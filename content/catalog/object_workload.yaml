@@ -1,0 +1,138 @@
+queries:
+  objects.table_workload:
+    title: Table Workload Counters
+    group: Object Workload
+    main_view: pg_stat_all_tables
+    description: Cumulative table scan, DML, vacuum, and analyze counters for user-visible relations.
+    source: pg_profile
+    cost: medium
+    display:
+      default_sort:
+        column: total_dml
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: objects_table_workload_pg14_plus
+        min_pg_version: 140000
+        sql_file: objects/table_workload.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+          counters:
+            seq_scan: seq_scan
+            seq_tup_read: seq_tup_read
+            idx_scan: idx_scan
+            idx_tup_fetch: idx_tup_fetch
+            n_tup_ins: n_tup_ins
+            n_tup_upd: n_tup_upd
+            n_tup_del: n_tup_del
+            n_tup_hot_upd: n_tup_hot_upd
+            vacuum_count: vacuum_count
+            autovacuum_count: autovacuum_count
+            analyze_count: analyze_count
+            autoanalyze_count: autoanalyze_count
+          gauges:
+            n_live_tup: n_live_tup
+            n_dead_tup: n_dead_tup
+            total_relation_size_bytes: total_relation_size_bytes
+
+  objects.table_io:
+    title: Table I/O Counters
+    group: Object Workload
+    main_view: pg_statio_all_tables
+    description: Cumulative heap, index, and toast block I/O counters by table.
+    source: pg_profile
+    cost: medium
+    display:
+      default_sort:
+        column: total_blks_read
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: objects_table_io_pg14_plus
+        min_pg_version: 140000
+        sql_file: objects/table_io.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+          counters:
+            heap_blks_read: heap_blks_read
+            heap_blks_hit: heap_blks_hit
+            idx_blks_read: idx_blks_read
+            idx_blks_hit: idx_blks_hit
+            toast_blks_read: toast_blks_read
+            toast_blks_hit: toast_blks_hit
+            tidx_blks_read: tidx_blks_read
+            tidx_blks_hit: tidx_blks_hit
+            total_blks_read: total_blks_read
+            total_blks_hit: total_blks_hit
+
+  objects.index_workload:
+    title: Index Workload Counters
+    group: Object Workload
+    main_view: pg_stat_all_indexes
+    description: Cumulative index scans, tuple reads, tuple fetches, and index cache I/O.
+    source: pg_profile
+    cost: medium
+    display:
+      default_sort:
+        column: idx_scan
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: objects_index_workload_pg14_plus
+        min_pg_version: 140000
+        sql_file: objects/index_workload.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+            index: indexrelname
+          counters:
+            idx_scan: idx_scan
+            idx_tup_read: idx_tup_read
+            idx_tup_fetch: idx_tup_fetch
+            idx_blks_read: idx_blks_read
+            idx_blks_hit: idx_blks_hit
+          gauges:
+            index_size_bytes: index_size_bytes
+            index_relpages: index_relpages
+
+  objects.function_workload:
+    title: Function Workload Counters
+    group: Object Workload
+    main_view: pg_stat_user_functions
+    description: Function call counters and execution time. Requires track_functions=pl or all.
+    source: pg_profile
+    cost: medium
+    display:
+      default_sort:
+        column: total_time_ms
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: objects_function_workload_pg14_plus
+        min_pg_version: 140000
+        sql_file: objects/function_workload.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            function: funcname
+          counters:
+            calls: calls
+            total_time_ms: total_time_ms
+            self_time_ms: self_time_ms

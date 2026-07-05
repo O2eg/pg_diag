@@ -1,0 +1,25 @@
+query_catalog:
+  schema_version: 2
+  sql_root: queries
+  defaults:
+    result_shape: dynamic_table
+    cost: low
+    collection:
+      default: once
+      supports:
+        - once
+        - every_snapshot
+  files:
+    - catalog/overview.yaml
+    - catalog/activity_locks.yaml
+    - catalog/database.yaml
+    - catalog/metric_sources.yaml
+    - catalog/statements.yaml
+    - catalog/object_workload.yaml
+    - catalog/wait_profile.yaml
+    - catalog/backend_os.yaml
+    - catalog/replication.yaml
+    - catalog/wal_io_checkpoints.yaml
+    - catalog/storage_vacuum.yaml
+    - catalog/indexes.yaml
+    - catalog/dba_extra.yaml

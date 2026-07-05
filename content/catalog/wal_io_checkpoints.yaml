@@ -1,0 +1,104 @@
+queries:
+  wal.position:
+    title: WAL Position
+    group: WAL, I/O & Checkpoints
+    main_view: pg_stat_wal
+    description: Current WAL location or replay location, plus timeline and server role.
+    source: postgresai
+    display:
+      default_sort:
+        column: xlog_location_b
+        direction: desc
+    collection:
+      default: once
+      supports: [once, every_snapshot]
+    variants:
+      - id: wal_position_pg14_plus
+        min_pg_version: 140000
+        sql_file: wal/wal_position_pg14.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+          counters:
+            wal_bytes: xlog_location_b
+          gauges:
+            in_recovery: in_recovery_int
+            timeline: timeline
+
+  checkpoints.bgwriter:
+    title: Background Writer
+    group: WAL, I/O & Checkpoints
+    main_view: pg_stat_bgwriter
+    description: Background writer counters. PostgreSQL 17+ moved checkpoint counters to pg_stat_checkpointer.
+    source: postgresai
+    display:
+      default_sort:
+        column: buffers_alloc
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: checkpoints_bgwriter_pg11_pg16
+        min_pg_version: 110000
+        max_pg_version: 169999
+        sql_file: checkpoints/bgwriter_pg11_pg16.sql
+      - id: checkpoints_bgwriter_pg17_plus
+        min_pg_version: 170000
+        sql_file: checkpoints/bgwriter_pg17_plus.sql
+
+  checkpoints.checkpointer:
+    title: Checkpointer
+    group: WAL, I/O & Checkpoints
+    main_view: pg_stat_checkpointer
+    description: Checkpointer and restartpoint counters.
+    source: postgresai
+    display:
+      default_sort:
+        column: buffers_written
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    requirements:
+      unsupported_versions_reason: On PostgreSQL versions before 17 checkpointer counters are covered by pg_stat_bgwriter.
+    variants:
+      - id: checkpoints_checkpointer_pg17_plus
+        min_pg_version: 170000
+        sql_file: checkpoints/checkpointer_pg17.sql
+
+  io.pg_stat_io:
+    title: PostgreSQL I/O Statistics
+    group: WAL, I/O & Checkpoints
+    main_view: pg_stat_io
+    description: Aggregated pg_stat_io counters by backend type.
+    source: postgresai
+    display:
+      default_sort:
+        column: read_bytes_mb
+        direction: desc
+    collection:
+      default: once
+      supports: [once, every_snapshot]
+    requirements:
+      unsupported_versions_reason: pg_stat_io exists in PostgreSQL 16+.
+    variants:
+      - id: io_pg_stat_io_pg16_pg17
+        min_pg_version: 160000
+        max_pg_version: 179999
+        sql_file: io/pg_stat_io_pg16_pg17.sql
+        semantic_columns: &pg_stat_io_semantics
+          dimensions:
+            backend_type: backend_type
+          counters:
+            read_mb: read_bytes_mb
+            write_mb: write_bytes_mb
+            writeback_mb: writeback_bytes_mb
+            extend_mb: extend_bytes_mb
+            reads: reads
+            writes: writes
+            fsyncs: fsyncs
+      - id: io_pg_stat_io_pg18_plus
+        min_pg_version: 180000
+        sql_file: io/pg_stat_io_pg18_plus.sql
+        semantic_columns: *pg_stat_io_semantics

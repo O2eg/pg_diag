@@ -1,0 +1,38 @@
+queries:
+  vacuum.autovacuum_queue:
+    title: Autovacuum Queue Pressure
+    group: Storage & Vacuum
+    main_view: pg_stat_all_tables
+    description: Dead tuple pressure relative to the autovacuum vacuum threshold.
+    source: postgresai
+    cost: medium
+    display:
+      default_sort:
+        column: autovacuum_overdue_factor
+        direction: desc
+    collection:
+      default: once
+      supports: [once, every_snapshot]
+    variants:
+      - id: vacuum_autovacuum_queue_all
+        min_pg_version: 110000
+        sql_file: vacuum/autovacuum_queue.sql
+
+  storage.table_size_detailed:
+    title: Top Table Size Breakdown
+    group: Storage & Vacuum
+    main_view: pg_class
+    description: Top table storage breakdown including heap, indexes, and toast.
+    source: postgresai
+    cost: medium
+    display:
+      default_sort:
+        column: total_relation_size_b
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: storage_table_size_detailed_all
+        min_pg_version: 110000
+        sql_file: storage/table_size_detailed.sql

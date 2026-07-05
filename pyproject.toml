@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pg-diag"
+version = "0.1.0"
+description = "Declarative PostgreSQL diagnostic report utility"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "PyYAML>=6.0",
+  "asyncpg>=0.29",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=7.4",
+]
+dev = [
+  "pytest>=7.4",
+  "pytest-cov>=4.1",
+  "ruff>=0.5",
+]
+browser = [
+  "playwright>=1.45",
+]
+docker = [
+  "docker>=7.1",
+]
+
+[project.scripts]
+pg-diag = "pg_diag.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.setuptools.packages.find]
+include = ["pg_diag*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

@@ -1,0 +1,2 @@
+#!/bin/sh
+/sbin/sysctl vm 2>&1 | grep -v "permission denied"

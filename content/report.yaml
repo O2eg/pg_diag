@@ -1,0 +1,553 @@
+report:
+  id: pg_diag_minimal
+  title: PostgreSQL Diagnostic Report
+  description: Minimal declarative DBA report layout for pg_diag.
+  schema_version: 2
+  default_state: expanded
+  catalogs:
+    queries: queries.yaml
+    scripts: scripts.yaml
+    metrics: metrics.yaml
+
+runtime_policy:
+  default_sql_timeout_ms: 10000
+  default_shell_timeout_ms: 5000
+  remote_db_only_shell_message: "no data bacause remote call"
+  table_columns: dynamic_from_result
+  fail_fast: false
+
+defaults:
+  table:
+    page_size: 25
+  item:
+    state: expanded
+
+sections:
+  overview:
+    title: Overview
+    description: PostgreSQL version and server configuration snapshot.
+    items:
+      server_version:
+        query: cluster.server_version
+      pg_settings:
+        query: cluster.settings
+        state: collapsed
+
+  os:
+    title: Operating System
+    description: Local host data. Remote DB-only mode keeps these items with skipped status.
+    state: collapsed
+    items:
+      kernel_version:
+        script: os.kernel_version
+      os_release:
+        script: os.os_release
+        state: collapsed
+      memory_info:
+        script: os.memory_info
+        state: collapsed
+      total_ram:
+        script: os.total_ram
+        state: collapsed
+      cpu_info:
+        script: os.cpu_info
+        state: collapsed
+      disk_usage:
+        script: os.disk_usage
+      fstab:
+        script: os.fstab
+        state: collapsed
+      mounts:
+        script: os.mounts
+        state: collapsed
+      network_addresses:
+        script: os.network_addresses
+        state: collapsed
+      sysctl_vm:
+        script: os.sysctl_vm
+        state: collapsed
+      sysctl_tcp:
+        script: os.sysctl_tcp
+        state: collapsed
+      sysctl_udp:
+        script: os.sysctl_udp
+        state: collapsed
+      lshw_system:
+        script: os.lshw_system
+        state: collapsed
+      lshw_bus:
+        script: os.lshw_bus
+        state: collapsed
+      lshw_memory:
+        script: os.lshw_memory
+        state: collapsed
+      lshw_processor:
+        script: os.lshw_processor
+        state: collapsed
+      lshw_bridge:
+        script: os.lshw_bridge
+        state: collapsed
+      lshw_display:
+        script: os.lshw_display
+        state: collapsed
+      lshw_network:
+        script: os.lshw_network
+        state: collapsed
+      lshw_storage:
+        script: os.lshw_storage
+        state: collapsed
+      lshw_disk:
+        script: os.lshw_disk
+        state: collapsed
+      lshw_volume:
+        script: os.lshw_volume
+        state: collapsed
+      lshw_input:
+        script: os.lshw_input
+        state: collapsed
+      lshw_communication:
+        script: os.lshw_communication
+        state: collapsed
+      lshw_multimedia:
+        script: os.lshw_multimedia
+        state: collapsed
+      lshw_power:
+        script: os.lshw_power
+        state: collapsed
+      lshw_generic:
+        script: os.lshw_generic
+        state: collapsed
+
+  activity_locks:
+    title: Activity & Locks
+    description: Session state summary and current lock waits.
+    items:
+      connection_pressure:
+        query: activity.connection_pressure
+      session_states:
+        query: activity.session_states
+      wait_events:
+        query: activity.wait_events
+        state: collapsed
+      long_transactions:
+        query: activity.long_transactions
+        state: collapsed
+      idle_in_transaction:
+        query: activity.idle_in_transaction
+        state: collapsed
+        render:
+          empty_message: No sessions idle in transaction for more than one minute.
+      lock_waits:
+        query: locks.lock_waits
+        render:
+          empty_message: No lock waits detected.
+      lock_modes:
+        query: locks.lock_modes
+        state: collapsed
+
+  database:
+    title: Database Workload
+    description: Current database cumulative statistics and workload counters.
+    items:
+      database_stats:
+        query: database.database_stats
+
+  sql_workload:
+    title: SQL Workload
+    description: pg_stat_statements capability checks and top SQL by time, calls, I/O, temporary I/O, and WAL.
+    items:
+      pg_stat_statements_capabilities:
+        query: statements.pg_stat_statements_capabilities
+      top_sql_by_total_time:
+        query: statements.top_by_total_time
+      top_sql_by_mean_time:
+        query: statements.top_by_mean_time
+        state: collapsed
+      top_sql_by_calls:
+        query: statements.top_by_calls
+        state: collapsed
+      top_sql_by_shared_io:
+        query: statements.top_by_io
+        state: collapsed
+      top_sql_by_temp_io:
+        query: statements.top_by_temp_io
+        state: collapsed
+      top_sql_by_wal:
+        query: statements.top_by_wal
+        state: collapsed
+
+  snapshot_delta_workload:
+    title: Snapshot Delta Workload
+    description: Top-N start/end deltas and rates computed from snapshots mode samples.
+    state: collapsed
+    items:
+      database_workload_delta:
+        metric: database.workload_delta
+      sql_time_delta:
+        metric: statements.total_time_delta
+        state: collapsed
+      sql_io_delta:
+        metric: statements.io_delta
+        state: collapsed
+      sql_wal_delta:
+        metric: statements.wal_delta
+        state: collapsed
+      table_dml_delta:
+        metric: objects.table_dml_delta
+        state: collapsed
+      table_scan_delta:
+        metric: objects.table_scan_delta
+        state: collapsed
+      table_io_delta:
+        metric: objects.table_io_delta
+        state: collapsed
+      index_usage_delta:
+        metric: objects.index_usage_delta
+        state: collapsed
+      function_time_delta:
+        metric: objects.function_time_delta
+        state: collapsed
+
+  replication:
+    title: Replication
+    description: Physical replication, standby conflicts, WAL receiver, and logical subscription state.
+    items:
+      physical_replication:
+        query: replication.physical_replication
+        render:
+          empty_message: No physical replication sender rows.
+      replication_slots:
+        query: replication.slots
+        state: collapsed
+        render:
+          empty_message: No replication slots.
+      wal_receiver:
+        query: replication.wal_receiver
+        state: collapsed
+        render:
+          empty_message: No WAL receiver row on this server.
+      standby_conflicts:
+        query: replication.database_conflicts
+      subscription_workers:
+        query: replication.subscription_workers
+        state: collapsed
+        render:
+          empty_message: No logical subscriptions.
+      recovery_prefetch:
+        query: replication.recovery_prefetch
+        state: collapsed
+
+  wal_io_checkpoints:
+    title: WAL, I/O & Checkpoints
+    description: WAL position, background writer, checkpointer, and pg_stat_io snapshots.
+    items:
+      wal_position:
+        query: wal.position
+      wal_statistics:
+        query: wal.stat_wal
+        state: collapsed
+      wal_archiver:
+        query: wal.archiver
+        state: collapsed
+      slru_statistics:
+        query: slru.stat_slru
+        state: collapsed
+      bgwriter:
+        query: checkpoints.bgwriter
+        state: collapsed
+      checkpointer:
+        query: checkpoints.checkpointer
+        state: collapsed
+      pg_stat_io:
+        query: io.pg_stat_io
+        state: collapsed
+
+  maintenance_progress:
+    title: Maintenance Progress
+    description: Live progress views for maintenance and bulk data operations.
+    state: collapsed
+    items:
+      vacuum_progress:
+        query: progress.vacuum
+        render:
+          empty_message: No VACUUM operations in progress.
+      create_index_progress:
+        query: progress.create_index
+        state: collapsed
+        render:
+          empty_message: No CREATE INDEX operations in progress.
+      cluster_progress:
+        query: progress.cluster
+        state: collapsed
+        render:
+          empty_message: No CLUSTER or VACUUM FULL operations in progress.
+      copy_progress:
+        query: progress.copy
+        state: collapsed
+        render:
+          empty_message: No COPY operations in progress.
+
+  storage_vacuum:
+    title: Storage, Vacuum & XID
+    description: Table size, autovacuum pressure, sequence capacity, and XID horizon diagnostics.
+    items:
+      autovacuum_queue:
+        query: vacuum.autovacuum_queue
+      database_wraparound:
+        query: vacuum.database_wraparound
+        state: collapsed
+      xmin_horizon:
+        query: vacuum.xmin_horizon
+        state: collapsed
+      xmin_horizon_blockers:
+        query: vacuum.xmin_horizon_blockers
+        state: collapsed
+        render:
+          empty_message: No xmin horizon blockers detected.
+      prepared_xacts:
+        query: vacuum.prepared_xacts
+        state: collapsed
+        render:
+          empty_message: No prepared transactions.
+      sequence_status:
+        query: storage.sequence_status
+        state: collapsed
+        render:
+          empty_message: No sequences found.
+      table_size_detailed:
+        query: storage.table_size_detailed
+
+  object_workload:
+    title: Object Workload
+    description: Table, index, and function workload counters inspired by pg_profile reports.
+    state: collapsed
+    items:
+      table_workload:
+        query: objects.table_workload
+      table_io:
+        query: objects.table_io
+        state: collapsed
+      index_workload:
+        query: objects.index_workload
+        state: collapsed
+      function_workload:
+        query: objects.function_workload
+        state: collapsed
+
+  wait_profile:
+    title: Wait Profile
+    description: Sampled wait profile from pg_stat_activity and optional pg_wait_sampling extension.
+    state: collapsed
+    items:
+      wait_event_sample_profile:
+        metric: activity.wait_sample_profile
+      pg_wait_sampling_capabilities:
+        query: wait.pg_wait_sampling_capabilities
+        state: collapsed
+      pg_wait_sampling_profile:
+        query: wait.pg_wait_sampling_profile
+        state: collapsed
+        render:
+          empty_message: pg_wait_sampling profile has no rows or extension is not installed.
+
+  backend_os:
+    title: Per-Backend Local OS
+    description: PostgreSQL backend activity correlated with local /proc CPU and I/O samples in local snapshots mode.
+    state: collapsed
+    items:
+      backend_activity:
+        query: backend.activity
+      backend_proc_cpu:
+        metric: backend.proc_cpu_top
+        state: collapsed
+      backend_proc_io:
+        metric: backend.proc_io_top
+        state: collapsed
+
+  indexes:
+    title: Index Health
+    description: Invalid, unused, duplicate, redundant, and structurally risky indexes.
+    items:
+      invalid_indexes:
+        query: indexes.invalid_indexes
+        render:
+          empty_message: No invalid indexes detected.
+      unused_indexes:
+        query: indexes.unused_indexes
+        state: collapsed
+      redundant_indexes:
+        query: indexes.redundant_indexes
+        state: collapsed
+        render:
+          empty_message: No redundant indexes detected.
+      duplicate_indexes:
+        query: indexes.duplicate_indexes
+        state: collapsed
+        render:
+          empty_message: No duplicate indexes detected.
+      foreign_keys_without_index:
+        query: indexes.foreign_keys_without_index
+        state: collapsed
+        render:
+          empty_message: No foreign keys without supporting indexes detected.
+      tables_without_pk_or_unique:
+        query: indexes.tables_without_pk_or_unique
+        state: collapsed
+        render:
+          empty_message: No user tables without PK or unique index detected.
+      large_indexes:
+        query: indexes.large_indexes
+        state: collapsed
+        render:
+          empty_message: No indexes larger than half of their table heap detected.
+
+  cluster_inventory:
+    title: Cluster Inventory
+    description: Extensions, privileged roles, restart-pending settings, and tablespaces.
+    state: collapsed
+    items:
+      extensions:
+        query: cluster.extensions
+      privileged_roles:
+        query: cluster.roles_privileges
+        state: collapsed
+        render:
+          empty_message: No privileged roles visible to the current user.
+      pending_restart_settings:
+        query: cluster.pending_restart_settings
+        state: collapsed
+        render:
+          empty_message: No settings pending restart.
+      tablespaces:
+        query: cluster.tablespaces
+        state: collapsed
+
+  snapshot_charts_os:
+    title: Snapshot charts OS
+    description: Operating system charts from local threaded samplers in snapshots mode.
+    state: collapsed
+    items:
+      os_cpu_utilization:
+        metric: os.cpu_utilization
+      os_cpu_load:
+        metric: os.cpu_load
+        state: collapsed
+      os_memory_usage:
+        metric: os.memory_usage
+        state: collapsed
+      os_memory_pressure:
+        metric: os.memory_pressure
+        state: collapsed
+      os_disk_read_throughput:
+        metric: os.disk_read_throughput
+        state: collapsed
+      os_disk_write_throughput:
+        metric: os.disk_write_throughput
+        state: collapsed
+      os_disk_iops:
+        metric: os.disk_iops
+        state: collapsed
+      os_disk_utilization:
+        metric: os.disk_utilization
+        state: collapsed
+      os_disk_latency:
+        metric: os.disk_latency
+        state: collapsed
+      os_network_receive:
+        metric: os.network_receive_throughput
+        state: collapsed
+      os_network_transmit:
+        metric: os.network_transmit_throughput
+        state: collapsed
+      os_network_packets:
+        metric: os.network_packets
+        state: collapsed
+
+  snapshot_charts_db:
+    title: Snapshot charts DB
+    description: Database charts rendered from repeated SQL samples in snapshots mode.
+    state: collapsed
+    items:
+      database_transaction_rate:
+        metric: database.transaction_rate
+      activity_sessions_by_state:
+        metric: activity.sessions_by_state
+        state: collapsed
+      wal_growth_rate:
+        metric: wal.growth_rate
+        state: collapsed
+      io_read_write_rate:
+        metric: io.read_write_rate
+        state: collapsed
+      database_tuple_dml_rate:
+        metric: database.tuple_dml_rate
+        state: collapsed
+      database_tuple_access_rate:
+        metric: database.tuple_access_rate
+        state: collapsed
+      database_block_access_rate:
+        metric: database.block_access_rate
+        state: collapsed
+      database_temp_files_delta:
+        metric: database.temp_files_delta
+        state: collapsed
+      database_temp_bytes_rate:
+        metric: database.temp_bytes_rate
+        state: collapsed
+      database_io_time_rate:
+        metric: database.io_time_rate
+        state: collapsed
+      database_backends:
+        metric: database.backends
+        state: collapsed
+      database_deadlocks:
+        metric: database.deadlocks
+        state: collapsed
+      tables_top_tuple_access_rate:
+        metric: objects.tables_top_tuple_access_rate
+        state: collapsed
+      tables_top_seq_read_rate:
+        metric: objects.tables_top_seq_read_rate
+        state: collapsed
+      tables_top_index_fetch_rate:
+        metric: objects.tables_top_index_fetch_rate
+        state: collapsed
+      tables_top_dml_rate:
+        metric: objects.tables_top_dml_rate
+        state: collapsed
+      tables_top_insert_rate:
+        metric: objects.tables_top_insert_rate
+        state: collapsed
+      tables_top_update_rate:
+        metric: objects.tables_top_update_rate
+        state: collapsed
+      tables_top_delete_rate:
+        metric: objects.tables_top_delete_rate
+        state: collapsed
+      tables_top_hot_update_rate:
+        metric: objects.tables_top_hot_update_rate
+        state: collapsed
+      tables_top_heap_read_rate:
+        metric: objects.tables_top_heap_read_rate
+        state: collapsed
+      tables_top_index_block_read_rate:
+        metric: objects.tables_top_index_block_read_rate
+        state: collapsed
+      indexes_top_scan_rate:
+        metric: objects.indexes_top_scan_rate
+        state: collapsed
+      indexes_top_tuple_read_rate:
+        metric: objects.indexes_top_tuple_read_rate
+        state: collapsed
+      indexes_top_tuple_fetch_rate:
+        metric: objects.indexes_top_tuple_fetch_rate
+        state: collapsed
+      indexes_top_reads_per_scan:
+        metric: objects.indexes_top_reads_per_scan
+        state: collapsed
+      indexes_top_fetches_per_scan:
+        metric: objects.indexes_top_fetches_per_scan
+        state: collapsed
+      indexes_top_reads_per_fetch:
+        metric: objects.indexes_top_reads_per_fetch
+        state: collapsed

@@ -1,0 +1,37 @@
+queries:
+  cluster.server_version:
+    title: PostgreSQL Full Version
+    group: Overview
+    main_view: pg_catalog
+    description: Full PostgreSQL server version string.
+    source: pg_perfbench
+    result_shape: scalar_text
+    display:
+      default_sort:
+        column: version
+        direction: asc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: cluster_server_version_all
+        min_pg_version: 90400
+        sql_file: cluster/server_version.sql
+
+  cluster.settings:
+    title: PostgreSQL Settings
+    group: Overview
+    main_view: pg_settings
+    description: Runtime settings with display-friendly values where possible.
+    source: postgresai
+    display:
+      default_sort:
+        column: setting_name
+        direction: asc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: cluster_settings_all
+        min_pg_version: 90400
+        sql_file: cluster/settings.sql

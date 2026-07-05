@@ -1,0 +1,177 @@
+script_catalog:
+  schema_version: 2
+  defaults:
+    output: plain_text
+    local_only: true
+    timeout_ms: 5000
+    remote_db_only_behavior:
+      status: skipped
+      message_ref: runtime_policy.remote_db_only_shell_message
+
+scripts:
+  os.kernel_version:
+    title: Kernel And Architecture
+    description: Local uname output.
+    script_file: os/uname_a.sh
+
+  os.os_release:
+    title: OS Distribution
+    description: Local /etc/os-release content.
+    script_file: os/etc_os_release.sh
+
+  os.memory_info:
+    title: Memory Information
+    description: Selected /proc/meminfo counters.
+    script_file: os/sys_memory_total.sh
+
+  os.total_ram:
+    title: Total RAM Capacity
+    description: Total host RAM from /proc/meminfo.
+    script_file: os/total_ram.sh
+
+  os.cpu_info:
+    title: CPU Information
+    description: CPU architecture and topology from lscpu.
+    script_file: os/cpu_info.sh
+
+  os.disk_usage:
+    title: Filesystem Usage
+    description: Local df output.
+    script_file: os/df_h.sh
+
+  os.fstab:
+    title: Filesystem Configuration
+    description: Local /etc/fstab content.
+    script_file: os/etc_fstab.sh
+
+  os.mounts:
+    title: Mounted Filesystems
+    description: Current filesystem mounts.
+    script_file: os/mount.sh
+
+  os.network_addresses:
+    title: Network Addresses And Hosts
+    description: Local network addresses and hostname mappings.
+    script_file: os/ip_br_addr.sh
+
+  os.sysctl_vm:
+    title: Kernel VM Parameters
+    description: Kernel virtual memory parameters from sysctl.
+    script_file: os/sysctl_vm.sh
+
+  os.sysctl_tcp:
+    title: Kernel TCP Parameters
+    description: Kernel IPv4 TCP parameters from sysctl.
+    script_file: os/sysctl_net_ipv4_tcp.sh
+    timeout_ms: 10000
+
+  os.sysctl_udp:
+    title: Kernel UDP Parameters
+    description: Kernel IPv4 UDP parameters from sysctl.
+    script_file: os/sysctl_net_ipv4_udp.sh
+    timeout_ms: 10000
+
+  os.lshw_system:
+    title: System Components
+    description: Hardware inventory from lshw -class system.
+    script_file: os/lshw_system.sh
+    output: table_json
+    timeout_ms: 15000
+
+  os.lshw_bus:
+    title: Buses And Interfaces
+    description: Hardware inventory from lshw -class bus.
+    script_file: os/lshw_bus.sh
+    output: table_json
+    timeout_ms: 15000
+
+  os.lshw_memory:
+    title: System Memory Hardware
+    description: Hardware inventory from lshw -class memory.
+    script_file: os/lshw_memory.sh
+    output: table_json
+    timeout_ms: 15000
+
+  os.lshw_processor:
+    title: Processor Hardware
+    description: Hardware inventory from lshw -class processor.
+    script_file: os/lshw_processor.sh
+    output: table_json
+    timeout_ms: 15000
+
+  os.lshw_bridge:
+    title: Bridges And Controllers
+    description: Hardware inventory from lshw -class bridge.
+    script_file: os/lshw_bridge.sh
+    output: table_json
+    timeout_ms: 15000
+
+  os.lshw_display:
+    title: Graphics Adapters
+    description: Hardware inventory from lshw -class display.
+    script_file: os/lshw_display.sh
+    output: table_json
+    timeout_ms: 15000
+
+  os.lshw_network:
+    title: Network Interfaces
+    description: Hardware inventory from lshw -class network.
+    script_file: os/lshw_network.sh
+    output: table_json
+    timeout_ms: 15000
+
+  os.lshw_storage:
+    title: Storage Controllers
+    description: Hardware inventory from lshw -class storage.
+    script_file: os/lshw_storage.sh
+    output: table_json
+    timeout_ms: 15000
+
+  os.lshw_disk:
+    title: Disks And SSDs
+    description: Hardware inventory from lshw -class disk.
+    script_file: os/lshw_disk.sh
+    output: table_json
+    timeout_ms: 15000
+
+  os.lshw_volume:
+    title: Disk Partitions And Volumes
+    description: Hardware inventory from lshw -class volume.
+    script_file: os/lshw_volume.sh
+    output: table_json
+    timeout_ms: 15000
+
+  os.lshw_input:
+    title: Input Devices
+    description: Hardware inventory from lshw -class input.
+    script_file: os/lshw_input.sh
+    output: table_json
+    timeout_ms: 15000
+
+  os.lshw_communication:
+    title: Communication Devices
+    description: Hardware inventory from lshw -class communication.
+    script_file: os/lshw_communication.sh
+    output: table_json
+    timeout_ms: 15000
+
+  os.lshw_multimedia:
+    title: Multimedia Devices
+    description: Hardware inventory from lshw -class multimedia.
+    script_file: os/lshw_multimedia.sh
+    output: table_json
+    timeout_ms: 15000
+
+  os.lshw_power:
+    title: Power Components
+    description: Hardware inventory from lshw -class power.
+    script_file: os/lshw_power.sh
+    output: table_json
+    timeout_ms: 15000
+
+  os.lshw_generic:
+    title: Generic Devices
+    description: Hardware inventory from lshw -class generic.
+    script_file: os/lshw_generic.sh
+    output: table_json
+    timeout_ms: 15000

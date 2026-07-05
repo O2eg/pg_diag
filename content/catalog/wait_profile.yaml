@@ -1,0 +1,37 @@
+queries:
+  wait.pg_wait_sampling_capabilities:
+    title: pg_wait_sampling Capability Check
+    group: Wait Profile
+    main_view: pg_extension
+    description: Optional pg_wait_sampling extension availability and installation state.
+    source: pgcenter_pg_profile
+    display:
+      default_sort:
+        column: capability
+        direction: asc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: wait_pg_wait_sampling_capabilities_pg14_plus
+        min_pg_version: 140000
+        sql_file: wait/pg_wait_sampling_capabilities.sql
+
+  wait.pg_wait_sampling_profile:
+    title: pg_wait_sampling Profile
+    group: Wait Profile
+    main_view: pg_wait_sampling_profile
+    description: Optional wait sampling profile if pg_wait_sampling is installed in the current database.
+    source: pg_wait_sampling
+    cost: medium
+    display:
+      default_sort:
+        column: samples
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: wait_pg_wait_sampling_profile_pg14_plus
+        min_pg_version: 140000
+        sql_file: wait/pg_wait_sampling_profile.sql

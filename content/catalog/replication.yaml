@@ -1,0 +1,108 @@
+queries:
+  replication.physical_replication:
+    title: Physical Replication Senders
+    group: Replication
+    main_view: pg_stat_replication
+    description: WAL sender LSN positions and reply lag.
+    source: postgresai
+    display:
+      default_sort:
+        column: reply_time_lag
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: replication_physical_replication_all
+        min_pg_version: 100000
+        sql_file: replication/physical_replication.sql
+        semantic_columns:
+          dimensions:
+            application_name: application_name
+          gauges:
+            current_wal_lsn: current_wal_lsn
+            sent_lsn: sent_lsn
+            write_lsn: write_lsn
+            flush_lsn: flush_lsn
+            replay_lsn: replay_lsn
+            reply_time_lag_seconds: reply_time_lag
+
+  replication.wal_receiver:
+    title: WAL Receiver
+    group: Replication
+    main_view: pg_stat_wal_receiver
+    description: WAL receiver status and upstream host data for standby servers.
+    source: postgresai
+    display:
+      default_sort:
+        column: status
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: replication_wal_receiver_all
+        min_pg_version: 100000
+        sql_file: replication/wal_receiver.sql
+
+  replication.database_conflicts:
+    title: Standby Recovery Conflicts
+    group: Replication
+    main_view: pg_stat_database_conflicts
+    description: Recovery conflict counters for standby databases.
+    source: PostgreSQL docs
+    display:
+      default_sort:
+        column: conflicts_total
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: replication_database_conflicts_pg09_pg17
+        min_pg_version: 90400
+        max_pg_version: 179999
+        sql_file: replication/database_conflicts_pg09_pg17.sql
+      - id: replication_database_conflicts_pg18_plus
+        min_pg_version: 180000
+        sql_file: replication/database_conflicts_pg18_plus.sql
+
+  replication.subscription_workers:
+    title: Logical Replication Subscription Workers
+    group: Replication
+    main_view: pg_stat_subscription
+    description: Logical replication subscription worker state and LSN progress.
+    source: PostgreSQL docs
+    display:
+      default_sort:
+        column: worker_running
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    requirements:
+      unsupported_versions_reason: Initial catalog contains only the PostgreSQL 18 shape of pg_stat_subscription.
+    variants:
+      - id: replication_subscription_workers_pg18_plus
+        min_pg_version: 180000
+        sql_file: replication/subscription_workers_pg18.sql
+
+  replication.recovery_prefetch:
+    title: Recovery Prefetch
+    group: Replication
+    main_view: pg_stat_recovery_prefetch
+    description: Recovery prefetch decisions and skip reasons.
+    source: PostgreSQL docs
+    display:
+      default_sort:
+        column: decisions_total
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    requirements:
+      unsupported_versions_reason: pg_stat_recovery_prefetch is available only on newer PostgreSQL versions.
+    variants:
+      - id: replication_recovery_prefetch_pg15_plus
+        min_pg_version: 150000
+        sql_file: replication/recovery_prefetch_pg15.sql

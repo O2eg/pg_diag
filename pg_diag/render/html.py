@@ -1,0 +1,3514 @@
+"""Self-contained HTML renderer for pg_diag artifacts."""
+
+from __future__ import annotations
+
+import html
+import json
+from copy import deepcopy
+from pathlib import Path
+from typing import Any
+
+from pg_diag.artifact_schema import validate_artifact
+from pg_diag.executors.sql import publicize_table_result
+
+
+def render_html(artifact: dict[str, Any]) -> str:
+    validate_artifact(artifact)
+    artifact = _publicize_artifact_for_render(artifact)
+    payload = _safe_json_payload(artifact)
+    title = html.escape(str((artifact.get("report") or {}).get("title") or "pg_diag report"))
+    return _HTML_TEMPLATE.replace("__TITLE__", title).replace("__PAYLOAD__", payload)
+
+
+def render_from_json(json_path: str | Path, html_path: str | Path) -> None:
+    artifact = json.loads(Path(json_path).read_text(encoding="utf-8"))
+    html_text = render_html(artifact)
+    output = Path(html_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(html_text, encoding="utf-8")
+
+
+def _safe_json_payload(artifact: dict[str, Any]) -> str:
+    payload = json.dumps(artifact, ensure_ascii=False, separators=(",", ":"))
+    return (
+        payload.replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
+
+
+def _publicize_artifact_for_render(artifact: dict[str, Any]) -> dict[str, Any]:
+    public_artifact = deepcopy(artifact)
+    for item in (public_artifact.get("items") or {}).values():
+        result = item.get("result") or {}
+        if result.get("kind") != "table":
+            continue
+        columns = result.get("columns") or []
+        rows = result.get("rows") or []
+        public_columns, public_rows = publicize_table_result(columns, rows)
+        result["columns"] = public_columns
+        result["rows"] = public_rows
+        result["row_count"] = len(public_rows)
+    return public_artifact
+
+
+_HTML_TEMPLATE = """<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>__TITLE__</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/apexcharts/3.44.0/apexcharts.min.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #17111f;
+      --panel: #241a2d;
+      --panel-soft: #2e2239;
+      --line: #463456;
+      --line-strong: #725a87;
+      --text: #f8f0ff;
+      --muted: #d8c8e8;
+      --header: #120c19;
+      --header-fg: #fff7d6;
+      --header-muted: #eadfb7;
+      --input-bg: #1d1526;
+      --button-bg: #2b2035;
+      --button-hover-bg: #392847;
+      --button-hover-border: #d6b35f;
+      --summary-bg: #2a1f34;
+      --section-summary-bg: #3a2748;
+      --section-summary-fg: #fff7d6;
+      --item-summary-bg: #281d32;
+      --item-summary-open-bg: #f3d46b;
+      --item-summary-open-fg: #24152f;
+      --item-open-bg: #0f0a16;
+      --item-indent-line: #6c5181;
+      --table-head-bg: #342643;
+      --row-alt-bg: #1d1626;
+      --sort-indicator: #f3d46b;
+      --accent: #f3d46b;
+      --accent-soft: #483a1f;
+      --accent-fg: #ffeaa3;
+      --accent-contrast: #24152f;
+      --ok-bg: #12351f;
+      --ok-fg: #9df0b7;
+      --warn-bg: #3b2f10;
+      --warn-fg: #ffe19a;
+      --err-bg: #3f1717;
+      --err-fg: #ffb4b4;
+      --neutral-bg: #30333a;
+      --neutral-fg: #d6d8dd;
+    }
+
+    html[data-theme="light"] {
+      color-scheme: light;
+      --bg: #fbf7ff;
+      --panel: #ffffff;
+      --panel-soft: #f4edfb;
+      --line: #dfd2ec;
+      --line-strong: #c9b3df;
+      --text: #2b1d38;
+      --muted: #746286;
+      --header: #ede1f7;
+      --header-fg: #2a1738;
+      --header-muted: #6c5b80;
+      --input-bg: #fffdf7;
+      --button-bg: #fffaf0;
+      --button-hover-bg: #f6ecff;
+      --button-hover-border: #b98bd6;
+      --summary-bg: #f6effc;
+      --section-summary-bg: #eadbf6;
+      --section-summary-fg: #2a1738;
+      --item-summary-bg: #fffaf0;
+      --item-summary-open-bg: #f4cf6a;
+      --item-summary-open-fg: #2a1738;
+      --item-open-bg: #f2f2f5;
+      --item-indent-line: #d8b96a;
+      --table-head-bg: #efe2f8;
+      --row-alt-bg: #fffaf0;
+      --sort-indicator: #7a4da0;
+      --accent: #f4cf6a;
+      --accent-soft: #fff0ba;
+      --accent-fg: #62490f;
+      --accent-contrast: #2a1738;
+      --ok-bg: #dcfce7;
+      --ok-fg: #166534;
+      --warn-bg: #fef3c7;
+      --warn-fg: #92400e;
+      --err-bg: #fee2e2;
+      --err-fg: #991b1b;
+      --neutral-bg: #e7edf3;
+      --neutral-fg: #334155;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    .shell {
+      width: min(100%, 1480px);
+      margin: 0 auto;
+      padding: 0 28px;
+      transition: padding-left 300ms ease;
+    }
+
+    @media (min-width: 1180px) {
+      .shell {
+        padding-left: 278px;
+      }
+
+      body.report-nav-collapsed .shell {
+        padding-left: 80px;
+      }
+    }
+
+    .app-header {
+      background: var(--header);
+      color: var(--header-fg);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .app-header .shell {
+      padding-top: 20px;
+      padding-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 25px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .runtime {
+      color: var(--header-muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    .runtime + .runtime {
+      margin-top: 4px;
+    }
+
+    .project-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      font-family: inherit;
+    }
+
+    .project-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--header-muted);
+      text-decoration: none;
+    }
+
+    .project-link:hover,
+    .project-link:focus-visible {
+      color: var(--header-fg);
+      text-decoration: underline;
+      outline: none;
+    }
+
+    .project-link-icon {
+      width: 14px;
+      height: 14px;
+      flex: 0 0 auto;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .summary-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    main.shell {
+      padding-top: 22px;
+      padding-bottom: 42px;
+    }
+
+    .report-description {
+      margin: 0 0 14px;
+      color: var(--muted);
+      max-width: 980px;
+    }
+
+    .report-toolbar {
+      display: grid;
+      grid-template-columns: auto auto minmax(220px, 420px) minmax(130px, 190px) minmax(150px, 220px) auto;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 16px;
+    }
+
+    .report-nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      z-index: 20;
+      width: 244px;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      border: 1px solid var(--line);
+      border-left: 0;
+      border-bottom: 0;
+      border-radius: 0 8px 0 0;
+      background: var(--panel);
+      box-shadow: 0 14px 38px rgba(0, 0, 0, 0.24);
+      overflow: hidden;
+      transition: width 300ms ease, box-shadow 300ms ease;
+      will-change: width;
+    }
+
+    .report-nav.collapsed {
+      width: 46px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+    }
+
+    .report-nav-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 9px 11px;
+      border-bottom: 1px solid var(--line);
+      background: var(--section-summary-bg);
+      color: var(--section-summary-fg);
+      font-weight: 700;
+      font-size: 13px;
+      transition: padding 300ms ease, gap 300ms ease;
+    }
+
+    .report-nav.collapsed .report-nav-title {
+      justify-content: center;
+      gap: 0;
+      padding: 7px;
+    }
+
+    .report-nav-title-text {
+      min-width: 0;
+      max-width: 160px;
+      overflow: hidden;
+      white-space: nowrap;
+      opacity: 1;
+      transform: translateX(0);
+      transition: max-width 300ms ease, opacity 180ms ease, transform 300ms ease;
+    }
+
+    .report-nav.collapsed .report-nav-title-text {
+      max-width: 0;
+      opacity: 0;
+      transform: translateX(-6px);
+    }
+
+    .report-nav-toggle {
+      flex: 0 0 auto;
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--section-summary-fg);
+      cursor: pointer;
+      transition: background 180ms ease, border-color 180ms ease, color 180ms ease;
+    }
+
+    .report-nav-toggle:hover,
+    .report-nav-toggle:focus-visible {
+      border-color: var(--accent);
+      background: var(--button-hover-bg);
+      outline: none;
+    }
+
+    .report-nav-toggle::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border: solid currentColor;
+      border-width: 0 2px 2px 0;
+      transform: rotate(135deg);
+      transition: transform 300ms ease;
+    }
+
+    .report-nav.collapsed .report-nav-toggle::before {
+      transform: rotate(-45deg);
+    }
+
+    .report-nav-tree {
+      min-width: 0;
+      overflow: auto;
+      padding: 7px;
+      opacity: 1;
+      transition: opacity 180ms ease;
+    }
+
+    .report-nav.collapsed .report-nav-tree {
+      opacity: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    .report-nav-section {
+      display: grid;
+      gap: 3px;
+      margin-bottom: 6px;
+    }
+
+    .report-nav-button {
+      width: 100%;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      text-align: left;
+      min-height: 30px;
+      padding: 5px 7px;
+    }
+
+    .report-nav-button:hover,
+    .report-nav-button:focus-visible {
+      border-color: var(--line-strong);
+      background: var(--button-hover-bg);
+      outline: none;
+    }
+
+    .report-nav-button.section-link {
+      font-weight: 700;
+      color: var(--section-summary-fg);
+    }
+
+    .report-nav-button.item-link {
+      padding-left: 20px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .report-nav-text {
+      min-width: 0;
+      flex: 1 1 auto;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .report-nav .data-type-icons {
+      margin-left: 0;
+      gap: 3px;
+    }
+
+    .report-nav .data-type-icon {
+      width: 15px;
+      height: 15px;
+      opacity: 0.78;
+    }
+
+    .report-nav .data-type-icon svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    @media (max-width: 1179px) {
+      .report-nav {
+        display: none;
+      }
+    }
+
+    .field {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .field span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .input,
+    .select {
+      width: 100%;
+      min-height: 34px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: var(--input-bg);
+      color: var(--text);
+      padding: 6px 9px;
+    }
+
+    .btn {
+      min-height: 34px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: var(--button-bg);
+      color: var(--text);
+      padding: 6px 11px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      border-color: var(--button-hover-border);
+      background: var(--button-hover-bg);
+    }
+
+    .btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--accent-contrast);
+    }
+
+    .btn.ghost {
+      background: transparent;
+    }
+
+    .theme-toggle {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 34px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .theme-toggle input {
+      appearance: none;
+      position: relative;
+      width: 42px;
+      height: 22px;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      background: var(--button-bg);
+      cursor: pointer;
+      transition: background 120ms ease, border-color 120ms ease;
+    }
+
+    .theme-toggle input::before {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: transform 120ms ease, background 120ms ease;
+    }
+
+    .theme-toggle input:checked {
+      border-color: var(--accent);
+      background: var(--accent);
+    }
+
+    .theme-toggle input:checked::before {
+      transform: translateX(20px);
+      background: var(--header-fg);
+    }
+
+    .sections {
+      display: grid;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    details.section {
+      box-sizing: border-box;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: clip;
+      min-width: 0;
+      transition: border-color 300ms ease, background-color 300ms ease;
+    }
+
+    details.section > summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 45px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-weight: 700;
+      list-style: none;
+      background: var(--section-summary-bg);
+      color: var(--section-summary-fg);
+      border-bottom: 1px solid transparent;
+      transition: background-color 300ms ease, color 300ms ease, border-color 300ms ease;
+    }
+
+    details.section > summary::-webkit-details-marker,
+    details.item > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    details.section[open] > summary {
+      border-bottom-color: var(--line);
+    }
+
+    details.section.is-closing > summary {
+      border-bottom-color: transparent;
+    }
+
+    .summary-title {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      flex: 1 1 auto;
+      gap: 8px;
+    }
+
+    .data-type-icons {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      flex: 0 0 auto;
+      margin-left: 2px;
+    }
+
+    .data-type-icon {
+      display: inline-grid;
+      place-items: center;
+      width: 18px;
+      height: 18px;
+      color: currentColor;
+      opacity: 0.72;
+    }
+
+    .data-type-icon svg {
+      display: block;
+      width: 16px;
+      height: 16px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .caret {
+      width: 0;
+      height: 0;
+      border-top: 5px solid transparent;
+      border-bottom: 5px solid transparent;
+      border-left: 7px solid var(--muted);
+      transform: rotate(0deg);
+      transition: transform 300ms ease, border-left-color 300ms ease;
+      flex: 0 0 auto;
+    }
+
+    details[open] > summary .caret {
+      transform: rotate(90deg);
+    }
+
+    details.is-closing > summary .caret {
+      transform: rotate(0deg);
+    }
+
+    .details-content {
+      display: grid;
+      grid-template-rows: 1fr;
+      opacity: 1;
+      overflow: clip;
+      transition: grid-template-rows 300ms ease, opacity 220ms ease;
+    }
+
+    .details-content-inner {
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    details.is-opening > .details-content,
+    details.is-closing > .details-content {
+      grid-template-rows: 0fr;
+      opacity: 0;
+    }
+
+    details[open]:not(.is-opening):not(.is-closing) > .details-content {
+      grid-template-rows: 1fr;
+      opacity: 1;
+    }
+
+    .section-title,
+    .item-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .section-meta,
+    .item-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      justify-content: flex-end;
+    }
+
+    .section-controls {
+      display: inline-flex;
+      gap: 4px;
+      align-items: center;
+    }
+
+    .section-control-button {
+      position: relative;
+      display: inline-grid;
+      place-items: center;
+      width: 24px;
+      height: 22px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: var(--button-bg);
+      color: var(--section-summary-fg);
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .section-control-button:hover {
+      border-color: var(--button-hover-border);
+      background: var(--button-hover-bg);
+      color: var(--accent);
+    }
+
+    .section-control-button::before {
+      content: "";
+      width: 0;
+      height: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+    }
+
+    .section-control-button.expand::before {
+      border-top: 7px solid currentColor;
+    }
+
+    .section-control-button.collapse::before {
+      border-bottom: 7px solid currentColor;
+    }
+
+    .section-body {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+      padding: 8px 0 10px 14px;
+      background: var(--panel);
+      border-left: 3px solid var(--item-indent-line);
+    }
+
+    details.item {
+      box-sizing: border-box;
+      border: 1px solid var(--line);
+      border-right: 0;
+      border-radius: 6px 0 0 6px;
+      background: var(--panel);
+      min-width: 0;
+      overflow: clip;
+      transition: border-color 300ms ease, background-color 300ms ease;
+    }
+
+    details.item:first-child {
+      border-top: 1px solid var(--line);
+    }
+
+    details.item > summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 43px;
+      padding: 9px 14px;
+      cursor: pointer;
+      list-style: none;
+      background: var(--item-summary-bg);
+      transition: background-color 300ms ease, color 300ms ease, border-color 300ms ease;
+    }
+
+    details.item[open] > summary {
+      background: var(--item-summary-open-bg);
+      color: var(--item-summary-open-fg);
+      border-bottom: 1px solid var(--line);
+    }
+
+    details.item[open] {
+      border-color: var(--item-summary-open-bg);
+      background: var(--item-open-bg);
+    }
+
+    details.item.is-closing {
+      border-color: var(--line);
+    }
+
+    details.item.is-closing > summary {
+      background: var(--item-summary-bg);
+      color: var(--text);
+      border-bottom-color: transparent;
+    }
+
+    details.item[open] > summary .caret {
+      border-left-color: var(--item-summary-open-fg);
+    }
+
+    details.item.is-closing > summary .caret {
+      border-left-color: var(--muted);
+    }
+
+    .item-body {
+      padding: 12px 14px 16px;
+      background: inherit;
+      min-width: 0;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.2;
+      white-space: nowrap;
+      background: var(--neutral-bg);
+      color: var(--neutral-fg);
+    }
+
+    .badge.ok {
+      background: var(--ok-bg);
+      color: var(--ok-fg);
+    }
+
+    .badge.empty,
+    .badge.skipped,
+    .badge.unsupported {
+      background: var(--warn-bg);
+      color: var(--warn-fg);
+    }
+
+    .badge.error,
+    .badge.permission_denied,
+    .badge.unavailable {
+      background: var(--err-bg);
+      color: var(--err-fg);
+    }
+
+    .badge.source {
+      background: var(--accent-soft);
+      color: var(--accent-fg);
+    }
+
+    .reason {
+      margin: 0 0 10px;
+      color: var(--muted);
+    }
+
+    .item-error {
+      display: grid;
+      gap: 10px;
+      border: 1px solid var(--err-fg);
+      border-radius: 8px;
+      background: var(--err-bg);
+      color: var(--err-fg);
+      padding: 12px;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .item-error-title {
+      margin: 0;
+      font-weight: 800;
+      line-height: 1.3;
+    }
+
+    .item-error-message {
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .item-error-details {
+      max-height: 420px;
+      margin: 0;
+      overflow: auto;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.22);
+      color: inherit;
+      padding: 10px;
+      white-space: pre-wrap;
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      tab-size: 2;
+    }
+
+    .source-modal[hidden] {
+      display: none;
+    }
+
+    .source-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: rgba(12, 8, 18, 0.72);
+    }
+
+    .source-dialog {
+      width: min(1100px, 100%);
+      max-height: min(760px, calc(100vh - 48px));
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+      overflow: hidden;
+    }
+
+    .source-dialog-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 12px 14px;
+      background: var(--section-summary-bg);
+      color: var(--section-summary-fg);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .source-dialog-title {
+      min-width: 0;
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.3;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .source-dialog-actions {
+      display: flex;
+      flex: 0 0 auto;
+      gap: 8px;
+    }
+
+    .source-code-shell {
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      background: #0d1117;
+    }
+
+    .source-code-shell pre {
+      margin: 0;
+      min-width: max-content;
+      padding: 16px;
+      background: transparent;
+    }
+
+    .source-code-shell code {
+      font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre;
+      tab-size: 2;
+    }
+
+    .meta-shell {
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      background: var(--panel);
+      padding: 14px;
+    }
+
+    .meta-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .meta-table th,
+    .meta-table td {
+      border: 1px solid var(--line);
+      padding: 7px 9px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .meta-table th {
+      width: 260px;
+      background: var(--table-head-bg);
+      color: var(--text);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .meta-table td {
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+
+    .meta-table pre {
+      margin: 0;
+      white-space: pre-wrap;
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .page-scroll-controls {
+      position: fixed;
+      right: max(18px, env(safe-area-inset-right));
+      bottom: max(18px, env(safe-area-inset-bottom));
+      z-index: 35;
+      display: grid;
+      gap: 10px;
+      pointer-events: none;
+    }
+
+    .scroll-jump {
+      position: relative;
+      width: 46px;
+      height: 46px;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      background: var(--accent);
+      color: var(--accent-contrast);
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+      cursor: pointer;
+      opacity: 0;
+      transform: translateY(12px) scale(0.92);
+      transition:
+        opacity 220ms ease,
+        transform 220ms ease,
+        background-color 160ms ease,
+        border-color 160ms ease;
+      pointer-events: none;
+    }
+
+    .scroll-jump.visible {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      pointer-events: auto;
+    }
+
+    .scroll-jump:hover {
+      border-color: var(--accent);
+      background: var(--header-fg);
+    }
+
+    .scroll-jump:focus-visible {
+      outline: 2px solid var(--header-fg);
+      outline-offset: 3px;
+    }
+
+    .scroll-jump::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 12px;
+      height: 12px;
+      border-left: 3px solid currentColor;
+      border-top: 3px solid currentColor;
+    }
+
+    .scroll-jump.scroll-up::before {
+      transform: translate(-50%, -35%) rotate(45deg);
+    }
+
+    .scroll-jump.scroll-down::before {
+      transform: translate(-50%, -65%) rotate(225deg);
+    }
+
+    .kv {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 10px;
+    }
+
+    .kv > span {
+      display: inline-flex;
+      gap: 5px;
+      max-width: 100%;
+      min-height: 24px;
+      padding: 3px 7px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+
+    .kv > span > span {
+      min-width: 0;
+    }
+
+    .kv b {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .kv .source-button {
+      min-height: 30px;
+    }
+
+    .item-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 10px;
+    }
+
+    .table-shell {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--panel);
+      min-width: 0;
+      max-width: 100%;
+    }
+
+    .chart-shell {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-soft);
+      padding: 12px;
+      min-width: 0;
+    }
+
+    .apex-chart {
+      box-sizing: border-box;
+      width: 100%;
+      height: 470px;
+      min-height: 470px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--input-bg);
+      padding: 10px 12px 6px;
+    }
+
+    .apex-chart .apexcharts-legend {
+      max-height: 92px !important;
+      overflow-x: hidden !important;
+      overflow-y: auto !important;
+      align-content: flex-start !important;
+      padding: 4px 8px 0 !important;
+    }
+
+    .apex-chart .apexcharts-legend-series {
+      display: inline-flex !important;
+      align-items: center !important;
+      min-width: 0;
+      margin-top: 3px !important;
+      margin-bottom: 3px !important;
+    }
+
+    .apex-chart .apexcharts-legend-text {
+      min-width: 0;
+      line-height: 1.25 !important;
+      white-space: normal !important;
+      overflow-wrap: anywhere;
+    }
+
+    .apexcharts-toolbar .apexcharts-menu-icon svg,
+    .apexcharts-toolbar .apexcharts-reset-icon svg,
+    .apexcharts-toolbar .apexcharts-zoom-icon svg,
+    .apexcharts-toolbar .apexcharts-zoomin-icon svg,
+    .apexcharts-toolbar .apexcharts-zoomout-icon svg,
+    .apexcharts-toolbar .apexcharts-pan-icon svg,
+    .apexcharts-toolbar .apexcharts-selection-icon svg {
+      fill: var(--muted) !important;
+    }
+
+    .apexcharts-toolbar .apexcharts-menu-icon:hover svg,
+    .apexcharts-toolbar .apexcharts-reset-icon:hover svg,
+    .apexcharts-toolbar .apexcharts-zoom-icon:hover svg,
+    .apexcharts-toolbar .apexcharts-zoomin-icon:hover svg,
+    .apexcharts-toolbar .apexcharts-zoomout-icon:hover svg,
+    .apexcharts-toolbar .apexcharts-pan-icon:hover svg,
+    .apexcharts-toolbar .apexcharts-selection-icon:hover svg {
+      fill: var(--accent) !important;
+    }
+
+    .apexcharts-toolbar .apexcharts-selected svg {
+      fill: var(--accent) !important;
+    }
+
+    .apexcharts-menu {
+      background: var(--panel) !important;
+      border: 1px solid var(--line) !important;
+      border-radius: 6px !important;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.32) !important;
+      color: var(--text) !important;
+      min-width: 126px !important;
+    }
+
+    .apexcharts-menu .apexcharts-menu-item {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: flex-start !important;
+      background: transparent !important;
+      color: var(--text) !important;
+      font-size: 12px !important;
+      line-height: 1.25 !important;
+      min-height: 30px !important;
+      padding: 7px 14px !important;
+      text-align: left !important;
+      text-indent: 0 !important;
+      white-space: nowrap !important;
+    }
+
+    .apexcharts-menu .apexcharts-menu-item:hover {
+      background: var(--button-hover-bg) !important;
+      color: var(--accent-fg) !important;
+    }
+
+    .apexcharts-tooltip,
+    .apexcharts-tooltip-title,
+    .apexcharts-xaxistooltip,
+    .apexcharts-yaxistooltip {
+      background: var(--panel) !important;
+      border-color: var(--line) !important;
+      color: var(--text) !important;
+    }
+
+    .table-toolbar {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) minmax(120px, max-content) auto auto minmax(130px, max-content);
+      gap: 8px;
+      align-items: center;
+      padding: 9px;
+      background: var(--panel-soft);
+      border-bottom: 1px solid var(--line);
+      min-width: 0;
+    }
+
+    .row-counter {
+      color: var(--muted);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    .table-scroll {
+      max-height: 72vh;
+      overflow: auto;
+      background: var(--panel);
+      min-width: 0;
+    }
+
+    table {
+      border-collapse: separate;
+      border-spacing: 0;
+      width: max-content;
+      min-width: 100%;
+      table-layout: auto;
+    }
+
+    th,
+    td {
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th:last-child,
+    td:last-child {
+      border-right: 0;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--table-head-bg);
+      color: var(--text);
+      font-weight: 700;
+      box-shadow: 0 1px 0 var(--line);
+      padding: 0;
+      white-space: nowrap;
+    }
+
+    td {
+      max-width: 520px;
+      padding: 7px 8px;
+      overflow-wrap: normal;
+    }
+
+    td.numeric {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .sort-button {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      width: 100%;
+      min-height: 34px;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      padding: 7px 8px;
+      cursor: pointer;
+      font-weight: 700;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .sort-button:hover {
+      background: var(--button-hover-bg);
+    }
+
+    .sort-indicator {
+      width: 0;
+      height: 0;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      opacity: 0;
+      flex: 0 0 auto;
+    }
+
+    th.sort-asc .sort-indicator {
+      border-bottom: 6px solid var(--sort-indicator);
+      opacity: 1;
+    }
+
+    th.sort-desc .sort-indicator {
+      border-top: 6px solid var(--sort-indicator);
+      opacity: 1;
+    }
+
+    tbody tr:nth-child(even) {
+      background: var(--row-alt-bg);
+    }
+
+    .cell-content {
+      --cell-line-height: 1.35;
+      --cell-collapsed-lines: 6;
+      line-height: var(--cell-line-height);
+      max-height: calc(var(--cell-collapsed-lines) * var(--cell-line-height) * 1em);
+      overflow: hidden;
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+      word-break: normal;
+    }
+
+    td.numeric .cell-content {
+      white-space: nowrap;
+    }
+
+    .cell-content.expanded {
+      max-height: none;
+    }
+
+    .cell-toggle {
+      margin-top: 5px;
+      padding: 3px 7px;
+      min-height: 26px;
+      font-size: 12px;
+    }
+
+    .json-cell {
+      margin: 0;
+      white-space: pre-wrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+
+    .search-highlight {
+      border-radius: 2px;
+      background: var(--accent);
+      color: var(--accent-contrast);
+      padding: 0 1px;
+    }
+
+    .empty-state,
+    pre.plain {
+      margin: 0;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    @media (max-width: 840px) {
+      .shell {
+        padding-left: 14px;
+        padding-right: 14px;
+      }
+
+      .report-nav {
+        display: none;
+      }
+
+      .report-toolbar,
+      .table-toolbar {
+        grid-template-columns: 1fr;
+      }
+
+      details.section > summary,
+      details.item > summary {
+        align-items: flex-start;
+      }
+
+      .section-meta,
+      .item-meta {
+        justify-content: flex-start;
+      }
+
+      .section-body {
+        padding-left: 8px;
+      }
+
+      .table-scroll {
+        max-height: 68vh;
+      }
+
+      .page-scroll-controls {
+        right: max(12px, env(safe-area-inset-right));
+        bottom: max(12px, env(safe-area-inset-bottom));
+      }
+
+      .scroll-jump {
+        width: 42px;
+        height: 42px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      details.section,
+      details.section > summary,
+      details.item,
+      details.item > summary,
+      .caret,
+      .scroll-jump,
+      .shell,
+      .report-nav,
+      .report-nav-title,
+      .report-nav-title-text,
+      .report-nav-toggle::before,
+      .report-nav-tree {
+        transition: none !important;
+      }
+    }
+  </style>
+</head>
+<body class="report-nav-collapsed">
+  <aside id="reportNav" class="report-nav collapsed" aria-label="Report contents">
+    <div class="report-nav-title">
+      <span class="report-nav-title-text">Contents</span>
+      <button id="reportNavToggle" type="button" class="report-nav-toggle" aria-label="Развернуть оглавление" title="Развернуть оглавление"></button>
+    </div>
+    <div id="reportNavTree" class="report-nav-tree"></div>
+  </aside>
+  <header class="app-header">
+    <div class="shell">
+      <h1>__TITLE__</h1>
+      <div id="generatorInfo" class="runtime"></div>
+      <div class="runtime project-links" aria-label="Project links">
+        <a class="project-link" href="https://github.com/O2eg/pg_diag" target="_blank" rel="noopener noreferrer">
+          <svg class="project-link-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M5 3.5h6.5a1 1 0 0 1 1 1V13"></path>
+            <path d="M4 2.5h6.5a1 1 0 0 1 1 1v9.5"></path>
+            <path d="M4 2.5A1.5 1.5 0 0 0 2.5 4v8A1.5 1.5 0 0 1 4 10.5h8.5"></path>
+          </svg>
+          <span>github.com/O2eg/pg_diag</span>
+        </a>
+        <a class="project-link" href="https://t.me/O2egg" target="_blank" rel="noopener noreferrer">
+          <svg class="project-link-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M14 2.5 2 7.4l4.3 1.5"></path>
+            <path d="M14 2.5 9.5 13.5 6.3 8.9"></path>
+            <path d="M6.3 8.9 10 5.8"></path>
+          </svg>
+          <span>t.me/O2egg</span>
+        </a>
+      </div>
+      <div id="runtime" class="runtime"></div>
+      <div id="runtimeDetails" class="runtime"></div>
+      <div id="statusSummary" class="summary-bar"></div>
+    </div>
+  </header>
+  <main class="shell">
+    <p id="reportDescription" class="report-description hidden"></p>
+    <div class="report-toolbar" aria-label="Report controls">
+      <button id="expandAll" type="button" class="btn primary">Expand all</button>
+      <button id="collapseAll" type="button" class="btn">Collapse all</button>
+      <label class="field">
+        <span>Find item</span>
+        <input id="itemSearch" class="input" type="search" placeholder="Title, status, source">
+      </label>
+      <label class="field">
+        <span>Type</span>
+        <select id="itemTypeFilter" class="select">
+          <option value="">All items</option>
+          <option value="plain_text">Plain Text</option>
+          <option value="table">Table</option>
+          <option value="chart">Chart</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Status</span>
+        <select id="statusFilter" class="select">
+          <option value="">All statuses</option>
+        </select>
+      </label>
+      <label class="theme-toggle" title="Switch report theme">
+        <span>Dark</span>
+        <input id="themeToggle" type="checkbox">
+        <span>Light</span>
+      </label>
+    </div>
+    <div id="app" class="sections"></div>
+  </main>
+  <div id="sourceModal" class="source-modal" role="dialog" aria-modal="true" aria-labelledby="sourceModalTitle" hidden>
+    <div class="source-dialog">
+      <div class="source-dialog-header">
+        <h2 id="sourceModalTitle" class="source-dialog-title">Source</h2>
+        <div class="source-dialog-actions">
+          <button id="copySource" type="button" class="btn primary">Копировать</button>
+          <button id="closeSource" type="button" class="btn">Закрыть</button>
+        </div>
+      </div>
+      <div class="source-code-shell">
+        <pre><code id="sourceCode"></code></pre>
+      </div>
+    </div>
+  </div>
+  <div id="metaModal" class="source-modal" role="dialog" aria-modal="true" aria-labelledby="metaModalTitle" hidden>
+    <div class="source-dialog">
+      <div class="source-dialog-header">
+        <h2 id="metaModalTitle" class="source-dialog-title">Meta</h2>
+        <div class="source-dialog-actions">
+          <button id="closeMeta" type="button" class="btn">Закрыть</button>
+        </div>
+      </div>
+      <div id="metaBody" class="meta-shell"></div>
+    </div>
+  </div>
+  <div class="page-scroll-controls" aria-label="Page scroll controls">
+    <button id="scrollToTop" type="button" class="scroll-jump scroll-up" aria-label="Scroll to top" title="Scroll to top"></button>
+    <button id="scrollToBottom" type="button" class="scroll-jump scroll-down" aria-label="Scroll to bottom" title="Scroll to bottom"></button>
+  </div>
+  <script id="pg-diag-artifact" type="application/json">__PAYLOAD__</script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script>
+    "use strict";
+
+    const artifact = JSON.parse(document.getElementById("pg-diag-artifact").textContent);
+    const runtime = artifact.runtime || {};
+    const items = artifact.items || {};
+    const visibleItems = Object.values(items).filter(isVisibleItem);
+    const app = document.getElementById("app");
+    const tableViews = [];
+    const pendingCharts = [];
+    const apexCharts = [];
+    const CHART_HEIGHT_PX = 450;
+    const CHART_LEGEND_HEIGHT_PX = 92;
+    const DATA_TYPE_ORDER = ["table", "plain_text", "chart"];
+    const ERROR_ITEM_STATUSES = new Set(["error", "permission_denied", "unavailable"]);
+    const CELL_COLLAPSED_LINE_LIMIT = 6;
+    const DETAILS_ANIMATION_MS = 300;
+    let currentSourceText = "";
+    let scrollControlsRaf = 0;
+    let chartResizeRaf = 0;
+    const chartResizeScopes = new Set();
+
+    hydrateTheme();
+    hydrateHeader();
+    hydrateStatusFilter();
+    renderSections();
+    renderReportNav();
+    bindReportNavControls();
+    bindAnimatedDetails();
+    renderPendingCharts();
+    bindReportControls();
+    bindSourceModalControls();
+    bindMetaModalControls();
+    bindPageScrollControls();
+    applyReportFilters();
+
+    function hydrateHeader() {
+      const generator = artifact.generator || {};
+      const generatorName = generator.name || "pg_diag";
+      const generatorVersion = generator.version;
+      const generatorInfo = document.getElementById("generatorInfo");
+      generatorInfo.textContent = generatorVersion ? generatorName + "=" + generatorVersion : generatorName;
+      generatorInfo.hidden = !generatorName && !generatorVersion;
+
+      const runtimeParts = [
+        ["mode", runtime.mode],
+        ["collection", runtime.collection_mode],
+        ["pg", runtime.server_version_num],
+        ["started", runtime.started_at],
+        ["finished", runtime.finished_at],
+      ].filter((entry) => entry[1] !== undefined && entry[1] !== null && entry[1] !== "");
+      document.getElementById("runtime").textContent = runtimeParts
+        .map((entry) => entry[0] + "=" + formatRuntimeValue(entry[0], entry[1]))
+        .join(" ");
+
+      const runtimeDetailParts = [
+        ["collector_host", runtime.collector_host],
+        ["collector_user", runtime.collector_user],
+        ["db", runtime.database || runtime.current_database],
+        ["db_user", runtime.current_user],
+        ["server", shortServerVersion(runtime.server_version)],
+        ["duration", formatSeconds(runtime.duration_seconds)],
+        ["interval", formatSeconds(runtime.interval_seconds)],
+        ["snapshots", (artifact.snapshots || []).length || null],
+      ].filter((entry) => entry[1] !== undefined && entry[1] !== null && entry[1] !== "");
+      const runtimeDetails = document.getElementById("runtimeDetails");
+      runtimeDetails.textContent = runtimeDetailParts
+        .map((entry) => entry[0] + "=" + formatRuntimeValue(entry[0], entry[1]))
+        .join(" ");
+      runtimeDetails.hidden = runtimeDetailParts.length === 0;
+
+      const description = (artifact.report || {}).description;
+      if (description) {
+        const node = document.getElementById("reportDescription");
+        node.textContent = description;
+        node.classList.remove("hidden");
+      }
+
+      const counts = {};
+      for (const item of visibleItems) {
+        const status = item.status || "unknown";
+        counts[status] = (counts[status] || 0) + 1;
+      }
+      const statusSummary = document.getElementById("statusSummary");
+      const totalBadge = document.createElement("span");
+      totalBadge.className = "badge neutral";
+      totalBadge.textContent = "total: " + visibleItems.length;
+      statusSummary.appendChild(totalBadge);
+      for (const status of Object.keys(counts).sort()) {
+        const badge = document.createElement("span");
+        badge.className = "badge " + status;
+        badge.textContent = status + ": " + counts[status];
+        statusSummary.appendChild(badge);
+      }
+    }
+
+    function formatRuntimeValue(key, value) {
+      if ((key === "started" || key === "finished") && value) {
+        return formatBrowserTimestamp(value);
+      }
+      return String(value);
+    }
+
+    function formatBrowserTimestamp(value) {
+      const date = new Date(value);
+      if (!Number.isFinite(date.getTime())) {
+        return String(value);
+      }
+      const parts = new Intl.DateTimeFormat(undefined, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+        timeZoneName: "short",
+      }).formatToParts(date);
+      const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+      return [
+        byType.year + "-" + byType.month + "-" + byType.day,
+        byType.hour + ":" + byType.minute + ":" + byType.second,
+        byType.timeZoneName || "",
+      ].filter(Boolean).join(" ");
+    }
+
+    function shortServerVersion(value) {
+      const text = String(value || "");
+      const match = text.match(/PostgreSQL\\s+[^\\s]+/i);
+      return match ? match[0] : text;
+    }
+
+    function formatSeconds(value) {
+      if (value === undefined || value === null || value === "") {
+        return null;
+      }
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) {
+        return String(value);
+      }
+      return Number.isInteger(numeric) ? numeric + "s" : numeric.toFixed(3).replace(/0+$/, "").replace(/\\.$/, "") + "s";
+    }
+
+    function hydrateStatusFilter() {
+      const select = document.getElementById("statusFilter");
+      const statuses = Array.from(new Set(visibleItems.map((item) => item.status || "unknown"))).sort();
+      for (const status of statuses) {
+        const option = document.createElement("option");
+        option.value = status;
+        option.textContent = status;
+        select.appendChild(option);
+      }
+    }
+
+    function renderSections() {
+      for (const section of artifact.sections || []) {
+        const details = document.createElement("details");
+        details.className = "section";
+        details.dataset.sectionId = section.section_id || "";
+        details.__searchText = valueSearchText([
+          section.section_id,
+          section.title,
+          section.description,
+        ]);
+        details.open = section.state !== "collapsed";
+
+        const summary = document.createElement("summary");
+        summary.appendChild(renderSummaryTitle(section.title || section.section_id, "section-title", sectionDataTypes(section)));
+        summary.appendChild(renderSectionMeta(section));
+        details.appendChild(summary);
+
+        const body = document.createElement("div");
+        body.className = "section-body";
+        for (const itemId of section.items || []) {
+          const item = items[itemId];
+          if (!item || !isVisibleItem(item)) {
+            continue;
+          }
+          body.appendChild(renderItem(item));
+        }
+        details.appendChild(wrapDetailsContent(body));
+        app.appendChild(details);
+      }
+    }
+
+    function renderReportNav() {
+      const tree = document.getElementById("reportNavTree");
+      if (!tree) {
+        return;
+      }
+      tree.replaceChildren();
+      for (const section of artifact.sections || []) {
+        const sectionItems = (section.items || [])
+          .map((itemId) => items[itemId])
+          .filter((item) => item && isVisibleItem(item));
+        if (!sectionItems.length) {
+          continue;
+        }
+        const group = document.createElement("div");
+        group.className = "report-nav-section";
+        group.appendChild(renderReportNavButton({
+          label: section.title || section.section_id,
+          dataTypes: sectionDataTypes(section),
+          targetKind: "section",
+          targetId: section.section_id || "",
+          className: "section-link",
+        }));
+        for (const item of sectionItems) {
+          group.appendChild(renderReportNavButton({
+            label: item.title || item.item_id,
+            dataTypes: [itemDataType(item)],
+            targetKind: "item",
+            targetId: item.item_id || "",
+            className: "item-link",
+          }));
+        }
+        tree.appendChild(group);
+      }
+    }
+
+    function renderReportNavButton({label, dataTypes, targetKind, targetId, className}) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "report-nav-button " + className;
+      button.dataset.targetKind = targetKind;
+      button.dataset.targetId = targetId;
+      const text = document.createElement("span");
+      text.className = "report-nav-text";
+      text.textContent = label || targetId;
+      button.appendChild(text);
+      const icons = renderDataTypeIcons(dataTypes || []);
+      if (icons) {
+        button.appendChild(icons);
+      }
+      button.addEventListener("click", () => navigateToReportNode(targetKind, targetId));
+      return button;
+    }
+
+    function bindReportNavControls() {
+      const nav = document.getElementById("reportNav");
+      const toggle = document.getElementById("reportNavToggle");
+      if (!nav || !toggle) {
+        return;
+      }
+      setReportNavCollapsed(nav.classList.contains("collapsed"));
+      toggle.addEventListener("click", () => {
+        setReportNavCollapsed(!nav.classList.contains("collapsed"));
+      });
+    }
+
+    function setReportNavCollapsed(collapsed) {
+      const nav = document.getElementById("reportNav");
+      const toggle = document.getElementById("reportNavToggle");
+      if (!nav || !toggle) {
+        return;
+      }
+      nav.classList.toggle("collapsed", collapsed);
+      document.body.classList.toggle("report-nav-collapsed", collapsed);
+      const label = collapsed ? "Развернуть оглавление" : "Свернуть оглавление";
+      toggle.setAttribute("aria-label", label);
+      toggle.title = label;
+    }
+
+    function navigateToReportNode(targetKind, targetId) {
+      let target = targetKind === "section" ? findSectionElement(targetId) : findItemElement(targetId);
+      if (!target) {
+        return;
+      }
+      if (target.classList.contains("hidden") || target.closest(".hidden")) {
+        resetReportFilters();
+        target = targetKind === "section" ? findSectionElement(targetId) : findItemElement(targetId);
+        if (!target) {
+          return;
+        }
+      }
+      if (targetKind === "item") {
+        const section = target.closest("details.section");
+        if (section) {
+          setDetailsOpen(section, true, true);
+        }
+        setDetailsOpen(target, true, true);
+      } else {
+        setDetailsOpen(target, true, true);
+      }
+      window.setTimeout(() => {
+        target.scrollIntoView({behavior: scrollBehavior(), block: "start"});
+      }, shouldReduceMotion() ? 0 : DETAILS_ANIMATION_MS);
+    }
+
+    function findSectionElement(sectionId) {
+      return Array.from(document.querySelectorAll("details.section"))
+        .find((section) => section.dataset.sectionId === sectionId) || null;
+    }
+
+    function findItemElement(itemId) {
+      return Array.from(document.querySelectorAll("details.item"))
+        .find((item) => item.dataset.itemId === itemId) || null;
+    }
+
+    function resetReportFilters() {
+      const search = document.getElementById("itemSearch");
+      const type = document.getElementById("itemTypeFilter");
+      const status = document.getElementById("statusFilter");
+      let changed = false;
+      for (const control of [search, type, status]) {
+        if (control && control.value) {
+          control.value = "";
+          changed = true;
+        }
+      }
+      if (changed) {
+        applyReportFilters();
+      }
+    }
+
+    function bindAnimatedDetails() {
+      document.querySelectorAll("details.section, details.item").forEach((details) => {
+        const summary = directSummary(details);
+        if (!summary) {
+          return;
+        }
+        summary.addEventListener("click", (event) => {
+          event.preventDefault();
+          setDetailsOpen(details, !details.open, true);
+        });
+      });
+    }
+
+    function isVisibleItem(item) {
+      return !Boolean(((item || {}).source_metadata || {}).internal);
+    }
+
+    function directSummary(details) {
+      return Array.from(details.children).find((child) => child.tagName === "SUMMARY") || null;
+    }
+
+    function setDetailsOpen(details, shouldOpen, animate) {
+      if (details.open === shouldOpen && !details.__detailsTimer && !details.classList.contains("is-opening") && !details.classList.contains("is-closing")) {
+        return;
+      }
+      const summary = directSummary(details);
+      if (!summary || !animate || shouldReduceMotion() || details.classList.contains("hidden")) {
+        cancelDetailsAnimation(details);
+        details.open = shouldOpen;
+        details.classList.remove("is-closing");
+        details.classList.remove("is-opening");
+        if (shouldOpen) {
+          scheduleChartResize(details);
+        } else {
+          requestPageScrollControlsUpdate();
+        }
+        return;
+      }
+
+      cancelDetailsAnimation(details);
+      if (shouldOpen) {
+        details.classList.remove("is-closing");
+        details.classList.add("is-opening");
+        details.open = true;
+        details.__detailsRaf = window.requestAnimationFrame(() => {
+          details.__detailsRaf = 0;
+          details.classList.remove("is-opening");
+          details.__detailsTimer = window.setTimeout(
+            () => finishDetailsAnimation(details, true),
+            DETAILS_ANIMATION_MS,
+          );
+        });
+        return;
+      }
+
+      if (!details.open) {
+        finishDetailsAnimation(details, false);
+        return;
+      }
+      details.classList.add("is-closing");
+      details.__detailsTimer = window.setTimeout(
+        () => finishDetailsAnimation(details, false),
+        DETAILS_ANIMATION_MS,
+      );
+    }
+
+    function finishDetailsAnimation(details, isOpen) {
+      details.__detailsTimer = 0;
+      details.__detailsRaf = 0;
+      if (!isOpen) {
+        details.open = false;
+      }
+      details.classList.remove("is-closing");
+      details.classList.remove("is-opening");
+      updateNearestSectionControl(details);
+      if (isOpen) {
+        scheduleChartResize(details);
+      } else {
+        requestPageScrollControlsUpdate();
+      }
+    }
+
+    function cancelDetailsAnimation(details) {
+      if (details.__detailsRaf) {
+        window.cancelAnimationFrame(details.__detailsRaf);
+        details.__detailsRaf = 0;
+      }
+      if (details.__detailsTimer) {
+        window.clearTimeout(details.__detailsTimer);
+        details.__detailsTimer = 0;
+      }
+      details.classList.remove("is-opening");
+      details.classList.remove("is-closing");
+    }
+
+    function shouldReduceMotion() {
+      return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    }
+
+    function scheduleChartResize(scope) {
+      if (scope) {
+        chartResizeScopes.add(scope);
+      }
+      if (!chartResizeRaf) {
+        chartResizeRaf = window.requestAnimationFrame(flushChartResize);
+      }
+      requestPageScrollControlsUpdate();
+    }
+
+    function flushChartResize() {
+      chartResizeRaf = 0;
+      if (!chartResizeScopes.size) {
+        return;
+      }
+      const scopes = Array.from(chartResizeScopes);
+      chartResizeScopes.clear();
+      for (const entry of apexCharts) {
+        if (!scopes.some((scope) => scope.contains(entry.container))) {
+          continue;
+        }
+        if (!isVisibleThroughDetails(entry.container)) {
+          continue;
+        }
+        entry.chart.updateOptions(buildApexChartOptions(entry.result, entry.item, entry.series), false, true);
+      }
+    }
+
+    function isVisibleThroughDetails(element) {
+      let node = element;
+      while (node && node !== document.body) {
+        if (node.tagName === "DETAILS" && (!node.open || node.classList.contains("is-closing") || node.classList.contains("is-opening"))) {
+          return false;
+        }
+        node = node.parentElement;
+      }
+      return true;
+    }
+
+    function updateNearestSectionControl(details) {
+      if (!details || !details.classList || !details.classList.contains("item")) {
+        return;
+      }
+      const section = details.closest("details.section");
+      if (section) {
+        updateSectionControlButtons(section);
+      }
+    }
+
+    function renderSummaryTitle(title, titleClass, dataTypes) {
+      const wrap = document.createElement("span");
+      wrap.className = "summary-title";
+      const caret = document.createElement("span");
+      caret.className = "caret";
+      caret.setAttribute("aria-hidden", "true");
+      const text = document.createElement("span");
+      text.className = titleClass;
+      setHighlightableText(text, title || "");
+      wrap.appendChild(caret);
+      wrap.appendChild(text);
+      const icons = renderDataTypeIcons(dataTypes || []);
+      if (icons) {
+        wrap.appendChild(icons);
+      }
+      return wrap;
+    }
+
+    function renderDataTypeIcons(dataTypes) {
+      const uniqueTypes = DATA_TYPE_ORDER.filter((type) => dataTypes.includes(type));
+      if (!uniqueTypes.length) {
+        return null;
+      }
+      const wrap = document.createElement("span");
+      wrap.className = "data-type-icons";
+      for (const type of uniqueTypes) {
+        wrap.appendChild(renderDataTypeIcon(type));
+      }
+      return wrap;
+    }
+
+    function renderDataTypeIcon(type) {
+      const icon = document.createElement("span");
+      icon.className = "data-type-icon " + type.replace("_", "-");
+      icon.title = dataTypeLabel(type);
+      icon.setAttribute("aria-label", dataTypeLabel(type));
+      icon.innerHTML = dataTypeSvg(type);
+      return icon;
+    }
+
+    function dataTypeSvg(type) {
+      const icons = {
+        table: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="1.5"></rect><path d="M4 10h16M4 15h16M10 5v14M16 5v14"></path></svg>',
+        plain_text: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h7l3 3v13H7z"></path><path d="M14 4v4h4M9 12h6M9 16h6"></path></svg>',
+        chart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16"></path><path d="M6 16l4-5 4 3 4-7"></path><path d="M18 7h-4M18 7v4"></path></svg>',
+      };
+      return icons[type] || icons.plain_text;
+    }
+
+    function dataTypeLabel(type) {
+      const labels = {
+        table: "Table",
+        plain_text: "Plain text",
+        chart: "Chart",
+      };
+      return labels[type] || "Data";
+    }
+
+    function sectionDataTypes(section) {
+      const types = new Set();
+      for (const itemId of section.items || []) {
+        const item = items[itemId];
+        if (item && isVisibleItem(item)) {
+          types.add(itemDataType(item));
+        }
+      }
+      return DATA_TYPE_ORDER.filter((type) => types.has(type));
+    }
+
+    function itemDataType(item) {
+      const resultKind = String(((item || {}).result || {}).kind || "").toLowerCase();
+      if (resultKind === "table" || resultKind === "chart" || resultKind === "plain_text") {
+        return resultKind;
+      }
+      const sourceKind = String((item || {}).source_kind || "").toLowerCase();
+      if (sourceKind === "query") {
+        return "table";
+      }
+      if (sourceKind === "script") {
+        return "plain_text";
+      }
+      if (sourceKind === "metric") {
+        const chart = (((item || {}).source_metadata || {}).chart || {});
+        return Object.keys(chart).length ? "chart" : "table";
+      }
+      return "plain_text";
+    }
+
+    function renderSectionMeta(section) {
+      const meta = document.createElement("span");
+      meta.className = "section-meta";
+      meta.appendChild(renderSectionControls());
+      const sectionItems = (section.items || []).map((itemId) => items[itemId]).filter(Boolean);
+      const counts = {};
+      for (const item of sectionItems) {
+        const status = item.status || "unknown";
+        counts[status] = (counts[status] || 0) + 1;
+      }
+      for (const status of Object.keys(counts).sort()) {
+        const badge = document.createElement("span");
+        badge.className = "badge " + status;
+        badge.textContent = status + ": " + counts[status];
+        meta.appendChild(badge);
+      }
+      return meta;
+    }
+
+    function renderSectionControls() {
+      const controls = document.createElement("span");
+      controls.className = "section-controls";
+      controls.appendChild(renderSectionControlButton());
+      return controls;
+    }
+
+    function renderSectionControlButton() {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "section-control-button expand";
+      updateSectionControlButton(button);
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const buttonNode = event.currentTarget;
+        setNestedItemsOpen(buttonNode.closest("details.section"), buttonNode.dataset.action === "expand");
+      });
+      return button;
+    }
+
+    function updateSectionControlButtons(root) {
+      root.querySelectorAll(".section-control-button").forEach(updateSectionControlButton);
+    }
+
+    function updateSectionControlButton(button) {
+      const section = button.closest("details.section");
+      const nestedItems = sectionNestedItems(section);
+      const hasCollapsed = nestedItems.some((item) => !item.open);
+      const action = hasCollapsed ? "expand" : "collapse";
+      button.dataset.action = action;
+      button.classList.toggle("expand", action === "expand");
+      button.classList.toggle("collapse", action === "collapse");
+      const label = action === "expand" ? "Expand nested items" : "Collapse nested items";
+      button.setAttribute("aria-label", label);
+      button.title = label;
+    }
+
+    function setNestedItemsOpen(section, shouldOpen) {
+      if (!section) {
+        return;
+      }
+      if (shouldOpen) {
+        setDetailsOpen(section, true, true);
+      }
+      sectionNestedItems(section).forEach((item) => {
+        setDetailsOpen(item, shouldOpen, true);
+      });
+      updateSectionControlButtons(section);
+    }
+
+    function sectionNestedItems(section) {
+      if (!section) {
+        return [];
+      }
+      const body = section.querySelector(":scope > .details-content > .details-content-inner > .section-body");
+      if (!body) {
+        return [];
+      }
+      return Array.from(body.querySelectorAll(":scope > details.item"));
+    }
+
+    function renderItem(item) {
+      const details = document.createElement("details");
+      details.className = "item";
+      details.dataset.itemId = item.item_id || "";
+      details.dataset.status = item.status || "unknown";
+      details.dataset.itemType = itemDataType(item);
+      details.__searchText = itemSearchText(item);
+      if (item.state === "expanded") {
+        details.open = true;
+      } else if (item.state === "collapsed" || item.state === "hidden") {
+        details.open = false;
+      } else {
+        details.open = item.status !== "skipped" && item.status !== "unsupported";
+      }
+
+      const summary = document.createElement("summary");
+      summary.appendChild(renderSummaryTitle(item.title || item.item_id, "item-title", [itemDataType(item)]));
+      const meta = document.createElement("span");
+      meta.className = "item-meta";
+      const sourceBadge = document.createElement("span");
+      sourceBadge.className = "badge source";
+      sourceBadge.textContent = sourceKindLabel(item.source_kind || "source");
+      const statusBadge = document.createElement("span");
+      statusBadge.className = "badge " + (item.status || "unknown");
+      statusBadge.textContent = item.status || "unknown";
+      meta.appendChild(sourceBadge);
+      meta.appendChild(statusBadge);
+      summary.appendChild(meta);
+      details.appendChild(summary);
+
+      const body = document.createElement("div");
+      body.className = "item-body";
+      if (item.reason && !isErrorItem(item)) {
+        const reason = document.createElement("p");
+        reason.className = "reason";
+        setHighlightableText(reason, item.reason);
+        body.appendChild(reason);
+      }
+      body.appendChild(renderItemMetadata(item));
+      body.appendChild(isErrorItem(item) ? renderItemError(item) : renderResult(item));
+      details.appendChild(wrapDetailsContent(body));
+      return details;
+    }
+
+    function wrapDetailsContent(content) {
+      const shell = document.createElement("div");
+      shell.className = "details-content";
+      const inner = document.createElement("div");
+      inner.className = "details-content-inner";
+      inner.appendChild(content);
+      shell.appendChild(inner);
+      return shell;
+    }
+
+    function renderSourceButton(item) {
+      if (!sourceText(item)) {
+        return null;
+      }
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn source-button";
+      button.textContent = sourceActionLabel(item);
+      button.addEventListener("click", () => openSourceModal(item));
+      return button;
+    }
+
+    function renderMetaButton(item) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn source-button";
+      button.textContent = "Show meta";
+      button.addEventListener("click", () => openMetaModal(item));
+      return button;
+    }
+
+    function renderItemMetadata(item) {
+      const meta = document.createElement("div");
+      meta.className = "item-actions";
+      const sourceButton = renderSourceButton(item);
+      if (sourceButton) {
+        meta.appendChild(sourceButton);
+      }
+      meta.appendChild(renderMetaButton(item));
+      return meta;
+    }
+
+    function sourceKindLabel(sourceKind) {
+      const labels = {
+        query: "SQL query",
+        script: "Bash",
+      };
+      return labels[sourceKind] || sourceKind || "source";
+    }
+
+    function sourceActionLabel(item) {
+      if (sourceLanguage(item) === "bash") {
+        return "Show Bash";
+      }
+      return "Show SQL";
+    }
+
+    function sourceText(item) {
+      return String(((item.source_metadata || {}).source_text) || "");
+    }
+
+    function sourceLanguage(item) {
+      const language = String(((item.source_metadata || {}).source_language) || item.source_kind || "").toLowerCase();
+      if (language === "script" || language === "shell" || language === "sh") {
+        return "bash";
+      }
+      if (language === "query") {
+        return "sql";
+      }
+      return language || "plaintext";
+    }
+
+    function openSourceModal(item) {
+      currentSourceText = sourceText(item);
+      const modal = document.getElementById("sourceModal");
+      const title = document.getElementById("sourceModalTitle");
+      const code = document.getElementById("sourceCode");
+      const language = sourceLanguage(item);
+      title.textContent = sourceActionLabel(item) + ": " + (item.title || item.item_id || "");
+      code.textContent = currentSourceText;
+      code.className = "language-" + language;
+      code.removeAttribute("data-highlighted");
+      if (window.hljs && typeof window.hljs.highlightElement === "function") {
+        window.hljs.highlightElement(code);
+      }
+      modal.hidden = false;
+      modal.setAttribute("aria-hidden", "false");
+      document.getElementById("closeSource").focus();
+    }
+
+    function openMetaModal(item) {
+      const modal = document.getElementById("metaModal");
+      const title = document.getElementById("metaModalTitle");
+      const body = document.getElementById("metaBody");
+      title.textContent = "Show meta: " + (item.title || item.item_id || "");
+      body.replaceChildren(renderMetaTable(itemMetaRows(item)));
+      modal.hidden = false;
+      modal.setAttribute("aria-hidden", "false");
+      document.getElementById("closeMeta").focus();
+    }
+
+    function closeMetaModal() {
+      const modal = document.getElementById("metaModal");
+      modal.hidden = true;
+      modal.setAttribute("aria-hidden", "true");
+      document.getElementById("metaBody").replaceChildren();
+    }
+
+    function renderMetaTable(rows) {
+      const table = document.createElement("table");
+      table.className = "meta-table";
+      const tbody = document.createElement("tbody");
+      for (const row of rows) {
+        const tr = document.createElement("tr");
+        const key = document.createElement("th");
+        key.scope = "row";
+        key.textContent = row.key;
+        const value = document.createElement("td");
+        if (row.multiline) {
+          const pre = document.createElement("pre");
+          pre.textContent = row.value;
+          value.appendChild(pre);
+        } else {
+          value.textContent = row.value;
+        }
+        tr.appendChild(key);
+        tr.appendChild(value);
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      return table;
+    }
+
+    function itemMetaRows(item) {
+      const rows = [];
+      appendMetaValue(rows, "item_id", item.item_id);
+      appendMetaValue(rows, "section_id", item.section_id);
+      appendMetaValue(rows, "title", item.title);
+      appendMetaValue(rows, "source_kind", item.source_kind);
+      appendMetaValue(rows, "status", item.status);
+      appendMetaValue(rows, "state", item.state);
+      appendMetaValue(rows, "reason", item.reason);
+      appendMetaValue(rows, "timing_ms", item.timing_ms);
+
+      const result = item.result || {};
+      appendMetaValue(rows, "result.kind", result.kind);
+      if (result.kind === "table") {
+        appendMetaValue(rows, "result.row_count", result.row_count == null ? (result.rows || []).length : result.row_count);
+        appendMetaValue(rows, "result.column_count", (result.columns || []).length);
+      } else if (result.kind === "chart") {
+        appendMetaValue(rows, "result.sample_count", result.sample_count);
+        appendMetaValue(rows, "result.series_count", (result.series || []).length);
+        appendMetaRows(rows, "result.chart", result.chart || {});
+      }
+
+      appendMetaRows(rows, "source", item.source_metadata || {});
+      const sourceText = sourceTextFromMeta(item.source_metadata || {});
+      if (sourceText) {
+        appendMetaValue(rows, "source.source_text_chars", sourceText.length);
+      }
+      if ((item.diagnostics || []).length) {
+        appendMetaValue(rows, "diagnostics", item.diagnostics, true);
+      }
+      return rows;
+    }
+
+    function appendMetaRows(rows, prefix, value) {
+      if (!value || typeof value !== "object") {
+        appendMetaValue(rows, prefix, value);
+        return;
+      }
+      if (Array.isArray(value)) {
+        appendMetaValue(rows, prefix, value, true);
+        return;
+      }
+      for (const key of Object.keys(value).sort()) {
+        if (key === "source_text") {
+          continue;
+        }
+        const child = value[key];
+        const childKey = prefix + "." + key;
+        if (child && typeof child === "object" && !Array.isArray(child)) {
+          appendMetaRows(rows, childKey, child);
+        } else {
+          appendMetaValue(rows, childKey, child, Array.isArray(child));
+        }
+      }
+    }
+
+    function appendMetaValue(rows, key, value, forceMultiline) {
+      if (value === undefined || value === null || value === "") {
+        return;
+      }
+      let text;
+      let multiline = Boolean(forceMultiline);
+      if (typeof value === "object") {
+        text = stringifyValue(value);
+        multiline = true;
+      } else {
+        text = String(value);
+      }
+      rows.push({key, value: text, multiline});
+    }
+
+    function sourceTextFromMeta(source) {
+      return String((source || {}).source_text || "");
+    }
+
+    function closeSourceModal() {
+      const modal = document.getElementById("sourceModal");
+      modal.hidden = true;
+      modal.setAttribute("aria-hidden", "true");
+      currentSourceText = "";
+      const copyButton = document.getElementById("copySource");
+      copyButton.textContent = "Копировать";
+    }
+
+    async function copyCurrentSource() {
+      if (!currentSourceText) {
+        return;
+      }
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(currentSourceText);
+        } else {
+          copyTextFallback(currentSourceText);
+        }
+        flashCopyButton("Скопировано");
+      } catch (error) {
+        copyTextFallback(currentSourceText);
+        flashCopyButton("Скопировано");
+      }
+    }
+
+    function copyTextFallback(text) {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "readonly");
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      textarea.remove();
+    }
+
+    function flashCopyButton(text) {
+      const button = document.getElementById("copySource");
+      button.textContent = text;
+      window.setTimeout(() => {
+        button.textContent = "Копировать";
+      }, 1200);
+    }
+
+    function isErrorItem(item) {
+      return ERROR_ITEM_STATUSES.has(String((item || {}).status || ""));
+    }
+
+    function renderItemError(item) {
+      const box = document.createElement("div");
+      box.className = "item-error";
+
+      const title = document.createElement("p");
+      title.className = "item-error-title";
+      title.textContent = "Execution error";
+      box.appendChild(title);
+
+      if (item.reason) {
+        const message = document.createElement("p");
+        message.className = "item-error-message";
+        setHighlightableText(message, item.reason);
+        box.appendChild(message);
+      }
+
+      const detailsText = itemErrorDetailsText(item);
+      if (detailsText) {
+        const pre = document.createElement("pre");
+        pre.className = "item-error-details";
+        setHighlightableText(pre, detailsText);
+        box.appendChild(pre);
+      }
+
+      return box;
+    }
+
+    function itemErrorDetailsText(item) {
+      const parts = [];
+      if (item.status) {
+        parts.push("status: " + item.status);
+      }
+      if (item.reason) {
+        parts.push("reason: " + item.reason);
+      }
+
+      (item.diagnostics || []).forEach((diagnostic, index) => {
+        if (!diagnostic || typeof diagnostic !== "object") {
+          parts.push("diagnostic[" + index + "]: " + stringifyValue(diagnostic));
+          return;
+        }
+        const header = [
+          diagnostic.level ? "level=" + diagnostic.level : "",
+          diagnostic.code ? "code=" + diagnostic.code : "",
+          diagnostic.message ? "message=" + diagnostic.message : "",
+        ].filter(Boolean).join(" ");
+        const diagnosticParts = [];
+        if (header) {
+          diagnosticParts.push(header);
+        }
+        ["exit_code", "stderr", "stdout", "traceback", "output"].forEach((key) => {
+          const value = diagnostic[key];
+          if (value !== undefined && value !== null && String(value) !== "") {
+            diagnosticParts.push(key + ":\\n" + stringifyValue(value));
+          }
+        });
+        if (!diagnosticParts.length) {
+          diagnosticParts.push(stringifyValue(diagnostic));
+        }
+        parts.push("diagnostic[" + index + "]:\\n" + diagnosticParts.join("\\n\\n"));
+      });
+
+      const result = item.result || {};
+      if (result.kind === "plain_text" && result.data) {
+        parts.push("output:\\n" + stringifyValue(result.data));
+      }
+      return parts.join("\\n\\n").trim();
+    }
+
+    function renderResult(item) {
+      const result = item.result || {kind: "none"};
+      if (result.kind === "table") {
+        return renderTable(result, item);
+      }
+      if (result.kind === "chart") {
+        return renderChart(result, item);
+      }
+      if (result.kind === "none") {
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        empty.textContent = item.status === "ok" ? "No result payload" : "No data";
+        return empty;
+      }
+      const pre = document.createElement("pre");
+      pre.className = "plain";
+      setHighlightableText(pre, result.data == null ? "" : stringifyValue(result.data));
+      return pre;
+    }
+
+    function renderChart(result, item) {
+      const series = apexSeries(result);
+      if (!series.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        empty.textContent = "No chart data";
+        return empty;
+      }
+
+      const shell = document.createElement("div");
+      shell.className = "chart-shell";
+      const container = document.createElement("div");
+      container.className = "apex-chart";
+      container.id = "apex_chart_" + pendingCharts.length;
+      shell.appendChild(container);
+      pendingCharts.push({container, result, item, series});
+      return shell;
+    }
+
+    function renderPendingCharts() {
+      for (const pending of pendingCharts) {
+        if (!window.ApexCharts) {
+          pending.container.textContent = "ApexCharts is unavailable";
+          continue;
+        }
+        const chart = new ApexCharts(pending.container, buildApexChartOptions(pending.result, pending.item, pending.series));
+        apexCharts.push({chart, result: pending.result, item: pending.item, series: pending.series});
+        chart.render();
+      }
+    }
+
+    function apexSeries(result) {
+      const xType = (result.chart || {}).x_type || "datetime";
+      return (result.series || [])
+        .map((entry) => {
+          const data = (entry.points || [])
+            .filter((point) => isFiniteNumber(point.value) && (xType !== "datetime" || Number.isFinite(Date.parse(point.t))))
+            .map((point) => ({x: xType === "datetime" ? point.t : String(point.x || point.t || ""), y: Number(point.value)}));
+          return {name: entry.name, unit: entry.unit, _color: entry.color || "", data};
+        })
+        .filter((entry) => entry.data.length > 0);
+    }
+
+    function buildApexChartOptions(result, item, series) {
+      const unit = chartUnit(result, series);
+      const theme = apexThemeOptions();
+      const chartKind = (result.chart || {}).kind || "line";
+      const apexType = apexChartType(chartKind);
+      const stacked = chartKind === "stacked_bar" || chartKind === "stacked_column" || chartKind === "stacked_area";
+      const xType = (result.chart || {}).x_type || "datetime";
+      const isBar = apexType === "bar";
+      const isArea = apexType === "area";
+      return {
+        series,
+        chart: {
+          height: CHART_HEIGHT_PX,
+          type: apexType,
+          stacked,
+          zoom: {
+            enabled: true,
+            type: "x",
+            autoScaleYaxis: unit !== "%",
+          },
+          toolbar: {
+            show: true,
+            offsetX: -6,
+            offsetY: 6,
+            tools: {
+              download: true,
+              selection: true,
+              zoom: true,
+              zoomin: true,
+              zoomout: true,
+              pan: true,
+              reset: true,
+            },
+            autoSelected: "zoom",
+          },
+          background: "transparent",
+          foreColor: theme.text,
+        },
+        colors: chartColors(series),
+        dataLabels: {enabled: false},
+        stroke: {curve: isBar ? "straight" : "smooth", width: isBar ? 0 : isArea ? 1 : 2},
+        fill: isArea ? {type: "solid", opacity: stacked ? 0.82 : 0.24} : {opacity: 1},
+        plotOptions: {
+          bar: {
+            horizontal: Boolean((result.chart || {}).horizontal),
+            columnWidth: "72%",
+            borderRadius: 2,
+          },
+        },
+        title: {text: chartTitle(item.title || "", unit), align: "left", margin: 12, offsetX: 0, offsetY: 4, style: {color: theme.text}},
+        grid: {
+          borderColor: theme.line,
+          row: {colors: [theme.panelSoft, "transparent"], opacity: 0.14},
+        },
+        legend: {
+          show: true,
+          position: "bottom",
+          height: CHART_LEGEND_HEIGHT_PX,
+          labels: {colors: theme.text},
+          itemMargin: {horizontal: 8, vertical: 2},
+        },
+        tooltip: {
+          theme: document.documentElement.dataset.theme === "light" ? "light" : "dark",
+          x: xType === "datetime" ? {format: "HH:mm:ss"} : {},
+          y: {formatter: (value) => formatChartTooltipValue(value, unit)},
+        },
+        xaxis: {
+          type: xType === "datetime" ? "datetime" : "category",
+          title: {text: ""},
+          labels: {datetimeUTC: false, rotate: xType === "datetime" ? 0 : -35, trim: true, style: {colors: theme.muted}},
+          axisBorder: {color: theme.line},
+          axisTicks: {color: theme.line},
+        },
+        yaxis: {
+          min: unit === "%" ? 0 : undefined,
+          max: unit === "%" ? 100 : undefined,
+          title: {text: ""},
+          labels: {
+            style: {colors: theme.muted},
+            formatter: (value) => formatChartAxisValue(value, unit),
+          },
+        },
+      };
+    }
+
+    function chartTitle(title, unit) {
+      if (!unit) {
+        return title;
+      }
+      if (title.endsWith(" [" + unit + "]")) {
+        return title;
+      }
+      return title + " [" + unit + "]";
+    }
+
+    function chartColors(series) {
+      const defaults = [
+          "#efd05f",
+          "#b38ee8",
+          "#84c8e7",
+          "#93d083",
+          "#e98996",
+          "#c7a0ee",
+          "#e7a764",
+          "#73d2c5",
+          "#c9ea5f",
+          "#8f9ae8",
+          "#d6b45d",
+          "#aeb4bd",
+      ];
+      return series.map((entry, index) => entry._color || defaults[index % defaults.length]);
+    }
+
+    function apexChartType(kind) {
+      if (kind === "bar" || kind === "column" || kind === "stacked_bar" || kind === "stacked_column") {
+        return "bar";
+      }
+      if (kind === "area" || kind === "stacked_area") {
+        return "area";
+      }
+      return "line";
+    }
+
+    function chartUnit(result, series) {
+      const configured = (result.chart || {}).unit;
+      if (configured) {
+        return configured;
+      }
+      const firstWithUnit = series.find((entry) => entry.unit);
+      return firstWithUnit ? firstWithUnit.unit : "";
+    }
+
+    function apexThemeOptions() {
+      return {
+        text: cssVar("--text"),
+        muted: cssVar("--muted"),
+        line: cssVar("--line"),
+        panelSoft: cssVar("--panel-soft"),
+      };
+    }
+
+    function refreshApexChartsTheme() {
+      for (const entry of apexCharts) {
+        entry.chart.updateOptions(buildApexChartOptions(entry.result, entry.item, entry.series), false, true);
+      }
+    }
+
+    function cssVar(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    function isFiniteNumber(value) {
+      return Number.isFinite(Number(value));
+    }
+
+    function renderTable(result, item) {
+      const itemId = item.item_id || "";
+      const rows = Array.isArray(result.rows) ? result.rows : [];
+      const columns = buildColumns(result.columns, rows);
+      const defaultSort = normalizeDefaultSort(item, columns);
+      const shell = document.createElement("div");
+      shell.className = "table-shell";
+
+      const toolbar = document.createElement("div");
+      toolbar.className = "table-toolbar";
+
+      const filter = document.createElement("input");
+      filter.className = "input";
+      filter.type = "search";
+      filter.placeholder = "Filter rows";
+
+      const pageSize = document.createElement("select");
+      pageSize.className = "select";
+      for (const value of ["15", "50", "100", "500", "all"]) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = value === "all" ? "All rows" : value + " rows";
+        pageSize.appendChild(option);
+      }
+
+      const previous = document.createElement("button");
+      previous.type = "button";
+      previous.className = "btn";
+      previous.textContent = "Prev";
+
+      const next = document.createElement("button");
+      next.type = "button";
+      next.className = "btn";
+      next.textContent = "Next";
+
+      const counter = document.createElement("div");
+      counter.className = "row-counter";
+
+      toolbar.appendChild(filter);
+      toolbar.appendChild(pageSize);
+      toolbar.appendChild(previous);
+      toolbar.appendChild(next);
+      toolbar.appendChild(counter);
+      shell.appendChild(toolbar);
+
+      const scroll = document.createElement("div");
+      scroll.className = "table-scroll";
+      const table = document.createElement("table");
+      table.dataset.itemId = itemId;
+      const thead = document.createElement("thead");
+      const tr = document.createElement("tr");
+      const headerCells = [];
+      for (const column of columns) {
+        const th = document.createElement("th");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "sort-button";
+        const label = document.createElement("span");
+        setHighlightableText(label, column.name);
+        const indicator = document.createElement("span");
+        indicator.className = "sort-indicator";
+        indicator.setAttribute("aria-hidden", "true");
+        button.appendChild(label);
+        button.appendChild(indicator);
+        th.appendChild(button);
+        tr.appendChild(th);
+        headerCells.push(th);
+      }
+      thead.appendChild(tr);
+      table.appendChild(thead);
+      const tbody = document.createElement("tbody");
+      table.appendChild(tbody);
+      scroll.appendChild(table);
+      shell.appendChild(scroll);
+
+      const state = {
+        rows,
+        columns,
+        filteredRows: rows,
+        page: 0,
+        pageSize: 15,
+        filter,
+        pageSizeInput: pageSize,
+        previous,
+        next,
+        counter,
+        tbody,
+        headerCells,
+        sort: defaultSort,
+      };
+
+      headerCells.forEach((th, index) => {
+        th.querySelector("button").addEventListener("click", () => {
+          if (state.sort && state.sort.columnIndex === index) {
+            state.sort.direction = state.sort.direction === "asc" ? "desc" : "asc";
+          } else {
+            state.sort = {columnIndex: index, direction: "asc"};
+          }
+          state.page = 0;
+          refreshTable(state);
+        });
+      });
+      filter.addEventListener("input", () => {
+        state.page = 0;
+        refreshTable(state);
+      });
+      pageSize.addEventListener("change", () => {
+        state.pageSize = pageSize.value === "all" ? rows.length || 1 : Number(pageSize.value);
+        state.page = 0;
+        refreshTable(state);
+      });
+      previous.addEventListener("click", () => {
+        state.page = Math.max(0, state.page - 1);
+        refreshTable(state);
+      });
+      next.addEventListener("click", () => {
+        state.page = Math.min(maxPage(state), state.page + 1);
+        refreshTable(state);
+      });
+
+      tableViews.push(state);
+      refreshTable(state);
+      return shell;
+    }
+
+    function buildColumns(columns, rows) {
+      if (Array.isArray(columns) && columns.length > 0) {
+        return columns.map((column, index) => {
+          let rawName;
+          let pgType = "";
+          if (typeof column === "string") {
+            rawName = column;
+          } else {
+            rawName = column && column.name ? column.name : "column_" + (index + 1);
+            pgType = column && column.pg_type ? column.pg_type : "";
+          }
+          return {name: rawName, sourceIndex: index, pgType};
+        });
+      }
+      const width = Array.isArray(rows[0]) ? rows[0].length : 0;
+      return Array.from({length: width}, (_, index) => ({name: "column_" + (index + 1), sourceIndex: index, pgType: ""}));
+    }
+
+    function normalizeDefaultSort(item, columns) {
+      const display = (item.source_metadata && item.source_metadata.display) || {};
+      const defaultSort = display.default_sort || {};
+      const columnName = defaultSort.column;
+      const direction = defaultSort.direction === "desc" ? "desc" : "asc";
+      const columnIndex = columns.findIndex((column) => column.name === columnName);
+      if (columnIndex < 0) {
+        return null;
+      }
+      return {columnIndex, direction};
+    }
+
+    function refreshTable(state) {
+      const localQuery = normalizeQuery(state.filter.value);
+      const globalQuery = currentGlobalSearchQuery();
+      const applyGlobalRowFilter = Boolean(globalQuery) && state.rows.some((row) => rowMatches(row, globalQuery, state.columns));
+      state.filteredRows = state.rows.filter((row) => {
+        if (localQuery && !rowMatches(row, localQuery, state.columns)) {
+          return false;
+        }
+        if (applyGlobalRowFilter && !rowMatches(row, globalQuery, state.columns)) {
+          return false;
+        }
+        return true;
+      });
+      applySort(state);
+      state.page = Math.min(state.page, maxPage(state));
+      updateSortIndicators(state);
+
+      const start = state.page * state.pageSize;
+      const pageRows = state.filteredRows.slice(start, start + state.pageSize);
+      state.tbody.replaceChildren();
+      for (const row of pageRows) {
+        const tr = document.createElement("tr");
+        for (const column of state.columns) {
+          tr.appendChild(renderCell(Array.isArray(row) ? row[column.sourceIndex] : undefined, column, row, state.columns));
+        }
+        state.tbody.appendChild(tr);
+      }
+
+      const total = state.rows.length;
+      const filtered = state.filteredRows.length;
+      const from = filtered === 0 ? 0 : start + 1;
+      const to = Math.min(start + pageRows.length, filtered);
+      const pageLabel = filtered === 0 ? "0" : from + "-" + to;
+      state.counter.textContent = pageLabel + " of " + filtered + (filtered === total ? " rows" : " filtered rows, " + total + " total");
+      state.previous.disabled = state.page === 0;
+      state.next.disabled = state.page >= maxPage(state);
+    }
+
+    function applySort(state) {
+      if (!state.sort) {
+        return;
+      }
+      const column = state.columns[state.sort.columnIndex];
+      if (!column) {
+        return;
+      }
+      const direction = state.sort.direction === "desc" ? -1 : 1;
+      state.filteredRows = state.filteredRows.slice().sort((left, right) => {
+        return compareValues(
+          Array.isArray(left) ? left[column.sourceIndex] : undefined,
+          Array.isArray(right) ? right[column.sourceIndex] : undefined,
+          column
+        ) * direction;
+      });
+    }
+
+    function updateSortIndicators(state) {
+      state.headerCells.forEach((th, index) => {
+        th.classList.remove("sort-asc", "sort-desc");
+        const button = th.querySelector("button");
+        if (button) {
+          button.removeAttribute("aria-sort");
+        }
+        if (!state.sort || state.sort.columnIndex !== index) {
+          return;
+        }
+        const direction = state.sort.direction === "desc" ? "desc" : "asc";
+        th.classList.add(direction === "desc" ? "sort-desc" : "sort-asc");
+        if (button) {
+          button.setAttribute("aria-sort", direction === "desc" ? "descending" : "ascending");
+        }
+      });
+    }
+
+    function compareValues(left, right, column) {
+      const leftEmpty = left === undefined || left === null || left === "";
+      const rightEmpty = right === undefined || right === null || right === "";
+      if (leftEmpty && rightEmpty) {
+        return 0;
+      }
+      if (leftEmpty) {
+        return 1;
+      }
+      if (rightEmpty) {
+        return -1;
+      }
+      const leftNumber = numericValue(left, column);
+      const rightNumber = numericValue(right, column);
+      if (leftNumber !== null && rightNumber !== null) {
+        return leftNumber - rightNumber;
+      }
+      return stringifyValue(left).localeCompare(stringifyValue(right), undefined, {numeric: true, sensitivity: "base"});
+    }
+
+    function maxPage(state) {
+      if (state.filteredRows.length === 0) {
+        return 0;
+      }
+      return Math.ceil(state.filteredRows.length / state.pageSize) - 1;
+    }
+
+    function rowMatches(row, query, columns) {
+      if (!Array.isArray(row)) {
+        return false;
+      }
+      return columns.some((column) => displayValue(row[column.sourceIndex], column, row, columns).text.toLowerCase().includes(query));
+    }
+
+    function renderCell(value, column, row, columns) {
+      const td = document.createElement("td");
+      const display = displayValue(value, column, row, columns);
+      const text = display.text;
+      const isComplex = display.kind === "complex";
+      if (display.kind === "numeric") {
+        td.classList.add("numeric");
+      }
+      if (display.title && display.title !== text) {
+        td.title = display.title;
+      }
+      const content = document.createElement(isComplex ? "pre" : "div");
+      content.className = isComplex ? "json-cell cell-content" : "cell-content";
+      setHighlightableText(content, text);
+      td.appendChild(content);
+
+      if (lineCount(text) > CELL_COLLAPSED_LINE_LIMIT) {
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "btn ghost cell-toggle";
+        toggle.textContent = "Show more";
+        toggle.addEventListener("click", () => {
+          const expanded = content.classList.toggle("expanded");
+          toggle.textContent = expanded ? "Show less" : "Show more";
+        });
+        td.appendChild(toggle);
+      } else {
+        content.classList.add("expanded");
+      }
+      return td;
+    }
+
+    function lineCount(text) {
+      if (!text) {
+        return 0;
+      }
+      return String(text).split(/\\r\\n|\\r|\\n/).length;
+    }
+
+    function setHighlightableText(node, text) {
+      node.__rawText = String(text == null ? "" : text);
+      node.dataset.highlightable = "1";
+      setHighlightedText(node, node.__rawText, currentGlobalSearchQuery());
+    }
+
+    function refreshStaticHighlights(query) {
+      document.querySelectorAll("[data-highlightable='1']").forEach((node) => {
+        setHighlightedText(node, node.__rawText || "", query);
+      });
+    }
+
+    function setHighlightedText(node, text, query) {
+      const source = String(text == null ? "" : text);
+      const needle = normalizeQuery(query);
+      node.replaceChildren();
+      if (!needle) {
+        node.textContent = source;
+        return;
+      }
+      const haystack = source.toLowerCase();
+      let cursor = 0;
+      while (cursor < source.length) {
+        const index = haystack.indexOf(needle, cursor);
+        if (index < 0) {
+          node.appendChild(document.createTextNode(source.slice(cursor)));
+          return;
+        }
+        if (index > cursor) {
+          node.appendChild(document.createTextNode(source.slice(cursor, index)));
+        }
+        const mark = document.createElement("mark");
+        mark.className = "search-highlight";
+        mark.textContent = source.slice(index, index + needle.length);
+        node.appendChild(mark);
+        cursor = index + needle.length;
+      }
+    }
+
+    function itemSearchText(item) {
+      return valueSearchText([
+        item.item_id,
+        item.section_id,
+        item.title,
+        item.source_kind,
+        item.status,
+        item.reason,
+        item.source_metadata,
+        item.result,
+      ]);
+    }
+
+    function valueSearchText(value) {
+      if (value === undefined || value === null) {
+        return "";
+      }
+      if (Array.isArray(value)) {
+        return value.map((item) => valueSearchText(item)).join(" ").toLowerCase();
+      }
+      if (typeof value === "object") {
+        return Object.entries(value)
+          .map(([key, item]) => key + " " + valueSearchText(item))
+          .join(" ")
+          .toLowerCase();
+      }
+      return String(value).toLowerCase();
+    }
+
+    function normalizeQuery(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function currentGlobalSearchQuery() {
+      return normalizeQuery(document.getElementById("itemSearch").value);
+    }
+
+    function displayValue(value, column, row, columns) {
+      if (value === undefined || value === null) {
+        return {text: "", kind: "empty"};
+      }
+      if (typeof value === "object") {
+        return {text: stringifyValue(value), kind: "complex"};
+      }
+      const numberValue = numericValue(value, column);
+      if (numberValue === null) {
+        return {text: String(value), kind: "text"};
+      }
+      const text = formatNumberForColumn(numberValue, column, row, columns);
+      return {text, kind: "numeric", title: String(value)};
+    }
+
+    function formatNumberForColumn(value, column, row, columns) {
+      if (!Number.isFinite(value)) {
+        return String(value);
+      }
+      const normalizedUnit = normalizedUnitForRow(row, columns);
+      if (column.name === "setting_normalized" && normalizedUnit === "bytes") {
+        return value < 0 ? String(value) : formatBytes(value);
+      }
+      if (column.name === "setting_normalized" && normalizedUnit === "seconds") {
+        return value < 0 ? String(value) : value.toFixed(3);
+      }
+      if (isByteColumn(column)) {
+        return formatBytes(value);
+      }
+      if (isMegabyteColumn(column)) {
+        return formatScaled(value, 1000, ["MB", "GB", "TB"]);
+      }
+      if (shouldScaleCount(column, value)) {
+        return formatScaled(value, 1000, ["", "K", "M", "B", "T"]);
+      }
+      if (!Number.isInteger(value)) {
+        return value.toFixed(3);
+      }
+      return String(value);
+    }
+
+    function normalizedUnitForRow(row, columns) {
+      if (!Array.isArray(row)) {
+        return "";
+      }
+      const unitColumn = columns.find((candidate) => candidate.name === "unit_normalized");
+      if (!unitColumn) {
+        return "";
+      }
+      return row[unitColumn.sourceIndex] || "";
+    }
+
+    function numericValue(value, column) {
+      if (typeof value === "number") {
+        return Number.isFinite(value) ? value : null;
+      }
+      if (!isNumericColumn(column) || typeof value !== "string" || value.trim() === "") {
+        return null;
+      }
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    function isNumericColumn(column) {
+      const pgType = (column.pgType || "").toLowerCase();
+      return /^(int|float|numeric|decimal|money)/.test(pgType);
+    }
+
+    function isMegabyteColumn(column) {
+      const name = column.name.toLowerCase();
+      return name.endsWith("_mb") || name.endsWith("_mbytes");
+    }
+
+    function isByteColumn(column) {
+      const name = column.name.toLowerCase();
+      if (isMegabyteColumn(column)) {
+        return false;
+      }
+      return name.endsWith("_bytes") || name.endsWith("_size_b") || name.endsWith("_lag_bytes") || name.endsWith("_location_b") || name.endsWith("_lsn") || name === "temp_bytes";
+    }
+
+    function shouldScaleCount(column, value) {
+      if (Math.abs(value) < 1000 || !Number.isInteger(value)) {
+        return false;
+      }
+      const name = column.name.toLowerCase();
+      if (/_id$|^pid$|_pid$|oid$|timeline|sys_id|datid|subid|relid|_tli$|port/.test(name)) {
+        return false;
+      }
+      if (name.endsWith("_s") || name.endsWith("_ms") || name.endsWith("_seconds")) {
+        return false;
+      }
+      return true;
+    }
+
+    function formatBytes(value) {
+      return formatScaled(value, 1024, ["B", "KB", "MB", "GB", "TB", "PB"]);
+    }
+
+    function formatChartAxisValue(value, unit) {
+      if (!Number.isFinite(Number(value))) {
+        return "";
+      }
+      const numeric = Number(value);
+      if (unit === "bytes" || unit === "bytes/s" || unit === "MB/s") {
+        return formatCompactMetricValue(numeric, 1024);
+      }
+      if (unit === "%") {
+        return formatCompactMetricValue(numeric, 1000);
+      }
+      if (unit === "ratio") {
+        return formatDecimalValue(numeric, 3);
+      }
+      return formatCompactMetricValue(numeric, 1000);
+    }
+
+    function formatChartTooltipValue(value, unit) {
+      if (!Number.isFinite(Number(value))) {
+        return "";
+      }
+      const numeric = Number(value);
+      if (!unit) {
+        return formatCompactMetricValue(numeric, 1000);
+      }
+      if (unit === "ratio") {
+        return formatDecimalValue(numeric, 3);
+      }
+      if (unit === "%") {
+        return formatDecimalValue(numeric, 1) + "%";
+      }
+      const base = unit === "bytes" || unit === "bytes/s" || unit === "MB/s" ? 1024 : 1000;
+      return formatCompactMetricValue(numeric, base) + " " + unit;
+    }
+
+    function formatCompactMetricValue(value, base) {
+      const sign = value < 0 ? -1 : 1;
+      let scaled = Math.abs(value);
+      const suffixes = ["", "K", "M", "G", "T", "P"];
+      let index = 0;
+      while (scaled >= base && index < suffixes.length - 1) {
+        scaled = scaled / base;
+        index += 1;
+      }
+      return formatCompactDecimal(scaled * sign) + suffixes[index];
+    }
+
+    function formatCompactDecimal(value) {
+      const abs = Math.abs(value);
+      if (Number.isInteger(value) || abs >= 100) {
+        return String(Math.round(value));
+      }
+      if (abs >= 10) {
+        return formatDecimalValue(value, 1);
+      }
+      if (abs >= 1) {
+        return formatDecimalValue(value, 2);
+      }
+      if (abs === 0) {
+        return "0";
+      }
+      return formatDecimalValue(value, 3);
+    }
+
+    function formatDecimalValue(value, maxDigits) {
+      return value.toLocaleString(undefined, {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: maxDigits,
+      });
+    }
+
+    function formatScaled(value, base, units) {
+      const sign = value < 0 ? -1 : 1;
+      let scaled = Math.abs(value);
+      let unitIndex = 0;
+      while (scaled >= base && unitIndex < units.length - 1) {
+        scaled = scaled / base;
+        unitIndex += 1;
+      }
+      const signed = scaled * sign;
+      if (unitIndex === 0) {
+        return units[unitIndex] ? String(value) + " " + units[unitIndex] : String(value);
+      }
+      return signed.toFixed(3) + " " + units[unitIndex];
+    }
+
+    function stringifyValue(value) {
+      if (value === undefined || value === null) {
+        return "";
+      }
+      if (typeof value === "object") {
+        try {
+          return JSON.stringify(value, null, 2);
+        } catch (error) {
+          return String(value);
+        }
+      }
+      return String(value);
+    }
+
+    function bindReportControls() {
+      document.getElementById("expandAll").addEventListener("click", () => {
+        document.querySelectorAll("details.section, details.item").forEach((node) => {
+          setDetailsOpen(node, true, true);
+        });
+        window.setTimeout(() => updateSectionControlButtons(document), DETAILS_ANIMATION_MS);
+      });
+      document.getElementById("collapseAll").addEventListener("click", () => {
+        document.querySelectorAll("details.section, details.item").forEach((node) => {
+          setDetailsOpen(node, false, true);
+        });
+        window.setTimeout(() => updateSectionControlButtons(document), DETAILS_ANIMATION_MS);
+      });
+      document.getElementById("itemSearch").addEventListener("input", applyReportFilters);
+      document.getElementById("itemTypeFilter").addEventListener("change", applyReportFilters);
+      document.getElementById("statusFilter").addEventListener("change", applyReportFilters);
+      document.getElementById("themeToggle").addEventListener("change", (event) => {
+        setTheme(event.target.checked ? "light" : "dark", true);
+      });
+    }
+
+    function bindSourceModalControls() {
+      const modal = document.getElementById("sourceModal");
+      document.getElementById("closeSource").addEventListener("click", closeSourceModal);
+      document.getElementById("copySource").addEventListener("click", copyCurrentSource);
+      modal.addEventListener("click", (event) => {
+        if (event.target === modal) {
+          closeSourceModal();
+        }
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !modal.hidden) {
+          closeSourceModal();
+        }
+      });
+    }
+
+    function bindMetaModalControls() {
+      const modal = document.getElementById("metaModal");
+      document.getElementById("closeMeta").addEventListener("click", closeMetaModal);
+      modal.addEventListener("click", (event) => {
+        if (event.target === modal) {
+          closeMetaModal();
+        }
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !modal.hidden) {
+          closeMetaModal();
+        }
+      });
+    }
+
+    function bindPageScrollControls() {
+      const topButton = document.getElementById("scrollToTop");
+      const bottomButton = document.getElementById("scrollToBottom");
+      topButton.addEventListener("click", () => {
+        window.scrollTo({top: 0, behavior: scrollBehavior()});
+      });
+      bottomButton.addEventListener("click", () => {
+        window.scrollTo({top: document.documentElement.scrollHeight, behavior: scrollBehavior()});
+      });
+      window.addEventListener("scroll", requestPageScrollControlsUpdate, {passive: true});
+      window.addEventListener("resize", requestPageScrollControlsUpdate);
+      requestPageScrollControlsUpdate();
+    }
+
+    function scrollBehavior() {
+      return shouldReduceMotion() ? "auto" : "smooth";
+    }
+
+    function requestPageScrollControlsUpdate() {
+      if (scrollControlsRaf) {
+        return;
+      }
+      scrollControlsRaf = window.requestAnimationFrame(() => {
+        scrollControlsRaf = 0;
+        updatePageScrollControls();
+      });
+    }
+
+    function updatePageScrollControls() {
+      const topButton = document.getElementById("scrollToTop");
+      const bottomButton = document.getElementById("scrollToBottom");
+      if (!topButton || !bottomButton) {
+        return;
+      }
+      const root = document.documentElement;
+      const maxScroll = Math.max(0, root.scrollHeight - window.innerHeight);
+      const scrollTop = window.scrollY || root.scrollTop || document.body.scrollTop || 0;
+      const progress = maxScroll > 0 ? scrollTop / maxScroll : 1;
+      setScrollButtonVisible(topButton, scrollTop > 80);
+      setScrollButtonVisible(bottomButton, maxScroll > 80 && progress < 0.9);
+    }
+
+    function setScrollButtonVisible(button, visible) {
+      button.classList.toggle("visible", visible);
+      button.disabled = !visible;
+      button.setAttribute("aria-hidden", visible ? "false" : "true");
+      button.tabIndex = visible ? 0 : -1;
+    }
+
+    function hydrateTheme() {
+      setTheme(readStoredTheme(), false);
+    }
+
+    function readStoredTheme() {
+      try {
+        return localStorage.getItem("pg_diag_theme") === "light" ? "light" : "dark";
+      } catch (error) {
+        return "dark";
+      }
+    }
+
+    function setTheme(theme, persist) {
+      const normalized = theme === "light" ? "light" : "dark";
+      document.documentElement.dataset.theme = normalized;
+      const toggle = document.getElementById("themeToggle");
+      if (toggle) {
+        toggle.checked = normalized === "light";
+      }
+      if (apexCharts.length) {
+        window.requestAnimationFrame(refreshApexChartsTheme);
+      }
+      if (!persist) {
+        return;
+      }
+      try {
+        localStorage.setItem("pg_diag_theme", normalized);
+      } catch (error) {
+        // Local files may run with storage disabled.
+      }
+    }
+
+    function applyReportFilters() {
+      const query = currentGlobalSearchQuery();
+      const itemType = document.getElementById("itemTypeFilter").value;
+      const status = document.getElementById("statusFilter").value;
+      for (const section of document.querySelectorAll("details.section")) {
+        const sectionMatchesQuery = Boolean(query) && (section.__searchText || "").includes(query);
+        let visibleCount = 0;
+        for (const item of section.querySelectorAll("details.item")) {
+          const itemOwnMatch = (item.__searchText || "").includes(query);
+          const matchesQuery = !query || sectionMatchesQuery || itemOwnMatch;
+          const matchesType = !itemType || item.dataset.itemType === itemType;
+          const matchesStatus = !status || item.dataset.status === status;
+          const visible = matchesQuery && matchesType && matchesStatus;
+          item.classList.toggle("hidden", !visible);
+          if (visible) {
+            visibleCount += 1;
+            if (query && itemOwnMatch && !sectionMatchesQuery) {
+              setDetailsOpen(item, true, true);
+            }
+          }
+        }
+        section.classList.toggle("hidden", visibleCount === 0);
+        if (query && visibleCount > 0) {
+          setDetailsOpen(section, true, true);
+        }
+      }
+      for (const table of tableViews) {
+        table.page = 0;
+        refreshTable(table);
+      }
+      refreshStaticHighlights(query);
+      requestPageScrollControlsUpdate();
+    }
+  </script>
+</body>
+</html>
+"""

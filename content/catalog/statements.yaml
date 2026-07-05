@@ -1,0 +1,157 @@
+queries:
+  statements.pg_stat_statements_capabilities:
+    title: pg_stat_statements Capability Check
+    group: SQL Workload
+    main_view: pg_extension
+    description: Extension, preload, query-id, and tracking settings needed for statement workload diagnostics.
+    source: pgcenter_pg_profile
+    display:
+      default_sort:
+        column: capability
+        direction: asc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: statements_pgss_capabilities_pg14_plus
+        min_pg_version: 140000
+        sql_file: statements/pg_stat_statements_capabilities.sql
+
+  statements.top_by_total_time:
+    title: Top SQL By Total Time
+    group: SQL Workload
+    main_view: pg_stat_statements
+    description: Statements with the highest cumulative execution time.
+    source: pgcenter_pg_profile
+    cost: medium
+    display:
+      default_sort:
+        column: total_exec_time_ms
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: statements_top_by_total_time_pg14_plus
+        min_pg_version: 140000
+        sql_file: statements/top_by_total_time.sql
+        semantic_columns: &statement_semantics
+          dimensions:
+            database: datname
+            user: rolname
+            query_id: query_id
+          counters:
+            calls: calls
+            rows: rows
+            total_plan_time_ms: total_plan_time_ms
+            total_exec_time_ms: total_exec_time_ms
+            shared_blks_hit: shared_blks_hit
+            shared_blks_read: shared_blks_read
+            shared_blks_dirtied: shared_blks_dirtied
+            shared_blks_written: shared_blks_written
+            temp_blks_read: temp_blks_read
+            temp_blks_written: temp_blks_written
+            blk_read_time_ms: blk_read_time_ms
+            blk_write_time_ms: blk_write_time_ms
+            wal_records: wal_records
+            wal_fpi: wal_fpi
+            wal_bytes: wal_bytes
+          gauges:
+            mean_exec_time_ms: mean_exec_time_ms
+
+  statements.top_by_mean_time:
+    title: Top SQL By Mean Time
+    group: SQL Workload
+    main_view: pg_stat_statements
+    description: Statements with the highest mean execution time.
+    source: pgcenter_pg_profile
+    cost: medium
+    display:
+      default_sort:
+        column: mean_exec_time_ms
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: statements_top_by_mean_time_pg14_plus
+        min_pg_version: 140000
+        sql_file: statements/top_by_mean_time.sql
+
+  statements.top_by_calls:
+    title: Top SQL By Calls
+    group: SQL Workload
+    main_view: pg_stat_statements
+    description: Most frequently executed statements.
+    source: pgcenter_pg_profile
+    cost: medium
+    display:
+      default_sort:
+        column: calls
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: statements_top_by_calls_pg14_plus
+        min_pg_version: 140000
+        sql_file: statements/top_by_calls.sql
+
+  statements.top_by_io:
+    title: Top SQL By Shared Block I/O
+    group: SQL Workload
+    main_view: pg_stat_statements
+    description: Statements with the most shared block reads and writes.
+    source: pgcenter_pg_profile
+    cost: medium
+    display:
+      default_sort:
+        column: shared_io_blks
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: statements_top_by_io_pg14_plus
+        min_pg_version: 140000
+        sql_file: statements/top_by_io.sql
+        semantic_columns: *statement_semantics
+
+  statements.top_by_temp_io:
+    title: Top SQL By Temp I/O
+    group: SQL Workload
+    main_view: pg_stat_statements
+    description: Statements spilling the most temporary blocks.
+    source: pgcenter_pg_profile
+    cost: medium
+    display:
+      default_sort:
+        column: temp_io_blks
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: statements_top_by_temp_io_pg14_plus
+        min_pg_version: 140000
+        sql_file: statements/top_by_temp_io.sql
+
+  statements.top_by_wal:
+    title: Top SQL By WAL Generated
+    group: SQL Workload
+    main_view: pg_stat_statements
+    description: Statements generating the most WAL bytes, records, and full-page images.
+    source: pgcenter_pg_profile
+    cost: medium
+    display:
+      default_sort:
+        column: wal_bytes
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: statements_top_by_wal_pg14_plus
+        min_pg_version: 140000
+        sql_file: statements/top_by_wal.sql
+        semantic_columns: *statement_semantics

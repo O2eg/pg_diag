@@ -1,0 +1,38 @@
+queries:
+  indexes.invalid_indexes:
+    title: Invalid Indexes
+    group: Index Health
+    main_view: pg_index
+    description: Invalid indexes with remediation context.
+    source: postgresai
+    cost: medium
+    display:
+      default_sort:
+        column: index_size_bytes
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: indexes_invalid_indexes_pg12_plus
+        min_pg_version: 120000
+        sql_file: indexes/invalid_indexes.sql
+
+  indexes.unused_indexes:
+    title: Never Used Indexes
+    group: Index Health
+    main_view: pg_index
+    description: Non-unique btree indexes with no scans and supporting context.
+    source: postgresai
+    cost: medium
+    display:
+      default_sort:
+        column: index_size_bytes
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: indexes_unused_indexes_pg12_plus
+        min_pg_version: 120000
+        sql_file: indexes/unused_indexes.sql

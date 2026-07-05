@@ -1,0 +1,1259 @@
+metric_catalog:
+  schema_version: 2
+  defaults:
+    mode: snapshots
+    x: snapshot_time
+
+metrics:
+  os.cpu_utilization:
+    title: CPU Utilization
+    source_sampler: os.cpu
+    series:
+      - name: user
+        value_ref: user_pct
+        transform: gauge
+        unit: "%"
+        color: "#93d083"
+      - name: system
+        value_ref: system_pct
+        transform: gauge
+        unit: "%"
+        color: "#e98996"
+      - name: iowait
+        value_ref: iowait_pct
+        transform: gauge
+        unit: "%"
+        color: "#efd05f"
+      - name: steal
+        value_ref: steal_pct
+        transform: gauge
+        unit: "%"
+        color: "#e7a764"
+      - name: idle
+        value_ref: idle_pct
+        transform: gauge
+        unit: "%"
+        color: "#aeb4bd"
+    chart:
+      kind: stacked_area
+      series_order: configured
+      unit: "%"
+
+  os.cpu_load:
+    title: CPU Load Average
+    source_sampler: os.cpu
+    series:
+      - name: load1
+        value_ref: load1
+        transform: gauge
+        unit: load
+      - name: load5
+        value_ref: load5
+        transform: gauge
+        unit: load
+      - name: load15
+        value_ref: load15
+        transform: gauge
+        unit: load
+    chart:
+      kind: line
+      unit: load
+
+  os.memory_usage:
+    title: Memory Usage
+    source_sampler: os.memory
+    series:
+      - name: Application memory
+        value_ref: application_bytes
+        transform: gauge
+        unit: bytes
+        color: "#93d083"
+      - name: Page cache
+        value_ref: cached_bytes
+        transform: gauge
+        unit: bytes
+        color: "#b38ee8"
+      - name: Shared memory
+        value_ref: shared_bytes
+        transform: gauge
+        unit: bytes
+        color: "#84c8e7"
+      - name: Buffers
+        value_ref: buffers_bytes
+        transform: gauge
+        unit: bytes
+        color: "#e7a764"
+      - name: Slab reclaimable
+        value_ref: slab_reclaimable_bytes
+        transform: gauge
+        unit: bytes
+        color: "#efd05f"
+      - name: Slab unreclaimable
+        value_ref: slab_unreclaimable_bytes
+        transform: gauge
+        unit: bytes
+        color: "#d6b45d"
+      - name: Page tables
+        value_ref: page_tables_bytes
+        transform: gauge
+        unit: bytes
+        color: "#8f9ae8"
+      - name: Kernel stack
+        value_ref: kernel_stack_bytes
+        transform: gauge
+        unit: bytes
+        color: "#aeb4bd"
+      - name: Swap cache
+        value_ref: swap_cached_bytes
+        transform: gauge
+        unit: bytes
+        color: "#e98996"
+      - name: Free
+        value_ref: free_bytes
+        transform: gauge
+        unit: bytes
+        color: "#c9ea5f"
+    chart:
+      kind: stacked_area
+      series_order: configured
+      unit: bytes
+
+  os.memory_pressure:
+    title: Memory Pressure
+    source_sampler: os.memory
+    series:
+      - name: RAM used
+        value_ref: used_pct
+        transform: gauge
+        unit: "%"
+      - name: swap used
+        value_ref: swap_used_pct
+        transform: gauge
+        unit: "%"
+    chart:
+      kind: stacked_area
+      unit: "%"
+
+  os.disk_read_throughput:
+    title: Disk Read Throughput
+    source_sampler: os.disk
+    partition_by:
+      - device
+    series:
+      - name: read
+        value_ref: read_bytes_per_sec
+        transform: gauge
+        unit: bytes/s
+    chart:
+      kind: area
+      unit: bytes/s
+
+  os.disk_write_throughput:
+    title: Disk Write Throughput
+    source_sampler: os.disk
+    partition_by:
+      - device
+    series:
+      - name: write
+        value_ref: write_bytes_per_sec
+        transform: gauge
+        unit: bytes/s
+    chart:
+      kind: area
+      unit: bytes/s
+
+  os.disk_iops:
+    title: Disk IOPS
+    source_sampler: os.disk
+    partition_by:
+      - device
+    series:
+      - name: read iops
+        value_ref: read_iops
+        transform: gauge
+        unit: iops
+      - name: write iops
+        value_ref: write_iops
+        transform: gauge
+        unit: iops
+    chart:
+      kind: stacked_area
+      unit: iops
+
+  os.disk_utilization:
+    title: Disk Utilization
+    source_sampler: os.disk
+    partition_by:
+      - device
+    series:
+      - name: util
+        value_ref: util_pct
+        transform: gauge
+        unit: "%"
+    chart:
+      kind: area
+      unit: "%"
+
+  os.disk_latency:
+    title: Disk Latency
+    source_sampler: os.disk
+    partition_by:
+      - device
+    series:
+      - name: await
+        value_ref: await_ms
+        transform: gauge
+        unit: ms
+      - name: read await
+        value_ref: r_await_ms
+        transform: gauge
+        unit: ms
+      - name: write await
+        value_ref: w_await_ms
+        transform: gauge
+        unit: ms
+    chart:
+      kind: line
+      unit: ms
+
+  os.network_receive_throughput:
+    title: Network Receive Throughput
+    source_sampler: os.network
+    partition_by:
+      - interface
+    series:
+      - name: rx
+        value_ref: rx_bytes_per_sec
+        transform: gauge
+        unit: bytes/s
+    chart:
+      kind: area
+      unit: bytes/s
+
+  os.network_transmit_throughput:
+    title: Network Transmit Throughput
+    source_sampler: os.network
+    partition_by:
+      - interface
+    series:
+      - name: tx
+        value_ref: tx_bytes_per_sec
+        transform: gauge
+        unit: bytes/s
+    chart:
+      kind: area
+      unit: bytes/s
+
+  os.network_packets:
+    title: Network Packets
+    source_sampler: os.network
+    partition_by:
+      - interface
+    series:
+      - name: rx packets
+        value_ref: rx_packets_per_sec
+        transform: gauge
+        unit: packets/s
+      - name: tx packets
+        value_ref: tx_packets_per_sec
+        transform: gauge
+        unit: packets/s
+    chart:
+      kind: stacked_area
+      unit: packets/s
+
+  database.transaction_rate:
+    title: Database Transaction Rate
+    source_query: metrics.database_transaction_rate
+    requires_collection: every_snapshot
+    partition_by:
+      - dimensions.database
+    series:
+      - name: commits
+        value_ref: counters.xact_commit
+        transform: rate
+        unit: tx/s
+      - name: rollbacks
+        value_ref: counters.xact_rollback
+        transform: rate
+        unit: tx/s
+    chart:
+      kind: stacked_area
+      unit: tx/s
+
+  activity.sessions_by_state:
+    title: Sessions By State
+    source_query: activity.session_states
+    requires_collection: every_snapshot
+    partition_by:
+      - dimensions.database
+      - dimensions.state
+    series:
+      - name_from_ref: dimensions.state
+        value_ref: gauges.sessions
+        transform: gauge
+        unit: sessions
+    chart:
+      kind: stacked_area
+      unit: sessions
+
+  wal.growth_rate:
+    title: WAL Growth Rate
+    source_query: metrics.wal_growth_rate
+    requires_collection: every_snapshot
+    partition_by:
+      - dimensions.database
+    series:
+      - name: wal bytes
+        value_ref: counters.wal_bytes
+        transform: rate
+        unit: bytes/s
+    chart:
+      kind: area
+      unit: bytes/s
+
+  io.read_write_rate:
+    title: I/O Read And Write Rate
+    source_query: metrics.io_read_write_rate
+    requires_collection: every_snapshot
+    partition_by:
+      - dimensions.backend_type
+    series:
+      - name: read
+        value_ref: counters.read_bytes
+        transform: rate
+        unit: bytes/s
+      - name: write
+        value_ref: counters.write_bytes
+        transform: rate
+        unit: bytes/s
+    chart:
+      kind: stacked_area
+      unit: bytes/s
+
+  database.tuple_dml_rate:
+    title: Database Tuple DML Rate
+    source_query: database.database_stats
+    requires_collection: every_snapshot
+    partition_by:
+      - dimensions.database
+    series:
+      - name: inserts
+        value_ref: counters.tup_inserted
+        transform: rate
+        unit: rows/s
+      - name: updates
+        value_ref: counters.tup_updated
+        transform: rate
+        unit: rows/s
+      - name: deletes
+        value_ref: counters.tup_deleted
+        transform: rate
+        unit: rows/s
+    chart:
+      kind: stacked_area
+      unit: rows/s
+
+  database.tuple_access_rate:
+    title: Database Tuple Access Rate
+    source_query: database.database_stats
+    requires_collection: every_snapshot
+    partition_by:
+      - dimensions.database
+    series:
+      - name: returned
+        value_ref: counters.tup_returned
+        transform: rate
+        unit: tuples/s
+      - name: fetched
+        value_ref: counters.tup_fetched
+        transform: rate
+        unit: tuples/s
+    chart:
+      kind: stacked_area
+      unit: tuples/s
+
+  database.block_access_rate:
+    title: Database Block Access Rate
+    source_query: database.database_stats
+    requires_collection: every_snapshot
+    partition_by:
+      - dimensions.database
+    series:
+      - name: read
+        value_ref: counters.blks_read
+        transform: rate
+        unit: blocks/s
+      - name: hit
+        value_ref: counters.blks_hit
+        transform: rate
+        unit: blocks/s
+    chart:
+      kind: stacked_area
+      unit: blocks/s
+
+  database.temp_files_delta:
+    title: Database Temp Files Delta
+    source_query: database.database_stats
+    requires_collection: every_snapshot
+    partition_by:
+      - dimensions.database
+    series:
+      - name: temp files
+        value_ref: counters.temp_files
+        transform: delta
+        unit: files
+    chart:
+      kind: column
+      unit: files
+
+  database.temp_bytes_rate:
+    title: Database Temp Bytes Rate
+    source_query: database.database_stats
+    requires_collection: every_snapshot
+    partition_by:
+      - dimensions.database
+    series:
+      - name: temp bytes
+        value_ref: counters.temp_bytes
+        transform: rate
+        unit: bytes/s
+    chart:
+      kind: area
+      unit: bytes/s
+
+  database.io_time_rate:
+    title: Database I/O Time Rate
+    source_query: database.database_stats
+    requires_collection: every_snapshot
+    partition_by:
+      - dimensions.database
+    series:
+      - name: read time
+        value_ref: counters.blk_read_time
+        transform: rate
+        unit: ms/s
+      - name: write time
+        value_ref: counters.blk_write_time
+        transform: rate
+        unit: ms/s
+    chart:
+      kind: stacked_area
+      unit: ms/s
+
+  database.backends:
+    title: Database Backends
+    source_query: database.database_stats
+    requires_collection: every_snapshot
+    partition_by:
+      - dimensions.database
+    series:
+      - name: backends
+        value_ref: gauges.numbackends
+        transform: gauge
+        unit: backends
+    chart:
+      kind: area
+      unit: backends
+
+  database.deadlocks:
+    title: Database Deadlocks
+    source_query: database.database_stats
+    requires_collection: every_snapshot
+    partition_by:
+      - dimensions.database
+    series:
+      - name: deadlocks
+        value_ref: counters.deadlocks
+        transform: delta
+        unit: deadlocks
+    chart:
+      kind: column
+      unit: deadlocks
+
+  objects.tables_top_tuple_access_rate:
+    title: Top Tables By Tuple Access Rate
+    source_query: objects.table_workload
+    requires_collection: every_snapshot
+    top_n:
+      mode: interval
+      limit: 10
+      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      label_refs: [dimensions.schema, dimensions.table]
+      value_refs: [counters.seq_tup_read, counters.idx_tup_fetch]
+      transform: rate
+      unit: tuples/s
+    chart:
+      kind: stacked_column
+      unit: tuples/s
+
+  objects.tables_top_seq_read_rate:
+    title: Top Tables By Sequential Tuple Read Rate
+    source_query: objects.table_workload
+    requires_collection: every_snapshot
+    top_n:
+      mode: interval
+      limit: 10
+      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      label_refs: [dimensions.schema, dimensions.table]
+      value_ref: counters.seq_tup_read
+      transform: rate
+      unit: tuples/s
+    chart:
+      kind: stacked_column
+      unit: tuples/s
+
+  objects.tables_top_index_fetch_rate:
+    title: Top Tables By Index Fetch Rate
+    source_query: objects.table_workload
+    requires_collection: every_snapshot
+    top_n:
+      mode: interval
+      limit: 10
+      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      label_refs: [dimensions.schema, dimensions.table]
+      value_ref: counters.idx_tup_fetch
+      transform: rate
+      unit: tuples/s
+    chart:
+      kind: stacked_column
+      unit: tuples/s
+
+  objects.tables_top_dml_rate:
+    title: Top Tables By DML Rate
+    source_query: objects.table_workload
+    requires_collection: every_snapshot
+    top_n:
+      mode: interval
+      limit: 10
+      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      label_refs: [dimensions.schema, dimensions.table]
+      value_refs: [counters.n_tup_ins, counters.n_tup_upd, counters.n_tup_del]
+      transform: rate
+      unit: rows/s
+    chart:
+      kind: stacked_column
+      unit: rows/s
+
+  objects.tables_top_insert_rate:
+    title: Top Tables By Insert Rate
+    source_query: objects.table_workload
+    requires_collection: every_snapshot
+    top_n:
+      mode: interval
+      limit: 10
+      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      label_refs: [dimensions.schema, dimensions.table]
+      value_ref: counters.n_tup_ins
+      transform: rate
+      unit: rows/s
+    chart:
+      kind: stacked_column
+      unit: rows/s
+
+  objects.tables_top_update_rate:
+    title: Top Tables By Update Rate
+    source_query: objects.table_workload
+    requires_collection: every_snapshot
+    top_n:
+      mode: interval
+      limit: 10
+      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      label_refs: [dimensions.schema, dimensions.table]
+      value_ref: counters.n_tup_upd
+      transform: rate
+      unit: rows/s
+    chart:
+      kind: stacked_column
+      unit: rows/s
+
+  objects.tables_top_delete_rate:
+    title: Top Tables By Delete Rate
+    source_query: objects.table_workload
+    requires_collection: every_snapshot
+    top_n:
+      mode: interval
+      limit: 10
+      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      label_refs: [dimensions.schema, dimensions.table]
+      value_ref: counters.n_tup_del
+      transform: rate
+      unit: rows/s
+    chart:
+      kind: stacked_column
+      unit: rows/s
+
+  objects.tables_top_hot_update_rate:
+    title: Top Tables By HOT Update Rate
+    source_query: objects.table_workload
+    requires_collection: every_snapshot
+    top_n:
+      mode: interval
+      limit: 10
+      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      label_refs: [dimensions.schema, dimensions.table]
+      value_ref: counters.n_tup_hot_upd
+      transform: rate
+      unit: rows/s
+    chart:
+      kind: stacked_column
+      unit: rows/s
+
+  objects.tables_top_heap_read_rate:
+    title: Top Tables By Heap Block Read Rate
+    source_query: objects.table_io
+    requires_collection: every_snapshot
+    top_n:
+      mode: interval
+      limit: 10
+      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      label_refs: [dimensions.schema, dimensions.table]
+      value_ref: counters.heap_blks_read
+      transform: rate
+      unit: blocks/s
+    chart:
+      kind: stacked_column
+      unit: blocks/s
+
+  objects.tables_top_index_block_read_rate:
+    title: Top Tables By Index Block Read Rate
+    source_query: objects.table_io
+    requires_collection: every_snapshot
+    top_n:
+      mode: interval
+      limit: 10
+      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      label_refs: [dimensions.schema, dimensions.table]
+      value_ref: counters.idx_blks_read
+      transform: rate
+      unit: blocks/s
+    chart:
+      kind: stacked_column
+      unit: blocks/s
+
+  objects.indexes_top_scan_rate:
+    title: Top Indexes By Scan Rate
+    source_query: objects.index_workload
+    requires_collection: every_snapshot
+    top_n:
+      mode: interval
+      limit: 10
+      key_refs: [dimensions.database, dimensions.schema, dimensions.table, dimensions.index]
+      label_refs: [dimensions.schema, dimensions.table, dimensions.index]
+      value_ref: counters.idx_scan
+      transform: rate
+      unit: scans/s
+    chart:
+      kind: stacked_column
+      unit: scans/s
+
+  objects.indexes_top_tuple_read_rate:
+    title: Top Indexes By Tuple Read Rate
+    source_query: objects.index_workload
+    requires_collection: every_snapshot
+    top_n:
+      mode: interval
+      limit: 10
+      key_refs: [dimensions.database, dimensions.schema, dimensions.table, dimensions.index]
+      label_refs: [dimensions.schema, dimensions.table, dimensions.index]
+      value_ref: counters.idx_tup_read
+      transform: rate
+      unit: tuples/s
+    chart:
+      kind: stacked_column
+      unit: tuples/s
+
+  objects.indexes_top_tuple_fetch_rate:
+    title: Top Indexes By Tuple Fetch Rate
+    source_query: objects.index_workload
+    requires_collection: every_snapshot
+    top_n:
+      mode: interval
+      limit: 10
+      key_refs: [dimensions.database, dimensions.schema, dimensions.table, dimensions.index]
+      label_refs: [dimensions.schema, dimensions.table, dimensions.index]
+      value_ref: counters.idx_tup_fetch
+      transform: rate
+      unit: tuples/s
+    chart:
+      kind: stacked_column
+      unit: tuples/s
+
+  objects.indexes_top_reads_per_scan:
+    title: Top Indexes By Reads Per Scan
+    source_query: objects.index_workload
+    requires_collection: every_snapshot
+    top_n:
+      mode: interval
+      operation: ratio
+      limit: 10
+      key_refs: [dimensions.database, dimensions.schema, dimensions.table, dimensions.index]
+      label_refs: [dimensions.schema, dimensions.table, dimensions.index]
+      numerator_refs: [counters.idx_tup_read]
+      denominator_ref: counters.idx_scan
+      series_name: reads / scan
+      unit: ratio
+    chart:
+      kind: stacked_column
+      unit: ratio
+
+  objects.indexes_top_fetches_per_scan:
+    title: Top Indexes By Fetches Per Scan
+    source_query: objects.index_workload
+    requires_collection: every_snapshot
+    top_n:
+      mode: interval
+      operation: ratio
+      limit: 10
+      key_refs: [dimensions.database, dimensions.schema, dimensions.table, dimensions.index]
+      label_refs: [dimensions.schema, dimensions.table, dimensions.index]
+      numerator_refs: [counters.idx_tup_fetch]
+      denominator_ref: counters.idx_scan
+      series_name: fetches / scan
+      unit: ratio
+    chart:
+      kind: stacked_column
+      unit: ratio
+
+  objects.indexes_top_reads_per_fetch:
+    title: Top Indexes By Reads Per Fetch
+    source_query: objects.index_workload
+    requires_collection: every_snapshot
+    top_n:
+      mode: interval
+      operation: ratio
+      limit: 10
+      key_refs: [dimensions.database, dimensions.schema, dimensions.table, dimensions.index]
+      label_refs: [dimensions.schema, dimensions.table, dimensions.index]
+      numerator_refs: [counters.idx_tup_read]
+      denominator_ref: counters.idx_tup_fetch
+      series_name: reads / fetch
+      unit: ratio
+    chart:
+      kind: stacked_column
+      unit: ratio
+
+  database.workload_delta:
+    title: Database Workload Delta
+    source_query: database.database_stats
+    requires_collection: every_snapshot
+    result: table
+    display:
+      default_sort:
+        column: commits_per_sec
+        direction: desc
+    table:
+      key_refs: [dimensions.database]
+      sort:
+        column: commits_per_sec
+        direction: desc
+      columns:
+        - name: datname
+          role: key
+          key_index: 0
+        - name: commit_delta
+          value_ref: counters.xact_commit
+          transform: delta
+          pg_type: float8
+        - name: commits_per_sec
+          value_ref: counters.xact_commit
+          transform: rate
+          pg_type: float8
+        - name: rollback_delta
+          value_ref: counters.xact_rollback
+          transform: delta
+          pg_type: float8
+        - name: temp_bytes_delta
+          value_ref: counters.temp_bytes
+          transform: delta
+          pg_type: float8
+        - name: deadlocks_delta
+          value_ref: counters.deadlocks
+          transform: delta
+          pg_type: float8
+
+  statements.total_time_delta:
+    title: SQL Time Delta
+    source_query: statements.top_by_total_time
+    requires_collection: every_snapshot
+    result: table
+    display:
+      default_sort:
+        column: exec_time_ms_per_sec
+        direction: desc
+    table:
+      key_refs: [dimensions.database, dimensions.user, dimensions.query_id]
+      limit: 50
+      sort:
+        column: exec_time_ms_per_sec
+        direction: desc
+      columns:
+        - name: datname
+          role: key
+          key_index: 0
+        - name: rolname
+          role: key
+          key_index: 1
+        - name: query_id
+          role: key
+          key_index: 2
+        - name: calls_delta
+          value_ref: counters.calls
+          transform: delta
+          pg_type: float8
+        - name: calls_per_sec
+          value_ref: counters.calls
+          transform: rate
+          pg_type: float8
+        - name: exec_time_ms_delta
+          value_ref: counters.total_exec_time_ms
+          transform: delta
+          pg_type: float8
+        - name: exec_time_ms_per_sec
+          value_ref: counters.total_exec_time_ms
+          transform: rate
+          pg_type: float8
+        - name: rows_delta
+          value_ref: counters.rows
+          transform: delta
+          pg_type: float8
+        - name: query
+          ref: query
+          transform: last
+
+  statements.io_delta:
+    title: SQL Shared I/O Delta
+    source_query: statements.top_by_io
+    requires_collection: every_snapshot
+    result: table
+    display:
+      default_sort:
+        column: shared_read_blks_delta
+        direction: desc
+    table:
+      key_refs: [dimensions.database, dimensions.user, dimensions.query_id]
+      limit: 50
+      sort:
+        column: shared_read_blks_delta
+        direction: desc
+      columns:
+        - name: datname
+          role: key
+          key_index: 0
+        - name: rolname
+          role: key
+          key_index: 1
+        - name: query_id
+          role: key
+          key_index: 2
+        - name: shared_read_blks_delta
+          value_ref: counters.shared_blks_read
+          transform: delta
+          pg_type: float8
+        - name: shared_written_blks_delta
+          value_ref: counters.shared_blks_written
+          transform: delta
+          pg_type: float8
+        - name: read_time_ms_delta
+          value_ref: counters.blk_read_time_ms
+          transform: delta
+          pg_type: float8
+        - name: write_time_ms_delta
+          value_ref: counters.blk_write_time_ms
+          transform: delta
+          pg_type: float8
+        - name: query
+          ref: query
+          transform: last
+
+  statements.wal_delta:
+    title: SQL WAL Delta
+    source_query: statements.top_by_wal
+    requires_collection: every_snapshot
+    result: table
+    display:
+      default_sort:
+        column: wal_bytes_per_sec
+        direction: desc
+    table:
+      key_refs: [dimensions.database, dimensions.user, dimensions.query_id]
+      limit: 50
+      sort:
+        column: wal_bytes_per_sec
+        direction: desc
+      columns:
+        - name: datname
+          role: key
+          key_index: 0
+        - name: rolname
+          role: key
+          key_index: 1
+        - name: query_id
+          role: key
+          key_index: 2
+        - name: wal_bytes_delta
+          value_ref: counters.wal_bytes
+          transform: delta
+          pg_type: float8
+        - name: wal_bytes_per_sec
+          value_ref: counters.wal_bytes
+          transform: rate
+          pg_type: float8
+        - name: wal_records_delta
+          value_ref: counters.wal_records
+          transform: delta
+          pg_type: float8
+        - name: wal_fpi_delta
+          value_ref: counters.wal_fpi
+          transform: delta
+          pg_type: float8
+        - name: query
+          ref: query
+          transform: last
+
+  objects.table_dml_delta:
+    title: Table DML Delta
+    source_query: objects.table_workload
+    requires_collection: every_snapshot
+    result: table
+    display:
+      default_sort:
+        column: total_dml_delta
+        direction: desc
+    table:
+      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      limit: 50
+      sort:
+        column: total_dml_delta
+        direction: desc
+      columns:
+        - name: datname
+          role: key
+          key_index: 0
+        - name: schemaname
+          role: key
+          key_index: 1
+        - name: relname
+          role: key
+          key_index: 2
+        - name: inserts_delta
+          value_ref: counters.n_tup_ins
+          transform: delta
+          pg_type: float8
+        - name: updates_delta
+          value_ref: counters.n_tup_upd
+          transform: delta
+          pg_type: float8
+        - name: deletes_delta
+          value_ref: counters.n_tup_del
+          transform: delta
+          pg_type: float8
+        - name: hot_updates_delta
+          value_ref: counters.n_tup_hot_upd
+          transform: delta
+          pg_type: float8
+        - name: total_dml_delta
+          value_ref: total_dml
+          transform: delta
+          pg_type: float8
+
+  objects.table_scan_delta:
+    title: Table Scan Delta
+    source_query: objects.table_workload
+    requires_collection: every_snapshot
+    result: table
+    display:
+      default_sort:
+        column: seq_tup_read_delta
+        direction: desc
+    table:
+      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      limit: 50
+      sort:
+        column: seq_tup_read_delta
+        direction: desc
+      columns:
+        - name: datname
+          role: key
+          key_index: 0
+        - name: schemaname
+          role: key
+          key_index: 1
+        - name: relname
+          role: key
+          key_index: 2
+        - name: seq_scan_delta
+          value_ref: counters.seq_scan
+          transform: delta
+          pg_type: float8
+        - name: seq_tup_read_delta
+          value_ref: counters.seq_tup_read
+          transform: delta
+          pg_type: float8
+        - name: idx_scan_delta
+          value_ref: counters.idx_scan
+          transform: delta
+          pg_type: float8
+        - name: idx_tup_fetch_delta
+          value_ref: counters.idx_tup_fetch
+          transform: delta
+          pg_type: float8
+
+  objects.table_io_delta:
+    title: Table I/O Delta
+    source_query: objects.table_io
+    requires_collection: every_snapshot
+    result: table
+    display:
+      default_sort:
+        column: total_blks_read_delta
+        direction: desc
+    table:
+      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      limit: 50
+      sort:
+        column: total_blks_read_delta
+        direction: desc
+      columns:
+        - name: datname
+          role: key
+          key_index: 0
+        - name: schemaname
+          role: key
+          key_index: 1
+        - name: relname
+          role: key
+          key_index: 2
+        - name: heap_blks_read_delta
+          value_ref: counters.heap_blks_read
+          transform: delta
+          pg_type: float8
+        - name: idx_blks_read_delta
+          value_ref: counters.idx_blks_read
+          transform: delta
+          pg_type: float8
+        - name: total_blks_read_delta
+          value_ref: counters.total_blks_read
+          transform: delta
+          pg_type: float8
+        - name: total_blks_hit_delta
+          value_ref: counters.total_blks_hit
+          transform: delta
+          pg_type: float8
+
+  objects.index_usage_delta:
+    title: Index Usage Delta
+    source_query: objects.index_workload
+    requires_collection: every_snapshot
+    result: table
+    display:
+      default_sort:
+        column: idx_scan_delta
+        direction: desc
+    table:
+      key_refs: [dimensions.database, dimensions.schema, dimensions.table, dimensions.index]
+      limit: 50
+      sort:
+        column: idx_scan_delta
+        direction: desc
+      columns:
+        - name: datname
+          role: key
+          key_index: 0
+        - name: schemaname
+          role: key
+          key_index: 1
+        - name: relname
+          role: key
+          key_index: 2
+        - name: indexrelname
+          role: key
+          key_index: 3
+        - name: idx_scan_delta
+          value_ref: counters.idx_scan
+          transform: delta
+          pg_type: float8
+        - name: idx_tup_read_delta
+          value_ref: counters.idx_tup_read
+          transform: delta
+          pg_type: float8
+        - name: idx_tup_fetch_delta
+          value_ref: counters.idx_tup_fetch
+          transform: delta
+          pg_type: float8
+        - name: idx_blks_read_delta
+          value_ref: counters.idx_blks_read
+          transform: delta
+          pg_type: float8
+
+  objects.function_time_delta:
+    title: Function Time Delta
+    source_query: objects.function_workload
+    requires_collection: every_snapshot
+    result: table
+    display:
+      default_sort:
+        column: total_time_ms_delta
+        direction: desc
+    table:
+      key_refs: [dimensions.database, dimensions.schema, dimensions.function]
+      limit: 50
+      sort:
+        column: total_time_ms_delta
+        direction: desc
+      columns:
+        - name: datname
+          role: key
+          key_index: 0
+        - name: schemaname
+          role: key
+          key_index: 1
+        - name: funcname
+          role: key
+          key_index: 2
+        - name: calls_delta
+          value_ref: counters.calls
+          transform: delta
+          pg_type: float8
+        - name: total_time_ms_delta
+          value_ref: counters.total_time_ms
+          transform: delta
+          pg_type: float8
+        - name: self_time_ms_delta
+          value_ref: counters.self_time_ms
+          transform: delta
+          pg_type: float8
+
+  activity.wait_sample_profile:
+    title: Wait Event Sample Profile
+    source_query: activity.wait_events
+    requires_collection: every_snapshot
+    result: table
+    display:
+      default_sort:
+        column: sampled_session_points
+        direction: desc
+    table:
+      mode: sample_sum
+      key_refs: [dimensions.database, dimensions.wait_event_type, dimensions.wait_event, dimensions.query_id]
+      limit: 100
+      sort:
+        column: sampled_session_points
+        direction: desc
+      columns:
+        - name: datname
+          role: key
+          key_index: 0
+        - name: wait_event_type
+          role: key
+          key_index: 1
+        - name: wait_event
+          role: key
+          key_index: 2
+        - name: query_id
+          role: key
+          key_index: 3
+        - name: samples_seen
+          transform: sample_count
+          pg_type: int8
+        - name: sampled_session_points
+          value_ref: gauges.sessions
+          transform: sum
+          pg_type: float8
+        - name: avg_sessions
+          value_ref: gauges.sessions
+          transform: avg
+          pg_type: float8
+        - name: max_sessions
+          value_ref: gauges.sessions
+          transform: max
+          pg_type: float8
+
+  backend.proc_cpu_top:
+    title: PostgreSQL Backend /proc CPU
+    source_sampler: os.backend_proc
+    result: table
+    display:
+      default_sort:
+        column: max_cpu_pct
+        direction: desc
+    table:
+      mode: sample_sum
+      key_refs: [pid]
+      limit: 50
+      sort:
+        column: max_cpu_pct
+        direction: desc
+      columns:
+        - name: pid
+          role: key
+          key_index: 0
+        - name: samples_seen
+          transform: sample_count
+          pg_type: int8
+        - name: avg_cpu_pct
+          value_ref: cpu_pct
+          transform: avg
+          pg_type: float8
+        - name: max_cpu_pct
+          value_ref: cpu_pct
+          transform: max
+          pg_type: float8
+        - name: rss_bytes
+          ref: rss_bytes
+          transform: last
+          pg_type: int8
+        - name: process
+          ref: process
+          transform: last
+        - name: command
+          ref: command
+          transform: last
+
+  backend.proc_io_top:
+    title: PostgreSQL Backend /proc I/O
+    source_sampler: os.backend_proc
+    result: table
+    display:
+      default_sort:
+        column: max_read_bytes_per_sec
+        direction: desc
+    table:
+      mode: sample_sum
+      key_refs: [pid]
+      limit: 50
+      sort:
+        column: max_read_bytes_per_sec
+        direction: desc
+      columns:
+        - name: pid
+          role: key
+          key_index: 0
+        - name: samples_seen
+          transform: sample_count
+          pg_type: int8
+        - name: io_access
+          ref: io_access
+          transform: last
+        - name: avg_read_bytes_per_sec
+          value_ref: read_bytes_per_sec
+          transform: avg
+          pg_type: float8
+        - name: max_read_bytes_per_sec
+          value_ref: read_bytes_per_sec
+          transform: max
+          pg_type: float8
+        - name: avg_write_bytes_per_sec
+          value_ref: write_bytes_per_sec
+          transform: avg
+          pg_type: float8
+        - name: max_write_bytes_per_sec
+          value_ref: write_bytes_per_sec
+          transform: max
+          pg_type: float8
+        - name: process
+          ref: process
+          transform: last
+        - name: command
+          ref: command
+          transform: last

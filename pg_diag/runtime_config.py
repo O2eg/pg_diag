@@ -1,0 +1,17 @@
+"""Runtime configuration constants."""
+
+from __future__ import annotations
+
+MIN_SUPPORTED_PG_VERSION = 140000
+MAX_SUPPORTED_PG_VERSION = 189999
+
+SUPPORTED_CONTENT_SCHEMA_VERSION = 2
+ARTIFACT_SCHEMA_VERSION = 1
+
+DEFAULT_COLLECTION_MODE = "remote-db-only"
+LOCAL_COLLECTION_MODE = "local"
+REMOTE_DB_ONLY_COLLECTION_MODE = "remote-db-only"
+
+SNAPSHOT_MODE = "snapshot"
+SNAPSHOTS_MODE = "snapshots"
+

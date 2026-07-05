@@ -1,0 +1,510 @@
+queries:
+  activity.connection_pressure:
+    title: Connection Pressure
+    group: Activity & Locks
+    main_view: pg_stat_activity
+    description: Current connection usage compared with max_connections and reserved connection slots.
+    source: queries_collection/pg_stat_activity_alert_max_connections_usage_db_converter.md
+    display:
+      default_sort:
+        column: used_pct
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: activity_connection_pressure_pg14_plus
+        min_pg_version: 140000
+        sql_file: activity/connection_pressure.sql
+
+  activity.wait_events:
+    title: Active Wait Events
+    group: Activity & Locks
+    main_view: pg_stat_activity
+    description: Active sessions grouped by wait event, state, database, and query_id.
+    source: queries_collection/pg_stat_activity_wait_events.md
+    display:
+      default_sort:
+        column: sessions
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: activity_wait_events_pg14_plus
+        min_pg_version: 140000
+        sql_file: activity/wait_events.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            state: state
+            wait_event_type: wait_event_type
+            wait_event: wait_event
+            query_id: query_id
+          gauges:
+            sessions: sessions
+
+  activity.long_transactions:
+    title: Long Active Transactions
+    group: Activity & Locks
+    main_view: pg_stat_activity
+    description: Long active and idle-in-transaction sessions with XID age and query text.
+    source: queries_collection/pg_stat_activity_dba_long_queries_db_converter.md
+    cost: medium
+    display:
+      default_sort:
+        column: xact_age_seconds
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: activity_long_transactions_pg14_plus
+        min_pg_version: 140000
+        sql_file: activity/long_transactions.sql
+
+  activity.idle_in_transaction:
+    title: Idle In Transaction Over 1 Minute
+    group: Activity & Locks
+    main_view: pg_stat_activity
+    description: Sessions stuck idle in transaction for more than one minute.
+    source: queries_collection/pg_stat_activity_pg_stuck_idle_in_transaction.md
+    display:
+      default_sort:
+        column: idle_seconds
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: activity_idle_in_transaction_pg14_plus
+        min_pg_version: 140000
+        sql_file: activity/idle_in_transaction.sql
+
+  locks.lock_modes:
+    title: Lock Mode Counts
+    group: Activity & Locks
+    main_view: pg_locks
+    description: Current lock counts by mode and granted state in the connected database.
+    source: queries_collection/pg_locks_locks_mode.md
+    display:
+      default_sort:
+        column: locks
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: locks_lock_modes_pg14_plus
+        min_pg_version: 140000
+        sql_file: locks/lock_modes.sql
+
+  replication.slots:
+    title: Replication Slots
+    group: Replication
+    main_view: pg_replication_slots
+    description: Physical and logical replication slots with retained WAL and xmin horizon impact.
+    source: queries_collection/pg_replication_slots_replication_slots.md
+    display:
+      default_sort:
+        column: retained_wal_bytes
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: replication_slots_pg14_plus
+        min_pg_version: 140000
+        sql_file: replication/replication_slots.sql
+
+  wal.stat_wal:
+    title: WAL Statistics
+    group: WAL, I/O & Checkpoints
+    main_view: pg_stat_wal
+    description: Cumulative WAL counters including bytes, records, writes, syncs, and buffers full.
+    source: queries_collection/pg_stat_wal_pg_stat_wal_pgcenter.md
+    display:
+      default_sort:
+        column: wal_bytes
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: wal_stat_wal_pg14_pg17
+        min_pg_version: 140000
+        max_pg_version: 179999
+        sql_file: wal/stat_wal_pg14_pg17.sql
+      - id: wal_stat_wal_pg18_plus
+        min_pg_version: 180000
+        sql_file: wal/stat_wal.sql
+
+  wal.archiver:
+    title: WAL Archiver
+    group: WAL, I/O & Checkpoints
+    main_view: pg_stat_archiver
+    description: Archiver success/failure counters and approximate pending WAL segment count.
+    source: queries_collection/pg_stat_archiver_pg_archiver.md
+    display:
+      default_sort:
+        column: pending_wal_count
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: wal_archiver_pg14_plus
+        min_pg_version: 140000
+        sql_file: wal/archiver.sql
+
+  slru.stat_slru:
+    title: SLRU Statistics
+    group: WAL, I/O & Checkpoints
+    main_view: pg_stat_slru
+    description: SLRU cache read/write, flush, and truncation counters.
+    source: queries_collection/pg_stat_slru_pg_stat_slru.md
+    display:
+      default_sort:
+        column: blks_read
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: slru_stat_slru_pg14_plus
+        min_pg_version: 140000
+        sql_file: slru/stat_slru.sql
+
+  vacuum.database_wraparound:
+    title: Database Wraparound Age
+    group: Storage & Vacuum
+    main_view: pg_database
+    description: Transaction ID and multixact age for databases relative to autovacuum freeze limits.
+    source: queries_collection/pg_database_pg_database_wraparound.md
+    display:
+      default_sort:
+        column: xid_age
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: vacuum_database_wraparound_pg14_plus
+        min_pg_version: 140000
+        sql_file: vacuum/database_wraparound.sql
+
+  vacuum.xmin_horizon:
+    title: Xmin Horizon Summary
+    group: Storage & Vacuum
+    main_view: pg_stat_activity
+    description: Oldest data and catalog xmin horizons split by activity, slots, replication, and prepared transactions.
+    source: queries_collection/pg_stat_activity_xmin_horizon.md
+    display:
+      default_sort:
+        column: catalog_horizon_age_tx
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: vacuum_xmin_horizon_pg14_plus
+        min_pg_version: 140000
+        sql_file: vacuum/xmin_horizon.sql
+
+  vacuum.xmin_horizon_blockers:
+    title: Xmin Horizon Blockers
+    group: Storage & Vacuum
+    main_view: pg_stat_activity
+    description: "Top xmin horizon blocker per component: activity, replication slots, standby feedback, and prepared xacts."
+    source: queries_collection/pg_stat_activity_xmin_horizon_blockers.md
+    display:
+      default_sort:
+        column: age_tx
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: vacuum_xmin_horizon_blockers_pg14_plus
+        min_pg_version: 140000
+        sql_file: vacuum/xmin_horizon_blockers.sql
+
+  vacuum.prepared_xacts:
+    title: Prepared Transactions
+    group: Storage & Vacuum
+    main_view: pg_prepared_xacts
+    description: Two-phase commit transactions that can retain old XIDs and locks.
+    source: queries_collection/pg_prepared_xacts_ccp_prepared_xacts_pg_pgexporter_conf.md
+    display:
+      default_sort:
+        column: prepared_age_seconds
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: vacuum_prepared_xacts_pg14_plus
+        min_pg_version: 140000
+        sql_file: vacuum/prepared_xacts.sql
+
+  progress.vacuum:
+    title: Vacuum Progress
+    group: Maintenance Progress
+    main_view: pg_stat_progress_vacuum
+    description: Running VACUUM and autovacuum operations with heap/index progress.
+    source: queries_collection/pg_stat_progress_vacuum_pg_vacuum_progress.md
+    display:
+      default_sort:
+        column: query_age_seconds
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: progress_vacuum_pg14_pg16
+        min_pg_version: 140000
+        max_pg_version: 169999
+        sql_file: progress/vacuum_progress_pg14_pg16.sql
+      - id: progress_vacuum_pg17_plus
+        min_pg_version: 170000
+        sql_file: progress/vacuum_progress_pg17_plus.sql
+
+  progress.create_index:
+    title: Create Index Progress
+    group: Maintenance Progress
+    main_view: pg_stat_progress_create_index
+    description: Running CREATE INDEX and REINDEX operations.
+    source: queries_collection/pg_stat_progress_create_index_pg_stat_progress_create_index_pgcenter.md
+    display:
+      default_sort:
+        column: xact_age_seconds
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: progress_create_index_pg14_plus
+        min_pg_version: 140000
+        sql_file: progress/create_index_progress.sql
+
+  progress.cluster:
+    title: Cluster Progress
+    group: Maintenance Progress
+    main_view: pg_stat_progress_cluster
+    description: Running CLUSTER and VACUUM FULL operations.
+    source: queries_collection/pg_stat_progress_cluster_pg_stat_progress_cluster_pgcenter.md
+    display:
+      default_sort:
+        column: xact_age_seconds
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: progress_cluster_pg14_plus
+        min_pg_version: 140000
+        sql_file: progress/cluster_progress.sql
+
+  progress.copy:
+    title: Copy Progress
+    group: Maintenance Progress
+    main_view: pg_stat_progress_copy
+    description: Running COPY operations with byte and tuple progress.
+    source: queries_collection/pg_stat_progress_copy_pg_stat_progress_copy_pgcenter.md
+    display:
+      default_sort:
+        column: xact_age_seconds
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: progress_copy_pg14_plus
+        min_pg_version: 140000
+        sql_file: progress/copy_progress.sql
+
+  storage.sequence_status:
+    title: Sequence Exhaustion
+    group: Storage & Vacuum
+    main_view: pg_sequences
+    description: Sequence usage, capacity, and related tables to detect approaching exhaustion.
+    source: queries_collection/pg_sequences_helper_monitor_sequence_status_pg_pgexporter_conf.md
+    cost: medium
+    display:
+      default_sort:
+        column: percent
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: storage_sequence_status_pg14_plus
+        min_pg_version: 140000
+        sql_file: storage/sequence_status.sql
+
+  indexes.redundant_indexes:
+    title: Redundant Indexes
+    group: Index Health
+    main_view: pg_index
+    description: Indexes covered by another index on the same relation.
+    source: queries_collection/pg_index_redundant_indexes_pg_utils.md
+    cost: medium
+    display:
+      default_sort:
+        column: redundant_index_size_bytes
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: indexes_redundant_indexes_pg14_plus
+        min_pg_version: 140000
+        sql_file: indexes/redundant_indexes.sql
+
+  indexes.foreign_keys_without_index:
+    title: Foreign Keys Without Supporting Index
+    group: Index Health
+    main_view: pg_constraint
+    description: Foreign keys whose referencing columns are not the leftmost prefix of a valid index.
+    source: queries_collection/pg_constraint_dba_foreign_keys_without_index_db_converter.md
+    cost: medium
+    display:
+      default_sort:
+        column: source_schema
+        direction: asc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: indexes_foreign_keys_without_index_pg14_plus
+        min_pg_version: 140000
+        sql_file: indexes/foreign_keys_without_index.sql
+
+  indexes.duplicate_indexes:
+    title: Duplicate Indexes
+    group: Index Health
+    main_view: pg_index
+    description: Indexes with identical key/operator/collation/predicate/expression fingerprints.
+    source: queries_collection/pg_index_dba_duplicate_indexes_db_converter.md
+    cost: medium
+    display:
+      default_sort:
+        column: total_index_size_bytes
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: indexes_duplicate_indexes_pg14_plus
+        min_pg_version: 140000
+        sql_file: indexes/duplicate_indexes.sql
+
+  indexes.tables_without_pk_or_unique:
+    title: Tables Without PK Or Unique Index
+    group: Index Health
+    main_view: pg_class
+    description: User tables without a primary key or any valid unique index.
+    source: queries_collection/pg_index_dba_tables_without_pk_or_unique_db_converter.md
+    cost: medium
+    display:
+      default_sort:
+        column: total_relation_size_bytes
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: indexes_tables_without_pk_or_unique_pg14_plus
+        min_pg_version: 140000
+        sql_file: indexes/tables_without_pk_or_unique.sql
+
+  indexes.large_indexes:
+    title: Indexes Large Relative To Table
+    group: Index Health
+    main_view: pg_index
+    description: Indexes larger than half of the table heap, with usage counters.
+    source: queries_collection/pg_index_dba_idx_large_relative_to_table_db_converter.md
+    cost: medium
+    display:
+      default_sort:
+        column: index_to_table_pct
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: indexes_large_indexes_pg14_plus
+        min_pg_version: 140000
+        sql_file: indexes/large_indexes.sql
+
+  cluster.extensions:
+    title: Available Extensions
+    group: Cluster Inventory
+    main_view: pg_available_extensions
+    description: Server extensions with installed/default versions.
+    source: queries_collection/pg_available_extensions_available_server_extensions_pg_perfbench.md
+    display:
+      default_sort:
+        column: installed
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: cluster_extensions_pg14_plus
+        min_pg_version: 140000
+        sql_file: cluster/extensions.sql
+
+  cluster.roles_privileges:
+    title: Privileged Roles
+    group: Cluster Inventory
+    main_view: pg_roles
+    description: Roles with superuser, create-db, create-role, replication, or bypass-RLS privileges.
+    source: queries_collection/pg_roles_ccp_pg_roles_superprivs_pg_pgexporter_conf.md
+    display:
+      default_sort:
+        column: rolsuper
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: cluster_roles_privileges_pg14_plus
+        min_pg_version: 140000
+        sql_file: cluster/roles_privileges.sql
+
+  cluster.pending_restart_settings:
+    title: Settings Pending Restart
+    group: Cluster Inventory
+    main_view: pg_settings
+    description: Settings whose changed values require a PostgreSQL restart to take effect.
+    source: queries_collection/pg_settings_ccp_settings_pending_restart_pg_pgexporter_conf.md
+    display:
+      default_sort:
+        column: name
+        direction: asc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: cluster_pending_restart_settings_pg14_plus
+        min_pg_version: 140000
+        sql_file: cluster/pending_restart_settings.sql
+
+  cluster.tablespaces:
+    title: Tablespaces
+    group: Cluster Inventory
+    main_view: pg_tablespace
+    description: Tablespace locations and total size.
+    source: queries_collection/pg_tablespace_collect_tablespace_stats.md
+    display:
+      default_sort:
+        column: size_bytes
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: cluster_tablespaces_pg14_plus
+        min_pg_version: 140000
+        sql_file: cluster/tablespaces.sql
