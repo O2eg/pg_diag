@@ -89,7 +89,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert 'totalBadge.textContent = "total: " + visibleItems.length' in html
     assert 'id="generatorInfo"' in html
     assert "generator.name || \"pg_diag\"" in html
-    assert "generatorName + \"=\" + generatorVersion" in html
+    assert "generatorName + \" version \" + generatorVersion" in html
     assert "https://github.com/O2eg/pg_diag" in html
     assert "https://t.me/O2egg" in html
     assert "project-link-icon" in html

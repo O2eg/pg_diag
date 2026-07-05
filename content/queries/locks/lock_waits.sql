@@ -1,4 +1,4 @@
-with sa_snapshot as ( /* pgwatch_generated */
+with sa_snapshot as (
   select *
   from pg_stat_activity
   where

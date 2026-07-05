@@ -122,7 +122,6 @@ queries:
     group: WAL, I/O & Checkpoints
     main_view: pg_stat_wal
     description: Cumulative WAL counters including bytes, records, writes, syncs, and buffers full.
-    source: queries_collection/pg_stat_wal_pg_stat_wal_pgcenter.md
     display:
       default_sort:
         column: wal_bytes
@@ -274,7 +273,6 @@ queries:
     group: Maintenance Progress
     main_view: pg_stat_progress_create_index
     description: Running CREATE INDEX and REINDEX operations.
-    source: queries_collection/pg_stat_progress_create_index_pg_stat_progress_create_index_pgcenter.md
     display:
       default_sort:
         column: xact_age_seconds
@@ -292,7 +290,6 @@ queries:
     group: Maintenance Progress
     main_view: pg_stat_progress_cluster
     description: Running CLUSTER and VACUUM FULL operations.
-    source: queries_collection/pg_stat_progress_cluster_pg_stat_progress_cluster_pgcenter.md
     display:
       default_sort:
         column: xact_age_seconds
@@ -310,7 +307,6 @@ queries:
     group: Maintenance Progress
     main_view: pg_stat_progress_copy
     description: Running COPY operations with byte and tuple progress.
-    source: queries_collection/pg_stat_progress_copy_pg_stat_progress_copy_pgcenter.md
     display:
       default_sort:
         column: xact_age_seconds
@@ -442,7 +438,6 @@ queries:
     group: Cluster Inventory
     main_view: pg_available_extensions
     description: Server extensions with installed/default versions.
-    source: queries_collection/pg_available_extensions_available_server_extensions_pg_perfbench.md
     display:
       default_sort:
         column: installed

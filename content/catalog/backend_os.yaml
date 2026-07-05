@@ -4,7 +4,6 @@ queries:
     group: Per-Backend Local OS
     main_view: pg_stat_activity
     description: Current backend state by PID for correlation with local /proc CPU and I/O samples.
-    source: pgcenter
     display:
       default_sort:
         column: query_age_seconds

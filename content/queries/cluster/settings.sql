@@ -1,8 +1,8 @@
-with base as ( /* pgwatch_generated */
+with base as (
   select
     name,
-    -- Use reset_val for lock_timeout/statement_timeout because pgwatch overrides them
-    -- during collection (lock_timeout=100ms, statement_timeout per-metric).
+    -- Use reset_val for lock_timeout/statement_timeout because the collector session can override them
+    -- during collection.
     case
       when name in ('lock_timeout', 'statement_timeout') then reset_val
       else setting

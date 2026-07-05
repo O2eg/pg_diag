@@ -1,4 +1,4 @@
-select /* pgwatch_generated */
+select
   statement_timestamp() as snapshot_time,
   current_database() as datname,
   numbackends,

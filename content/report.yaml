@@ -1,7 +1,6 @@
 report:
   id: pg_diag_minimal
   title: PostgreSQL Diagnostic Report
-  description: Minimal declarative DBA report layout for pg_diag.
   schema_version: 2
   default_state: expanded
   catalogs:
@@ -319,7 +318,7 @@ sections:
 
   object_workload:
     title: Object Workload
-    description: Table, index, and function workload counters inspired by pg_profile reports.
+    description: Table, index, and function workload counters from PostgreSQL statistics views.
     state: collapsed
     items:
       table_workload:

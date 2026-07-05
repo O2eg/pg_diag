@@ -1,4 +1,4 @@
-select current_database() as datname, /* pgwatch_generated */
+select current_database() as datname,
 case status when 'stopped' then 0 when 'starting' then 1 when 'streaming' then 2 when 'waiting' then 3 when 'restarting' then 4 when 'stopping' then 5 else -1 end as status,
       (receive_start_lsn- '0/0') % (2^52)::bigint as receive_start_lsn,
       receive_start_tli,

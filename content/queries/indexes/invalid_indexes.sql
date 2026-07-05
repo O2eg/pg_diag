@@ -1,4 +1,4 @@
-with fk_indexes as materialized ( /* pgwatch_generated */
+with fk_indexes as materialized (
   select
     schemaname as schema_name,
     indexrelid,

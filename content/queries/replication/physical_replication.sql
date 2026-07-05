@@ -1,4 +1,4 @@
-select /* pgwatch_generated */
+select
   current_database() as datname,
   application_name as application_name,
   (pg_current_wal_lsn() - '0/0') % (2^52)::bigint as current_wal_lsn,

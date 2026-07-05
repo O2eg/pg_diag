@@ -1,4 +1,4 @@
-select /* pgwatch_generated */
+select
     current_database() as datname,
     checkpoints_timed,
     checkpoints_req,

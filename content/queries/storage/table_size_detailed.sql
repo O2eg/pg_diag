@@ -1,4 +1,4 @@
-with table_sizes as ( /* pgwatch_generated */
+with table_sizes as (
   select
     current_database() as datname,
     n.nspname as schema,

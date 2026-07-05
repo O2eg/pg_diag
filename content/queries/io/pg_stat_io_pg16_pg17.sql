@@ -1,4 +1,4 @@
-select /* pgwatch_generated */
+select
     current_database() as datname,
     coalesce(backend_type, 'total') as backend_type,
     sum(coalesce(reads, 0))::int8 as reads,

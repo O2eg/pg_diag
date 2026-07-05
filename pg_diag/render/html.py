@@ -254,12 +254,6 @@ _HTML_TEMPLATE = """<!doctype html>
       padding-bottom: 42px;
     }
 
-    .report-description {
-      margin: 0 0 14px;
-      color: var(--muted);
-      max-width: 980px;
-    }
-
     .report-toolbar {
       display: grid;
       grid-template-columns: auto auto minmax(220px, 420px) minmax(130px, 190px) minmax(150px, 220px) auto;
@@ -1482,7 +1476,6 @@ _HTML_TEMPLATE = """<!doctype html>
     </div>
   </header>
   <main class="shell">
-    <p id="reportDescription" class="report-description hidden"></p>
     <div class="report-toolbar" aria-label="Report controls">
       <button id="expandAll" type="button" class="btn primary">Expand all</button>
       <button id="collapseAll" type="button" class="btn">Collapse all</button>
@@ -1585,7 +1578,7 @@ _HTML_TEMPLATE = """<!doctype html>
       const generatorName = generator.name || "pg_diag";
       const generatorVersion = generator.version;
       const generatorInfo = document.getElementById("generatorInfo");
-      generatorInfo.textContent = generatorVersion ? generatorName + "=" + generatorVersion : generatorName;
+      generatorInfo.textContent = generatorVersion ? generatorName + " version " + generatorVersion : generatorName;
       generatorInfo.hidden = !generatorName && !generatorVersion;
 
       const runtimeParts = [
@@ -1614,13 +1607,6 @@ _HTML_TEMPLATE = """<!doctype html>
         .map((entry) => entry[0] + "=" + formatRuntimeValue(entry[0], entry[1]))
         .join(" ");
       runtimeDetails.hidden = runtimeDetailParts.length === 0;
-
-      const description = (artifact.report || {}).description;
-      if (description) {
-        const node = document.getElementById("reportDescription");
-        node.textContent = description;
-        node.classList.remove("hidden");
-      }
 
       const counts = {};
       for (const item of visibleItems) {

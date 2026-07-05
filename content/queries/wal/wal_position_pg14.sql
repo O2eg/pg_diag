@@ -1,4 +1,4 @@
-select /* pgwatch_generated */
+select
   current_database() as datname,
   case
     when pg_is_in_recovery() = false then

@@ -1,4 +1,4 @@
-select /* pgwatch_generated */
+select
     statement_timestamp() as snapshot_time,
     pg_database.datname as datname,
     tmp2.application_name,

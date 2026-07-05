@@ -26,7 +26,7 @@ tables as (
     and c.relpersistence <> 't'
     and not n.nspname like any (array[E'pg\\_%', 'information_schema'])
 )
-select /* pgwatch_generated */
+select
   current_database() as datname,
   t.schemaname as schemaname,
   t.relname as relname,

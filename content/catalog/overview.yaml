@@ -4,7 +4,6 @@ queries:
     group: Overview
     main_view: pg_catalog
     description: Full PostgreSQL server version string.
-    source: pg_perfbench
     result_shape: scalar_text
     display:
       default_sort:

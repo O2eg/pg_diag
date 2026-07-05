@@ -4,7 +4,6 @@ queries:
     group: SQL Workload
     main_view: pg_extension
     description: Extension, preload, query-id, and tracking settings needed for statement workload diagnostics.
-    source: pgcenter_pg_profile
     display:
       default_sort:
         column: capability
@@ -22,7 +21,6 @@ queries:
     group: SQL Workload
     main_view: pg_stat_statements
     description: Statements with the highest cumulative execution time.
-    source: pgcenter_pg_profile
     cost: medium
     display:
       default_sort:
@@ -64,7 +62,6 @@ queries:
     group: SQL Workload
     main_view: pg_stat_statements
     description: Statements with the highest mean execution time.
-    source: pgcenter_pg_profile
     cost: medium
     display:
       default_sort:
@@ -83,7 +80,6 @@ queries:
     group: SQL Workload
     main_view: pg_stat_statements
     description: Most frequently executed statements.
-    source: pgcenter_pg_profile
     cost: medium
     display:
       default_sort:
@@ -102,7 +98,6 @@ queries:
     group: SQL Workload
     main_view: pg_stat_statements
     description: Statements with the most shared block reads and writes.
-    source: pgcenter_pg_profile
     cost: medium
     display:
       default_sort:
@@ -122,7 +117,6 @@ queries:
     group: SQL Workload
     main_view: pg_stat_statements
     description: Statements spilling the most temporary blocks.
-    source: pgcenter_pg_profile
     cost: medium
     display:
       default_sort:
@@ -141,7 +135,6 @@ queries:
     group: SQL Workload
     main_view: pg_stat_statements
     description: Statements generating the most WAL bytes, records, and full-page images.
-    source: pgcenter_pg_profile
     cost: medium
     display:
       default_sort:

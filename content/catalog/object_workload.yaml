@@ -4,7 +4,6 @@ queries:
     group: Object Workload
     main_view: pg_stat_all_tables
     description: Cumulative table scan, DML, vacuum, and analyze counters for user-visible relations.
-    source: pg_profile
     cost: medium
     display:
       default_sort:
@@ -45,7 +44,6 @@ queries:
     group: Object Workload
     main_view: pg_statio_all_tables
     description: Cumulative heap, index, and toast block I/O counters by table.
-    source: pg_profile
     cost: medium
     display:
       default_sort:
@@ -80,7 +78,6 @@ queries:
     group: Object Workload
     main_view: pg_stat_all_indexes
     description: Cumulative index scans, tuple reads, tuple fetches, and index cache I/O.
-    source: pg_profile
     cost: medium
     display:
       default_sort:
@@ -114,7 +111,6 @@ queries:
     group: Object Workload
     main_view: pg_stat_user_functions
     description: Function call counters and execution time. Requires track_functions=pl or all.
-    source: pg_profile
     cost: medium
     display:
       default_sort:

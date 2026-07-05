@@ -1,4 +1,4 @@
-select /* pgwatch_generated */
+select
   current_database() as datname,
   num_timed,
   num_requested,

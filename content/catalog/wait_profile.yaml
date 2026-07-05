@@ -4,7 +4,6 @@ queries:
     group: Wait Profile
     main_view: pg_extension
     description: Optional pg_wait_sampling extension availability and installation state.
-    source: pgcenter_pg_profile
     display:
       default_sort:
         column: capability
