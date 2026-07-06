@@ -30,6 +30,36 @@ def test_delta_table_metric_uses_first_and_last_samples() -> None:
     assert result["rows"] == [["db", 20.0, 4.0]]
 
 
+def test_delta_table_metric_uses_row_snapshot_time_for_rate_interval() -> None:
+    metric = {
+        "table": {
+            "key_refs": ["dimensions.database"],
+            "columns": [
+                {"name": "datname", "role": "key", "key_index": 0},
+                {"name": "commits_per_sec", "value_ref": "counters.xact_commit", "transform": "rate"},
+            ],
+        }
+    }
+    semantic_columns = {
+        "dimensions": {"database": "datname"},
+        "counters": {"xact_commit": "xact_commit"},
+    }
+    samples = [
+        {
+            "timestamp": "2026-07-05T00:00:00+00:00",
+            "rows": [{"snapshot_time": "2026-07-05T00:00:05+00:00", "datname": "db", "xact_commit": 10}],
+        },
+        {
+            "timestamp": "2026-07-05T00:00:05+00:00",
+            "rows": [{"snapshot_time": "2026-07-05T00:00:15+00:00", "datname": "db", "xact_commit": 30}],
+        },
+    ]
+
+    result = build_table_result(metric, samples, semantic_columns)
+
+    assert result["rows"] == [["db", 2.0]]
+
+
 def test_sample_sum_table_metric_aggregates_all_samples() -> None:
     metric = {
         "table": {
@@ -92,6 +122,83 @@ def test_top_n_interval_chart_joins_adjacent_snapshots_in_memory() -> None:
             "name": "public.hot",
             "unit": "rows/s",
             "points": [{"t": "2026-07-05T00:00:05+00:00", "value": 20.0}],
+        }
+    ]
+
+
+def test_stacked_column_top_n_orders_largest_series_for_top_stack_position() -> None:
+    metric = {
+        "chart": {"kind": "stacked_column", "unit": "rows/s"},
+        "top_n": {
+            "mode": "interval",
+            "limit": 2,
+            "key_refs": ["schema", "table"],
+            "label_refs": ["schema", "table"],
+            "value_ref": "inserts",
+            "transform": "rate",
+            "unit": "rows/s",
+        },
+    }
+    samples = [
+        {
+            "timestamp": "2026-07-05T00:00:00+00:00",
+            "rows": [
+                {"schema": "public", "table": "small", "inserts": 10},
+                {"schema": "public", "table": "hot", "inserts": 100},
+            ],
+        },
+        {
+            "timestamp": "2026-07-05T00:00:05+00:00",
+            "rows": [
+                {"schema": "public", "table": "small", "inserts": 15},
+                {"schema": "public", "table": "hot", "inserts": 160},
+            ],
+        },
+    ]
+
+    result = build_chart_result(metric, samples, {})
+
+    assert [series["name"] for series in result["series"]] == ["public.small", "public.hot"]
+    assert [series["points"][0]["value"] for series in result["series"]] == [1.0, 12.0]
+
+
+def test_top_n_interval_uses_row_snapshot_time_for_point_and_rate_interval() -> None:
+    metric = {
+        "chart": {"kind": "stacked_column", "unit": "rows/s"},
+        "top_n": {
+            "mode": "interval",
+            "limit": 1,
+            "key_refs": ["table"],
+            "label_refs": ["table"],
+            "value_ref": "inserts",
+            "transform": "rate",
+            "unit": "rows/s",
+        },
+    }
+    samples = [
+        {
+            "timestamp": "2026-07-05T00:00:00+00:00",
+            "rows": [
+                {"snapshot_time": "2026-07-05T00:00:00+00:00", "table": "cold", "inserts": 1},
+                {"snapshot_time": "2026-07-05T00:00:05+00:00", "table": "hot", "inserts": 100},
+            ],
+        },
+        {
+            "timestamp": "2026-07-05T00:00:05+00:00",
+            "rows": [
+                {"snapshot_time": "2026-07-05T00:00:05+00:00", "table": "cold", "inserts": 2},
+                {"snapshot_time": "2026-07-05T00:00:15+00:00", "table": "hot", "inserts": 200},
+            ],
+        },
+    ]
+
+    result = build_chart_result(metric, samples, {})
+
+    assert result["series"] == [
+        {
+            "name": "hot",
+            "unit": "rows/s",
+            "points": [{"t": "2026-07-05T00:00:15+00:00", "value": 10.0}],
         }
     ]
 
@@ -215,14 +322,14 @@ def test_top_n_interval_ratio_chart_uses_snapshot_time_per_interval() -> None:
     assert result["chart"]["x_type"] == "datetime"
     assert result["series"] == [
         {
-            "name": "idx_b",
-            "unit": "ratio",
-            "points": [{"t": "2026-07-05T00:00:11+00:00", "value": 8.0}],
-        },
-        {
             "name": "idx_a",
             "unit": "ratio",
             "points": [{"t": "2026-07-05T00:00:06+00:00", "value": 6.0}],
+        },
+        {
+            "name": "idx_b",
+            "unit": "ratio",
+            "points": [{"t": "2026-07-05T00:00:11+00:00", "value": 8.0}],
         },
     ]
 

@@ -10,6 +10,7 @@ with base as (
     unit,
     category,
     vartype,
+    pending_restart,
     -- For lock_timeout/statement_timeout, compare reset_val with boot_val
     -- since source becomes 'session' during collection.
     case
@@ -41,17 +42,20 @@ select
       case
         when numeric_value = 0 then '0 ms'
         when numeric_value < 1000 then numeric_value::text || ' ms'
-        else round(numeric_value / 1000, 3)::text || ' s'
+        when numeric_value < 60000 then
+          trim(trailing '.' from trim(trailing '0' from round(numeric_value / 1000, 3)::text)) || ' s'
+        else trim(trailing '.' from trim(trailing '0' from round(numeric_value / 60000, 3)::text)) || ' min'
       end
     when unit = 's' then
       case
         when numeric_value < 60 then numeric_value::text || ' s'
-        else round(numeric_value / 60, 3)::text || ' min'
+        else trim(trailing '.' from trim(trailing '0' from round(numeric_value / 60, 3)::text)) || ' min'
       end
     when unit = 'min' then numeric_value::text || ' min'
     else null
   end as pretty_value,
   unit as unit,
+  pending_restart as pending_restart,
   category as category,
   vartype as vartype,
   case when is_default_bool then 1 else 0 end as is_default,

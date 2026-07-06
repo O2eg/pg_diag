@@ -76,3 +76,908 @@ queries:
         min_pg_version: 180000
         sql_file: metrics/io_read_write_rate_pg18_plus.sql
         semantic_columns: *metrics_io_read_write_rate_semantics
+
+  metrics.activity_sessions_by_state:
+    title: Sessions By State Chart Source
+    group: Metric Sources
+    main_view: pg_stat_activity
+    description: Narrow sampled SQL source used only by the Sessions By State Chart item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: state
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_activity_sessions_by_state_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/activity_sessions_by_state.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            state: state
+          gauges:
+            sessions: count
+
+  metrics.activity_wait_sample_profile:
+    title: Wait Event Sample Profile Source
+    group: Metric Sources
+    main_view: pg_stat_activity
+    description: Narrow sampled SQL source used only by the Wait Event Sample Profile item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: sessions
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_activity_wait_sample_profile_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/activity_wait_sample_profile.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            wait_event_type: wait_event_type
+            wait_event: wait_event
+            query_id: query_id
+            query: query
+          gauges:
+            sessions: sessions
+
+  metrics.database_tuple_dml_rate:
+    title: Database Tuple DML Rate Source
+    group: Metric Sources
+    main_view: pg_stat_database
+    description: Narrow sampled SQL source used only by the Database Tuple DML Rate item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: datname
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_database_tuple_dml_rate_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/database_tuple_dml_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+          counters:
+            tup_inserted: tup_inserted
+            tup_updated: tup_updated
+            tup_deleted: tup_deleted
+
+  metrics.database_tuple_access_rate:
+    title: Database Tuple Access Rate Source
+    group: Metric Sources
+    main_view: pg_stat_database
+    description: Narrow sampled SQL source used only by the Database Tuple Access Rate item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: datname
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_database_tuple_access_rate_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/database_tuple_access_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+          counters:
+            tup_returned: tup_returned
+            tup_fetched: tup_fetched
+
+  metrics.database_block_access_rate:
+    title: Database Block Access Rate Source
+    group: Metric Sources
+    main_view: pg_stat_database
+    description: Narrow sampled SQL source used only by the Database Block Access Rate item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: datname
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_database_block_access_rate_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/database_block_access_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+          counters:
+            blks_read: blks_read
+            blks_hit: blks_hit
+
+  metrics.database_temp_files_delta:
+    title: Database Temp Files Delta Source
+    group: Metric Sources
+    main_view: pg_stat_database
+    description: Narrow sampled SQL source used only by the Database Temp Files Delta item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: datname
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_database_temp_files_delta_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/database_temp_files_delta.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+          counters:
+            temp_files: temp_files
+
+  metrics.database_temp_bytes_rate:
+    title: Database Temp Bytes Rate Source
+    group: Metric Sources
+    main_view: pg_stat_database
+    description: Narrow sampled SQL source used only by the Database Temp Bytes Rate item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: datname
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_database_temp_bytes_rate_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/database_temp_bytes_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+          counters:
+            temp_bytes: temp_bytes
+
+  metrics.database_io_time_rate:
+    title: Database I/O Time Rate Source
+    group: Metric Sources
+    main_view: pg_stat_database
+    description: Narrow sampled SQL source used only by the Database I/O Time Rate item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: datname
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_database_io_time_rate_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/database_io_time_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+          counters:
+            blk_read_time: blk_read_time
+            blk_write_time: blk_write_time
+
+  metrics.database_backends:
+    title: Database Backends Source
+    group: Metric Sources
+    main_view: pg_stat_database
+    description: Narrow sampled SQL source used only by the Database Backends item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: datname
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_database_backends_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/database_backends.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+          gauges:
+            numbackends: numbackends
+
+  metrics.database_deadlocks:
+    title: Database Deadlocks Source
+    group: Metric Sources
+    main_view: pg_stat_database
+    description: Narrow sampled SQL source used only by the Database Deadlocks item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: datname
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_database_deadlocks_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/database_deadlocks.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+          counters:
+            deadlocks: deadlocks
+
+  metrics.database_workload_delta:
+    title: Database Workload Delta Source
+    group: Metric Sources
+    main_view: pg_stat_database
+    description: Narrow sampled SQL source used only by the Database Workload Delta item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: xact_commit
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_database_workload_delta_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/database_workload_delta.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+          counters:
+            xact_commit: xact_commit
+            xact_rollback: xact_rollback
+            temp_bytes: temp_bytes
+            deadlocks: deadlocks
+
+  metrics.objects_table_dml_delta:
+    title: Table DML Delta Source
+    group: Metric Sources
+    main_view: pg_stat_all_tables
+    description: Narrow sampled SQL source used only by the Table DML Delta item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: total_dml
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_table_dml_delta_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_table_dml_delta.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+          counters:
+            n_tup_ins: n_tup_ins
+            n_tup_upd: n_tup_upd
+            n_tup_del: n_tup_del
+            n_tup_hot_upd: n_tup_hot_upd
+
+  metrics.objects_table_scan_delta:
+    title: Table Scan Delta Source
+    group: Metric Sources
+    main_view: pg_stat_all_tables
+    description: Narrow sampled SQL source used only by the Table Scan Delta item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: seq_tup_read
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_table_scan_delta_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_table_scan_delta.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+          counters:
+            seq_scan: seq_scan
+            seq_tup_read: seq_tup_read
+            idx_scan: idx_scan
+            idx_tup_fetch: idx_tup_fetch
+
+  metrics.objects_tables_top_tuple_access_rate:
+    title: Top Tables By Tuple Access Rate Source
+    group: Metric Sources
+    main_view: pg_stat_all_tables
+    description: Narrow sampled SQL source used only by the Top Tables By Tuple Access Rate item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: seq_tup_read
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_tables_top_tuple_access_rate_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_tables_top_tuple_access_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+          counters:
+            seq_tup_read: seq_tup_read
+            idx_tup_fetch: idx_tup_fetch
+
+  metrics.objects_tables_top_seq_read_rate:
+    title: Top Tables By Sequential Tuple Read Rate Source
+    group: Metric Sources
+    main_view: pg_stat_all_tables
+    description: Narrow sampled SQL source used only by the Top Tables By Sequential Tuple Read Rate item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: seq_tup_read
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_tables_top_seq_read_rate_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_tables_top_seq_read_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+          counters:
+            seq_tup_read: seq_tup_read
+
+  metrics.objects_tables_top_index_fetch_rate:
+    title: Top Tables By Index Fetch Rate Source
+    group: Metric Sources
+    main_view: pg_stat_all_tables
+    description: Narrow sampled SQL source used only by the Top Tables By Index Fetch Rate item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: idx_tup_fetch
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_tables_top_index_fetch_rate_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_tables_top_index_fetch_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+          counters:
+            idx_tup_fetch: idx_tup_fetch
+
+  metrics.objects_tables_top_dml_rate:
+    title: Top Tables By DML Rate Source
+    group: Metric Sources
+    main_view: pg_stat_all_tables
+    description: Narrow sampled SQL source used only by the Top Tables By DML Rate item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: n_tup_ins
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_tables_top_dml_rate_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_tables_top_dml_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+          counters:
+            n_tup_ins: n_tup_ins
+            n_tup_upd: n_tup_upd
+            n_tup_del: n_tup_del
+
+  metrics.objects_tables_top_insert_rate:
+    title: Top Tables By Insert Rate Source
+    group: Metric Sources
+    main_view: pg_stat_all_tables
+    description: Narrow sampled SQL source used only by the Top Tables By Insert Rate item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: n_tup_ins
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_tables_top_insert_rate_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_tables_top_insert_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+          counters:
+            n_tup_ins: n_tup_ins
+
+  metrics.objects_tables_top_update_rate:
+    title: Top Tables By Update Rate Source
+    group: Metric Sources
+    main_view: pg_stat_all_tables
+    description: Narrow sampled SQL source used only by the Top Tables By Update Rate item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: n_tup_upd
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_tables_top_update_rate_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_tables_top_update_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+          counters:
+            n_tup_upd: n_tup_upd
+
+  metrics.objects_tables_top_delete_rate:
+    title: Top Tables By Delete Rate Source
+    group: Metric Sources
+    main_view: pg_stat_all_tables
+    description: Narrow sampled SQL source used only by the Top Tables By Delete Rate item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: n_tup_del
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_tables_top_delete_rate_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_tables_top_delete_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+          counters:
+            n_tup_del: n_tup_del
+
+  metrics.objects_tables_top_hot_update_rate:
+    title: Top Tables By HOT Update Rate Source
+    group: Metric Sources
+    main_view: pg_stat_all_tables
+    description: Narrow sampled SQL source used only by the Top Tables By HOT Update Rate item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: n_tup_hot_upd
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_tables_top_hot_update_rate_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_tables_top_hot_update_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+          counters:
+            n_tup_hot_upd: n_tup_hot_upd
+
+  metrics.objects_table_io_delta:
+    title: Table I/O Delta Source
+    group: Metric Sources
+    main_view: pg_statio_all_tables
+    description: Narrow sampled SQL source used only by the Table I/O Delta item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: total_blks_read
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_table_io_delta_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_table_io_delta.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+          counters:
+            heap_blks_read: heap_blks_read
+            idx_blks_read: idx_blks_read
+            total_blks_read: total_blks_read
+            total_blks_hit: total_blks_hit
+
+  metrics.objects_tables_top_heap_read_rate:
+    title: Top Tables By Heap Block Read Rate Source
+    group: Metric Sources
+    main_view: pg_statio_all_tables
+    description: Narrow sampled SQL source used only by the Top Tables By Heap Block Read Rate item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: heap_blks_read
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_tables_top_heap_read_rate_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_tables_top_heap_read_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+          counters:
+            heap_blks_read: heap_blks_read
+
+  metrics.objects_tables_top_index_block_read_rate:
+    title: Top Tables By Index Block Read Rate Source
+    group: Metric Sources
+    main_view: pg_statio_all_tables
+    description: Narrow sampled SQL source used only by the Top Tables By Index Block Read Rate item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: idx_blks_read
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_tables_top_index_block_read_rate_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_tables_top_index_block_read_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+          counters:
+            idx_blks_read: idx_blks_read
+
+  metrics.objects_index_usage_delta:
+    title: Index Usage Delta Source
+    group: Metric Sources
+    main_view: pg_stat_all_indexes
+    description: Narrow sampled SQL source used only by the Index Usage Delta item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: idx_scan
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_index_usage_delta_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_index_usage_delta.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+            index: indexrelname
+          counters:
+            idx_scan: idx_scan
+            idx_tup_read: idx_tup_read
+            idx_tup_fetch: idx_tup_fetch
+            idx_blks_read: idx_blks_read
+
+  metrics.objects_indexes_top_scan_rate:
+    title: Top Indexes By Scan Rate Source
+    group: Metric Sources
+    main_view: pg_stat_all_indexes
+    description: Narrow sampled SQL source used only by the Top Indexes By Scan Rate item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: idx_scan
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_indexes_top_scan_rate_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_indexes_top_scan_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+            index: indexrelname
+          counters:
+            idx_scan: idx_scan
+
+  metrics.objects_indexes_top_tuple_read_rate:
+    title: Top Indexes By Tuple Read Rate Source
+    group: Metric Sources
+    main_view: pg_stat_all_indexes
+    description: Narrow sampled SQL source used only by the Top Indexes By Tuple Read Rate item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: idx_tup_read
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_indexes_top_tuple_read_rate_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_indexes_top_tuple_read_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+            index: indexrelname
+          counters:
+            idx_tup_read: idx_tup_read
+
+  metrics.objects_indexes_top_tuple_fetch_rate:
+    title: Top Indexes By Tuple Fetch Rate Source
+    group: Metric Sources
+    main_view: pg_stat_all_indexes
+    description: Narrow sampled SQL source used only by the Top Indexes By Tuple Fetch Rate item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: idx_tup_fetch
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_indexes_top_tuple_fetch_rate_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_indexes_top_tuple_fetch_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+            index: indexrelname
+          counters:
+            idx_tup_fetch: idx_tup_fetch
+
+  metrics.objects_indexes_top_reads_per_scan:
+    title: Top Indexes By Reads Per Scan Source
+    group: Metric Sources
+    main_view: pg_stat_all_indexes
+    description: Narrow sampled SQL source used only by the Top Indexes By Reads Per Scan item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: idx_tup_read
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_indexes_top_reads_per_scan_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_indexes_top_reads_per_scan.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+            index: indexrelname
+          counters:
+            idx_tup_read: idx_tup_read
+            idx_scan: idx_scan
+
+  metrics.objects_indexes_top_fetches_per_scan:
+    title: Top Indexes By Fetches Per Scan Source
+    group: Metric Sources
+    main_view: pg_stat_all_indexes
+    description: Narrow sampled SQL source used only by the Top Indexes By Fetches Per Scan item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: idx_tup_fetch
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_indexes_top_fetches_per_scan_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_indexes_top_fetches_per_scan.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+            index: indexrelname
+          counters:
+            idx_tup_fetch: idx_tup_fetch
+            idx_scan: idx_scan
+
+  metrics.objects_indexes_top_reads_per_fetch:
+    title: Top Indexes By Reads Per Fetch Source
+    group: Metric Sources
+    main_view: pg_stat_all_indexes
+    description: Narrow sampled SQL source used only by the Top Indexes By Reads Per Fetch item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: idx_tup_read
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_indexes_top_reads_per_fetch_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_indexes_top_reads_per_fetch.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            table: relname
+            index: indexrelname
+          counters:
+            idx_tup_read: idx_tup_read
+            idx_tup_fetch: idx_tup_fetch
+
+  metrics.objects_function_time_delta:
+    title: Function Time Delta Source
+    group: Metric Sources
+    main_view: pg_stat_user_functions
+    description: Narrow sampled SQL source used only by the Function Time Delta item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: total_time_ms
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_objects_function_time_delta_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/objects_function_time_delta.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            schema: schemaname
+            function: funcname
+          counters:
+            calls: calls
+            total_time_ms: total_time_ms
+            self_time_ms: self_time_ms
+
+  metrics.statements_total_time_delta:
+    title: SQL Time Delta Source
+    group: Metric Sources
+    main_view: pg_stat_statements
+    description: Narrow sampled SQL source used only by the SQL Time Delta item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: total_exec_time_ms
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_statements_total_time_delta_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/statements_total_time_delta.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            user: rolname
+            query_id: query_id
+          counters:
+            calls: calls
+            rows: rows
+            total_exec_time_ms: total_exec_time_ms
+
+  metrics.statements_wal_delta:
+    title: SQL WAL Delta Source
+    group: Metric Sources
+    main_view: pg_stat_statements
+    description: Narrow sampled SQL source used only by the SQL WAL Delta item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: wal_bytes
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_statements_wal_delta_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/statements_wal_delta.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            user: rolname
+            query_id: query_id
+          counters:
+            wal_bytes: wal_bytes
+            wal_records: wal_records
+            wal_fpi: wal_fpi
+
+  metrics.statements_io_delta:
+    title: SQL Shared I/O Delta Source
+    group: Metric Sources
+    main_view: pg_stat_statements
+    description: Narrow sampled statement I/O counters used only by the SQL shared I/O delta item.
+    source: pg_diag
+    display:
+      default_sort:
+        column: shared_blks_read
+        direction: desc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_statements_io_delta_pg14_pg16
+        min_pg_version: 140000
+        max_pg_version: 169999
+        sql_file: metrics/statements_io_delta.sql
+        semantic_columns: &metrics_statements_io_delta_semantics
+          dimensions:
+            database: datname
+            user: rolname
+            query_id: query_id
+          counters:
+            shared_blks_read: shared_blks_read
+            shared_blks_written: shared_blks_written
+            blk_read_time_ms: blk_read_time_ms
+            blk_write_time_ms: blk_write_time_ms
+      - id: metrics_statements_io_delta_pg17_plus
+        min_pg_version: 170000
+        sql_file: metrics/statements_io_delta_pg17_plus.sql
+        semantic_columns: *metrics_statements_io_delta_semantics

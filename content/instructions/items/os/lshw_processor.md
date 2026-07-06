@@ -1,0 +1,22 @@
+# Processor Hardware
+
+This instruction belongs to report item `os.lshw_processor`. The item is backed by `os.lshw_processor` (local host script).
+
+## What this item shows
+- Processor hardware inventory from lshw.
+- CPU model and hardware capability context.
+
+## What to watch
+- Unexpected CPU model or count.
+- Different CPU generation across nodes.
+- Missing hardware data.
+
+## Common fault causes
+- VM resized incorrectly.
+- Host migration to different CPU class.
+- lshw permission limits.
+
+## Checklist
+- Compare with `CPU Information`
+- Check extension or JIT assumptions that depend on CPU features.
+- Confirm primary and standby CPU class consistency.

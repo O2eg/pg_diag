@@ -30,8 +30,9 @@ queries:
       default: every_snapshot
       supports: [once, every_snapshot]
     variants:
-      - id: statements_top_by_total_time_pg14_plus
+      - id: statements_top_by_total_time_pg14_pg16
         min_pg_version: 140000
+        max_pg_version: 169999
         sql_file: statements/top_by_total_time.sql
         semantic_columns: &statement_semantics
           dimensions:
@@ -56,6 +57,10 @@ queries:
             wal_bytes: wal_bytes
           gauges:
             mean_exec_time_ms: mean_exec_time_ms
+      - id: statements_top_by_total_time_pg17_plus
+        min_pg_version: 170000
+        sql_file: statements/top_by_total_time_pg17_plus.sql
+        semantic_columns: *statement_semantics
 
   statements.top_by_mean_time:
     title: Top SQL By Mean Time
@@ -107,9 +112,14 @@ queries:
       default: every_snapshot
       supports: [once, every_snapshot]
     variants:
-      - id: statements_top_by_io_pg14_plus
+      - id: statements_top_by_io_pg14_pg16
         min_pg_version: 140000
+        max_pg_version: 169999
         sql_file: statements/top_by_io.sql
+        semantic_columns: *statement_semantics
+      - id: statements_top_by_io_pg17_plus
+        min_pg_version: 170000
+        sql_file: statements/top_by_io_pg17_plus.sql
         semantic_columns: *statement_semantics
 
   statements.top_by_temp_io:

@@ -54,6 +54,11 @@ scripts:
     description: Local network addresses and hostname mappings.
     script_file: os/ip_br_addr.sh
 
+  os.postgres_process_tree:
+    title: PostgreSQL Process Tree
+    description: Local ps fax process tree filtered to PostgreSQL server processes.
+    script_file: os/postgres_process_tree.sh
+
   os.sysctl_vm:
     title: Kernel VM Parameters
     description: Kernel virtual memory parameters from sysctl.

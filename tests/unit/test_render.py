@@ -32,8 +32,8 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
                 "status": "ok",
                 "result": {
                     "kind": "table",
-                    "columns": [{"name": "value"}],
-                    "rows": [["</script><script>alert(1)</script>"]],
+                    "columns": [{"name": "value"}, {"name": "captured_at", "pg_type": "timestamptz"}],
+                    "rows": [["</script><script>alert(1)</script>", "2026-05-29T21:27:18.283630+00:00"]],
                     "row_count": 1,
                 },
                 "source_metadata": {
@@ -42,6 +42,11 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
                     "variant_id": "test_query_all",
                     "source_text": "select 1",
                     "source_language": "sql",
+                    "instructions": {
+                        "format": "markdown",
+                        "path": "instructions/items/s/i.md",
+                        "text": "# Item instruction\n\n## Checklist\n- Check **risk** and `query_id`.",
+                    },
                 },
                 "diagnostics": [],
             }
@@ -66,8 +71,8 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert 'id="reportNavTree"' in html
     assert 'id="reportNavToggle"' in html
     assert "Contents" in html
-    assert "Свернуть оглавление" in html
-    assert "Развернуть оглавление" in html
+    assert "Collapse contents" in html
+    assert "Expand contents" in html
     assert "bindReportNavControls()" in html
     assert "setReportNavCollapsed" in html
     assert "report-nav-collapsed" in html
@@ -112,6 +117,10 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "new ApexCharts" in html
     assert "buildApexChartOptions" in html
     assert "apexChartType(chartKind)" in html
+    assert "chartDatetimeBounds(series)" in html
+    assert "min: datetimeBounds.min" in html
+    assert "max: datetimeBounds.max" in html
+    assert "const padding = 60000" in html
     assert "chartColors(series)" in html
     assert "entry._color || defaults[index % defaults.length]" in html
     assert '"stacked_area"' in html
@@ -142,11 +151,18 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "highlight.js/11.9.0" in html
     assert 'id="sourceModal"' in html
     assert 'id="metaModal"' in html
+    assert 'id="instructionModal"' in html
     assert "sourceActionLabel(item)" in html
     assert "Show SQL" in html
     assert "Show Bash" in html
     assert "Show meta" in html
+    assert "Show Instruction" in html
     assert "openMetaModal(item)" in html
+    assert "openInstructionModal(item)" in html
+    assert "PgDiagMarkdown" in html
+    assert "source.instructions.text_chars" in html
+    assert '"path":"instructions/items/s/i.md"' in html
+    assert "Item instruction" in html
     assert "itemMetaRows(item)" in html
     assert "appendMetaRows(rows, \"source\", item.source_metadata || {})" in html
     assert '"sql_file":"test/query.sql"' in html
@@ -156,7 +172,15 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "highlightElement" in html
     assert '"source_text":"select 1"' in html
     assert "formatNumberForColumn" in html
+    assert "isTemporalColumn(column)" in html
+    assert "formatTemporalValue(value, column)" in html
+    assert 'pgType === "timestamp" || pgType === "timestamptz"' in html
+    assert 'match[1] + " " + match[2]' in html
     assert "toFixed(3)" in html
+    assert 'name.startsWith("seconds_")' in html
+    assert 'name.includes("_seconds_")' in html
+    assert '"captured_at","pg_type":"timestamptz"' in html
+    assert "2026-05-29T21:27:18.283630+00:00" in html
     assert '<html lang="en" data-theme="dark">' in html
     assert 'id="themeToggle"' in html
     assert 'localStorage.setItem("pg_diag_theme"' in html

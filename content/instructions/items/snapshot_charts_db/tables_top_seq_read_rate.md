@@ -1,0 +1,22 @@
+# Top Tables By Sequential Tuple Read Rate
+
+This instruction belongs to report item `snapshot_charts_db.tables_top_seq_read_rate`. The item is backed by `objects.tables_top_seq_read_rate` (snapshot metric).
+
+## What this item shows
+- Tables with highest sequential tuple read rate.
+- Current sequential scan pressure by table.
+
+## What to watch
+- Large table with high seq read rate.
+- Seq read spike after release.
+- Top table not expected to be scanned.
+
+## Common fault causes
+- Missing index.
+- Planner chose seq scan due to estimates.
+- Report or batch scan.
+
+## Checklist
+- Check table size and row counts.
+- Review plans for queries touching the table.
+- Run ANALYZE if estimates are stale.

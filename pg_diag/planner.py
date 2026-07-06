@@ -76,6 +76,7 @@ def build_plan(
 ) -> ExecutionPlan:
     unsupported_reason = supported_version_reason(server_version_num)
     metric_dependencies = _metric_dependencies(content) if mode == runtime_config.SNAPSHOTS_MODE else set()
+    query_usage_index = _query_usage_index(content)
     sections = _plan_sections(content)
     items: list[PlannedItem] = []
     report_query_ids: set[str] = set()
@@ -94,17 +95,30 @@ def build_plan(
                     status="unsupported",
                     state=_item_state(item),
                     reason=unsupported_reason,
+                    source_metadata=_with_instruction_metadata(content, item_id),
                 )
             )
             continue
 
         if source_kind == "query":
             report_query_ids.add(item["query"])
-            items.append(_plan_query_item(content, section_id, item_key, item_id, item, server_version_num, mode, metric_dependencies))
+            items.append(
+                _plan_query_item(
+                    content,
+                    section_id,
+                    item_key,
+                    item_id,
+                    item,
+                    server_version_num,
+                    mode,
+                    metric_dependencies,
+                    query_usage_index,
+                )
+            )
         elif source_kind == "script":
             items.append(_plan_script_item(content, section_id, item_key, item_id, item, collection_mode))
         elif source_kind == "metric":
-            items.append(_plan_metric_item(content, section_id, item_key, item_id, item, mode))
+            items.append(_plan_metric_item(content, section_id, item_key, item_id, item, mode, query_usage_index))
         else:
             items.append(
                 PlannedItem(
@@ -116,6 +130,7 @@ def build_plan(
                     status="error",
                     state=_item_state(item),
                     reason="Cannot determine item source kind",
+                    source_metadata=_with_instruction_metadata(content, item_id),
                 )
             )
 
@@ -128,6 +143,7 @@ def build_plan(
                     server_version_num,
                     mode,
                     metric_dependencies,
+                    query_usage_index,
                 )
             )
 
@@ -181,6 +197,51 @@ def _item_state(item: dict[str, Any]) -> str | None:
     return state if state in {"expanded", "collapsed", "hidden"} else None
 
 
+def _with_instruction_metadata(
+    content: ContentPack,
+    item_id: str,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    result = dict(metadata or {})
+    instruction = content.instructions.get(item_id)
+    if instruction:
+        result["instructions"] = instruction
+    return result
+
+
+def _query_usage_index(content: ContentPack) -> dict[str, list[str]]:
+    usage: dict[str, list[str]] = {}
+    for _section_id, _item_key, item_id, item in iter_report_items(content):
+        query_id = _sql_source_query_id(content, item)
+        if not query_id:
+            continue
+        usage.setdefault(query_id, []).append(item_id)
+    return usage
+
+
+def _sql_source_query_id(content: ContentPack, item: dict[str, Any]) -> str | None:
+    if "query" in item:
+        return item["query"]
+    if "metric" in item:
+        metric = content.metrics.get(item["metric"]) or {}
+        return metric.get("source_query")
+    return None
+
+
+def _query_usage_metadata(query_id: str, item_id: str, query_usage_index: dict[str, list[str]]) -> dict[str, Any]:
+    item_ids = list(query_usage_index.get(query_id) or [item_id])
+    other_item_ids = [used_item_id for used_item_id in item_ids if used_item_id != item_id]
+    return {
+        "query_usage": {
+            "query_id": query_id,
+            "isolation": "isolated" if len(item_ids) <= 1 else "shared",
+            "item_count": len(item_ids),
+            "item_ids": item_ids,
+            "other_item_ids": other_item_ids,
+        }
+    }
+
+
 def _plan_query_item(
     content: ContentPack,
     section_id: str,
@@ -190,13 +251,14 @@ def _plan_query_item(
     server_version_num: int,
     mode: str,
     metric_dependencies: set[str],
+    query_usage_index: dict[str, list[str]],
     internal: bool = False,
 ) -> PlannedItem:
     query_id = item["query"]
     manifest = content.queries[query_id]
     selection = select_query_variant(query_id, manifest, server_version_num)
     if selection.status != "ok" or selection.variant is None:
-        source_metadata = {}
+        source_metadata = _query_usage_metadata(query_id, item_id, query_usage_index)
         if internal:
             source_metadata["internal"] = True
         return PlannedItem(
@@ -209,7 +271,7 @@ def _plan_query_item(
             status="unsupported",
             state=_item_state(item),
             reason=selection.reason,
-            source_metadata=source_metadata,
+            source_metadata=_with_instruction_metadata(content, item_id, source_metadata),
         )
 
     collection_scope = "once"
@@ -229,9 +291,11 @@ def _plan_query_item(
         "cost": manifest.get("cost"),
         "display": manifest.get("display") or {},
         "semantic_columns": variant.get("semantic_columns") or {},
+        **_query_usage_metadata(query_id, item_id, query_usage_index),
     }
     if internal:
         source_metadata["internal"] = True
+    source_metadata = _with_instruction_metadata(content, item_id, source_metadata)
     return PlannedItem(
         item_id=item_id,
         section_id=section_id,
@@ -254,6 +318,7 @@ def _plan_hidden_metric_source_query(
     server_version_num: int,
     mode: str,
     metric_dependencies: set[str],
+    query_usage_index: dict[str, list[str]],
 ) -> PlannedItem:
     item_key = query_id.replace(".", "_")
     return _plan_query_item(
@@ -265,6 +330,7 @@ def _plan_hidden_metric_source_query(
         server_version_num,
         mode,
         metric_dependencies,
+        query_usage_index,
         internal=True,
     )
 
@@ -295,13 +361,18 @@ def _plan_script_item(
             reason=message,
             script_file=script.get("script_file"),
             collection_scope="once",
-            source_metadata={
+            source_metadata=_with_instruction_metadata(content, item_id, {
                 "script_id": script_id,
                 "script_file": script.get("script_file"),
                 "output": script.get("output"),
-            },
+            }),
         )
 
+    source_metadata = _with_instruction_metadata(content, item_id, {
+        "script_id": script_id,
+        "script_file": script.get("script_file"),
+        "output": script.get("output"),
+    })
     return PlannedItem(
         item_id=item_id,
         section_id=section_id,
@@ -313,11 +384,7 @@ def _plan_script_item(
         state=_item_state(item),
         script_file=script.get("script_file"),
         collection_scope="once",
-        source_metadata={
-            "script_id": script_id,
-            "script_file": script.get("script_file"),
-            "output": script.get("output"),
-        },
+        source_metadata=source_metadata,
     )
 
 
@@ -328,9 +395,12 @@ def _plan_metric_item(
     item_id: str,
     item: dict[str, Any],
     mode: str,
+    query_usage_index: dict[str, list[str]],
 ) -> PlannedItem:
     metric_id = item["metric"]
     metric = content.metrics[metric_id]
+    source_query = metric.get("source_query")
+    query_usage_metadata = _query_usage_metadata(source_query, item_id, query_usage_index) if source_query else {}
     if mode == runtime_config.SNAPSHOT_MODE:
         return PlannedItem(
             item_id=item_id,
@@ -342,15 +412,24 @@ def _plan_metric_item(
             status="skipped",
             state=_item_state(item),
             reason="requires snapshots mode",
-            source_metadata={
+            source_metadata=_with_instruction_metadata(content, item_id, {
                 "metric_id": metric_id,
-                "source_query": metric.get("source_query"),
+                "source_query": source_query,
                 "source_sampler": metric.get("source_sampler"),
                 "chart": metric.get("chart") or {},
                 "display": metric.get("display") or {},
-            },
+                **query_usage_metadata,
+            }),
         )
 
+    source_metadata = _with_instruction_metadata(content, item_id, {
+        "metric_id": metric_id,
+        "source_query": source_query,
+        "source_sampler": metric.get("source_sampler"),
+        "chart": metric.get("chart") or {},
+        "display": metric.get("display") or {},
+        **query_usage_metadata,
+    })
     return PlannedItem(
         item_id=item_id,
         section_id=section_id,
@@ -361,13 +440,7 @@ def _plan_metric_item(
         status="planned",
         state=_item_state(item),
         collection_scope="post_collection",
-        source_metadata={
-            "metric_id": metric_id,
-            "source_query": metric.get("source_query"),
-            "source_sampler": metric.get("source_sampler"),
-            "chart": metric.get("chart") or {},
-            "display": metric.get("display") or {},
-        },
+        source_metadata=source_metadata,
     )
 
 

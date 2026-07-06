@@ -139,6 +139,17 @@ def write_json(path: str | Path, artifact: dict[str, Any]) -> None:
         handle.write("\n")
 
 
+def report_output_paths(
+    out_dir: str | Path,
+    json_out: str | Path | None = None,
+    html_out: str | Path | None = None,
+) -> tuple[Path, Path]:
+    output_dir = Path(out_dir)
+    json_path = Path(json_out) if json_out else output_dir / "report.json"
+    html_path = Path(html_out) if html_out else output_dir / "report.html"
+    return json_path, html_path
+
+
 def _publicize_metadata(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: _publicize_metadata(item) for key, item in value.items()}

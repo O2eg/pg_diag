@@ -985,6 +985,97 @@ _HTML_TEMPLATE = """<!doctype html>
       font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
 
+    .instruction-shell {
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      background: var(--panel);
+      padding: 18px;
+    }
+
+    .markdown-body {
+      max-width: 860px;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .markdown-body > *:first-child {
+      margin-top: 0;
+    }
+
+    .markdown-body > *:last-child {
+      margin-bottom: 0;
+    }
+
+    .markdown-body h1,
+    .markdown-body h2,
+    .markdown-body h3 {
+      margin: 22px 0 8px;
+      color: var(--text);
+      line-height: 1.25;
+    }
+
+    .markdown-body h1 {
+      font-size: 22px;
+    }
+
+    .markdown-body h2 {
+      font-size: 18px;
+    }
+
+    .markdown-body h3 {
+      font-size: 15px;
+    }
+
+    .markdown-body p {
+      margin: 0 0 10px;
+      color: var(--text);
+    }
+
+    .markdown-body ul,
+    .markdown-body ol {
+      margin: 0 0 12px;
+      padding-left: 24px;
+    }
+
+    .markdown-body li {
+      margin: 4px 0;
+    }
+
+    .markdown-body blockquote {
+      margin: 0 0 12px;
+      padding: 8px 12px;
+      border-left: 3px solid var(--accent);
+      background: var(--panel-soft);
+      color: var(--muted);
+    }
+
+    .markdown-body code {
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: var(--code-bg);
+      padding: 1px 4px;
+      font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .markdown-body pre {
+      margin: 0 0 12px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--code-bg);
+      padding: 10px;
+    }
+
+    .markdown-body pre code {
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      padding: 0;
+      white-space: pre;
+    }
+
     .page-scroll-controls {
       position: fixed;
       right: max(18px, env(safe-area-inset-right));
@@ -1444,7 +1535,7 @@ _HTML_TEMPLATE = """<!doctype html>
   <aside id="reportNav" class="report-nav collapsed" aria-label="Report contents">
     <div class="report-nav-title">
       <span class="report-nav-title-text">Contents</span>
-      <button id="reportNavToggle" type="button" class="report-nav-toggle" aria-label="Развернуть оглавление" title="Развернуть оглавление"></button>
+      <button id="reportNavToggle" type="button" class="report-nav-toggle" aria-label="Expand contents" title="Expand contents"></button>
     </div>
     <div id="reportNavTree" class="report-nav-tree"></div>
   </aside>
@@ -1511,8 +1602,8 @@ _HTML_TEMPLATE = """<!doctype html>
       <div class="source-dialog-header">
         <h2 id="sourceModalTitle" class="source-dialog-title">Source</h2>
         <div class="source-dialog-actions">
-          <button id="copySource" type="button" class="btn primary">Копировать</button>
-          <button id="closeSource" type="button" class="btn">Закрыть</button>
+          <button id="copySource" type="button" class="btn primary">Copy</button>
+          <button id="closeSource" type="button" class="btn">Close</button>
         </div>
       </div>
       <div class="source-code-shell">
@@ -1525,10 +1616,21 @@ _HTML_TEMPLATE = """<!doctype html>
       <div class="source-dialog-header">
         <h2 id="metaModalTitle" class="source-dialog-title">Meta</h2>
         <div class="source-dialog-actions">
-          <button id="closeMeta" type="button" class="btn">Закрыть</button>
+          <button id="closeMeta" type="button" class="btn">Close</button>
         </div>
       </div>
       <div id="metaBody" class="meta-shell"></div>
+    </div>
+  </div>
+  <div id="instructionModal" class="source-modal" role="dialog" aria-modal="true" aria-labelledby="instructionModalTitle" hidden>
+    <div class="source-dialog">
+      <div class="source-dialog-header">
+        <h2 id="instructionModalTitle" class="source-dialog-title">Instruction</h2>
+        <div class="source-dialog-actions">
+          <button id="closeInstruction" type="button" class="btn">Close</button>
+        </div>
+      </div>
+      <div id="instructionBody" class="instruction-shell"></div>
     </div>
   </div>
   <div class="page-scroll-controls" aria-label="Page scroll controls">
@@ -1570,6 +1672,7 @@ _HTML_TEMPLATE = """<!doctype html>
     bindReportControls();
     bindSourceModalControls();
     bindMetaModalControls();
+    bindInstructionModalControls();
     bindPageScrollControls();
     applyReportFilters();
 
@@ -1788,7 +1891,7 @@ _HTML_TEMPLATE = """<!doctype html>
       }
       nav.classList.toggle("collapsed", collapsed);
       document.body.classList.toggle("report-nav-collapsed", collapsed);
-      const label = collapsed ? "Развернуть оглавление" : "Свернуть оглавление";
+      const label = collapsed ? "Expand contents" : "Collapse contents";
       toggle.setAttribute("aria-label", label);
       toggle.title = label;
     }
@@ -2237,6 +2340,18 @@ _HTML_TEMPLATE = """<!doctype html>
       return button;
     }
 
+    function renderInstructionButton(item) {
+      if (!instructionText(item)) {
+        return null;
+      }
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn source-button";
+      button.textContent = "Show Instruction";
+      button.addEventListener("click", () => openInstructionModal(item));
+      return button;
+    }
+
     function renderItemMetadata(item) {
       const meta = document.createElement("div");
       meta.className = "item-actions";
@@ -2245,6 +2360,10 @@ _HTML_TEMPLATE = """<!doctype html>
         meta.appendChild(sourceButton);
       }
       meta.appendChild(renderMetaButton(item));
+      const instructionButton = renderInstructionButton(item);
+      if (instructionButton) {
+        meta.appendChild(instructionButton);
+      }
       return meta;
     }
 
@@ -2278,6 +2397,14 @@ _HTML_TEMPLATE = """<!doctype html>
       return language || "plaintext";
     }
 
+    function instructionText(item) {
+      return instructionTextFromMeta(item.source_metadata || {});
+    }
+
+    function instructionTextFromMeta(source) {
+      return String((((source || {}).instructions || {}).text) || "");
+    }
+
     function openSourceModal(item) {
       currentSourceText = sourceText(item);
       const modal = document.getElementById("sourceModal");
@@ -2305,6 +2432,24 @@ _HTML_TEMPLATE = """<!doctype html>
       modal.hidden = false;
       modal.setAttribute("aria-hidden", "false");
       document.getElementById("closeMeta").focus();
+    }
+
+    function openInstructionModal(item) {
+      const modal = document.getElementById("instructionModal");
+      const title = document.getElementById("instructionModalTitle");
+      const body = document.getElementById("instructionBody");
+      title.textContent = "Show Instruction: " + (item.title || item.item_id || "");
+      body.replaceChildren(PgDiagMarkdown.render(instructionText(item)));
+      modal.hidden = false;
+      modal.setAttribute("aria-hidden", "false");
+      document.getElementById("closeInstruction").focus();
+    }
+
+    function closeInstructionModal() {
+      const modal = document.getElementById("instructionModal");
+      modal.hidden = true;
+      modal.setAttribute("aria-hidden", "true");
+      document.getElementById("instructionBody").replaceChildren();
     }
 
     function closeMetaModal() {
@@ -2366,6 +2511,10 @@ _HTML_TEMPLATE = """<!doctype html>
       if (sourceText) {
         appendMetaValue(rows, "source.source_text_chars", sourceText.length);
       }
+      const instructionsText = instructionTextFromMeta(item.source_metadata || {});
+      if (instructionsText) {
+        appendMetaValue(rows, "source.instructions.text_chars", instructionsText.length);
+      }
       if ((item.diagnostics || []).length) {
         appendMetaValue(rows, "diagnostics", item.diagnostics, true);
       }
@@ -2382,11 +2531,11 @@ _HTML_TEMPLATE = """<!doctype html>
         return;
       }
       for (const key of Object.keys(value).sort()) {
-        if (key === "source_text") {
+        const childKey = prefix + "." + key;
+        if (key === "source_text" || childKey === "source.instructions.text") {
           continue;
         }
         const child = value[key];
-        const childKey = prefix + "." + key;
         if (child && typeof child === "object" && !Array.isArray(child)) {
           appendMetaRows(rows, childKey, child);
         } else {
@@ -2414,13 +2563,150 @@ _HTML_TEMPLATE = """<!doctype html>
       return String((source || {}).source_text || "");
     }
 
+    const PgDiagMarkdown = (() => {
+      function render(markdown) {
+        const root = document.createElement("div");
+        root.className = "markdown-body";
+        const lines = String(markdown || "").replace(/\\r\\n?/g, "\\n").split("\\n");
+        let index = 0;
+        while (index < lines.length) {
+          const line = lines[index];
+          if (!line.trim()) {
+            index += 1;
+            continue;
+          }
+          if (line.startsWith("```")) {
+            const language = line.slice(3).trim();
+            const codeLines = [];
+            index += 1;
+            while (index < lines.length && !lines[index].startsWith("```")) {
+              codeLines.push(lines[index]);
+              index += 1;
+            }
+            if (index < lines.length) {
+              index += 1;
+            }
+            root.appendChild(renderCodeBlock(codeLines.join("\\n"), language));
+            continue;
+          }
+          const heading = /^(#{1,3})\\s+(.+)$/.exec(line);
+          if (heading) {
+            root.appendChild(renderHeading(heading[1].length, heading[2]));
+            index += 1;
+            continue;
+          }
+          if (/^\\s*[-*]\\s+/.test(line)) {
+            const list = document.createElement("ul");
+            while (index < lines.length && /^\\s*[-*]\\s+/.test(lines[index])) {
+              list.appendChild(renderListItem(lines[index].replace(/^\\s*[-*]\\s+/, "")));
+              index += 1;
+            }
+            root.appendChild(list);
+            continue;
+          }
+          if (/^\\s*\\d+\\.\\s+/.test(line)) {
+            const list = document.createElement("ol");
+            while (index < lines.length && /^\\s*\\d+\\.\\s+/.test(lines[index])) {
+              list.appendChild(renderListItem(lines[index].replace(/^\\s*\\d+\\.\\s+/, "")));
+              index += 1;
+            }
+            root.appendChild(list);
+            continue;
+          }
+          if (/^\\s*>\\s?/.test(line)) {
+            const block = document.createElement("blockquote");
+            const parts = [];
+            while (index < lines.length && /^\\s*>\\s?/.test(lines[index])) {
+              parts.push(lines[index].replace(/^\\s*>\\s?/, ""));
+              index += 1;
+            }
+            block.appendChild(renderInline(parts.join(" ")));
+            root.appendChild(block);
+            continue;
+          }
+          const parts = [line.trim()];
+          index += 1;
+          while (
+            index < lines.length &&
+            lines[index].trim() &&
+            !lines[index].startsWith("```") &&
+            !/^(#{1,3})\\s+/.test(lines[index]) &&
+            !/^\\s*[-*]\\s+/.test(lines[index]) &&
+            !/^\\s*\\d+\\.\\s+/.test(lines[index]) &&
+            !/^\\s*>\\s?/.test(lines[index])
+          ) {
+            parts.push(lines[index].trim());
+            index += 1;
+          }
+          const paragraph = document.createElement("p");
+          paragraph.appendChild(renderInline(parts.join(" ")));
+          root.appendChild(paragraph);
+        }
+        return root;
+      }
+
+      function renderHeading(level, text) {
+        const heading = document.createElement("h" + level);
+        heading.appendChild(renderInline(text));
+        return heading;
+      }
+
+      function renderListItem(text) {
+        const item = document.createElement("li");
+        item.appendChild(renderInline(text));
+        return item;
+      }
+
+      function renderCodeBlock(text, language) {
+        const pre = document.createElement("pre");
+        const code = document.createElement("code");
+        if (language) {
+          code.className = "language-" + language;
+        }
+        code.textContent = text;
+        pre.appendChild(code);
+        return pre;
+      }
+
+      function renderInline(text) {
+        const fragment = document.createDocumentFragment();
+        const pattern = /(`[^`]+`|\\*\\*[^*]+\\*\\*)/g;
+        let lastIndex = 0;
+        let match;
+        while ((match = pattern.exec(text)) !== null) {
+          appendText(fragment, text.slice(lastIndex, match.index));
+          const token = match[0];
+          if (token.startsWith("`")) {
+            const code = document.createElement("code");
+            code.textContent = token.slice(1, -1);
+            fragment.appendChild(code);
+          } else if (token.startsWith("**")) {
+            const strong = document.createElement("strong");
+            strong.textContent = token.slice(2, -2);
+            fragment.appendChild(strong);
+          }
+          lastIndex = match.index + token.length;
+        }
+        appendText(fragment, text.slice(lastIndex));
+        return fragment;
+      }
+
+      function appendText(parent, text) {
+        if (text) {
+          parent.appendChild(document.createTextNode(text));
+        }
+      }
+
+      return {render};
+    })();
+
     function closeSourceModal() {
       const modal = document.getElementById("sourceModal");
       modal.hidden = true;
       modal.setAttribute("aria-hidden", "true");
       currentSourceText = "";
       const copyButton = document.getElementById("copySource");
-      copyButton.textContent = "Копировать";
+      copyButton.textContent = "Copy";
     }
 
     async function copyCurrentSource() {
@@ -2433,10 +2719,10 @@ _HTML_TEMPLATE = """<!doctype html>
         } else {
           copyTextFallback(currentSourceText);
         }
-        flashCopyButton("Скопировано");
+        flashCopyButton("Copied");
       } catch (error) {
         copyTextFallback(currentSourceText);
-        flashCopyButton("Скопировано");
+        flashCopyButton("Copied");
       }
     }
 
@@ -2456,7 +2742,7 @@ _HTML_TEMPLATE = """<!doctype html>
       const button = document.getElementById("copySource");
       button.textContent = text;
       window.setTimeout(() => {
-        button.textContent = "Копировать";
+        button.textContent = "Copy";
       }, 1200);
     }
 
@@ -2603,6 +2889,7 @@ _HTML_TEMPLATE = """<!doctype html>
       const apexType = apexChartType(chartKind);
       const stacked = chartKind === "stacked_bar" || chartKind === "stacked_column" || chartKind === "stacked_area";
       const xType = (result.chart || {}).x_type || "datetime";
+      const datetimeBounds = xType === "datetime" ? chartDatetimeBounds(series) : {};
       const isBar = apexType === "bar";
       const isArea = apexType === "area";
       return {
@@ -2664,6 +2951,8 @@ _HTML_TEMPLATE = """<!doctype html>
         },
         xaxis: {
           type: xType === "datetime" ? "datetime" : "category",
+          min: datetimeBounds.min,
+          max: datetimeBounds.max,
           title: {text: ""},
           labels: {datetimeUTC: false, rotate: xType === "datetime" ? 0 : -35, trim: true, style: {colors: theme.muted}},
           axisBorder: {color: theme.line},
@@ -2679,6 +2968,29 @@ _HTML_TEMPLATE = """<!doctype html>
           },
         },
       };
+    }
+
+    function chartDatetimeBounds(series) {
+      const timestamps = [];
+      for (const entry of series || []) {
+        for (const point of entry.data || []) {
+          const parsed = Date.parse(point.x);
+          if (Number.isFinite(parsed)) {
+            timestamps.push(parsed);
+          }
+        }
+      }
+      if (!timestamps.length) {
+        return {};
+      }
+      let min = Math.min(...timestamps);
+      let max = Math.max(...timestamps);
+      if (min === max) {
+        const padding = 60000;
+        return {min: min - padding, max: max + padding};
+      }
+      const padding = Math.max(Math.round((max - min) * 0.03), 1000);
+      return {min: min - padding, max: max + padding};
     }
 
     function chartTitle(title, unit) {
@@ -3136,12 +3448,41 @@ _HTML_TEMPLATE = """<!doctype html>
       if (typeof value === "object") {
         return {text: stringifyValue(value), kind: "complex"};
       }
+      if (isTemporalColumn(column)) {
+        const formatted = formatTemporalValue(value, column);
+        if (formatted !== null) {
+          return {text: formatted, kind: "text", title: String(value)};
+        }
+      }
       const numberValue = numericValue(value, column);
       if (numberValue === null) {
         return {text: String(value), kind: "text"};
       }
       const text = formatNumberForColumn(numberValue, column, row, columns);
       return {text, kind: "numeric", title: String(value)};
+    }
+
+    function isTemporalColumn(column) {
+      const pgType = String((column || {}).pgType || "").toLowerCase();
+      return pgType === "date" || pgType === "time" || pgType === "timetz" || pgType === "timestamp" || pgType === "timestamptz";
+    }
+
+    function formatTemporalValue(value, column) {
+      const text = String(value || "").trim();
+      if (!text) {
+        return "";
+      }
+      const pgType = String((column || {}).pgType || "").toLowerCase();
+      if (pgType === "date") {
+        const match = /^(\\d{4}-\\d{2}-\\d{2})/.exec(text);
+        return match ? match[1] : text;
+      }
+      if (pgType === "time" || pgType === "timetz") {
+        const match = /^(\\d{2}:\\d{2}:\\d{2})(?:\\.\\d+)?(?:Z|[+-]\\d{2}(?::?\\d{2})?)?$/.exec(text);
+        return match ? match[1] : text;
+      }
+      const match = /^(\\d{4}-\\d{2}-\\d{2})[T ](\\d{2}:\\d{2}:\\d{2})(?:\\.\\d+)?(?:Z|[+-]\\d{2}(?::?\\d{2})?)?$/.exec(text);
+      return match ? match[1] + " " + match[2] : text;
     }
 
     function formatNumberForColumn(value, column, row, columns) {
@@ -3218,7 +3559,13 @@ _HTML_TEMPLATE = """<!doctype html>
       if (/_id$|^pid$|_pid$|oid$|timeline|sys_id|datid|subid|relid|_tli$|port/.test(name)) {
         return false;
       }
-      if (name.endsWith("_s") || name.endsWith("_ms") || name.endsWith("_seconds")) {
+      if (
+        name.endsWith("_s") ||
+        name.endsWith("_ms") ||
+        name.endsWith("_seconds") ||
+        name.startsWith("seconds_") ||
+        name.includes("_seconds_")
+      ) {
         return false;
       }
       return true;
@@ -3376,6 +3723,21 @@ _HTML_TEMPLATE = """<!doctype html>
       document.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && !modal.hidden) {
           closeMetaModal();
+        }
+      });
+    }
+
+    function bindInstructionModalControls() {
+      const modal = document.getElementById("instructionModal");
+      document.getElementById("closeInstruction").addEventListener("click", closeInstructionModal);
+      modal.addEventListener("click", (event) => {
+        if (event.target === modal) {
+          closeInstructionModal();
+        }
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !modal.hidden) {
+          closeInstructionModal();
         }
       });
     }

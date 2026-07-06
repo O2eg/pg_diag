@@ -6,7 +6,14 @@ from pathlib import Path
 from typing import Any
 
 from . import runtime_config
-from .artifact import create_artifact, item_error_from_exception, item_from_plan, utc_now, write_json
+from .artifact import (
+    create_artifact,
+    item_error_from_exception,
+    item_from_plan,
+    report_output_paths,
+    utc_now,
+    write_json,
+)
 from .content_loader import ContentPack
 from .executors.remote_disabled_shell import skipped_shell_item
 from .executors.shell import execute_shell_item
@@ -22,6 +29,8 @@ async def collect_snapshot(
     dsn: str | None,
     connection_kwargs: dict[str, Any],
     collection_mode: str = runtime_config.DEFAULT_COLLECTION_MODE,
+    json_out: str | Path | None = None,
+    html_out: str | Path | None = None,
 ) -> dict[str, Any]:
     issues = validate_content(content)
     if has_errors(issues):
@@ -84,10 +93,11 @@ async def collect_snapshot(
                 artifact["items"][planned.item_id] = item_error_from_exception(planned, exc)
 
         artifact["runtime"]["finished_at"] = utc_now()
-        output_dir = Path(out_dir)
-        write_json(output_dir / "report.json", artifact)
+        json_path, html_path = report_output_paths(out_dir, json_out, html_out)
+        write_json(json_path, artifact)
         html_text = render_html(artifact)
-        (output_dir / "report.html").write_text(html_text, encoding="utf-8")
+        html_path.parent.mkdir(parents=True, exist_ok=True)
+        html_path.write_text(html_text, encoding="utf-8")
         return artifact
     finally:
         await conn.close()

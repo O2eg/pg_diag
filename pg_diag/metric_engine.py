@@ -259,23 +259,24 @@ def _top_n_interval_series(
 
     for previous, current in zip(sorted_samples, sorted_samples[1:]):
         previous_timestamp = _sample_timestamp(previous)
-        timestamp = _sample_timestamp(current)
-        interval_seconds = _seconds_between(previous_timestamp, timestamp)
-        if interval_seconds <= 0:
-            continue
+        current_timestamp = _sample_timestamp(current)
         previous_rows = _rows_by_key(previous.get("rows") or [], key_refs, semantic_columns)
         current_rows = _rows_by_key(current.get("rows") or [], key_refs, semantic_columns)
-        candidates: list[tuple[float, str]] = []
+        candidates: list[tuple[float, str, str]] = []
         for key in sorted(current_rows):
             last_row = current_rows[key]
             first_row = previous_rows.get(key)
+            interval_seconds = _row_interval_seconds(first_row, last_row, previous_timestamp, current_timestamp)
+            if interval_seconds <= 0:
+                continue
             value = _top_n_metric_value(top_n, first_row, last_row, semantic_columns, interval_seconds)
             if value is None or (drop_zero and value <= 0):
                 continue
-            candidates.append((value, _top_n_label(top_n, key, last_row, semantic_columns)))
+            timestamp = _row_timestamp(last_row, current_timestamp)
+            candidates.append((value, _top_n_label(top_n, key, last_row, semantic_columns), timestamp))
 
         candidates.sort(key=lambda item: (-item[0], item[1]))
-        for value, label in candidates[:limit]:
+        for value, label, timestamp in candidates[:limit]:
             series = series_by_label.setdefault(
                 label,
                 {
@@ -288,9 +289,7 @@ def _top_n_interval_series(
             series["points"].append({"t": timestamp, "value": round(value, 6)})
             series["_total"] += value
 
-    return _strip_private_series_keys(
-        sorted(series_by_label.values(), key=lambda item: (-float(item.get("_total") or 0.0), str(item.get("name") or "")))
-    )
+    return _strip_private_series_keys(_order_top_n_series(series_by_label.values(), chart))
 
 
 def _top_n_first_last_series(
@@ -306,32 +305,43 @@ def _top_n_first_last_series(
     last = sorted_samples[-1]
     first_timestamp = _sample_timestamp(first)
     last_timestamp = _sample_timestamp(last)
-    interval_seconds = _seconds_between(first_timestamp, last_timestamp)
-    if interval_seconds <= 0:
-        return []
 
     key_refs = top_n.get("key_refs") or top_n.get("partition_by") or []
     first_rows = _rows_by_key(first.get("rows") or [], key_refs, semantic_columns)
     last_rows = _rows_by_key(last.get("rows") or [], key_refs, semantic_columns)
     drop_zero = top_n.get("drop_zero", True)
-    candidates: list[tuple[float, str]] = []
+    candidates: list[tuple[float, str, str]] = []
     for key in sorted(last_rows):
         last_row = last_rows[key]
-        value = _top_n_metric_value(top_n, first_rows.get(key), last_row, semantic_columns, interval_seconds)
+        first_row = first_rows.get(key)
+        interval_seconds = _row_interval_seconds(first_row, last_row, first_timestamp, last_timestamp)
+        if interval_seconds <= 0:
+            continue
+        value = _top_n_metric_value(top_n, first_row, last_row, semantic_columns, interval_seconds)
         if value is None or (drop_zero and value <= 0):
             continue
-        candidates.append((value, _top_n_label(top_n, key, last_row, semantic_columns)))
+        timestamp = _row_timestamp(last_row, last_timestamp)
+        candidates.append((value, _top_n_label(top_n, key, last_row, semantic_columns), timestamp))
 
     candidates.sort(key=lambda item: (-item[0], item[1]))
     limit = _positive_int(top_n.get("limit"), 10)
-    return [
+    series = [
         {
             "name": label,
             "unit": top_n.get("unit") or chart.get("unit"),
-            "points": [{"t": last_timestamp, "value": round(value, 6)}],
+            "points": [{"t": point_timestamp, "value": round(value, 6)}],
+            "_total": value,
         }
-        for value, label in candidates[:limit]
+        for value, label, point_timestamp in candidates[:limit]
     ]
+    return _strip_private_series_keys(_order_top_n_series(series, chart))
+
+
+def _order_top_n_series(series: Any, chart: dict[str, Any]) -> list[dict[str, Any]]:
+    series_list = list(series)
+    if chart.get("kind") == "stacked_column":
+        return sorted(series_list, key=lambda item: (float(item.get("_total") or 0.0), str(item.get("name") or "")))
+    return sorted(series_list, key=lambda item: (-float(item.get("_total") or 0.0), str(item.get("name") or "")))
 
 
 def _top_n_metric_value(
@@ -445,9 +455,8 @@ def build_table_result(
 
     first = sorted_samples[0]
     last = sorted_samples[-1]
-    interval_seconds = _seconds_between(_sample_timestamp(first), _sample_timestamp(last))
-    if interval_seconds <= 0:
-        interval_seconds = 1.0
+    first_timestamp = _sample_timestamp(first)
+    last_timestamp = _sample_timestamp(last)
 
     key_refs = table.get("key_refs") or table.get("partition_by") or []
     first_rows = _rows_by_key(first.get("rows") or [], key_refs, semantic_columns)
@@ -457,6 +466,9 @@ def build_table_result(
     for key in sorted(last_rows):
         last_row = last_rows[key]
         first_row = first_rows.get(key)
+        interval_seconds = _row_interval_seconds(first_row, last_row, first_timestamp, last_timestamp)
+        if interval_seconds <= 0:
+            interval_seconds = 1.0
         rendered: list[Any] = []
         nonzero_metric = False
         for column in table.get("columns") or []:
@@ -647,6 +659,17 @@ def _sample_timestamp(sample: dict[str, Any]) -> str:
 def _row_timestamp(row: dict[str, Any], fallback: str) -> str:
     value = row.get(SNAPSHOT_TIME_COLUMN)
     return str(value) if value not in (None, "") else fallback
+
+
+def _row_interval_seconds(
+    first_row: dict[str, Any] | None,
+    last_row: dict[str, Any],
+    first_fallback: str,
+    last_fallback: str,
+) -> float:
+    first_timestamp = _row_timestamp(first_row or {}, first_fallback) if first_row else first_fallback
+    last_timestamp = _row_timestamp(last_row, last_fallback)
+    return _seconds_between(first_timestamp, last_timestamp)
 
 
 def _resolve_ref(row: dict[str, Any], semantic_columns: dict[str, dict[str, str]], ref: str) -> Any:

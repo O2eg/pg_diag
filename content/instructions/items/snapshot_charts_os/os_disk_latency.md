@@ -1,0 +1,23 @@
+# Disk Latency
+
+This instruction belongs to report item `snapshot_charts_os.os_disk_latency`. The item is backed by `os.disk_latency` (snapshot metric).
+
+## What this item shows
+- Read and write latency by device over time.
+- Storage response time during the capture window.
+
+## What to watch
+- Latency spikes on WAL or data device.
+- Sustained high write latency during checkpoints.
+- Read latency aligned with query slowdown.
+
+## Common fault causes
+- Slow storage.
+- Queueing from high IOPS.
+- Checkpoint or WAL sync pressure.
+- Shared storage contention.
+
+## Checklist
+- Map device to WAL/data/archive paths.
+- Compare with checkpointer, WAL, and pg_stat_io.
+- Investigate storage before changing query plans when latency dominates.

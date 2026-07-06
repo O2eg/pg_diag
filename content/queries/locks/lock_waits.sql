@@ -24,6 +24,7 @@ select
   blocked.locktype as blocked_locktype,
   coalesce(blocked.relation::regclass::text, blocked_tbl.table_name, '') as blocked_table,
   blocked_stm.query_id::text as blocked_query_id,
+  left(regexp_replace(coalesce(blocked_stm.query, ''), '\s+', ' ', 'g'), 1000) as blocked_query,
   (extract(epoch from (clock_timestamp() - blocked_stm.state_change)) * 1000)::bigint as blocked_ms,
   blocker.pid::text as blocker_pid,
   blocker_stm.usename::text as blocker_user,
@@ -32,6 +33,7 @@ select
   blocker.locktype as blocker_locktype,
   coalesce(blocker.relation::regclass::text, blocker_tbl.table_name, '') as blocker_table,
   blocker_stm.query_id::text as blocker_query_id,
+  left(regexp_replace(coalesce(blocker_stm.query, ''), '\s+', ' ', 'g'), 1000) as blocker_query,
   (extract(epoch from (clock_timestamp() - blocker_stm.xact_start)) * 1000)::bigint as blocker_tx_ms
 from pg_catalog.pg_locks as blocked
 join sa_snapshot as blocked_stm on blocked_stm.pid = blocked.pid

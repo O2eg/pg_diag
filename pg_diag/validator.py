@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from . import runtime_config
-from .content_loader import ContentPack, iter_report_items
+from .content_loader import ContentPack, instruction_ref_for_report_item, iter_report_items
 from .sql_lint import lint_sql
 from .versioning import variant_intersects_supported_window
 
@@ -31,6 +31,7 @@ def validate_content(content: ContentPack) -> list[ValidationIssue]:
     _validate_query_manifests(content, issues)
     _validate_scripts(content, issues)
     _validate_metrics(content, issues)
+    _validate_instructions(content, issues)
     _validate_sql_files(content, issues)
     return issues
 
@@ -256,6 +257,43 @@ def _validate_metrics(content: ContentPack, issues: list[ValidationIssue]) -> No
             name_ref = series.get("name_from_ref")
             if name_ref and not _semantic_ref_exists(supported_variants, name_ref):
                 _issue(issues, "metric_ref", f"Unresolvable name_from_ref {name_ref!r}", location)
+
+
+def _validate_instructions(content: ContentPack, issues: list[ValidationIssue]) -> None:
+    catalogs = (content.report.get("report") or {}).get("catalogs") or {}
+    instructions_root = catalogs.get("instructions", "instructions")
+    instructions_dir = content.path / instructions_root
+    for section_id, item_key, item_id, item in iter_report_items(content):
+        location = f"report.yaml:sections.{section_id}.items.{item_key}"
+        try:
+            instruction_ref = instruction_ref_for_report_item(section_id, item_key, item)
+        except Exception as exc:
+            _issue(issues, "instruction_file", str(exc), location)
+            continue
+        if instruction_ref is None:
+            _issue(issues, "instruction_file", "Report item must define an instruction markdown file", location)
+            continue
+        path_ref = Path(instruction_ref)
+        if path_ref.is_absolute() or ".." in path_ref.parts:
+            _issue(issues, "instruction_file", "Instruction path must stay under the instructions directory", location)
+            continue
+        if path_ref.suffix.lower() != ".md":
+            _issue(issues, "instruction_file", "Instruction file must use .md extension", location)
+            continue
+        instruction_path = instructions_dir / path_ref
+        if not instruction_path.exists():
+            _issue(
+                issues,
+                "instruction_file",
+                f"Instruction file does not exist: {instructions_root}/{instruction_ref}",
+                location,
+            )
+            continue
+        if not instruction_path.read_text(encoding="utf-8").strip():
+            _issue(issues, "instruction_file", "Instruction file must not be empty", location)
+            continue
+        if item_id not in content.instructions:
+            _issue(issues, "instruction_file", "Instruction file was not loaded", location)
 
 
 def _is_hex_color(value: str) -> bool:

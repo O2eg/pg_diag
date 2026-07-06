@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -34,6 +35,20 @@ def test_report_items_have_exactly_one_source(content_path: Path) -> None:
         assert len({"query", "script", "metric"}.intersection(item)) == 1
 
 
+def test_report_items_have_markdown_instructions(content_path: Path) -> None:
+    content = load_content(content_path)
+    item_ids = []
+    for _section_id, _item_key, item_id, _item in iter_report_items(content):
+        item_ids.append(item_id)
+        instruction = content.instructions.get(item_id)
+        assert instruction, item_id
+        assert instruction["format"] == "markdown"
+        assert instruction["path"].endswith(".md")
+        assert "## What this item shows" in instruction["text"]
+        assert "## Checklist" in instruction["text"]
+    assert set(content.instructions) == set(item_ids)
+
+
 def test_query_manifests_define_default_sort(content_path: Path) -> None:
     content = load_content(content_path)
     for query_id, manifest in content.queries.items():
@@ -42,12 +57,12 @@ def test_query_manifests_define_default_sort(content_path: Path) -> None:
         assert default_sort.get("direction") in {"asc", "desc"}, query_id
 
 
-def test_sql_chart_sources_expose_snapshot_time(content_path: Path) -> None:
+def test_sql_metric_sources_expose_snapshot_time(content_path: Path) -> None:
     content = load_content(content_path)
     query_ids = {
         metric["source_query"]
         for metric in content.metrics.values()
-        if metric.get("source_query") and not metric.get("result") and not metric.get("table")
+        if metric.get("source_query")
     }
     for query_id in sorted(query_ids):
         query = content.queries[query_id]
@@ -55,6 +70,24 @@ def test_sql_chart_sources_expose_snapshot_time(content_path: Path) -> None:
             sql_file = variant["sql_file"]
             sql = (content.path / "queries" / sql_file).read_text(encoding="utf-8")
             assert "snapshot_time" in sql.lower(), f"{query_id} variant {variant['id']} lacks snapshot_time"
+
+
+def test_sql_query_id_columns_expose_query_text(content_path: Path) -> None:
+    content = load_content(content_path)
+    query_id_column_re = re.compile(r"\bas\s+([a-z_]*query_id)\b", re.IGNORECASE)
+
+    for query_id, query in content.queries.items():
+        for variant in query.get("variants") or []:
+            sql_file = variant["sql_file"]
+            sql = (content.path / "queries" / sql_file).read_text(encoding="utf-8")
+            for match in query_id_column_re.finditer(sql):
+                query_id_column = match.group(1).lower()
+                query_column = query_id_column.removesuffix("_id")
+                query_column_re = re.compile(rf"\bas\s+{re.escape(query_column)}\b", re.IGNORECASE)
+                assert query_column_re.search(sql), (
+                    f"{query_id} variant {variant['id']} exposes {query_id_column} "
+                    f"without {query_column}"
+                )
 
 
 def test_no_table_columns_in_report_layout(content_path: Path) -> None:
@@ -126,6 +159,15 @@ def test_plan_exposes_query_default_sort(content_path: Path) -> None:
         "column": "autovacuum_overdue_factor",
         "direction": "desc",
     }
+    assert by_id["overview.server_version"].source_metadata["instructions"]["format"] == "markdown"
+    assert "## Checklist" in by_id["overview.server_version"].source_metadata["instructions"]["text"]
+    assert by_id["overview.server_version"].source_metadata["query_usage"] == {
+        "query_id": "cluster.server_version",
+        "isolation": "isolated",
+        "item_count": 1,
+        "item_ids": ["overview.server_version"],
+        "other_item_ids": [],
+    }
 
 
 def test_snapshots_promotes_metric_sources(content_path: Path) -> None:
@@ -142,9 +184,21 @@ def test_snapshots_promotes_metric_sources(content_path: Path) -> None:
     assert by_source["objects.table_io"].collection_scope == "every_snapshot"
     assert by_source["objects.index_workload"].collection_scope == "every_snapshot"
     assert by_source["metrics.database_transaction_rate"].source_metadata["internal"] is True
+    database_usage = by_id["overview.database_stats"].source_metadata["query_usage"]
+    assert database_usage["query_id"] == "database.database_stats"
+    assert database_usage["isolation"] == "isolated"
+    assert database_usage["item_count"] == 1
+    assert database_usage["item_ids"] == ["overview.database_stats"]
+    assert database_usage["other_item_ids"] == []
     assert by_id["snapshot_charts_db.database_transaction_rate"].source_metadata["source_query"] == (
         "metrics.database_transaction_rate"
     )
+    metric_usage = by_id["snapshot_charts_db.database_tuple_dml_rate"].source_metadata["query_usage"]
+    assert metric_usage["query_id"] == "metrics.database_tuple_dml_rate"
+    assert metric_usage["isolation"] == "isolated"
+    assert metric_usage["item_ids"] == ["snapshot_charts_db.database_tuple_dml_rate"]
+    assert metric_usage["other_item_ids"] == []
+    assert "query_usage" not in by_id["snapshot_charts_os.os_cpu_utilization"].source_metadata
     assert by_id["snapshot_charts_db.tables_top_dml_rate"].source_metadata["chart"]["kind"] == "stacked_column"
     for item_id in (
         "snapshot_charts_db.indexes_top_reads_per_scan",
@@ -153,6 +207,29 @@ def test_snapshots_promotes_metric_sources(content_path: Path) -> None:
     ):
         assert by_id[item_id].source_metadata["chart"]["kind"] == "stacked_column"
         assert content.metrics[by_id[item_id].source_id]["top_n"]["mode"] == "interval"
+
+
+def test_sql_backed_report_items_have_isolated_query_usage(content_path: Path) -> None:
+    content = load_content(content_path)
+    plan = build_plan(content, 180000, mode=SNAPSHOTS_MODE)
+
+    source_queries = [
+        metric["source_query"]
+        for metric in content.metrics.values()
+        if metric.get("source_query")
+    ]
+    assert len(source_queries) == len(set(source_queries))
+
+    for item in plan.items:
+        if item.source_metadata.get("internal"):
+            continue
+        usage = item.source_metadata.get("query_usage")
+        if not usage:
+            continue
+        assert usage["isolation"] == "isolated", item.item_id
+        assert usage["item_count"] == 1, item.item_id
+        assert usage["item_ids"] == [item.item_id], item.item_id
+        assert usage["other_item_ids"] == [], item.item_id
 
 
 def test_snapshot_chart_sections_are_split(content_path: Path) -> None:
@@ -175,10 +252,15 @@ def test_workload_sections_and_delta_dependencies_are_planned(content_path: Path
     by_source = {item.source_id: item for item in plan.items if item.source_kind == "query"}
     by_id = {item.item_id: item for item in plan.items}
 
-    assert {"sql_workload", "snapshot_delta_workload", "object_workload", "wait_profile", "backend_os"}.issubset(section_ids)
+    assert {"sql_workload", "snapshot_delta_workload", "object_workload", "backend_os"}.issubset(section_ids)
+    assert "wait_profile" not in section_ids
     assert by_source["statements.top_by_total_time"].collection_scope == "every_snapshot"
     assert by_source["objects.table_workload"].collection_scope == "every_snapshot"
     assert by_source["backend.activity"].collection_scope == "every_snapshot"
+    assert by_id["activity_locks.wait_event_sample_profile"].source_kind == "metric"
+    assert by_id["activity_locks.pg_wait_sampling_capabilities"].source_kind == "query"
+    assert by_id["backend_os.postgres_process_tree"].source_kind == "script"
+    assert by_id["backend_os.postgres_process_tree"].script_file == "os/postgres_process_tree.sh"
     assert by_id["snapshot_delta_workload.sql_time_delta"].source_metadata["display"]["default_sort"] == {
         "column": "exec_time_ms_per_sec",
         "direction": "desc",

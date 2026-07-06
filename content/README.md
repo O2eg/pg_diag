@@ -18,6 +18,8 @@ executes the selected sources, and renders a JSON/HTML report.
   metrics sourced from local samplers.
 - `scripts.yaml` - local script declarations, script defaults, output types, and
   remote DB-only behavior.
+- `instructions/` - Markdown instructions embedded into report items and shown
+  through the `Show Instruction` button.
 - `queries/` - SQL files referenced by query variants.
 - `scripts/` - local shell scripts referenced by `scripts.yaml`.
 - `EXTENDING.md` - examples for adding new report items.
@@ -47,7 +49,42 @@ Useful item-level keys include:
 
 - `state: expanded|collapsed|hidden`
 - `empty_message`
+- `instruction` or `instructions` to override the default Markdown instruction
+  path for the item
 - source reference: `query`, `script`, or `metric`
+
+## Item Instructions
+
+Every visible report item has a Markdown instruction file. By default the
+runtime maps item id `section.item` to:
+
+```text
+instructions/items/<section>/<item>.md
+```
+
+For example:
+
+```text
+sql_workload.top_sql_by_total_time
+=> instructions/items/sql_workload/top_sql_by_total_time.md
+```
+
+The Markdown text is embedded in `source_metadata.instructions` in the JSON
+artifact and rendered in the HTML report through `Show Instruction`. Keep these
+files focused on DBA interpretation: what the item can reveal, what to watch,
+common fault causes, and a short checklist.
+
+If an item needs a non-standard path, set it in `report.yaml`:
+
+```yaml
+items:
+  top_sql_by_total_time:
+    query: statements.top_by_total_time
+    instruction: items/sql_workload/top_sql_by_total_time.md
+```
+
+Instruction files are part of the content checksum. Validation fails when a
+report item has no Markdown instruction file.
 
 ## Query Manifests
 
@@ -138,7 +175,7 @@ Metrics can produce:
 
 Important keys:
 
-- `source_query` - use repeated SQL samples from a query item.
+- `source_query` - use repeated SQL samples from a dedicated metric query.
 - `source_sampler` - use local threaded sampler data.
 - `requires_collection: every_snapshot`
 - `partition_by`
@@ -149,9 +186,9 @@ Important keys:
 - `chart`
 
 For SQL-backed metrics, the referenced query must support `every_snapshot` when
-the metric requires repeated collection. In `snapshots` mode the planner promotes
-metric source queries to repeated collection without changing ordinary table
-items that use the same query.
+the metric requires repeated collection. Keep metric source queries item-specific
+under the `metrics.*` namespace; this keeps SQL editing isolated and avoids
+showing unrelated source columns in `Show SQL` or `Show meta`.
 
 For sampler-backed metrics, `source_sampler` identifies local sampler data such
 as CPU, memory, disk, network, or backend process metrics.

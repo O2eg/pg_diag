@@ -42,6 +42,7 @@ class ContentPack:
     query_catalog: dict[str, Any]
     script_catalog: dict[str, Any]
     metric_catalog: dict[str, Any]
+    instructions: dict[str, dict[str, str]]
     queries: dict[str, dict[str, Any]]
     scripts: dict[str, dict[str, Any]]
     metrics: dict[str, dict[str, Any]]
@@ -87,6 +88,28 @@ def _content_checksum(paths: list[Path], root: Path) -> str:
     return "sha256:" + digest.hexdigest()
 
 
+def instruction_ref_for_report_item(section_id: str, item_key: str, item: dict[str, Any]) -> str | None:
+    ref = item.get("instruction")
+    if ref is None:
+        ref = item.get("instructions")
+    if ref is False:
+        return None
+    if ref is None:
+        return f"items/{section_id}/{item_key}.md"
+    if not isinstance(ref, str) or not ref:
+        raise ContentLoadError(
+            f"Instruction path must be a non-empty string or false: sections.{section_id}.items.{item_key}"
+        )
+    return ref
+
+
+def _instruction_path(instructions_dir: Path, instruction_ref: str) -> Path:
+    path_ref = Path(instruction_ref)
+    if path_ref.is_absolute() or ".." in path_ref.parts:
+        raise ContentLoadError(f"Instruction path must stay under the instructions directory: {instruction_ref}")
+    return instructions_dir / path_ref
+
+
 def load_content(content_path: str | Path) -> ContentPack:
     root = Path(content_path).resolve()
     if not root.exists():
@@ -101,6 +124,7 @@ def load_content(content_path: str | Path) -> ContentPack:
     query_index_path = root / catalogs.get("queries", "queries.yaml")
     script_path = root / catalogs.get("scripts", "scripts.yaml")
     metric_path = root / catalogs.get("metrics", "metrics.yaml")
+    instructions_root = catalogs.get("instructions", "instructions")
 
     query_index = load_yaml_file(query_index_path)
     script_catalog = load_yaml_file(script_path)
@@ -141,6 +165,25 @@ def load_content(content_path: str | Path) -> ContentPack:
         for metric_id, metric in metrics_root.items()
     }
 
+    instructions_dir = root / instructions_root
+    instructions: dict[str, dict[str, str]] = {}
+    if instructions_dir.exists():
+        for section_id, item_key, item_id, item in iter_report_items_from_report(report):
+            instruction_ref = instruction_ref_for_report_item(section_id, item_key, item)
+            if instruction_ref is None:
+                continue
+            path = _instruction_path(instructions_dir, instruction_ref)
+            if path.exists() and path.is_file():
+                instructions[item_id] = {
+                    "format": "markdown",
+                    "path": f"{instructions_root}/{instruction_ref}",
+                    "text": path.read_text(encoding="utf-8"),
+                }
+
+    instruction_files = []
+    if instructions_dir.exists():
+        instruction_files = sorted(instructions_dir.rglob("*.md"))
+
     checksum_paths = [
         report_path,
         query_index_path,
@@ -149,6 +192,7 @@ def load_content(content_path: str | Path) -> ContentPack:
         *catalog_files,
         *sorted((root / "queries").rglob("*.sql")),
         *sorted((root / "scripts").rglob("*")),
+        *instruction_files,
     ]
     checksum_paths = [path for path in checksum_paths if path.is_file()]
 
@@ -158,6 +202,7 @@ def load_content(content_path: str | Path) -> ContentPack:
         query_catalog=query_index,
         script_catalog=script_catalog,
         metric_catalog=metric_catalog,
+        instructions=instructions,
         queries=queries,
         scripts=scripts,
         metrics=metrics,
@@ -167,7 +212,11 @@ def load_content(content_path: str | Path) -> ContentPack:
 
 
 def iter_report_items(content: ContentPack):
-    sections = content.report.get("sections") or {}
+    yield from iter_report_items_from_report(content.report)
+
+
+def iter_report_items_from_report(report: dict[str, Any]):
+    sections = report.get("sections") or {}
     for section_id, section in sections.items():
         items = (section or {}).get("items") or {}
         for item_key, item in items.items():

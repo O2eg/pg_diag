@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__, runtime_config
+from .artifact import report_output_paths
 from .content_loader import ContentPack, iter_report_items, load_content
 from .errors import ContentLoadError, PgDiagError
 from .planner import build_plan
@@ -73,6 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     snapshot_parser.add_argument("--user")
     snapshot_parser.add_argument("--password")
     snapshot_parser.add_argument("--out", default="report", help="Output directory")
+    _add_report_output_file_args(snapshot_parser)
     snapshot_parser.add_argument(
         "--collection-mode",
         choices=[runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE, runtime_config.LOCAL_COLLECTION_MODE],
@@ -94,6 +96,7 @@ def build_parser() -> argparse.ArgumentParser:
     snapshots_parser.add_argument("--user")
     snapshots_parser.add_argument("--password")
     snapshots_parser.add_argument("--out", default="report", help="Output directory")
+    _add_report_output_file_args(snapshots_parser)
     snapshots_parser.add_argument("--duration-seconds", type=float, default=30.0)
     snapshots_parser.add_argument("--interval-seconds", type=float, default=5.0)
     snapshots_parser.add_argument(
@@ -112,6 +115,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _add_content_arg(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--content", default="content", help="Path to pg_diag content directory")
+
+
+def _add_report_output_file_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--json-out", help="Exact report JSON output file")
+    parser.add_argument("--html-out", help="Exact report HTML output file")
 
 
 def _add_pg_version_arg(parser: argparse.ArgumentParser) -> None:
@@ -249,13 +257,16 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
                 dsn=args.dsn,
                 connection_kwargs=connection_kwargs,
                 collection_mode=args.collection_mode,
+                json_out=args.json_out,
+                html_out=args.html_out,
             )
         )
     except Exception as exc:
         print(f"ERROR: snapshot failed: {exc}", file=sys.stderr)
         return 1
-    print(f"Wrote {Path(args.out) / 'report.json'}")
-    print(f"Wrote {Path(args.out) / 'report.html'}")
+    json_path, html_path = report_output_paths(args.out, args.json_out, args.html_out)
+    print(f"Wrote {json_path}")
+    print(f"Wrote {html_path}")
     return 0
 
 
@@ -287,13 +298,16 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
                 collection_mode=args.collection_mode,
                 duration_seconds=args.duration_seconds,
                 interval_seconds=args.interval_seconds,
+                json_out=args.json_out,
+                html_out=args.html_out,
             )
         )
     except Exception as exc:
         print(f"ERROR: snapshots failed: {exc}", file=sys.stderr)
         return 1
-    print(f"Wrote {Path(args.out) / 'report.json'}")
-    print(f"Wrote {Path(args.out) / 'report.html'}")
+    json_path, html_path = report_output_paths(args.out, args.json_out, args.html_out)
+    print(f"Wrote {json_path}")
+    print(f"Wrote {html_path}")
     return 0
 
 

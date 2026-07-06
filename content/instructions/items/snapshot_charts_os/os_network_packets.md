@@ -1,0 +1,23 @@
+# Network Packets
+
+This instruction belongs to report item `snapshot_charts_os.os_network_packets`. The item is backed by `os.network_packets` (snapshot metric).
+
+## What this item shows
+- Packet rate by interface over time.
+- Small-packet or high-connection network behavior during snapshots.
+
+## What to watch
+- Very high packet rate without high throughput.
+- Packet spikes during connection storms.
+- Unexpected interface carrying traffic.
+
+## Common fault causes
+- Chatty application protocol.
+- Connection churn.
+- Monitoring bursts.
+- Network retries.
+
+## Checklist
+- Compare with connection pressure.
+- Check pooler behavior.
+- Use external NIC counters for drops/errors.

@@ -34,3 +34,33 @@ queries:
       - id: cluster_settings_all
         min_pg_version: 90400
         sql_file: cluster/settings.sql
+
+  cluster.stat_reset_times:
+    title: Statistics Reset Times
+    group: Overview
+    main_view: pg_stat_database
+    description: Statistics reset timestamps and elapsed time since reset for PostgreSQL statistics views that expose stats_reset.
+    source: PostgreSQL docs
+    display:
+      default_sort:
+        column: seconds_since_reset
+        direction: asc
+    collection:
+      default: once
+      supports: [once, every_snapshot]
+    variants:
+      - id: cluster_stat_reset_times_pg14
+        min_pg_version: 140000
+        max_pg_version: 149999
+        sql_file: cluster/stat_reset_times_pg14.sql
+      - id: cluster_stat_reset_times_pg15
+        min_pg_version: 150000
+        max_pg_version: 159999
+        sql_file: cluster/stat_reset_times_pg15.sql
+      - id: cluster_stat_reset_times_pg16
+        min_pg_version: 160000
+        max_pg_version: 169999
+        sql_file: cluster/stat_reset_times_pg16.sql
+      - id: cluster_stat_reset_times_pg17_plus
+        min_pg_version: 170000
+        sql_file: cluster/stat_reset_times_pg17_plus.sql

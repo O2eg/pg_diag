@@ -283,7 +283,7 @@ metrics:
 
   activity.sessions_by_state:
     title: Sessions By State
-    source_query: activity.session_states
+    source_query: metrics.activity_sessions_by_state
     requires_collection: every_snapshot
     partition_by:
       - dimensions.database
@@ -333,7 +333,7 @@ metrics:
 
   database.tuple_dml_rate:
     title: Database Tuple DML Rate
-    source_query: database.database_stats
+    source_query: metrics.database_tuple_dml_rate
     requires_collection: every_snapshot
     partition_by:
       - dimensions.database
@@ -356,7 +356,7 @@ metrics:
 
   database.tuple_access_rate:
     title: Database Tuple Access Rate
-    source_query: database.database_stats
+    source_query: metrics.database_tuple_access_rate
     requires_collection: every_snapshot
     partition_by:
       - dimensions.database
@@ -375,7 +375,7 @@ metrics:
 
   database.block_access_rate:
     title: Database Block Access Rate
-    source_query: database.database_stats
+    source_query: metrics.database_block_access_rate
     requires_collection: every_snapshot
     partition_by:
       - dimensions.database
@@ -394,7 +394,7 @@ metrics:
 
   database.temp_files_delta:
     title: Database Temp Files Delta
-    source_query: database.database_stats
+    source_query: metrics.database_temp_files_delta
     requires_collection: every_snapshot
     partition_by:
       - dimensions.database
@@ -409,7 +409,7 @@ metrics:
 
   database.temp_bytes_rate:
     title: Database Temp Bytes Rate
-    source_query: database.database_stats
+    source_query: metrics.database_temp_bytes_rate
     requires_collection: every_snapshot
     partition_by:
       - dimensions.database
@@ -424,7 +424,7 @@ metrics:
 
   database.io_time_rate:
     title: Database I/O Time Rate
-    source_query: database.database_stats
+    source_query: metrics.database_io_time_rate
     requires_collection: every_snapshot
     partition_by:
       - dimensions.database
@@ -443,7 +443,7 @@ metrics:
 
   database.backends:
     title: Database Backends
-    source_query: database.database_stats
+    source_query: metrics.database_backends
     requires_collection: every_snapshot
     partition_by:
       - dimensions.database
@@ -458,7 +458,7 @@ metrics:
 
   database.deadlocks:
     title: Database Deadlocks
-    source_query: database.database_stats
+    source_query: metrics.database_deadlocks
     requires_collection: every_snapshot
     partition_by:
       - dimensions.database
@@ -473,7 +473,7 @@ metrics:
 
   objects.tables_top_tuple_access_rate:
     title: Top Tables By Tuple Access Rate
-    source_query: objects.table_workload
+    source_query: metrics.objects_tables_top_tuple_access_rate
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -489,7 +489,7 @@ metrics:
 
   objects.tables_top_seq_read_rate:
     title: Top Tables By Sequential Tuple Read Rate
-    source_query: objects.table_workload
+    source_query: metrics.objects_tables_top_seq_read_rate
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -505,7 +505,7 @@ metrics:
 
   objects.tables_top_index_fetch_rate:
     title: Top Tables By Index Fetch Rate
-    source_query: objects.table_workload
+    source_query: metrics.objects_tables_top_index_fetch_rate
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -521,7 +521,7 @@ metrics:
 
   objects.tables_top_dml_rate:
     title: Top Tables By DML Rate
-    source_query: objects.table_workload
+    source_query: metrics.objects_tables_top_dml_rate
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -537,7 +537,7 @@ metrics:
 
   objects.tables_top_insert_rate:
     title: Top Tables By Insert Rate
-    source_query: objects.table_workload
+    source_query: metrics.objects_tables_top_insert_rate
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -553,7 +553,7 @@ metrics:
 
   objects.tables_top_update_rate:
     title: Top Tables By Update Rate
-    source_query: objects.table_workload
+    source_query: metrics.objects_tables_top_update_rate
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -569,7 +569,7 @@ metrics:
 
   objects.tables_top_delete_rate:
     title: Top Tables By Delete Rate
-    source_query: objects.table_workload
+    source_query: metrics.objects_tables_top_delete_rate
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -585,7 +585,7 @@ metrics:
 
   objects.tables_top_hot_update_rate:
     title: Top Tables By HOT Update Rate
-    source_query: objects.table_workload
+    source_query: metrics.objects_tables_top_hot_update_rate
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -601,7 +601,7 @@ metrics:
 
   objects.tables_top_heap_read_rate:
     title: Top Tables By Heap Block Read Rate
-    source_query: objects.table_io
+    source_query: metrics.objects_tables_top_heap_read_rate
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -617,7 +617,7 @@ metrics:
 
   objects.tables_top_index_block_read_rate:
     title: Top Tables By Index Block Read Rate
-    source_query: objects.table_io
+    source_query: metrics.objects_tables_top_index_block_read_rate
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -633,7 +633,7 @@ metrics:
 
   objects.indexes_top_scan_rate:
     title: Top Indexes By Scan Rate
-    source_query: objects.index_workload
+    source_query: metrics.objects_indexes_top_scan_rate
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -649,7 +649,7 @@ metrics:
 
   objects.indexes_top_tuple_read_rate:
     title: Top Indexes By Tuple Read Rate
-    source_query: objects.index_workload
+    source_query: metrics.objects_indexes_top_tuple_read_rate
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -665,7 +665,7 @@ metrics:
 
   objects.indexes_top_tuple_fetch_rate:
     title: Top Indexes By Tuple Fetch Rate
-    source_query: objects.index_workload
+    source_query: metrics.objects_indexes_top_tuple_fetch_rate
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -681,7 +681,7 @@ metrics:
 
   objects.indexes_top_reads_per_scan:
     title: Top Indexes By Reads Per Scan
-    source_query: objects.index_workload
+    source_query: metrics.objects_indexes_top_reads_per_scan
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -699,7 +699,7 @@ metrics:
 
   objects.indexes_top_fetches_per_scan:
     title: Top Indexes By Fetches Per Scan
-    source_query: objects.index_workload
+    source_query: metrics.objects_indexes_top_fetches_per_scan
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -717,7 +717,7 @@ metrics:
 
   objects.indexes_top_reads_per_fetch:
     title: Top Indexes By Reads Per Fetch
-    source_query: objects.index_workload
+    source_query: metrics.objects_indexes_top_reads_per_fetch
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -735,7 +735,7 @@ metrics:
 
   database.workload_delta:
     title: Database Workload Delta
-    source_query: database.database_stats
+    source_query: metrics.database_workload_delta
     requires_collection: every_snapshot
     result: table
     display:
@@ -774,7 +774,7 @@ metrics:
 
   statements.total_time_delta:
     title: SQL Time Delta
-    source_query: statements.top_by_total_time
+    source_query: metrics.statements_total_time_delta
     requires_collection: every_snapshot
     result: table
     display:
@@ -823,7 +823,7 @@ metrics:
 
   statements.io_delta:
     title: SQL Shared I/O Delta
-    source_query: statements.top_by_io
+    source_query: metrics.statements_io_delta
     requires_collection: every_snapshot
     result: table
     display:
@@ -868,7 +868,7 @@ metrics:
 
   statements.wal_delta:
     title: SQL WAL Delta
-    source_query: statements.top_by_wal
+    source_query: metrics.statements_wal_delta
     requires_collection: every_snapshot
     result: table
     display:
@@ -913,7 +913,7 @@ metrics:
 
   objects.table_dml_delta:
     title: Table DML Delta
-    source_query: objects.table_workload
+    source_query: metrics.objects_table_dml_delta
     requires_collection: every_snapshot
     result: table
     display:
@@ -959,7 +959,7 @@ metrics:
 
   objects.table_scan_delta:
     title: Table Scan Delta
-    source_query: objects.table_workload
+    source_query: metrics.objects_table_scan_delta
     requires_collection: every_snapshot
     result: table
     display:
@@ -1001,7 +1001,7 @@ metrics:
 
   objects.table_io_delta:
     title: Table I/O Delta
-    source_query: objects.table_io
+    source_query: metrics.objects_table_io_delta
     requires_collection: every_snapshot
     result: table
     display:
@@ -1043,7 +1043,7 @@ metrics:
 
   objects.index_usage_delta:
     title: Index Usage Delta
-    source_query: objects.index_workload
+    source_query: metrics.objects_index_usage_delta
     requires_collection: every_snapshot
     result: table
     display:
@@ -1088,7 +1088,7 @@ metrics:
 
   objects.function_time_delta:
     title: Function Time Delta
-    source_query: objects.function_workload
+    source_query: metrics.objects_function_time_delta
     requires_collection: every_snapshot
     result: table
     display:
@@ -1126,7 +1126,7 @@ metrics:
 
   activity.wait_sample_profile:
     title: Wait Event Sample Profile
-    source_query: activity.wait_events
+    source_query: metrics.activity_wait_sample_profile
     requires_collection: every_snapshot
     result: table
     display:
@@ -1153,6 +1153,9 @@ metrics:
         - name: query_id
           role: key
           key_index: 3
+        - name: query
+          ref: dimensions.query
+          pg_type: text
         - name: samples_seen
           transform: sample_count
           pg_type: int8

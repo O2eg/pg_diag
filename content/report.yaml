@@ -7,6 +7,7 @@ report:
     queries: queries.yaml
     scripts: scripts.yaml
     metrics: metrics.yaml
+    instructions: instructions
 
 runtime_policy:
   default_sql_timeout_ms: 10000
@@ -30,6 +31,12 @@ sections:
         query: cluster.server_version
       pg_settings:
         query: cluster.settings
+        state: collapsed
+      stat_reset_times:
+        query: cluster.stat_reset_times
+        state: collapsed
+      database_stats:
+        query: database.database_stats
         state: collapsed
 
   os:
@@ -128,6 +135,17 @@ sections:
       wait_events:
         query: activity.wait_events
         state: collapsed
+      wait_event_sample_profile:
+        metric: activity.wait_sample_profile
+        state: collapsed
+      pg_wait_sampling_capabilities:
+        query: wait.pg_wait_sampling_capabilities
+        state: collapsed
+      pg_wait_sampling_profile:
+        query: wait.pg_wait_sampling_profile
+        state: collapsed
+        render:
+          empty_message: pg_wait_sampling profile has no rows or extension is not installed.
       long_transactions:
         query: activity.long_transactions
         state: collapsed
@@ -143,13 +161,6 @@ sections:
       lock_modes:
         query: locks.lock_modes
         state: collapsed
-
-  database:
-    title: Database Workload
-    description: Current database cumulative statistics and workload counters.
-    items:
-      database_stats:
-        query: database.database_stats
 
   sql_workload:
     title: SQL Workload
@@ -333,22 +344,6 @@ sections:
         query: objects.function_workload
         state: collapsed
 
-  wait_profile:
-    title: Wait Profile
-    description: Sampled wait profile from pg_stat_activity and optional pg_wait_sampling extension.
-    state: collapsed
-    items:
-      wait_event_sample_profile:
-        metric: activity.wait_sample_profile
-      pg_wait_sampling_capabilities:
-        query: wait.pg_wait_sampling_capabilities
-        state: collapsed
-      pg_wait_sampling_profile:
-        query: wait.pg_wait_sampling_profile
-        state: collapsed
-        render:
-          empty_message: pg_wait_sampling profile has no rows or extension is not installed.
-
   backend_os:
     title: Per-Backend Local OS
     description: PostgreSQL backend activity correlated with local /proc CPU and I/O samples in local snapshots mode.
@@ -356,6 +351,9 @@ sections:
     items:
       backend_activity:
         query: backend.activity
+      postgres_process_tree:
+        script: os.postgres_process_tree
+        state: collapsed
       backend_proc_cpu:
         metric: backend.proc_cpu_top
         state: collapsed

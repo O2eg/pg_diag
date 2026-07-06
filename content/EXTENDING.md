@@ -14,6 +14,8 @@ catalog files define SQL sources, `scripts.yaml` defines local Bash sources, and
   version.
 - `report.yaml` must stay lightweight. Do not describe table columns in report
   layout; table headers come from the actual SQL result.
+- Every visible report item needs a Markdown instruction file under
+  `instructions/items/<section>/<item>.md`.
 - `catalog/*.yaml` is not loaded by glob. A new catalog file must be registered
   in `queries.yaml` under `query_catalog.files`.
 - SQL used by metrics should expose stable `semantic_columns` so metrics do not
@@ -107,6 +109,36 @@ The item title, description, SQL metadata, sort hint, and table shape are
 inherited from the query catalog unless explicitly overridden by supported
 report item keys.
 
+4. Add the item instruction Markdown file.
+
+   The default path is derived from the report item id:
+
+   ```text
+   instructions/items/activity_locks/lock_mode_summary.md
+   ```
+
+   Use this structure:
+
+   ```markdown
+   # Lock Mode Summary
+
+   ## What this item shows
+   - Current lock volume by lock type and mode.
+
+   ## What to watch
+   - Granted and waiting locks growing during the same incident window.
+
+   ## Common fault causes
+   - Long transactions, DDL, hot rows, or unindexed foreign key checks.
+
+   ## Checklist
+   - Find the root blocker before terminating sessions.
+   - Compare with Activity & Locks and SQL Workload sections.
+   ```
+
+   The HTML report embeds this file and shows it with the item-level
+   `Show Instruction` button.
+
 ## Add A Repeated-Snapshot Chart
 
 Use this when the report needs a time-series chart from SQL samples.
@@ -193,8 +225,10 @@ Use this when the report needs a time-series chart from SQL samples.
    ```
 
 The planner promotes the metric source query to repeated collection in
-`snapshots` mode. Ordinary table items that reference the same query keep their
-own declared behavior.
+`snapshots` mode. Prefer one dedicated `metrics.*` query per report item so
+`Show SQL` and `Show meta` stay item-specific and isolated.
+
+5. Add `instructions/items/snapshot_charts_db/<item>.md` for the chart item.
 
 ## Add A Top-N Chart
 
@@ -207,7 +241,7 @@ Example:
 ```yaml
 objects.indexes_top_scan_rate:
   title: Top Indexes By Scan Rate
-  source_query: objects.index_workload
+  source_query: metrics.objects_indexes_top_scan_rate
   requires_collection: every_snapshot
   top_n:
     mode: interval
@@ -236,7 +270,7 @@ Example:
 ```yaml
 database.workload_delta:
   title: Database Workload Delta
-  source_query: database.database_stats
+  source_query: metrics.database_workload_delta
   requires_collection: every_snapshot
   result: table
   display:
@@ -319,6 +353,9 @@ PostgreSQL SQL.
 Scripts are local-only by default. In `remote-db-only` collection mode they are
 kept in the report with skipped status and a skip message.
 
+4. Add `instructions/items/<section>/<item>.md` so the skipped or collected
+   script still has DBA guidance in the HTML report.
+
 ## Add An OS Sampler Chart
 
 OS sampler metrics use threaded local samplers. They are available only in local
@@ -361,6 +398,7 @@ Before committing a content change, check the following:
 - PostgreSQL variants use correct `min_pg_version` and optional
   `max_pg_version` boundaries.
 - Every referenced SQL or Bash file exists.
+- Every report item has a non-empty Markdown instruction file.
 - Every SQL-backed chart query returns `snapshot_time`.
 - Every metric `value_ref`, `key_ref`, `label_ref`, and `partition_by` entry has
   a matching semantic column or sampler field.

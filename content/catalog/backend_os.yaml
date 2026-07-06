@@ -23,6 +23,7 @@ queries:
             wait_event_type: wait_event_type
             wait_event: wait_event
             query_id: query_id
+            query: query
           gauges:
             query_age_seconds: query_age_seconds
             xact_age_seconds: xact_age_seconds

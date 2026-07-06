@@ -44,7 +44,7 @@ result.
 Install from the project directory:
 
 ```bash
-cd /home/oleg/Desktop/dev/pg_diag
+cd pg_diag
 
 python3 -m venv .venv
 . .venv/bin/activate
@@ -56,7 +56,7 @@ python -m pip install -e .
 For development and tests:
 
 ```bash
-cd /home/oleg/Desktop/dev/pg_diag
+cd pg_diag
 . .venv/bin/activate
 
 python -m pip install -e ".[dev]"
@@ -157,6 +157,21 @@ reports/appdb_snapshot/report.json
 reports/appdb_snapshot/report.html
 ```
 
+To write outputs to fixed file names instead of the default files inside
+`--out`, pass exact output paths:
+
+```bash
+pg-diag snapshot \
+  --content content \
+  --dsn "postgresql://app:${PGDIAG_PASSWORD}@127.0.0.1:5432/appdb" \
+  --collection-mode remote-db-only \
+  --json-out reports/appdb_snapshot_20260706.json \
+  --html-out reports/appdb_snapshot_20260706.html
+```
+
+If only one fixed output path is supplied, the other file still uses the
+default path under `--out`.
+
 The same command can use a DSN:
 
 ```bash
@@ -220,6 +235,19 @@ pg-diag snapshots \
   --out reports/appdb_60s_remote
 ```
 
+Repeated snapshot reports also support fixed output file names:
+
+```bash
+pg-diag snapshots \
+  --content content \
+  --dsn "postgresql://app:${PGDIAG_PASSWORD}@127.0.0.1:5432/appdb" \
+  --collection-mode remote-db-only \
+  --duration-seconds 60 \
+  --interval-seconds 5 \
+  --json-out reports/appdb_60s.json \
+  --html-out reports/appdb_60s.html
+```
+
 ## Render Existing JSON
 
 `report.json` is the durable artifact. HTML can be rebuilt later without
@@ -273,7 +301,7 @@ table columns.
 Run unit tests:
 
 ```bash
-cd /home/oleg/Desktop/dev/pg_diag
+cd pg_diag
 . .venv/bin/activate
 
 PYTHONDONTWRITEBYTECODE=1 python -m pytest -q
