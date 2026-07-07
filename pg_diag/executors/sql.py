@@ -62,7 +62,7 @@ async def execute_query_item(content: ContentPack, conn: Any, planned: PlannedIt
     if not sql_file:
         return item_from_plan(
             planned,
-            status="unsupported",
+            collection_status="unsupported",
             reason=planned.reason or "No SQL variant selected",
             result={"kind": "table", "columns": [], "rows": [], "row_count": 0},
         )
@@ -87,7 +87,7 @@ async def execute_query_item(content: ContentPack, conn: Any, planned: PlannedIt
         message = redact_error(exc)
         return item_from_plan(
             planned,
-            status=status,
+            collection_status=status,
             reason=message,
             timing_ms=_elapsed_ms(started),
             result={"kind": "table", "columns": [], "rows": [], "row_count": 0},
@@ -99,7 +99,7 @@ async def execute_query_item(content: ContentPack, conn: Any, planned: PlannedIt
     status = "ok" if rows else "empty"
     return item_from_plan(
         planned,
-        status=status,
+        collection_status=status,
         timing_ms=_elapsed_ms(started),
         result={"kind": "table", "columns": columns, "rows": rows, "row_count": len(rows)},
         source_text=sql_text,
@@ -175,10 +175,6 @@ def _dedupe_column_name(name: str, used_names: set[str]) -> str:
 
 def _classify_sql_error(exc: Exception) -> str:
     name = exc.__class__.__name__
-    if "Permission" in name or "InsufficientPrivilege" in name:
-        return "permission_denied"
-    if name in {"UndefinedTableError", "UndefinedFunctionError", "UndefinedColumnError"}:
-        return "unavailable"
     if "FeatureNotSupported" in name:
         return "unsupported"
     return "error"

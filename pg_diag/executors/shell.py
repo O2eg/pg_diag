@@ -21,7 +21,7 @@ def execute_shell_item(content: ContentPack, planned: PlannedItem) -> dict[str, 
     if not script_file:
         return item_from_plan(
             planned,
-            status="error",
+            collection_status="error",
             reason="script_file is missing",
             result={"kind": "plain_text", "data": ""},
         )
@@ -55,7 +55,7 @@ def execute_shell_item(content: ContentPack, planned: PlannedItem) -> dict[str, 
             message = redact_error(exc)
             return item_from_plan(
                 planned,
-                status="error",
+                collection_status="error",
                 reason=message,
                 timing_ms=_elapsed_ms(started),
                 result={"kind": "plain_text", "data": redact_text(output)},
@@ -68,7 +68,7 @@ def execute_shell_item(content: ContentPack, planned: PlannedItem) -> dict[str, 
             )
         return item_from_plan(
             planned,
-            status="ok" if result["row_count"] else "empty",
+            collection_status="ok" if result["row_count"] else "empty",
             timing_ms=_elapsed_ms(started),
             result=result,
             source_text=source_text,
@@ -77,7 +77,7 @@ def execute_shell_item(content: ContentPack, planned: PlannedItem) -> dict[str, 
 
     return item_from_plan(
         planned,
-        status=status,
+        collection_status=status,
         reason=None if proc.returncode == 0 else f"exit_code={proc.returncode}",
         timing_ms=_elapsed_ms(started),
         result={"kind": "plain_text", "data": redact_text(output)},

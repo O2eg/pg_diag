@@ -4,10 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pg-diag"
-version = "0.1.0"
+version = "0.8.0"
 description = "Declarative PostgreSQL diagnostic report utility"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
 dependencies = [
   "PyYAML>=6.0",
   "asyncpg>=0.29",

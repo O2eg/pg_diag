@@ -11,7 +11,7 @@ from pg_diag.planner import PlannedItem
 def skipped_shell_item(planned: PlannedItem, message: str, source_text: str | None = None) -> dict[str, Any]:
     return item_from_plan(
         planned,
-        status="skipped",
+        collection_status="skipped",
         reason="remote_db_only",
         result={"kind": "plain_text", "data": message},
         source_text=source_text,

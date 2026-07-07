@@ -24,6 +24,7 @@ class PlannedItem:
     variant_id: str | None = None
     sql_file: str | None = None
     script_file: str | None = None
+    python_file: str | None = None
     collection_scope: str | None = None
     source_metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -41,6 +42,7 @@ class PlannedItem:
             "variant_id": self.variant_id,
             "sql_file": self.sql_file,
             "script_file": self.script_file,
+            "python_file": self.python_file,
             "collection_scope": self.collection_scope,
             "source_metadata": self.source_metadata,
         }
@@ -117,6 +119,8 @@ def build_plan(
             )
         elif source_kind == "script":
             items.append(_plan_script_item(content, section_id, item_key, item_id, item, collection_mode))
+        elif source_kind == "python":
+            items.append(_plan_python_item(content, section_id, item_key, item_id, item, collection_mode))
         elif source_kind == "metric":
             items.append(_plan_metric_item(content, section_id, item_key, item_id, item, mode, query_usage_index))
         else:
@@ -159,7 +163,7 @@ def build_plan(
 
 
 def _source_kind(item: dict[str, Any]) -> str:
-    for key in ("query", "script", "metric"):
+    for key in ("query", "script", "metric", "python"):
         if key in item:
             return key
     return "unknown"
@@ -187,6 +191,8 @@ def _item_title(content: ContentPack, source_kind: str, item: dict[str, Any], it
         manifest = content.scripts.get(item.get("script"), {})
     elif source_kind == "metric":
         manifest = content.metrics.get(item.get("metric"), {})
+    elif source_kind == "python":
+        manifest = content.pythons.get(item.get("python"), {})
     else:
         manifest = {}
     return item.get("title") or manifest.get("title") or item_key
@@ -401,6 +407,59 @@ def _plan_script_item(
         status="planned",
         state=_item_state(item),
         script_file=script.get("script_file"),
+        collection_scope="once",
+        source_metadata=source_metadata,
+    )
+
+
+def _plan_python_item(
+    content: ContentPack,
+    section_id: str,
+    item_key: str,
+    item_id: str,
+    item: dict[str, Any],
+    collection_mode: str,
+) -> PlannedItem:
+    python_id = item["python"]
+    python_source = content.pythons[python_id]
+    if collection_mode == runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE and python_source.get("local_only", False):
+        message = (content.report.get("runtime_policy") or {}).get(
+            "remote_db_only_shell_message", "no data bacause remote call"
+        )
+        return PlannedItem(
+            item_id=item_id,
+            section_id=section_id,
+            item_key=item_key,
+            title=_item_title(content, "python", item, item_key),
+            source_kind="python",
+            source_id=python_id,
+            status="skipped",
+            state=_item_state(item),
+            reason=message,
+            python_file=python_source.get("python_file"),
+            collection_scope="once",
+            source_metadata=_with_item_metadata(content, item_id, item, {
+                "python_id": python_id,
+                "python_file": python_source.get("python_file"),
+                "function": python_source.get("function"),
+            }),
+        )
+
+    source_metadata = _with_item_metadata(content, item_id, item, {
+        "python_id": python_id,
+        "python_file": python_source.get("python_file"),
+        "function": python_source.get("function"),
+    })
+    return PlannedItem(
+        item_id=item_id,
+        section_id=section_id,
+        item_key=item_key,
+        title=_item_title(content, "python", item, item_key),
+        source_kind="python",
+        source_id=python_id,
+        status="planned",
+        state=_item_state(item),
+        python_file=python_source.get("python_file"),
         collection_scope="once",
         source_metadata=source_metadata,
     )

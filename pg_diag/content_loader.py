@@ -10,6 +10,7 @@ from typing import Any
 
 import yaml
 
+from . import runtime_config
 from .errors import ContentLoadError
 
 
@@ -42,10 +43,12 @@ class ContentPack:
     query_catalog: dict[str, Any]
     script_catalog: dict[str, Any]
     metric_catalog: dict[str, Any]
+    python_catalog: dict[str, Any]
     instructions: dict[str, dict[str, str]]
     queries: dict[str, dict[str, Any]]
     scripts: dict[str, dict[str, Any]]
     metrics: dict[str, dict[str, Any]]
+    pythons: dict[str, dict[str, Any]]
     catalog_files: list[Path]
     checksum: str
 
@@ -124,11 +127,20 @@ def load_content(content_path: str | Path) -> ContentPack:
     query_index_path = root / catalogs.get("queries", "queries.yaml")
     script_path = root / catalogs.get("scripts", "scripts.yaml")
     metric_path = root / catalogs.get("metrics", "metrics.yaml")
+    python_ref = catalogs.get("python")
+    python_path = root / python_ref if python_ref else root / "python.yaml"
     instructions_root = catalogs.get("instructions", "instructions")
 
     query_index = load_yaml_file(query_index_path)
     script_catalog = load_yaml_file(script_path)
     metric_catalog = load_yaml_file(metric_path)
+    if python_ref or python_path.exists():
+        python_catalog = load_yaml_file(python_path)
+    else:
+        python_catalog = {
+            "python_catalog": {"schema_version": runtime_config.SUPPORTED_CONTENT_SCHEMA_VERSION},
+            "python_sources": {},
+        }
 
     query_catalog = query_index.get("query_catalog")
     if not isinstance(query_catalog, dict):
@@ -165,6 +177,13 @@ def load_content(content_path: str | Path) -> ContentPack:
         for metric_id, metric in metrics_root.items()
     }
 
+    pythons_root = python_catalog.get("python_sources") or {}
+    python_defaults = (python_catalog.get("python_catalog") or {}).get("defaults") or {}
+    pythons = {
+        python_id: _merge_defaults(python_defaults, python_source)
+        for python_id, python_source in pythons_root.items()
+    }
+
     instructions_dir = root / instructions_root
     instructions: dict[str, dict[str, str]] = {}
     if instructions_dir.exists():
@@ -189,9 +208,11 @@ def load_content(content_path: str | Path) -> ContentPack:
         query_index_path,
         script_path,
         metric_path,
+        *([python_path] if python_path.exists() else []),
         *catalog_files,
         *sorted((root / "queries").rglob("*.sql")),
         *sorted((root / "scripts").rglob("*")),
+        *sorted((root / "python").rglob("*.py")),
         *instruction_files,
     ]
     checksum_paths = [path for path in checksum_paths if path.is_file()]
@@ -202,10 +223,12 @@ def load_content(content_path: str | Path) -> ContentPack:
         query_catalog=query_index,
         script_catalog=script_catalog,
         metric_catalog=metric_catalog,
+        python_catalog=python_catalog,
         instructions=instructions,
         queries=queries,
         scripts=scripts,
         metrics=metrics,
+        pythons=pythons,
         catalog_files=catalog_files,
         checksum=_content_checksum(checksum_paths, root),
     )

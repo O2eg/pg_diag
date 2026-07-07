@@ -20,7 +20,7 @@ class ValidationIssue:
     location: str
 
 
-SOURCE_KEYS = {"query", "script", "metric"}
+SOURCE_KEYS = {"query", "script", "metric", "python"}
 FORBIDDEN_LAYOUT_KEYS = {"columns", "theader", "fields"}
 ALLOWED_ITEM_TAGS = {
     "CPU",
@@ -61,6 +61,7 @@ def validate_content(content: ContentPack) -> list[ValidationIssue]:
     _validate_report_items(content, issues)
     _validate_query_manifests(content, issues)
     _validate_scripts(content, issues)
+    _validate_python_sources(content, issues)
     _validate_metrics(content, issues)
     _validate_instructions(content, issues)
     _validate_sql_files(content, issues)
@@ -94,6 +95,10 @@ def _validate_schema_versions(content: ContentPack, issues: list[ValidationIssue
     if metric_schema != runtime_config.SUPPORTED_CONTENT_SCHEMA_VERSION:
         _issue(issues, "schema_version", "Unsupported metric catalog schema version", "metrics.yaml")
 
+    python_schema = (content.python_catalog.get("python_catalog") or {}).get("schema_version")
+    if python_schema != runtime_config.SUPPORTED_CONTENT_SCHEMA_VERSION:
+        _issue(issues, "schema_version", "Unsupported python catalog schema version", "python.yaml")
+
     for key in content.report:
         if key not in {"report", "runtime_policy", "defaults", "sections"}:
             _issue(issues, "unknown_key", f"Unknown report top-level key {key!r}", "report.yaml")
@@ -107,7 +112,7 @@ def _validate_report_items(content: ContentPack, issues: list[ValidationIssue]) 
             _issue(
                 issues,
                 "item_source",
-                "Report item must contain exactly one source key: query, script, or metric",
+                "Report item must contain exactly one source key: query, script, metric, or python",
                 location,
             )
             continue
@@ -127,6 +132,8 @@ def _validate_report_items(content: ContentPack, issues: list[ValidationIssue]) 
             _issue(issues, "missing_script", f"Unknown script id {item['script']!r}", location)
         if "metric" in source_keys and item["metric"] not in content.metrics:
             _issue(issues, "missing_metric", f"Unknown metric id {item['metric']!r}", location)
+        if "python" in source_keys and item["python"] not in content.pythons:
+            _issue(issues, "missing_python", f"Unknown python source id {item['python']!r}", location)
 
 
 def _validate_report_item_tags(
@@ -261,6 +268,24 @@ def _validate_scripts(content: ContentPack, issues: list[ValidationIssue]) -> No
                 "Local-only script must define remote_db_only_behavior",
                 location,
             )
+
+
+def _validate_python_sources(content: ContentPack, issues: list[ValidationIssue]) -> None:
+    for python_id, python_source in content.pythons.items():
+        location = f"python:{python_id}"
+        python_file = python_source.get("python_file")
+        if not python_file:
+            _issue(issues, "python_file", "Python source manifest must define python_file", location)
+        else:
+            path = content.path / "python" / python_file
+            if not path.exists():
+                _issue(issues, "python_file", f"Python source file does not exist: {python_file}", location)
+            elif path.suffix != ".py":
+                _issue(issues, "python_file", "Python source file must use .py extension", location)
+
+        function = python_source.get("function")
+        if not isinstance(function, str) or not function:
+            _issue(issues, "python_function", "Python source manifest must define function", location)
 
 
 def _validate_metrics(content: ContentPack, issues: list[ValidationIssue]) -> None:

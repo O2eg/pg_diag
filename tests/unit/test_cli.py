@@ -66,7 +66,7 @@ def test_run_query_dry_run_cli(repo_root: Path) -> None:
 def test_render_from_json_cli(repo_root: Path, tmp_path: Path) -> None:
     artifact = {
         "artifact_schema_version": 1,
-        "generator": {"name": "pg_diag", "version": "0.1.0"},
+        "generator": {"name": "pg_diag", "version": "0.8.0"},
         "content": {"schema_version": 2, "checksum": "sha256:test"},
         "report": {"id": "test", "title": "Test Report"},
         "runtime": {
@@ -82,7 +82,8 @@ def test_render_from_json_cli(repo_root: Path, tmp_path: Path) -> None:
                 "section_id": "overview",
                 "title": "X",
                 "source_kind": "query",
-                "status": "ok",
+                "collection_status": "ok",
+                "severity_level": "unknown",
                 "reason": None,
                 "result": {
                     "kind": "table",

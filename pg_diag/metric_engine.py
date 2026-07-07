@@ -29,7 +29,7 @@ def build_metric_item(
         if not source_item_id:
             return item_from_plan(
                 planned,
-                status="empty",
+                collection_status="empty",
                 reason=f"source query {source_query} was not collected",
                 result=_empty_chart(metric),
             )
@@ -52,7 +52,7 @@ def build_metric_item(
     else:
         return item_from_plan(
             planned,
-            status="empty",
+            collection_status="empty",
             reason="metric has no source",
             result=_empty_chart(metric),
         )
@@ -62,11 +62,23 @@ def build_metric_item(
     if metric.get("result") == "table" or metric.get("table"):
         table = build_table_result(metric, samples, semantic_columns)
         status = "ok" if table.get("rows") else "empty"
-        return item_from_plan(planned, status=status, result=table, source_text=source_text, source_language=source_language)
+        return item_from_plan(
+            planned,
+            collection_status=status,
+            result=table,
+            source_text=source_text,
+            source_language=source_language,
+        )
 
     chart = build_chart_result(metric, samples, semantic_columns)
     status = "ok" if _chart_has_points(chart) else "empty"
-    return item_from_plan(planned, status=status, result=chart, source_text=source_text, source_language=source_language)
+    return item_from_plan(
+        planned,
+        collection_status=status,
+        result=chart,
+        source_text=source_text,
+        source_language=source_language,
+    )
 
 
 def _metric_source_text(metric: dict[str, Any], source_text: str | None, source_language: str | None) -> str:

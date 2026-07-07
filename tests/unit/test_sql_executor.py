@@ -68,7 +68,8 @@ def test_sql_timeout_exception_is_recorded_in_item(tmp_path) -> None:
 
     assert ("select set_config('statement_timeout', $1, true)", "3000") in conn.executed
     assert item["item_id"] == "test.slow"
-    assert item["status"] == "error"
+    assert item["collection_status"] == "error"
+    assert item["severity_level"] == "unknown"
     assert "statement timeout" in item["reason"]
     assert item["result"] == {"kind": "table", "columns": [], "rows": [], "row_count": 0}
     assert item["source_metadata"]["source_text"] == "select pg_sleep(10)"

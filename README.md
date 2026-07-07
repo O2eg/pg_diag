@@ -82,6 +82,51 @@ You can also run the CLI without installing the console script:
 python -m pg_diag.cli --help
 ```
 
+## Runtime Requirements
+
+Python runtime:
+
+- Python 3.11 or newer.
+- Python packages from `pyproject.toml`: `asyncpg` and `PyYAML`.
+
+PostgreSQL target:
+
+- PostgreSQL 14-18.
+- A login role that can connect to the diagnosed database and read PostgreSQL
+  catalog/statistics views. Granting `pg_monitor` or `pg_read_all_stats` is
+  recommended for complete activity/statistics visibility.
+- No extension is required for the core catalog, activity, locks, WAL,
+  replication, storage, vacuum, index, and OS parts of the report.
+
+Optional PostgreSQL extensions:
+
+- `pg_stat_statements` enables SQL workload sections and SQL delta charts.
+  It must be present in `shared_preload_libraries`, PostgreSQL must be
+  restarted after that change, and `CREATE EXTENSION pg_stat_statements` must
+  be run in the diagnosed database.
+- `pg_wait_sampling` enables the optional historical wait sampling profile.
+  Install the extension package and run `CREATE EXTENSION pg_wait_sampling` in
+  the diagnosed database. Without it, `pg_diag` still reports wait data sampled
+  from `pg_stat_activity` in snapshots mode.
+
+Local collection mode OS requirements:
+
+- Linux collector host with `/proc` mounted.
+- POSIX shell plus common base tools: `cat`, `grep`, `awk`, `df`, `mount`,
+  `uname`.
+- `procps` tools: `ps` and `/sbin/sysctl`.
+- `util-linux`: `lscpu` and `lsblk`.
+- `iproute2`: `ip`.
+- `lshw` for hardware inventory sections. Some `lshw` data requires root; if
+  passwordless `sudo -n` is available, `pg_diag` uses it automatically.
+- `sysstat` / `iostat` for local disk throughput, IOPS, utilization, and
+  latency charts in snapshots mode.
+
+Missing local tools do not stop the report. Affected OS items become empty,
+skipped, unavailable, or add a diagnostic warning; PostgreSQL SQL collection
+continues. In `remote-db-only` mode, local host scripts and local OS samplers
+are intentionally skipped.
+
 ## Validate Content
 
 Validate the bundled content pack:

@@ -18,6 +18,7 @@ from .artifact import (
 )
 from .content_loader import ContentPack
 from .executors.remote_disabled_shell import skipped_shell_item
+from .executors.python import execute_python_item
 from .executors.shell import execute_shell_item
 from .executors.sql import connect, detect_runtime_context, execute_query_item
 from .metric_engine import build_metric_item
@@ -77,7 +78,7 @@ async def collect_snapshots(
             item
             for item in plan.items
             if item.status == "planned"
-            and item.source_kind in {"query", "script"}
+            and item.source_kind in {"query", "script", "python"}
             and item not in sampled_queries
         ]
         metric_items = [
@@ -139,7 +140,7 @@ async def collect_snapshots(
             if planned.item_id not in artifact["items"]:
                 artifact["items"][planned.item_id] = item_from_plan(
                     planned,
-                    status=planned.status if planned.status != "planned" else "skipped",
+                    collection_status=planned.status if planned.status != "planned" else "skipped",
                     reason=planned.reason,
                     result={"kind": "none"},
                 )
@@ -221,4 +222,26 @@ async def _execute_once_item(
                     source_text = None
             return skipped_shell_item(planned, message, source_text=source_text)
         return execute_shell_item(content, planned)
-    return item_from_plan(planned, status="skipped", result={"kind": "none"})
+    if planned.source_kind == "python":
+        if collection_mode == runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE and (
+            content.pythons.get(planned.source_id or "", {}).get("local_only", False)
+        ):
+            message = (content.report.get("runtime_policy") or {}).get(
+                "remote_db_only_shell_message", "no data bacause remote call"
+            )
+            source_text = None
+            if planned.python_file:
+                try:
+                    source_text = (content.path / "python" / planned.python_file).read_text(encoding="utf-8")
+                except OSError:
+                    source_text = None
+            return item_from_plan(
+                planned,
+                collection_status="skipped",
+                reason="remote_db_only",
+                result={"kind": "plain_text", "data": message},
+                source_text=source_text,
+                source_language="python" if source_text is not None else None,
+            )
+        return await execute_python_item(content, conn, planned)
+    return item_from_plan(planned, collection_status="skipped", result={"kind": "none"})

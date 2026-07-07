@@ -40,12 +40,15 @@ def test_item_metadata_uses_public_semantic_column_refs() -> None:
         },
     )
 
-    item = item_from_plan(planned, status="ok")
+    item = item_from_plan(planned, collection_status="ok")
 
     assert item["source_metadata"]["semantic_columns"]["dimensions"] == {
         "database": "datname",
         "setting": "setting_name",
     }
+    assert item["collection_status"] == "ok"
+    assert item["severity_level"] == "unknown"
+    assert "status" not in item
 
 
 def test_item_metadata_can_embed_source_text() -> None:
@@ -59,7 +62,12 @@ def test_item_metadata_can_embed_source_text() -> None:
         source_metadata={"query_id": "cluster.server_version"},
     )
 
-    item = item_from_plan(planned, status="ok", source_text="select version()", source_language="sql")
+    item = item_from_plan(
+        planned,
+        collection_status="ok",
+        source_text="select version()",
+        source_language="sql",
+    )
 
     assert item["source_metadata"]["source_text"] == "select version()"
     assert item["source_metadata"]["source_language"] == "sql"
@@ -111,7 +119,8 @@ def test_item_error_from_exception_embeds_traceback_diagnostic() -> None:
     except RuntimeError as exc:
         item = item_error_from_exception(planned, exc, source_text="exit 1", source_language="bash")
 
-    assert item["status"] == "error"
+    assert item["collection_status"] == "error"
+    assert item["severity_level"] == "unknown"
     assert item["reason"] == "boom"
     assert item["result"]["kind"] == "plain_text"
     assert "RuntimeError: boom" in item["result"]["data"]

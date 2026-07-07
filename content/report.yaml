@@ -7,6 +7,7 @@ report:
     queries: queries.yaml
     scripts: scripts.yaml
     metrics: metrics.yaml
+    python: python.yaml
     instructions: instructions
 
 runtime_policy:
@@ -508,6 +509,10 @@ sections:
         state: collapsed
         render:
           empty_message: No privileged roles visible to the current user.
+      remote_superuser_access:
+        python: security.remote_superuser_access
+        tags: [Security, Sessions]
+        state: collapsed
       pending_restart_settings:
         query: cluster.pending_restart_settings
         tags: [Configuration]

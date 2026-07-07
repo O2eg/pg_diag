@@ -129,6 +129,7 @@ __APEXCHARTS_JS__
     }
 
     .app-header {
+      position: relative;
       background: var(--header);
       color: var(--header-fg);
       border-bottom: 1px solid var(--line);
@@ -195,7 +196,28 @@ __APEXCHARTS_JS__
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
+      align-items: center;
       margin-top: 14px;
+    }
+
+    .summary-label {
+      color: var(--header-muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .severity-count {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 0;
+      background: transparent;
+      color: var(--header-muted);
+    }
+
+    .severity-count .severity-dot {
+      width: 10px;
+      height: 10px;
     }
 
     main.shell {
@@ -205,24 +227,43 @@ __APEXCHARTS_JS__
 
     .report-toolbar {
       display: grid;
-      grid-template-columns: auto auto minmax(220px, 420px) minmax(130px, 190px) minmax(130px, 190px) minmax(150px, 220px) auto;
+      grid-template-columns: minmax(220px, 1.2fr) minmax(120px, 180px) minmax(120px, 180px) minmax(150px, 210px) minmax(140px, 190px);
       gap: 10px;
       align-items: end;
       margin-bottom: 10px;
     }
 
     .filter-summary-panel {
-      display: flex;
-      justify-content: center;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      gap: 10px;
       align-items: center;
       min-height: 34px;
       margin-bottom: 16px;
+      padding: 6px 9px;
       border: 1px solid var(--line);
       border-radius: 6px;
       background: var(--panel-soft);
       color: var(--muted);
       font-size: 13px;
       font-weight: 700;
+    }
+
+    .filter-summary-actions {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-self: start;
+      min-width: 0;
+    }
+
+    .filter-summary-spacer {
+      justify-self: end;
+    }
+
+    #visibleSummary {
+      justify-self: center;
+      text-align: center;
     }
 
     .report-nav {
@@ -484,6 +525,17 @@ __APEXCHARTS_JS__
       white-space: nowrap;
     }
 
+    .header-theme-toggle {
+      position: absolute;
+      top: 18px;
+      right: max(18px, env(safe-area-inset-right));
+      z-index: 2;
+      padding: 5px 9px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.04);
+    }
+
     .theme-toggle input {
       appearance: none;
       position: relative;
@@ -597,6 +649,39 @@ __APEXCHARTS_JS__
       stroke-width: 1.8;
       stroke-linecap: round;
       stroke-linejoin: round;
+    }
+
+    .severity-dots {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      flex: 0 0 auto;
+    }
+
+    .severity-dot {
+      display: inline-block;
+      width: 11px;
+      height: 11px;
+      border: 1px solid rgba(255, 255, 255, 0.34);
+      border-radius: 999px;
+      background: var(--neutral-fg);
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+    }
+
+    .severity-dot.severity-high {
+      background: #ef4444;
+    }
+
+    .severity-dot.severity-medium {
+      background: #f59e0b;
+    }
+
+    .severity-dot.severity-ok {
+      background: #22c55e;
+    }
+
+    .severity-dot.severity-unknown {
+      background: #94a3b8;
     }
 
     .caret {
@@ -811,9 +896,7 @@ __APEXCHARTS_JS__
       color: var(--warn-fg);
     }
 
-    .badge.error,
-    .badge.permission_denied,
-    .badge.unavailable {
+    .badge.error {
       background: var(--err-bg);
       color: var(--err-fg);
     }
@@ -823,9 +906,86 @@ __APEXCHARTS_JS__
       color: var(--accent-fg);
     }
 
+    .badge.severity-ok {
+      background: var(--ok-bg);
+      color: var(--ok-fg);
+    }
+
+    .badge.severity-medium {
+      background: var(--warn-bg);
+      color: var(--warn-fg);
+    }
+
+    .badge.severity-unknown {
+      background: var(--neutral-bg);
+      color: var(--neutral-fg);
+    }
+
+    .badge.severity-high {
+      background: var(--err-bg);
+      color: var(--err-fg);
+    }
+
     .reason {
       margin: 0 0 10px;
       color: var(--muted);
+    }
+
+    .item-issues {
+      display: grid;
+      gap: 8px;
+      margin: 0 0 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: var(--panel-soft);
+      padding: 12px;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .item-issues.severity-ok {
+      border-color: var(--ok-fg);
+      background: var(--ok-bg);
+      color: var(--ok-fg);
+    }
+
+    .item-issues.severity-medium {
+      border-color: var(--warn-fg);
+      background: var(--warn-bg);
+      color: var(--warn-fg);
+    }
+
+    .item-issues.severity-unknown {
+      border-color: var(--neutral-fg);
+      background: var(--neutral-bg);
+      color: var(--neutral-fg);
+    }
+
+    .item-issues.severity-high {
+      border-color: var(--err-fg);
+      background: var(--err-bg);
+      color: var(--err-fg);
+    }
+
+    .item-issue-title {
+      margin: 0;
+      font-weight: 800;
+      line-height: 1.3;
+    }
+
+    .item-issue-text,
+    .item-issue-recommendation {
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .item-issue-list {
+      margin: 2px 0 0;
+      padding-left: 18px;
+    }
+
+    .item-issue-list li + li {
+      margin-top: 5px;
     }
 
     .item-error {
@@ -1548,6 +1708,22 @@ __APEXCHARTS_JS__
         grid-template-columns: 1fr;
       }
 
+      .header-theme-toggle {
+        position: static;
+        width: max-content;
+        margin: 10px 0 0;
+      }
+
+      .filter-summary-panel {
+        grid-template-columns: 1fr;
+      }
+
+      .filter-summary-actions,
+      .filter-summary-spacer,
+      #visibleSummary {
+        justify-self: center;
+      }
+
       details.section > summary,
       details.item > summary {
         align-items: flex-start;
@@ -1628,15 +1804,19 @@ __APEXCHARTS_JS__
       <div id="runtime" class="runtime"></div>
       <div id="runtimeDetails" class="runtime"></div>
       <div id="statusSummary" class="summary-bar"></div>
+      <div id="severitySummary" class="summary-bar"></div>
+      <label class="theme-toggle header-theme-toggle" title="Switch report theme">
+        <span>Dark</span>
+        <input id="themeToggle" type="checkbox">
+        <span>Light</span>
+      </label>
     </div>
   </header>
   <main class="shell">
     <div class="report-toolbar" aria-label="Report controls">
-      <button id="expandAll" type="button" class="btn">Expand all</button>
-      <button id="collapseAll" type="button" class="btn">Collapse all</button>
       <label class="field">
         <span>Find item</span>
-        <input id="itemSearch" class="input" type="search" placeholder="Title, status, source">
+        <input id="itemSearch" class="input" type="search" placeholder="Title, collection status, source">
       </label>
       <label class="field">
         <span>Tag</span>
@@ -1654,19 +1834,29 @@ __APEXCHARTS_JS__
         </select>
       </label>
       <label class="field">
-        <span>Status</span>
-        <select id="statusFilter" class="select">
+        <span>Collection status</span>
+        <select id="collectionStatusFilter" class="select">
           <option value="">All statuses</option>
         </select>
       </label>
-      <label class="theme-toggle" title="Switch report theme">
-        <span>Dark</span>
-        <input id="themeToggle" type="checkbox">
-        <span>Light</span>
+      <label class="field">
+        <span>Severity level</span>
+        <select id="severityLevelFilter" class="select">
+          <option value="">All levels</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="ok">OK</option>
+          <option value="unknown">Unknown</option>
+        </select>
       </label>
     </div>
     <div class="filter-summary-panel">
+      <div class="filter-summary-actions">
+        <button id="expandAll" type="button" class="btn">Expand all</button>
+        <button id="collapseAll" type="button" class="btn">Collapse all</button>
+      </div>
       <span id="visibleSummary"></span>
+      <span class="filter-summary-spacer" aria-hidden="true"></span>
     </div>
     <div id="app" class="sections"></div>
   </main>
@@ -1760,7 +1950,10 @@ __HIGHLIGHT_JS__
       "Hardware",
       "Other",
     ];
-    const ERROR_ITEM_STATUSES = new Set(["error", "permission_denied", "unavailable"]);
+    const ERROR_ITEM_STATUSES = new Set(["error"]);
+    const SEVERITY_LEVEL_ORDER = ["high", "medium", "ok", "unknown"];
+    const SEVERITY_SUMMARY_ORDER = ["ok", "medium", "high", "unknown"];
+    const SEVERITY_LEVEL_RANK = {high: 4, medium: 3, ok: 2, unknown: 1};
     const CELL_COLLAPSED_LINE_LIMIT = 6;
     const DETAILS_ANIMATION_MS = 300;
     let currentSourceText = "";
@@ -1770,7 +1963,7 @@ __HIGHLIGHT_JS__
 
     hydrateTheme();
     hydrateHeader();
-    hydrateStatusFilter();
+    hydrateCollectionStatusFilter();
     hydrateTagFilter();
     renderSections();
     renderReportNav();
@@ -1821,10 +2014,14 @@ __HIGHLIGHT_JS__
 
       const counts = {};
       for (const item of visibleItems) {
-        const status = item.status || "unknown";
-        counts[status] = (counts[status] || 0) + 1;
+        const currentCollectionStatus = collectionStatus(item);
+        counts[currentCollectionStatus] = (counts[currentCollectionStatus] || 0) + 1;
       }
       const statusSummary = document.getElementById("statusSummary");
+      const summaryLabel = document.createElement("span");
+      summaryLabel.className = "summary-label";
+      summaryLabel.textContent = "Collection status:";
+      statusSummary.appendChild(summaryLabel);
       const totalBadge = document.createElement("span");
       totalBadge.className = "badge neutral";
       totalBadge.textContent = "total: " + visibleItems.length;
@@ -1834,6 +2031,27 @@ __HIGHLIGHT_JS__
         badge.className = "badge " + status;
         badge.textContent = status + ": " + counts[status];
         statusSummary.appendChild(badge);
+      }
+      renderSeveritySummary();
+    }
+
+    function renderSeveritySummary() {
+      const counts = {};
+      for (const item of visibleItems) {
+        const level = itemSeverityLevel(item);
+        counts[level] = (counts[level] || 0) + 1;
+      }
+      const severitySummary = document.getElementById("severitySummary");
+      const summaryLabel = document.createElement("span");
+      summaryLabel.className = "summary-label";
+      summaryLabel.textContent = "Severity levels:";
+      severitySummary.appendChild(summaryLabel);
+      for (const level of SEVERITY_SUMMARY_ORDER) {
+        const badge = document.createElement("span");
+        badge.className = "badge severity-" + level + " severity-count";
+        badge.appendChild(renderSeverityDot(level));
+        badge.appendChild(document.createTextNode(severityLevelLabel(level) + ": " + (counts[level] || 0)));
+        severitySummary.appendChild(badge);
       }
     }
 
@@ -1884,9 +2102,9 @@ __HIGHLIGHT_JS__
       return Number.isInteger(numeric) ? numeric + "s" : numeric.toFixed(3).replace(/0+$/, "").replace(/\.$/, "") + "s";
     }
 
-    function hydrateStatusFilter() {
-      const select = document.getElementById("statusFilter");
-      const statuses = Array.from(new Set(visibleItems.map((item) => item.status || "unknown"))).sort();
+    function hydrateCollectionStatusFilter() {
+      const select = document.getElementById("collectionStatusFilter");
+      const statuses = Array.from(new Set(visibleItems.map(collectionStatus))).sort();
       for (const status of statuses) {
         const option = document.createElement("option");
         option.value = status;
@@ -1920,7 +2138,12 @@ __HIGHLIGHT_JS__
         details.open = section.state !== "collapsed";
 
         const summary = document.createElement("summary");
-        summary.appendChild(renderSummaryTitle(section.title || section.section_id, "section-title", sectionDataTypes(section)));
+        summary.appendChild(renderSummaryTitle(
+          section.title || section.section_id,
+          "section-title",
+          sectionDataTypes(section),
+          sectionSeverityLevels(section),
+        ));
         summary.appendChild(renderSectionMeta(section));
         details.appendChild(summary);
 
@@ -2055,10 +2278,11 @@ __HIGHLIGHT_JS__
     function resetReportFilters() {
       const search = document.getElementById("itemSearch");
       const type = document.getElementById("itemTypeFilter");
-      const status = document.getElementById("statusFilter");
+      const collection = document.getElementById("collectionStatusFilter");
+      const severity = document.getElementById("severityLevelFilter");
       const tag = document.getElementById("tagFilter");
       let changed = false;
-      for (const control of [search, type, status, tag]) {
+      for (const control of [search, type, collection, severity, tag]) {
         if (control && control.value) {
           control.value = "";
           changed = true;
@@ -2217,7 +2441,7 @@ __HIGHLIGHT_JS__
       }
     }
 
-    function renderSummaryTitle(title, titleClass, dataTypes) {
+    function renderSummaryTitle(title, titleClass, dataTypes, severityLevels) {
       const wrap = document.createElement("span");
       wrap.className = "summary-title";
       const caret = document.createElement("span");
@@ -2227,12 +2451,38 @@ __HIGHLIGHT_JS__
       text.className = titleClass;
       setHighlightableText(text, title || "");
       wrap.appendChild(caret);
+      const dots = renderSeverityDots(severityLevels || []);
+      if (dots) {
+        wrap.appendChild(dots);
+      }
       wrap.appendChild(text);
       const icons = renderDataTypeIcons(dataTypes || []);
       if (icons) {
         wrap.appendChild(icons);
       }
       return wrap;
+    }
+
+    function renderSeverityDots(levels) {
+      const uniqueLevels = SEVERITY_LEVEL_ORDER.filter((level) => levels.includes(level));
+      if (!uniqueLevels.length) {
+        return null;
+      }
+      const wrap = document.createElement("span");
+      wrap.className = "severity-dots";
+      for (const level of uniqueLevels) {
+        wrap.appendChild(renderSeverityDot(level));
+      }
+      return wrap;
+    }
+
+    function renderSeverityDot(level) {
+      const dot = document.createElement("span");
+      const normalized = normalizeSeverityLevel(level);
+      dot.className = "severity-dot severity-" + normalized;
+      dot.title = "Severity level: " + severityLevelLabel(normalized);
+      dot.setAttribute("aria-label", dot.title);
+      return dot;
     }
 
     function renderDataTypeIcons(dataTypes) {
@@ -2286,6 +2536,17 @@ __HIGHLIGHT_JS__
       return DATA_TYPE_ORDER.filter((type) => types.has(type));
     }
 
+    function sectionSeverityLevels(section) {
+      const levels = new Set();
+      for (const itemId of section.items || []) {
+        const item = items[itemId];
+        if (item && isVisibleItem(item)) {
+          levels.add(itemSeverityLevel(item));
+        }
+      }
+      return SEVERITY_LEVEL_ORDER.filter((level) => levels.has(level));
+    }
+
     function itemDataType(item) {
       const resultKind = String(((item || {}).result || {}).kind || "").toLowerCase();
       if (resultKind === "table" || resultKind === "chart" || resultKind === "plain_text") {
@@ -2305,6 +2566,14 @@ __HIGHLIGHT_JS__
       return "plain_text";
     }
 
+    function collectionStatus(item) {
+      return String((item || {}).collection_status).toLowerCase();
+    }
+
+    function itemSeverityLevel(item) {
+      return normalizeSeverityLevel((item || {}).severity_level);
+    }
+
     function renderSectionMeta(section) {
       const meta = document.createElement("span");
       meta.className = "section-meta";
@@ -2312,8 +2581,8 @@ __HIGHLIGHT_JS__
       const sectionItems = (section.items || []).map((itemId) => items[itemId]).filter(Boolean);
       const counts = {};
       for (const item of sectionItems) {
-        const status = item.status || "unknown";
-        counts[status] = (counts[status] || 0) + 1;
+        const currentCollectionStatus = collectionStatus(item);
+        counts[currentCollectionStatus] = (counts[currentCollectionStatus] || 0) + 1;
       }
       for (const status of Object.keys(counts).sort()) {
         const badge = document.createElement("span");
@@ -2388,9 +2657,12 @@ __HIGHLIGHT_JS__
 
     function renderItem(item) {
       const details = document.createElement("details");
+      const itemCollectionStatus = collectionStatus(item);
+      const severityLevel = itemSeverityLevel(item);
       details.className = "item";
       details.dataset.itemId = item.item_id || "";
-      details.dataset.status = item.status || "unknown";
+      details.dataset.collectionStatus = itemCollectionStatus;
+      details.dataset.severityLevel = severityLevel;
       details.dataset.itemType = itemDataType(item);
       details.__tags = itemTags(item);
       details.__searchText = itemSearchText(item);
@@ -2399,19 +2671,24 @@ __HIGHLIGHT_JS__
       } else if (item.state === "collapsed" || item.state === "hidden") {
         details.open = false;
       } else {
-        details.open = item.status !== "skipped" && item.status !== "unsupported";
+        details.open = itemCollectionStatus !== "skipped" && itemCollectionStatus !== "unsupported";
       }
 
       const summary = document.createElement("summary");
-      summary.appendChild(renderSummaryTitle(item.title || item.item_id, "item-title", [itemDataType(item)]));
+      summary.appendChild(renderSummaryTitle(
+        item.title || item.item_id,
+        "item-title",
+        [itemDataType(item)],
+        [severityLevel],
+      ));
       const meta = document.createElement("span");
       meta.className = "item-meta";
       const sourceBadge = document.createElement("span");
       sourceBadge.className = "badge source";
       sourceBadge.textContent = sourceKindLabel(item.source_kind || "source");
       const statusBadge = document.createElement("span");
-      statusBadge.className = "badge " + (item.status || "unknown");
-      statusBadge.textContent = item.status || "unknown";
+      statusBadge.className = "badge " + itemCollectionStatus;
+      statusBadge.textContent = itemCollectionStatus;
       meta.appendChild(sourceBadge);
       meta.appendChild(statusBadge);
       summary.appendChild(meta);
@@ -2426,6 +2703,10 @@ __HIGHLIGHT_JS__
         body.appendChild(reason);
       }
       body.appendChild(renderItemMetadata(item));
+      const issuePanel = renderItemIssues(item);
+      if (issuePanel) {
+        body.appendChild(issuePanel);
+      }
       body.appendChild(isErrorItem(item) ? renderItemError(item) : renderResult(item));
       details.appendChild(wrapDetailsContent(body));
       return details;
@@ -2493,6 +2774,7 @@ __HIGHLIGHT_JS__
       const labels = {
         query: "SQL query",
         script: "Bash",
+        python: "Python",
       };
       return labels[sourceKind] || sourceKind || "source";
     }
@@ -2500,6 +2782,9 @@ __HIGHLIGHT_JS__
     function sourceActionLabel(item) {
       if (sourceLanguage(item) === "bash") {
         return "Show Bash";
+      }
+      if (sourceLanguage(item) === "python") {
+        return "Show Python";
       }
       return "Show SQL";
     }
@@ -2516,7 +2801,104 @@ __HIGHLIGHT_JS__
       if (language === "query") {
         return "sql";
       }
+      if (language === "py") {
+        return "python";
+      }
       return language || "plaintext";
+    }
+
+    function renderItemIssues(item) {
+      const summary = itemIssueSummary(item);
+      const issueItems = itemIssueItems(item);
+      if (!summary && !issueItems.length) {
+        return null;
+      }
+      const severity = issueSeverityLevel((summary || {}).severity || maxIssueSeverity(issueItems));
+      const panel = document.createElement("div");
+      panel.className = "item-issues" + (severity ? " severity-" + severity : "");
+
+      if (summary && (summary.title || summary.status || summary.severity)) {
+        const title = document.createElement("p");
+        title.className = "item-issue-title";
+        setHighlightableText(title, summary.title || severityLabel(severity) || "Issue");
+        panel.appendChild(title);
+      }
+      if (summary && summary.description) {
+        const description = document.createElement("p");
+        description.className = "item-issue-text";
+        setHighlightableText(description, summary.description);
+        panel.appendChild(description);
+      }
+      if (summary && summary.recommendation) {
+        const recommendation = document.createElement("p");
+        recommendation.className = "item-issue-recommendation";
+        setHighlightableText(recommendation, "Recommendation: " + summary.recommendation);
+        panel.appendChild(recommendation);
+      }
+      if (issueItems.length) {
+        const list = document.createElement("ul");
+        list.className = "item-issue-list";
+        for (const issue of issueItems.slice(0, 8)) {
+          const entry = document.createElement("li");
+          const issueSeverity = issueSeverityLevel(issue.severity);
+          const text = [
+            issueSeverity ? "[" + severityLevelLabel(issueSeverity) + "]" : "",
+            issue.title || issue.description || stringifyValue(issue.evidence || issue),
+          ].filter(Boolean).join(" ");
+          setHighlightableText(entry, text);
+          list.appendChild(entry);
+        }
+        panel.appendChild(list);
+      }
+      return panel;
+    }
+
+    function itemIssueSummary(item) {
+      const issues = (item || {}).issues || {};
+      const summary = issues.summary;
+      return summary && typeof summary === "object" ? summary : null;
+    }
+
+    function itemIssueItems(item) {
+      const entries = (((item || {}).issues || {}).items || []);
+      return Array.isArray(entries) ? entries.filter((entry) => entry && typeof entry === "object") : [];
+    }
+
+    function maxIssueSeverity(issueItems) {
+      let best = "";
+      let bestRank = -1;
+      for (const issue of issueItems) {
+        const severity = issueSeverityLevel(issue.severity);
+        const rank = SEVERITY_LEVEL_RANK[severity] || -1;
+        if (rank > bestRank) {
+          best = severity;
+          bestRank = rank;
+        }
+      }
+      return best;
+    }
+
+    function issueSeverityLevel(value) {
+      if (value === undefined || value === null || value === "") {
+        return "";
+      }
+      return normalizeSeverityLevel(value);
+    }
+
+    function normalizeSeverityLevel(value) {
+      const level = String(value || "").toLowerCase();
+      return SEVERITY_LEVEL_ORDER.includes(level) ? level : "unknown";
+    }
+
+    function severityLevelLabel(level) {
+      const normalized = normalizeSeverityLevel(level);
+      if (!normalized) {
+        return "";
+      }
+      if (normalized === "ok") {
+        return "OK";
+      }
+      return normalized.charAt(0).toUpperCase() + normalized.slice(1);
     }
 
     function instructionText(item) {
@@ -2633,7 +3015,8 @@ __HIGHLIGHT_JS__
       appendMetaValue(rows, "section_id", item.section_id);
       appendMetaValue(rows, "title", item.title);
       appendMetaValue(rows, "source_kind", item.source_kind);
-      appendMetaValue(rows, "status", item.status);
+      appendMetaValue(rows, "collection_status", collectionStatus(item));
+      appendMetaValue(rows, "severity_level", itemSeverityLevel(item));
       appendMetaValue(rows, "state", item.state);
       appendMetaValue(rows, "reason", item.reason);
       appendMetaValue(rows, "timing_ms", item.timing_ms);
@@ -2660,6 +3043,9 @@ __HIGHLIGHT_JS__
       }
       if ((item.diagnostics || []).length) {
         appendMetaValue(rows, "diagnostics", item.diagnostics, true);
+      }
+      if (item.issues && Object.keys(item.issues).length) {
+        appendMetaValue(rows, "issues", item.issues, true);
       }
       return rows;
     }
@@ -2890,7 +3276,7 @@ __HIGHLIGHT_JS__
     }
 
     function isErrorItem(item) {
-      return ERROR_ITEM_STATUSES.has(String((item || {}).status || ""));
+      return ERROR_ITEM_STATUSES.has(collectionStatus(item));
     }
 
     function renderItemError(item) {
@@ -2922,9 +3308,7 @@ __HIGHLIGHT_JS__
 
     function itemErrorDetailsText(item) {
       const parts = [];
-      if (item.status) {
-        parts.push("status: " + item.status);
-      }
+      parts.push("collection_status: " + collectionStatus(item));
       if (item.reason) {
         parts.push("reason: " + item.reason);
       }
@@ -2973,7 +3357,7 @@ __HIGHLIGHT_JS__
       if (result.kind === "none") {
         const empty = document.createElement("div");
         empty.className = "empty-state";
-        empty.textContent = item.status === "ok" ? "No result payload" : "No data";
+        empty.textContent = collectionStatus(item) === "ok" ? "No result payload" : "No data";
         return empty;
       }
       const pre = document.createElement("pre");
@@ -3597,8 +3981,10 @@ __HIGHLIGHT_JS__
         item.section_id,
         item.title,
         item.source_kind,
-        item.status,
+        collectionStatus(item),
+        itemSeverityLevel(item),
         item.reason,
+        item.issues,
         item.source_metadata,
         item.result,
       ]);
@@ -3877,7 +4263,8 @@ __HIGHLIGHT_JS__
       });
       document.getElementById("itemSearch").addEventListener("input", applyReportFilters);
       document.getElementById("itemTypeFilter").addEventListener("change", applyReportFilters);
-      document.getElementById("statusFilter").addEventListener("change", applyReportFilters);
+      document.getElementById("collectionStatusFilter").addEventListener("change", applyReportFilters);
+      document.getElementById("severityLevelFilter").addEventListener("change", applyReportFilters);
       document.getElementById("tagFilter").addEventListener("change", applyReportFilters);
       document.getElementById("themeToggle").addEventListener("change", (event) => {
         setTheme(event.target.checked ? "light" : "dark", true);
@@ -4014,7 +4401,8 @@ __HIGHLIGHT_JS__
     function applyReportFilters() {
       const query = currentGlobalSearchQuery();
       const itemType = document.getElementById("itemTypeFilter").value;
-      const status = document.getElementById("statusFilter").value;
+      const collection = document.getElementById("collectionStatusFilter").value;
+      const severity = document.getElementById("severityLevelFilter").value;
       const tag = document.getElementById("tagFilter").value;
       let visibleTotal = 0;
       for (const section of document.querySelectorAll("details.section")) {
@@ -4024,9 +4412,10 @@ __HIGHLIGHT_JS__
           const itemOwnMatch = (item.__searchText || "").includes(query);
           const matchesQuery = !query || sectionMatchesQuery || itemOwnMatch;
           const matchesType = !itemType || item.dataset.itemType === itemType;
-          const matchesStatus = !status || item.dataset.status === status;
+          const matchesCollection = !collection || item.dataset.collectionStatus === collection;
+          const matchesSeverity = !severity || item.dataset.severityLevel === severity;
           const matchesTag = !tag || (item.__tags || []).includes(tag);
-          const visible = matchesQuery && matchesType && matchesStatus && matchesTag;
+          const visible = matchesQuery && matchesType && matchesCollection && matchesSeverity && matchesTag;
           item.classList.toggle("hidden", !visible);
           if (visible) {
             visibleCount += 1;

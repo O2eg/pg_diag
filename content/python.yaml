@@ -1,0 +1,14 @@
+python_catalog:
+  schema_version: 2
+  defaults:
+    timeout_ms: 5000
+    local_only: false
+
+python_sources:
+  security.remote_superuser_access:
+    title: Remote Superuser Access
+    description: Detect host-based pg_hba.conf rules that allow PostgreSQL superusers to connect remotely.
+    python_file: security/remote_superuser_access.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000

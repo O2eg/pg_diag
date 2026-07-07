@@ -143,8 +143,8 @@ def test_pgbench_loaded_database_snapshot(repo_root: Path, tmp_path: Path) -> No
         assert report_html.exists()
         artifact = json.loads(report_json.read_text(encoding="utf-8"))
         assert artifact["runtime"]["server_version_num"] >= 140000
-        assert artifact["items"]["overview.server_version"]["status"] == "ok"
+        assert artifact["items"]["overview.server_version"]["collection_status"] == "ok"
         assert "overview.database_stats" in artifact["items"]
-        assert artifact["items"]["os.kernel_version"]["status"] == "skipped"
+        assert artifact["items"]["os.kernel_version"]["collection_status"] == "skipped"
     finally:
         run(["docker", "rm", "-f", container_name], timeout=60, check=False)

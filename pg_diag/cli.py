@@ -186,7 +186,7 @@ def cmd_list_items(args: argparse.Namespace) -> int:
         _print_validation_errors(issues)
         return 1
     for _section_id, _item_key, item_id, item in iter_report_items(content):
-        source_kind = next((key for key in ("query", "script", "metric") if key in item), "unknown")
+        source_kind = next((key for key in ("query", "script", "metric", "python") if key in item), "unknown")
         print(f"{item_id}\t{source_kind}\t{item.get(source_kind, '')}")
     return 0
 

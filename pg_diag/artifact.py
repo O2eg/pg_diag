@@ -18,6 +18,8 @@ from .security import redact_error, redact_text
 
 
 INTERNAL_TAG_PREFIX = "tag_"
+COLLECTION_ERROR_STATUSES = {"error"}
+SEVERITY_LEVELS = {"high", "medium", "ok", "unknown"}
 
 
 def utc_now() -> str:
@@ -76,14 +78,18 @@ def _collector_user() -> str:
 
 def item_from_plan(
     planned: PlannedItem,
-    status: str,
+    collection_status: str,
     result: dict[str, Any] | None = None,
     timing_ms: float | None = None,
     reason: str | None = None,
     diagnostics: list[dict[str, Any]] | None = None,
+    issues: dict[str, Any] | None = None,
+    severity_level: str | None = None,
     source_text: str | None = None,
     source_language: str | None = None,
 ) -> dict[str, Any]:
+    normalized_issues = issues or {}
+    normalized_severity_level = _item_severity_level(collection_status, severity_level)
     source_metadata = _publicize_metadata(planned.source_metadata)
     if source_text is not None:
         source_metadata["source_text"] = source_text
@@ -93,13 +99,15 @@ def item_from_plan(
         "section_id": planned.section_id,
         "title": planned.title,
         "source_kind": planned.source_kind,
-        "status": status,
+        "collection_status": collection_status,
+        "severity_level": normalized_severity_level,
         "state": planned.state,
         "reason": reason,
         "result": result or {"kind": "none"},
         "timing_ms": timing_ms,
         "source_metadata": source_metadata,
         "diagnostics": diagnostics or [],
+        "issues": normalized_issues,
     }
 
 
@@ -115,7 +123,7 @@ def item_error_from_exception(
     trace = redact_text("".join(traceback.format_exception(type(exc), exc, exc.__traceback__)))
     return item_from_plan(
         planned,
-        status="error",
+        collection_status="error",
         reason=message,
         timing_ms=timing_ms,
         result={"kind": "plain_text", "data": trace},
@@ -130,6 +138,17 @@ def item_error_from_exception(
         source_text=source_text,
         source_language=source_language,
     )
+
+
+def _item_severity_level(collection_status: str, severity_level: str | None) -> str:
+    if collection_status in COLLECTION_ERROR_STATUSES:
+        return "unknown"
+    if severity_level is None:
+        return "unknown"
+    level = str(severity_level).strip().lower()
+    if level not in SEVERITY_LEVELS:
+        raise ValueError(f"unsupported severity_level {severity_level!r}")
+    return level
 
 
 def write_json(path: str | Path, artifact: dict[str, Any]) -> None:

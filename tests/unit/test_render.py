@@ -25,7 +25,7 @@ def _without_vendor_bundles(html: str) -> str:
 def test_html_embedded_json_is_inert_and_escaped() -> None:
     artifact = {
         "artifact_schema_version": 1,
-        "generator": {"name": "pg_diag", "version": "0.1.0"},
+        "generator": {"name": "pg_diag", "version": "0.8.0"},
         "content": {"schema_version": 2, "checksum": "sha256:test"},
         "report": {"id": "test", "title": "Test"},
         "runtime": {
@@ -48,7 +48,8 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
                 "section_id": "s",
                 "title": "Item",
                 "source_kind": "query",
-                "status": "ok",
+                "collection_status": "ok",
+                "severity_level": "unknown",
                 "result": {
                     "kind": "table",
                     "columns": [
@@ -88,11 +89,15 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "All rows" in html
     assert 'id="itemTypeFilter"' in html
     assert 'id="tagFilter"' in html
-    assert html.index('id="tagFilter"') < html.index('id="itemTypeFilter"') < html.index('id="statusFilter"')
+    assert html.index('id="tagFilter"') < html.index('id="itemTypeFilter"') < html.index('id="collectionStatusFilter"') < html.index('id="severityLevelFilter"')
     assert '<button id="expandAll" type="button" class="btn">Expand all</button>' in html
     assert '<button id="expandAll" type="button" class="btn primary">Expand all</button>' not in html
     assert 'id="visibleSummary"' in html
     assert "filter-summary-panel" in html
+    assert "filter-summary-actions" in html
+    assert html.index('class="filter-summary-actions"') < html.index('id="visibleSummary"')
+    assert "header-theme-toggle" in html
+    assert '<label class="theme-toggle header-theme-toggle"' in html
     assert "updateVisibleSummary(visibleTotal)" in html
     assert 'node.textContent = "Showing " + visibleTotal + " from " + visibleItems.length' in html
     assert "All tags" in html
@@ -132,6 +137,16 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert ".report-nav.collapsed .report-nav-title" in html
     assert "gap: 0;" in html
     assert 'totalBadge.textContent = "total: " + visibleItems.length' in html
+    assert 'summaryLabel.textContent = "Collection status:"' in html
+    assert 'id="severitySummary"' in html
+    assert 'summaryLabel.textContent = "Severity levels:"' in html
+    assert 'SEVERITY_SUMMARY_ORDER = ["ok", "medium", "high", "unknown"]' in html
+    assert "renderSeveritySummary()" in html
+    assert "severity-count" in html
+    assert ".badge.severity-ok" in html
+    assert ".severity-dot.severity-ok" in html
+    assert 'return "OK"' in html
+    assert ".summary-label" in html
     assert 'id="generatorInfo"' in html
     assert "generator.name || \"pg_diag\"" in html
     assert "generatorName + \" version \" + generatorVersion" in html
@@ -227,6 +242,13 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "Item instruction" in html
     assert "itemMetaRows(item)" in html
     assert "appendMetaRows(rows, \"source\", item.source_metadata || {})" in html
+    assert "renderItemIssues(item)" in html
+    assert "SEVERITY_LEVEL_ORDER" in html
+    assert "severity-dot" in html
+    assert "Severity level" in html
+    assert "collectionStatusFilter" in html
+    assert "severityLevelFilter" in html
+    assert ".item-issues" in html
     assert '"sql_file":"test/query.sql"' in html
     assert '"variant_id":"test_query_all"' in html
     assert '"tags":["SQL","Tables"]' in html
@@ -257,6 +279,8 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "applyGlobalRowFilter" in html
     assert 'query: "SQL query"' in html
     assert 'script: "Bash"' in html
+    assert 'python: "Python"' in html
+    assert "Show Python" in html
     assert "function addKv" not in app_html
     assert 'addKv(meta, "id"' not in app_html
     assert 'addKv(meta, "metric"' not in app_html
@@ -324,7 +348,9 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert ".table-scroll {\n      max-height: 72vh;\n      width: 100%;\n      max-width: 100%;" in html
     assert ".item-error" in html
     assert "ERROR_ITEM_STATUSES" in html
-    assert '"permission_denied"' in html
+    assert 'new Set(["error"])' in html
+    assert '"permission_denied"' not in app_html
+    assert '"unavailable"' not in app_html
     assert "renderItemError(item)" in html
     assert "itemErrorDetailsText(item)" in html
     assert "traceback" in html
@@ -334,7 +360,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
 def test_html_publicizes_legacy_internal_columns_before_embedding() -> None:
     artifact = {
         "artifact_schema_version": 1,
-        "generator": {"name": "pg_diag", "version": "0.1.0"},
+        "generator": {"name": "pg_diag", "version": "0.8.0"},
         "content": {"schema_version": 2, "checksum": "sha256:test"},
         "report": {"id": "test", "title": "Test"},
         "runtime": {"mode": "snapshot", "collection_mode": "remote-db-only"},
@@ -345,7 +371,8 @@ def test_html_publicizes_legacy_internal_columns_before_embedding() -> None:
                 "section_id": "s",
                 "title": "Item",
                 "source_kind": "query",
-                "status": "ok",
+                "collection_status": "ok",
+                "severity_level": "unknown",
                 "result": {
                     "kind": "table",
                     "columns": [{"name": "epoch_ns"}, {"name": "tag_value"}],

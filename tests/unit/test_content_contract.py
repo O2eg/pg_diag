@@ -27,12 +27,14 @@ def test_report_references_exist(content_path: Path) -> None:
             assert item["script"] in content.scripts
         if "metric" in item:
             assert item["metric"] in content.metrics
+        if "python" in item:
+            assert item["python"] in content.pythons
 
 
 def test_report_items_have_exactly_one_source(content_path: Path) -> None:
     content = load_content(content_path)
     for _section_id, _item_key, _item_id, item in iter_report_items(content):
-        assert len({"query", "script", "metric"}.intersection(item)) == 1
+        assert len({"query", "script", "metric", "python"}.intersection(item)) == 1
 
 
 def test_report_items_have_allowed_tags(content_path: Path) -> None:

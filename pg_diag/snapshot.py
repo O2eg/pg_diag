@@ -17,6 +17,7 @@ from .artifact import (
 )
 from .content_loader import ContentPack
 from .executors.remote_disabled_shell import skipped_shell_item
+from .executors.python import execute_python_item
 from .executors.shell import execute_shell_item
 from .executors.sql import connect, detect_runtime_context, execute_query_item
 from .planner import build_plan
@@ -56,7 +57,7 @@ async def collect_snapshot(
                 if planned.status == "unsupported":
                     artifact["items"][planned.item_id] = item_from_plan(
                         planned,
-                        status="unsupported",
+                        collection_status="unsupported",
                         reason=planned.reason,
                         result={"kind": "none"},
                     )
@@ -76,17 +77,40 @@ async def collect_snapshot(
                         artifact["items"][planned.item_id] = skipped_shell_item(planned, message, source_text=source_text)
                     else:
                         artifact["items"][planned.item_id] = execute_shell_item(content, planned)
+                elif planned.source_kind == "python":
+                    if collection_mode == runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE and (
+                        content.pythons.get(planned.source_id or "", {}).get("local_only", False)
+                    ):
+                        message = (content.report.get("runtime_policy") or {}).get(
+                            "remote_db_only_shell_message", "no data bacause remote call"
+                        )
+                        source_text = None
+                        if planned.python_file:
+                            try:
+                                source_text = (content.path / "python" / planned.python_file).read_text(encoding="utf-8")
+                            except OSError:
+                                source_text = None
+                        artifact["items"][planned.item_id] = item_from_plan(
+                            planned,
+                            collection_status="skipped",
+                            reason="remote_db_only",
+                            result={"kind": "plain_text", "data": message},
+                            source_text=source_text,
+                            source_language="python" if source_text is not None else None,
+                        )
+                    else:
+                        artifact["items"][planned.item_id] = await execute_python_item(content, conn, planned)
                 elif planned.source_kind == "metric":
                     artifact["items"][planned.item_id] = item_from_plan(
                         planned,
-                        status="skipped",
+                        collection_status="skipped",
                         reason="requires snapshots mode",
                         result={"kind": "none"},
                     )
                 else:
                     artifact["items"][planned.item_id] = item_from_plan(
                         planned,
-                        status="error",
+                        collection_status="error",
                         reason="Unknown source kind",
                         result={"kind": "none"},
                     )
