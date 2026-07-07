@@ -95,7 +95,7 @@ def build_plan(
                     status="unsupported",
                     state=_item_state(item),
                     reason=unsupported_reason,
-                    source_metadata=_with_instruction_metadata(content, item_id),
+                    source_metadata=_with_item_metadata(content, item_id, item),
                 )
             )
             continue
@@ -130,7 +130,7 @@ def build_plan(
                     status="error",
                     state=_item_state(item),
                     reason="Cannot determine item source kind",
-                    source_metadata=_with_instruction_metadata(content, item_id),
+                    source_metadata=_with_item_metadata(content, item_id, item),
                 )
             )
 
@@ -197,16 +197,34 @@ def _item_state(item: dict[str, Any]) -> str | None:
     return state if state in {"expanded", "collapsed", "hidden"} else None
 
 
-def _with_instruction_metadata(
+def _with_item_metadata(
     content: ContentPack,
     item_id: str,
+    item: dict[str, Any],
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     result = dict(metadata or {})
+    tags = _item_tags(item)
+    if tags:
+        result["tags"] = tags
     instruction = content.instructions.get(item_id)
     if instruction:
         result["instructions"] = instruction
     return result
+
+
+def _item_tags(item: dict[str, Any]) -> list[str]:
+    tags = item.get("tags") or []
+    if not isinstance(tags, list):
+        return []
+    normalized = []
+    seen = set()
+    for tag in tags:
+        text = str(tag).strip()
+        if text and text not in seen:
+            normalized.append(text)
+            seen.add(text)
+    return normalized
 
 
 def _query_usage_index(content: ContentPack) -> dict[str, list[str]]:
@@ -271,7 +289,7 @@ def _plan_query_item(
             status="unsupported",
             state=_item_state(item),
             reason=selection.reason,
-            source_metadata=_with_instruction_metadata(content, item_id, source_metadata),
+            source_metadata=_with_item_metadata(content, item_id, item, source_metadata),
         )
 
     collection_scope = "once"
@@ -295,7 +313,7 @@ def _plan_query_item(
     }
     if internal:
         source_metadata["internal"] = True
-    source_metadata = _with_instruction_metadata(content, item_id, source_metadata)
+    source_metadata = _with_item_metadata(content, item_id, item, source_metadata)
     return PlannedItem(
         item_id=item_id,
         section_id=section_id,
@@ -361,14 +379,14 @@ def _plan_script_item(
             reason=message,
             script_file=script.get("script_file"),
             collection_scope="once",
-            source_metadata=_with_instruction_metadata(content, item_id, {
+            source_metadata=_with_item_metadata(content, item_id, item, {
                 "script_id": script_id,
                 "script_file": script.get("script_file"),
                 "output": script.get("output"),
             }),
         )
 
-    source_metadata = _with_instruction_metadata(content, item_id, {
+    source_metadata = _with_item_metadata(content, item_id, item, {
         "script_id": script_id,
         "script_file": script.get("script_file"),
         "output": script.get("output"),
@@ -412,7 +430,7 @@ def _plan_metric_item(
             status="skipped",
             state=_item_state(item),
             reason="requires snapshots mode",
-            source_metadata=_with_instruction_metadata(content, item_id, {
+            source_metadata=_with_item_metadata(content, item_id, item, {
                 "metric_id": metric_id,
                 "source_query": source_query,
                 "source_sampler": metric.get("source_sampler"),
@@ -422,7 +440,7 @@ def _plan_metric_item(
             }),
         )
 
-    source_metadata = _with_instruction_metadata(content, item_id, {
+    source_metadata = _with_item_metadata(content, item_id, item, {
         "metric_id": metric_id,
         "source_query": source_query,
         "source_sampler": metric.get("source_sampler"),

@@ -3,6 +3,25 @@ from __future__ import annotations
 from pg_diag.render.html import render_html
 
 
+def _without_vendor_bundles(html: str) -> str:
+    blocks = [
+        ('<script id="pg-diag-third-party-licenses"', "</script>"),
+        ('<style id="highlight-theme"', "</style>"),
+        ('<script id="apexcharts-library"', "</script>"),
+        ('<script id="highlight-library"', "</script>"),
+    ]
+    result = html
+    for start_marker, end_marker in blocks:
+        start = result.find(start_marker)
+        if start < 0:
+            continue
+        end = result.find(end_marker, start)
+        if end < 0:
+            continue
+        result = result[:start] + result[end + len(end_marker) :]
+    return result
+
+
 def test_html_embedded_json_is_inert_and_escaped() -> None:
     artifact = {
         "artifact_schema_version": 1,
@@ -32,14 +51,19 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
                 "status": "ok",
                 "result": {
                     "kind": "table",
-                    "columns": [{"name": "value"}, {"name": "captured_at", "pg_type": "timestamptz"}],
-                    "rows": [["</script><script>alert(1)</script>", "2026-05-29T21:27:18.283630+00:00"]],
+                    "columns": [
+                        {"name": "value"},
+                        {"name": "query_id", "pg_type": "int8"},
+                        {"name": "captured_at", "pg_type": "timestamptz"},
+                    ],
+                    "rows": [["</script><script>alert(1)</script>", "123", "2026-05-29T21:27:18.283630+00:00"]],
                     "row_count": 1,
                 },
                 "source_metadata": {
                     "query_id": "test.query",
                     "sql_file": "test/query.sql",
                     "variant_id": "test_query_all",
+                    "tags": ["SQL", "Tables"],
                     "source_text": "select 1",
                     "source_language": "sql",
                     "instructions": {
@@ -51,9 +75,11 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
                 "diagnostics": [],
             }
         },
+        "query_texts": {"123": "select * from pg_class where oid = $1"},
     }
 
     html = render_html(artifact)
+    app_html = _without_vendor_bundles(html)
 
     assert '<script id="pg-diag-artifact" type="application/json">' in html
     assert "\\u003c/script\\u003e" in html
@@ -61,6 +87,20 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "Filter rows" in html
     assert "All rows" in html
     assert 'id="itemTypeFilter"' in html
+    assert 'id="tagFilter"' in html
+    assert html.index('id="tagFilter"') < html.index('id="itemTypeFilter"') < html.index('id="statusFilter"')
+    assert '<button id="expandAll" type="button" class="btn">Expand all</button>' in html
+    assert '<button id="expandAll" type="button" class="btn primary">Expand all</button>' not in html
+    assert 'id="visibleSummary"' in html
+    assert "filter-summary-panel" in html
+    assert "updateVisibleSummary(visibleTotal)" in html
+    assert 'node.textContent = "Showing " + visibleTotal + " from " + visibleItems.length' in html
+    assert "All tags" in html
+    assert "hydrateTagFilter()" in html
+    assert "TAG_ORDER" in html
+    assert "details.__tags = itemTags(item)" in html
+    assert "const tag = document.getElementById(\"tagFilter\").value" in html
+    assert "const matchesTag = !tag || (item.__tags || []).includes(tag)" in html
     assert "All items" in html
     assert "Plain Text" in html
     assert "Table" in html
@@ -113,7 +153,17 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "tbody.replaceChildren()" in html
     assert "sort-button" in html
     assert "renderChart(result, item)" in html
-    assert "apexcharts/3.44.0" in html
+    assert "ApexCharts v5.16.0" in html
+    assert 'id="apexcharts-library"' in html
+    assert 'id="highlight-library"' in html
+    assert "pg-diag-third-party-licenses" in html
+    assert "License: SEE LICENSE IN LICENSE" in html
+    assert "https://cdnjs.cloudflare.com/ajax/libs" not in html
+    assert "https://cdn.jsdelivr.net/npm" not in html
+    assert "__APEXCHARTS_JS__" not in html
+    assert "__HIGHLIGHT_JS__" not in html
+    assert "__HIGHLIGHT_CSS__" not in html
+    assert "__THIRD_PARTY_LICENSES__" not in html
     assert "new ApexCharts" in html
     assert "buildApexChartOptions" in html
     assert "apexChartType(chartKind)" in html
@@ -127,6 +177,12 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "kind === \"area\" || kind === \"stacked_area\"" in html
     assert "xType === \"datetime\" ? \"datetime\" : \"category\"" in html
     assert "apex-chart" in html
+    assert "z-index: 60 !important" in html
+    assert ".apexcharts-toolbar {\n      display: inline-flex !important;" in html
+    assert "background: var(--button-bg) !important;" in html
+    assert ".apexcharts-toolbar .apexcharts-menu-icon,\n    .apexcharts-toolbar .apexcharts-reset-icon," in html
+    assert ".apexcharts-toolbar .apexcharts-selected,\n    .apexcharts-toolbar .apexcharts-menu-open" in html
+    assert "background: var(--accent-soft) !important;" in html
     assert "apexcharts-menu" in html
     assert "justify-content: flex-start !important" in html
     assert "text-align: left !important" in html
@@ -135,6 +191,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "enabled: true" in html
     assert 'type: "x"' in html
     assert "autoScaleYaxis: unit !== \"%\"" in html
+    assert "allowMouseWheelZoom: false" in html
     assert "toolbar: {" in html
     assert "selection: true" in html
     assert "zoomin: true" in html
@@ -148,8 +205,13 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "formatChartAxisValue(value, unit)" in html
     assert "formatChartTooltipValue(value, unit)" in html
     assert "formatCompactMetricValue(numeric, 1000)" in html
-    assert "highlight.js/11.9.0" in html
+    assert "Highlight.js v11.11.1" in html
     assert 'id="sourceModal"' in html
+    assert "const queryTexts = artifact.query_texts || {}" in html
+    assert "query-id-button" in html
+    assert "openQueryTextModal(queryId)" in html
+    assert "Show query: " in html
+    assert '"query_texts":{"123":"select * from pg_class where oid = $1"}' in html
     assert 'id="metaModal"' in html
     assert 'id="instructionModal"' in html
     assert "sourceActionLabel(item)" in html
@@ -167,6 +229,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "appendMetaRows(rows, \"source\", item.source_metadata || {})" in html
     assert '"sql_file":"test/query.sql"' in html
     assert '"variant_id":"test_query_all"' in html
+    assert '"tags":["SQL","Tables"]' in html
     assert "source.source_text_chars" in html
     assert "copyCurrentSource" in html
     assert "highlightElement" in html
@@ -186,7 +249,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert 'localStorage.setItem("pg_diag_theme"' in html
     assert "CELL_COLLAPSED_LINE_LIMIT = 6" in html
     assert "lineCount(text) > CELL_COLLAPSED_LINE_LIMIT" in html
-    assert 'text.includes("\\\\n")' not in html
+    assert 'text.includes("\\\\n")' not in app_html
     assert "search-highlight" in html
     assert "itemSearchText(item)" in html
     assert "item.result" in html
@@ -194,9 +257,9 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "applyGlobalRowFilter" in html
     assert 'query: "SQL query"' in html
     assert 'script: "Bash"' in html
-    assert "function addKv" not in html
-    assert 'addKv(meta, "id"' not in html
-    assert 'addKv(meta, "metric"' not in html
+    assert "function addKv" not in app_html
+    assert 'addKv(meta, "id"' not in app_html
+    assert 'addKv(meta, "metric"' not in app_html
     assert "--item-summary-open-bg: #f3d46b" in html
     assert "--item-open-bg: #0f0a16" in html
     assert "--item-open-bg: #f2f2f5" in html
@@ -212,8 +275,13 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "details.item {\n      box-sizing: border-box;" in html
     assert "transition: background-color 300ms ease, color 300ms ease, border-color 300ms ease" in html
     assert ".details-content" in html
+    assert ".details-content {\n      display: grid;\n      grid-template-rows: 1fr;\n      min-width: 0;" in html
+    assert ".details-content-inner {\n      min-height: 0;\n      min-width: 0;" in html
     assert "grid-template-rows: 0fr" in html
     assert "grid-template-rows: 1fr" in html
+    assert "details[open]:not(.is-opening):not(.is-closing) > .details-content > .details-content-inner" in html
+    assert "details.item[open]:not(.is-opening):not(.is-closing)" in html
+    assert "overflow: visible" in html
     assert "wrapDetailsContent(body)" in html
     assert "details.classList.add(\"is-opening\")" in html
     assert "window.setTimeout(" in html
@@ -223,11 +291,11 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert 'diagnosticParts.push(key + ":\\n" + stringifyValue(value));' in html
     assert 'parts.push("diagnostic[" + index + "]:\\n" + diagnosticParts.join("\\n\\n"));' in html
     assert 'parts.push("output:\\n" + stringifyValue(result.data));' in html
-    assert "getBoundingClientRect" not in html
-    assert "offsetHeight" not in html
-    assert "details.animate([" not in html
-    assert 'window.dispatchEvent(new Event("resize"))' not in html
-    assert "body.animate" not in html
+    assert "getBoundingClientRect" not in app_html
+    assert "offsetHeight" not in app_html
+    assert "details.animate([" not in app_html
+    assert 'window.dispatchEvent(new Event("resize"))' not in app_html
+    assert "body.animate" not in app_html
     assert ".section-control-button.expand::before" in html
     assert ".section-control-button.collapse::before" in html
     assert 'button.className = "section-control-button expand"' in html
@@ -252,6 +320,8 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "updatePageScrollControls" in html
     assert "progress < 0.9" in html
     assert "setScrollButtonVisible" in html
+    assert ".table-shell {\n      border: 1px solid var(--line);\n      border-radius: 8px;\n      overflow: hidden;\n      background: var(--panel);\n      width: 100%;" in html
+    assert ".table-scroll {\n      max-height: 72vh;\n      width: 100%;\n      max-width: 100%;" in html
     assert ".item-error" in html
     assert "ERROR_ITEM_STATUSES" in html
     assert '"permission_denied"' in html

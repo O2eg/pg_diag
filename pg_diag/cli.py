@@ -97,8 +97,16 @@ def build_parser() -> argparse.ArgumentParser:
     snapshots_parser.add_argument("--password")
     snapshots_parser.add_argument("--out", default="report", help="Output directory")
     _add_report_output_file_args(snapshots_parser)
-    snapshots_parser.add_argument("--duration-seconds", type=float, default=30.0)
-    snapshots_parser.add_argument("--interval-seconds", type=float, default=5.0)
+    snapshots_parser.add_argument(
+        "--duration-seconds",
+        type=float,
+        default=runtime_config.SNAPSHOTS_DEFAULT_DURATION_SECONDS,
+    )
+    snapshots_parser.add_argument(
+        "--interval-seconds",
+        type=float,
+        default=runtime_config.SNAPSHOTS_DEFAULT_INTERVAL_SECONDS,
+    )
     snapshots_parser.add_argument(
         "--collection-mode",
         choices=[runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE, runtime_config.LOCAL_COLLECTION_MODE],
@@ -274,8 +282,9 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
     if not args.dsn and not (args.host and args.database and args.user):
         print("ERROR: snapshots requires --dsn or --host/--database/--user", file=sys.stderr)
         return 2
-    if args.duration_seconds <= 0 or args.interval_seconds <= 0:
-        print("ERROR: snapshots requires positive --duration-seconds and --interval-seconds", file=sys.stderr)
+    window_error = runtime_config.validate_snapshots_window(args.duration_seconds, args.interval_seconds)
+    if window_error:
+        print(f"ERROR: {window_error}", file=sys.stderr)
         return 2
     content, issues = _load_and_validate(args.content)
     if has_errors(issues):

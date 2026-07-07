@@ -9,6 +9,7 @@ from typing import Any
 from . import runtime_config
 from .artifact import (
     create_artifact,
+    extract_item_query_texts,
     item_error_from_exception,
     item_from_plan,
     report_output_paths,
@@ -32,11 +33,15 @@ async def collect_snapshots(
     dsn: str | None,
     connection_kwargs: dict[str, Any],
     collection_mode: str = runtime_config.LOCAL_COLLECTION_MODE,
-    duration_seconds: float = 30.0,
-    interval_seconds: float = 5.0,
+    duration_seconds: float = runtime_config.SNAPSHOTS_DEFAULT_DURATION_SECONDS,
+    interval_seconds: float = runtime_config.SNAPSHOTS_DEFAULT_INTERVAL_SECONDS,
     json_out: str | Path | None = None,
     html_out: str | Path | None = None,
 ) -> dict[str, Any]:
+    window_error = runtime_config.validate_snapshots_window(duration_seconds, interval_seconds)
+    if window_error:
+        raise ValueError(window_error)
+
     issues = validate_content(content)
     if has_errors(issues):
         details = "; ".join(f"{issue.location}: {issue.message}" for issue in issues if issue.level == "error")
@@ -82,17 +87,20 @@ async def collect_snapshots(
         ]
 
         snapshots = await _collect_db_samples(content, conn, sampled_queries, duration_seconds, interval_seconds)
+        _extract_snapshots_query_texts(artifact, snapshots)
         artifact["snapshots"] = snapshots
         _promote_last_sample_items(artifact, snapshots)
 
         for planned in once_items:
             try:
-                artifact["items"][planned.item_id] = await _execute_once_item(
+                item = await _execute_once_item(
                     content,
                     conn,
                     planned,
                     collection_mode,
                 )
+                extract_item_query_texts(item, artifact["query_texts"])
+                artifact["items"][planned.item_id] = item
             except Exception as exc:
                 artifact["items"][planned.item_id] = item_error_from_exception(planned, exc)
 
@@ -156,7 +164,7 @@ async def _collect_db_samples(
     duration_seconds: float,
     interval_seconds: float,
 ) -> list[dict[str, Any]]:
-    sample_count = max(1, int(round(duration_seconds / interval_seconds)) + 1)
+    sample_count = runtime_config.snapshots_sample_count(duration_seconds, interval_seconds)
     loop = asyncio.get_running_loop()
     start = loop.time()
     snapshots: list[dict[str, Any]] = []
@@ -174,6 +182,13 @@ async def _collect_db_samples(
             snapshot["items"][planned.item_id] = item
         snapshots.append(snapshot)
     return snapshots
+
+
+def _extract_snapshots_query_texts(artifact: dict[str, Any], snapshots: list[dict[str, Any]]) -> None:
+    query_texts = artifact["query_texts"]
+    for snapshot in snapshots:
+        for item in (snapshot.get("items") or {}).values():
+            extract_item_query_texts(item, query_texts)
 
 
 def _promote_last_sample_items(artifact: dict[str, Any], snapshots: list[dict[str, Any]]) -> None:

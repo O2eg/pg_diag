@@ -106,3 +106,36 @@ def test_render_from_json_cli(repo_root: Path, tmp_path: Path) -> None:
     html = html_path.read_text(encoding="utf-8")
     assert "\\u003c/script\\u003e" in html
     assert "<script>alert(1)</script>" not in html
+
+
+def test_snapshots_cli_rejects_interval_below_minimum(repo_root: Path) -> None:
+    proc = run_cli(
+        repo_root,
+        "snapshots",
+        "--dsn",
+        "postgresql://example/db",
+        "--duration-seconds",
+        "30",
+        "--interval-seconds",
+        "4",
+    )
+
+    assert proc.returncode == 2
+    assert "between 5 and 600" in proc.stderr
+
+
+def test_snapshots_cli_rejects_too_many_samples(repo_root: Path) -> None:
+    proc = run_cli(
+        repo_root,
+        "snapshots",
+        "--dsn",
+        "postgresql://example/db",
+        "--duration-seconds",
+        "86400",
+        "--interval-seconds",
+        "15",
+    )
+
+    assert proc.returncode == 2
+    assert "sample count 5761 exceeds maximum 300" in proc.stderr
+    assert "at least 289" in proc.stderr

@@ -14,4 +14,9 @@ select
   left(coalesce(query, ''), 1000) as query
 from pg_stat_activity
 where pid <> pg_backend_pid()
-order by query_age_seconds desc nulls last, pid
+order by
+  coalesce(state = 'active', false) desc,
+  query_age_seconds desc nulls last,
+  xact_age_seconds desc nulls last,
+  pid
+limit 200

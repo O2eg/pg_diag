@@ -8,6 +8,7 @@ from typing import Any
 from . import runtime_config
 from .artifact import (
     create_artifact,
+    extract_item_query_texts,
     item_error_from_exception,
     item_from_plan,
     report_output_paths,
@@ -89,6 +90,7 @@ async def collect_snapshot(
                         reason="Unknown source kind",
                         result={"kind": "none"},
                     )
+                extract_item_query_texts(artifact["items"][planned.item_id], artifact["query_texts"])
             except Exception as exc:
                 artifact["items"][planned.item_id] = item_error_from_exception(planned, exc)
 

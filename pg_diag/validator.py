@@ -22,6 +22,37 @@ class ValidationIssue:
 
 SOURCE_KEYS = {"query", "script", "metric"}
 FORBIDDEN_LAYOUT_KEYS = {"columns", "theader", "fields"}
+ALLOWED_ITEM_TAGS = {
+    "CPU",
+    "Checkpoints",
+    "Configuration",
+    "Databases",
+    "Disk",
+    "Filesystem",
+    "Functions",
+    "Hardware",
+    "I/O",
+    "Indexes",
+    "Kernel",
+    "Locks",
+    "Maintenance",
+    "Memory",
+    "Network",
+    "Other",
+    "Processes",
+    "Replication",
+    "SQL",
+    "Security",
+    "Sequences",
+    "Sessions",
+    "Storage",
+    "Tables",
+    "Tablespaces",
+    "Transactions",
+    "Vacuum",
+    "WAL",
+    "Waits",
+}
 
 
 def validate_content(content: ContentPack) -> list[ValidationIssue]:
@@ -88,6 +119,7 @@ def _validate_report_items(content: ContentPack, issues: list[ValidationIssue]) 
                 f"Report item must not define table columns: {sorted(forbidden)}",
                 location,
             )
+        _validate_report_item_tags(item, issues, location)
 
         if "query" in source_keys and item["query"] not in content.queries:
             _issue(issues, "missing_query", f"Unknown query id {item['query']!r}", location)
@@ -95,6 +127,28 @@ def _validate_report_items(content: ContentPack, issues: list[ValidationIssue]) 
             _issue(issues, "missing_script", f"Unknown script id {item['script']!r}", location)
         if "metric" in source_keys and item["metric"] not in content.metrics:
             _issue(issues, "missing_metric", f"Unknown metric id {item['metric']!r}", location)
+
+
+def _validate_report_item_tags(
+    item: dict[str, Any],
+    issues: list[ValidationIssue],
+    location: str,
+) -> None:
+    tags = item.get("tags")
+    if not isinstance(tags, list) or not tags:
+        _issue(issues, "item_tags", "Report item must define at least one tag", location)
+        return
+
+    seen: set[str] = set()
+    for tag in tags:
+        if not isinstance(tag, str) or not tag:
+            _issue(issues, "item_tags", "Report item tags must be non-empty strings", location)
+            continue
+        if tag in seen:
+            _issue(issues, "item_tags", f"Duplicate report item tag {tag!r}", location)
+        seen.add(tag)
+        if tag not in ALLOWED_ITEM_TAGS:
+            _issue(issues, "item_tags", f"Unknown report item tag {tag!r}", location)
 
 
 def _validate_query_manifests(content: ContentPack, issues: list[ValidationIssue]) -> None:

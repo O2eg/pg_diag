@@ -25,18 +25,37 @@ tables as (
   where c.relkind in ('r', 'm')
     and c.relpersistence <> 't'
     and not n.nspname like any (array[E'pg\\_%', 'information_schema'])
+),
+queue as (
+  select
+    current_database() as datname,
+    t.schemaname as schemaname,
+    t.relname as relname,
+    ut.n_dead_tup::int8 as n_dead_tup,
+    ut.n_live_tup::int8 as n_live_tup,
+    (t.av_threshold + t.av_scale_factor * t.reltuples)::int8 as autovacuum_threshold,
+    case
+      when (t.av_threshold + t.av_scale_factor * t.reltuples) > 0
+      then ut.n_dead_tup::float8 / (t.av_threshold + t.av_scale_factor * t.reltuples)
+      else 0
+    end as autovacuum_overdue_factor
+  from tables t
+  join pg_stat_all_tables ut on ut.relid = t.relid
 )
 select
-  current_database() as datname,
-  t.schemaname as schemaname,
-  t.relname as relname,
-  ut.n_dead_tup::int8 as n_dead_tup,
-  ut.n_live_tup::int8 as n_live_tup,
-  (t.av_threshold + t.av_scale_factor * t.reltuples)::int8 as autovacuum_threshold,
-  case
-    when (t.av_threshold + t.av_scale_factor * t.reltuples) > 0
-    then ut.n_dead_tup::float8 / (t.av_threshold + t.av_scale_factor * t.reltuples)
-    else 0
-  end as autovacuum_overdue_factor
-from tables t
-join pg_stat_all_tables ut on ut.relid = t.relid
+  datname,
+  schemaname,
+  relname,
+  n_dead_tup,
+  n_live_tup,
+  autovacuum_threshold,
+  autovacuum_overdue_factor
+from queue
+where n_dead_tup > 0
+order by
+  autovacuum_overdue_factor desc nulls last,
+  n_dead_tup desc nulls last,
+  n_live_tup desc nulls last,
+  schemaname asc,
+  relname asc
+limit 200

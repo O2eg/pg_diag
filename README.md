@@ -207,6 +207,16 @@ OS data from the collector host is intentionally required.
 Repeated snapshots mode collects samples over time and computes rates, deltas,
 top-N charts, and workload summaries from adjacent snapshots.
 
+The collection window is bounded to keep `report.json`, self-contained HTML, and
+browser memory usage predictable:
+
+- `--duration-seconds`: 30 seconds to 86400 seconds (24 hours), default 30.
+- `--interval-seconds`: 5 seconds to 600 seconds, default 15.
+- Estimated snapshots: at most 300 (`round(duration / interval) + 1`).
+
+For example, a 24 hour report needs an interval of about 5 minutes (289 seconds
+or more with the current sample count formula).
+
 Example: collect for 60 seconds with a 5 second interval:
 
 ```bash

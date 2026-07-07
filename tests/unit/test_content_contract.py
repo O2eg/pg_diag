@@ -8,7 +8,7 @@ import pytest
 from pg_diag.content_loader import ContentLoadError, iter_report_items, load_content, load_yaml_file
 from pg_diag.planner import build_plan
 from pg_diag.runtime_config import REMOTE_DB_ONLY_COLLECTION_MODE, SNAPSHOT_MODE, SNAPSHOTS_MODE
-from pg_diag.validator import has_errors, validate_content
+from pg_diag.validator import ALLOWED_ITEM_TAGS, has_errors, validate_content
 from pg_diag.versioning import select_query_variant
 
 
@@ -33,6 +33,15 @@ def test_report_items_have_exactly_one_source(content_path: Path) -> None:
     content = load_content(content_path)
     for _section_id, _item_key, _item_id, item in iter_report_items(content):
         assert len({"query", "script", "metric"}.intersection(item)) == 1
+
+
+def test_report_items_have_allowed_tags(content_path: Path) -> None:
+    content = load_content(content_path)
+    for _section_id, _item_key, item_id, item in iter_report_items(content):
+        tags = item.get("tags") or []
+        assert tags, item_id
+        assert len(tags) == len(set(tags)), item_id
+        assert set(tags).issubset(ALLOWED_ITEM_TAGS), item_id
 
 
 def test_report_items_have_markdown_instructions(content_path: Path) -> None:
@@ -160,6 +169,8 @@ def test_plan_exposes_query_default_sort(content_path: Path) -> None:
         "direction": "desc",
     }
     assert by_id["overview.server_version"].source_metadata["instructions"]["format"] == "markdown"
+    assert by_id["overview.server_version"].source_metadata["tags"] == ["Configuration"]
+    assert by_id["activity_locks.lock_waits"].source_metadata["tags"] == ["Locks", "Waits", "Sessions"]
     assert "## Checklist" in by_id["overview.server_version"].source_metadata["instructions"]["text"]
     assert by_id["overview.server_version"].source_metadata["query_usage"] == {
         "query_id": "cluster.server_version",

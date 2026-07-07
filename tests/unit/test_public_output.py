@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pg_diag.artifact import item_error_from_exception, item_from_plan
+from pg_diag.artifact import extract_item_query_texts, item_error_from_exception, item_from_plan
 from pg_diag.executors.shell import table_json_result
 from pg_diag.executors.sql import publicize_table_result
 from pg_diag.planner import PlannedItem
@@ -63,6 +63,36 @@ def test_item_metadata_can_embed_source_text() -> None:
 
     assert item["source_metadata"]["source_text"] == "select version()"
     assert item["source_metadata"]["source_language"] == "sql"
+
+
+def test_item_query_texts_are_moved_to_artifact_catalog() -> None:
+    item = {
+        "result": {
+            "kind": "table",
+            "columns": [
+                {"name": "pid"},
+                {"name": "query_id"},
+                {"name": "query"},
+                {"name": "blocked_query_id"},
+                {"name": "blocked_query"},
+            ],
+            "rows": [
+                [101, "11", "select 1", "22", "select blocked"],
+                [102, "11", "select 1 from pg_catalog.pg_class", "", "ignored"],
+            ],
+            "row_count": 2,
+        },
+    }
+    query_texts: dict[str, str] = {}
+
+    extract_item_query_texts(item, query_texts)
+
+    assert [column["name"] for column in item["result"]["columns"]] == ["pid", "query_id", "blocked_query_id"]
+    assert item["result"]["rows"] == [[101, "11", "22"], [102, "11", ""]]
+    assert query_texts == {
+        "11": "select 1 from pg_catalog.pg_class",
+        "22": "select blocked",
+    }
 
 
 def test_item_error_from_exception_embeds_traceback_diagnostic() -> None:

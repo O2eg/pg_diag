@@ -10,7 +10,7 @@ report:
     instructions: instructions
 
 runtime_policy:
-  default_sql_timeout_ms: 10000
+  default_sql_timeout_ms: 3000
   default_shell_timeout_ms: 5000
   remote_db_only_shell_message: "no data bacause remote call"
   table_columns: dynamic_from_result
@@ -29,14 +29,18 @@ sections:
     items:
       server_version:
         query: cluster.server_version
+        tags: [Configuration]
       pg_settings:
         query: cluster.settings
+        tags: [Configuration]
         state: collapsed
       stat_reset_times:
         query: cluster.stat_reset_times
+        tags: [Databases]
         state: collapsed
       database_stats:
         query: database.database_stats
+        tags: [Databases]
         state: collapsed
 
   os:
@@ -46,82 +50,109 @@ sections:
     items:
       kernel_version:
         script: os.kernel_version
+        tags: [Kernel, Hardware]
       os_release:
         script: os.os_release
+        tags: [Configuration, Kernel]
         state: collapsed
       memory_info:
         script: os.memory_info
+        tags: [Memory]
         state: collapsed
       total_ram:
         script: os.total_ram
+        tags: [Memory, Hardware]
         state: collapsed
       cpu_info:
         script: os.cpu_info
+        tags: [CPU, Hardware]
         state: collapsed
       disk_usage:
         script: os.disk_usage
+        tags: [Disk, Filesystem]
       fstab:
         script: os.fstab
+        tags: [Filesystem, Configuration]
         state: collapsed
       mounts:
         script: os.mounts
+        tags: [Filesystem]
         state: collapsed
       network_addresses:
         script: os.network_addresses
+        tags: [Network]
         state: collapsed
       sysctl_vm:
         script: os.sysctl_vm
+        tags: [Kernel, Memory]
         state: collapsed
       sysctl_tcp:
         script: os.sysctl_tcp
+        tags: [Kernel, Network]
         state: collapsed
       sysctl_udp:
         script: os.sysctl_udp
+        tags: [Kernel, Network]
         state: collapsed
       lshw_system:
         script: os.lshw_system
+        tags: [Hardware]
         state: collapsed
       lshw_bus:
         script: os.lshw_bus
+        tags: [Hardware]
         state: collapsed
       lshw_memory:
         script: os.lshw_memory
+        tags: [Hardware, Memory]
         state: collapsed
       lshw_processor:
         script: os.lshw_processor
+        tags: [Hardware, CPU]
         state: collapsed
       lshw_bridge:
         script: os.lshw_bridge
+        tags: [Hardware]
         state: collapsed
       lshw_display:
         script: os.lshw_display
+        tags: [Hardware]
         state: collapsed
       lshw_network:
         script: os.lshw_network
+        tags: [Hardware, Network]
         state: collapsed
       lshw_storage:
         script: os.lshw_storage
+        tags: [Hardware, Storage]
         state: collapsed
       lshw_disk:
         script: os.lshw_disk
+        tags: [Hardware, Disk]
         state: collapsed
       lshw_volume:
         script: os.lshw_volume
+        tags: [Hardware, Disk, Filesystem]
         state: collapsed
       lshw_input:
         script: os.lshw_input
+        tags: [Hardware]
         state: collapsed
       lshw_communication:
         script: os.lshw_communication
+        tags: [Hardware, Network]
         state: collapsed
       lshw_multimedia:
         script: os.lshw_multimedia
+        tags: [Hardware]
         state: collapsed
       lshw_power:
         script: os.lshw_power
+        tags: [Hardware]
         state: collapsed
       lshw_generic:
         script: os.lshw_generic
+        tags: [Hardware]
         state: collapsed
 
   activity_locks:
@@ -130,36 +161,46 @@ sections:
     items:
       connection_pressure:
         query: activity.connection_pressure
+        tags: [Sessions, Databases]
       session_states:
         query: activity.session_states
+        tags: [Sessions]
       wait_events:
         query: activity.wait_events
+        tags: [Sessions, Waits]
         state: collapsed
       wait_event_sample_profile:
         metric: activity.wait_sample_profile
+        tags: [Sessions, Waits]
         state: collapsed
       pg_wait_sampling_capabilities:
         query: wait.pg_wait_sampling_capabilities
+        tags: [Configuration, Waits]
         state: collapsed
       pg_wait_sampling_profile:
         query: wait.pg_wait_sampling_profile
+        tags: [Waits]
         state: collapsed
         render:
           empty_message: pg_wait_sampling profile has no rows or extension is not installed.
       long_transactions:
         query: activity.long_transactions
+        tags: [Transactions, Sessions]
         state: collapsed
       idle_in_transaction:
         query: activity.idle_in_transaction
+        tags: [Transactions, Sessions]
         state: collapsed
         render:
           empty_message: No sessions idle in transaction for more than one minute.
       lock_waits:
         query: locks.lock_waits
+        tags: [Locks, Waits, Sessions]
         render:
           empty_message: No lock waits detected.
       lock_modes:
         query: locks.lock_modes
+        tags: [Locks]
         state: collapsed
 
   sql_workload:
@@ -168,22 +209,29 @@ sections:
     items:
       pg_stat_statements_capabilities:
         query: statements.pg_stat_statements_capabilities
+        tags: [Configuration, SQL]
       top_sql_by_total_time:
         query: statements.top_by_total_time
+        tags: [SQL]
       top_sql_by_mean_time:
         query: statements.top_by_mean_time
+        tags: [SQL]
         state: collapsed
       top_sql_by_calls:
         query: statements.top_by_calls
+        tags: [SQL]
         state: collapsed
       top_sql_by_shared_io:
         query: statements.top_by_io
+        tags: [SQL, "I/O"]
         state: collapsed
       top_sql_by_temp_io:
         query: statements.top_by_temp_io
+        tags: [SQL, "I/O"]
         state: collapsed
       top_sql_by_wal:
         query: statements.top_by_wal
+        tags: [SQL, WAL]
         state: collapsed
 
   snapshot_delta_workload:
@@ -193,29 +241,38 @@ sections:
     items:
       database_workload_delta:
         metric: database.workload_delta
+        tags: [Databases, SQL]
       sql_time_delta:
         metric: statements.total_time_delta
+        tags: [SQL]
         state: collapsed
       sql_io_delta:
         metric: statements.io_delta
+        tags: [SQL, "I/O"]
         state: collapsed
       sql_wal_delta:
         metric: statements.wal_delta
+        tags: [SQL, WAL]
         state: collapsed
       table_dml_delta:
         metric: objects.table_dml_delta
+        tags: [Tables]
         state: collapsed
       table_scan_delta:
         metric: objects.table_scan_delta
+        tags: [Tables]
         state: collapsed
       table_io_delta:
         metric: objects.table_io_delta
+        tags: [Tables, "I/O"]
         state: collapsed
       index_usage_delta:
         metric: objects.index_usage_delta
+        tags: [Indexes]
         state: collapsed
       function_time_delta:
         metric: objects.function_time_delta
+        tags: [Functions]
         state: collapsed
 
   replication:
@@ -224,27 +281,33 @@ sections:
     items:
       physical_replication:
         query: replication.physical_replication
+        tags: [Replication]
         render:
           empty_message: No physical replication sender rows.
       replication_slots:
         query: replication.slots
+        tags: [Replication, WAL]
         state: collapsed
         render:
           empty_message: No replication slots.
       wal_receiver:
         query: replication.wal_receiver
+        tags: [Replication, WAL]
         state: collapsed
         render:
           empty_message: No WAL receiver row on this server.
       standby_conflicts:
         query: replication.database_conflicts
+        tags: [Replication, Databases]
       subscription_workers:
         query: replication.subscription_workers
+        tags: [Replication]
         state: collapsed
         render:
           empty_message: No logical subscriptions.
       recovery_prefetch:
         query: replication.recovery_prefetch
+        tags: [Replication]
         state: collapsed
 
   wal_io_checkpoints:
@@ -253,23 +316,30 @@ sections:
     items:
       wal_position:
         query: wal.position
+        tags: [WAL]
       wal_statistics:
         query: wal.stat_wal
+        tags: [WAL]
         state: collapsed
       wal_archiver:
         query: wal.archiver
+        tags: [WAL]
         state: collapsed
       slru_statistics:
         query: slru.stat_slru
+        tags: [Storage]
         state: collapsed
       bgwriter:
         query: checkpoints.bgwriter
+        tags: [Checkpoints, "I/O"]
         state: collapsed
       checkpointer:
         query: checkpoints.checkpointer
+        tags: [Checkpoints, "I/O"]
         state: collapsed
       pg_stat_io:
         query: io.pg_stat_io
+        tags: ["I/O"]
         state: collapsed
 
   maintenance_progress:
@@ -279,20 +349,24 @@ sections:
     items:
       vacuum_progress:
         query: progress.vacuum
+        tags: [Maintenance, Vacuum]
         render:
           empty_message: No VACUUM operations in progress.
       create_index_progress:
         query: progress.create_index
+        tags: [Maintenance, Indexes]
         state: collapsed
         render:
           empty_message: No CREATE INDEX operations in progress.
       cluster_progress:
         query: progress.cluster
+        tags: [Maintenance, Tables]
         state: collapsed
         render:
           empty_message: No CLUSTER or VACUUM FULL operations in progress.
       copy_progress:
         query: progress.copy
+        tags: [Maintenance, Tables]
         state: collapsed
         render:
           empty_message: No COPY operations in progress.
@@ -303,29 +377,36 @@ sections:
     items:
       autovacuum_queue:
         query: vacuum.autovacuum_queue
+        tags: [Vacuum, Tables]
       database_wraparound:
         query: vacuum.database_wraparound
+        tags: [Vacuum, Databases]
         state: collapsed
       xmin_horizon:
         query: vacuum.xmin_horizon
+        tags: [Vacuum, Transactions]
         state: collapsed
       xmin_horizon_blockers:
         query: vacuum.xmin_horizon_blockers
+        tags: [Vacuum, Transactions, Replication]
         state: collapsed
         render:
           empty_message: No xmin horizon blockers detected.
       prepared_xacts:
         query: vacuum.prepared_xacts
+        tags: [Transactions]
         state: collapsed
         render:
           empty_message: No prepared transactions.
       sequence_status:
         query: storage.sequence_status
+        tags: [Sequences, Storage]
         state: collapsed
         render:
           empty_message: No sequences found.
       table_size_detailed:
         query: storage.table_size_detailed
+        tags: [Tables, Storage]
 
   object_workload:
     title: Object Workload
@@ -334,14 +415,18 @@ sections:
     items:
       table_workload:
         query: objects.table_workload
+        tags: [Tables]
       table_io:
         query: objects.table_io
+        tags: [Tables, "I/O"]
         state: collapsed
       index_workload:
         query: objects.index_workload
+        tags: [Indexes]
         state: collapsed
       function_workload:
         query: objects.function_workload
+        tags: [Functions]
         state: collapsed
 
   backend_os:
@@ -351,14 +436,18 @@ sections:
     items:
       backend_activity:
         query: backend.activity
+        tags: [Processes, Sessions]
       postgres_process_tree:
         script: os.postgres_process_tree
+        tags: [Processes]
         state: collapsed
       backend_proc_cpu:
         metric: backend.proc_cpu_top
+        tags: [Processes, CPU]
         state: collapsed
       backend_proc_io:
         metric: backend.proc_io_top
+        tags: [Processes, "I/O"]
         state: collapsed
 
   indexes:
@@ -367,33 +456,40 @@ sections:
     items:
       invalid_indexes:
         query: indexes.invalid_indexes
+        tags: [Indexes]
         render:
           empty_message: No invalid indexes detected.
       unused_indexes:
         query: indexes.unused_indexes
+        tags: [Indexes]
         state: collapsed
       redundant_indexes:
         query: indexes.redundant_indexes
+        tags: [Indexes]
         state: collapsed
         render:
           empty_message: No redundant indexes detected.
       duplicate_indexes:
         query: indexes.duplicate_indexes
+        tags: [Indexes]
         state: collapsed
         render:
           empty_message: No duplicate indexes detected.
       foreign_keys_without_index:
         query: indexes.foreign_keys_without_index
+        tags: [Indexes, Tables]
         state: collapsed
         render:
           empty_message: No foreign keys without supporting indexes detected.
       tables_without_pk_or_unique:
         query: indexes.tables_without_pk_or_unique
+        tags: [Indexes, Tables]
         state: collapsed
         render:
           empty_message: No user tables without PK or unique index detected.
       large_indexes:
         query: indexes.large_indexes
+        tags: [Indexes, Storage]
         state: collapsed
         render:
           empty_message: No indexes larger than half of their table heap detected.
@@ -405,18 +501,22 @@ sections:
     items:
       extensions:
         query: cluster.extensions
+        tags: [Configuration]
       privileged_roles:
         query: cluster.roles_privileges
+        tags: [Security]
         state: collapsed
         render:
           empty_message: No privileged roles visible to the current user.
       pending_restart_settings:
         query: cluster.pending_restart_settings
+        tags: [Configuration]
         state: collapsed
         render:
           empty_message: No settings pending restart.
       tablespaces:
         query: cluster.tablespaces
+        tags: [Tablespaces, Storage]
         state: collapsed
 
   snapshot_charts_os:
@@ -426,38 +526,50 @@ sections:
     items:
       os_cpu_utilization:
         metric: os.cpu_utilization
+        tags: [CPU]
       os_cpu_load:
         metric: os.cpu_load
+        tags: [CPU]
         state: collapsed
       os_memory_usage:
         metric: os.memory_usage
+        tags: [Memory]
         state: collapsed
       os_memory_pressure:
         metric: os.memory_pressure
+        tags: [Memory]
         state: collapsed
       os_disk_read_throughput:
         metric: os.disk_read_throughput
+        tags: [Disk, "I/O"]
         state: collapsed
       os_disk_write_throughput:
         metric: os.disk_write_throughput
+        tags: [Disk, "I/O"]
         state: collapsed
       os_disk_iops:
         metric: os.disk_iops
+        tags: [Disk, "I/O"]
         state: collapsed
       os_disk_utilization:
         metric: os.disk_utilization
+        tags: [Disk]
         state: collapsed
       os_disk_latency:
         metric: os.disk_latency
+        tags: [Disk, "I/O"]
         state: collapsed
       os_network_receive:
         metric: os.network_receive_throughput
+        tags: [Network]
         state: collapsed
       os_network_transmit:
         metric: os.network_transmit_throughput
+        tags: [Network]
         state: collapsed
       os_network_packets:
         metric: os.network_packets
+        tags: [Network]
         state: collapsed
 
   snapshot_charts_db:
@@ -467,84 +579,112 @@ sections:
     items:
       database_transaction_rate:
         metric: database.transaction_rate
+        tags: [Databases, Transactions]
       activity_sessions_by_state:
         metric: activity.sessions_by_state
+        tags: [Sessions]
         state: collapsed
       wal_growth_rate:
         metric: wal.growth_rate
+        tags: [WAL]
         state: collapsed
       io_read_write_rate:
         metric: io.read_write_rate
+        tags: ["I/O"]
         state: collapsed
       database_tuple_dml_rate:
         metric: database.tuple_dml_rate
+        tags: [Databases, Tables]
         state: collapsed
       database_tuple_access_rate:
         metric: database.tuple_access_rate
+        tags: [Databases, Tables]
         state: collapsed
       database_block_access_rate:
         metric: database.block_access_rate
+        tags: [Databases, "I/O"]
         state: collapsed
       database_temp_files_delta:
         metric: database.temp_files_delta
+        tags: [Databases, Storage]
         state: collapsed
       database_temp_bytes_rate:
         metric: database.temp_bytes_rate
+        tags: [Databases, Storage]
         state: collapsed
       database_io_time_rate:
         metric: database.io_time_rate
+        tags: [Databases, "I/O"]
         state: collapsed
       database_backends:
         metric: database.backends
+        tags: [Databases, Sessions]
         state: collapsed
       database_deadlocks:
         metric: database.deadlocks
+        tags: [Databases, Locks]
         state: collapsed
       tables_top_tuple_access_rate:
         metric: objects.tables_top_tuple_access_rate
+        tags: [Tables]
         state: collapsed
       tables_top_seq_read_rate:
         metric: objects.tables_top_seq_read_rate
+        tags: [Tables]
         state: collapsed
       tables_top_index_fetch_rate:
         metric: objects.tables_top_index_fetch_rate
+        tags: [Tables, Indexes]
         state: collapsed
       tables_top_dml_rate:
         metric: objects.tables_top_dml_rate
+        tags: [Tables]
         state: collapsed
       tables_top_insert_rate:
         metric: objects.tables_top_insert_rate
+        tags: [Tables]
         state: collapsed
       tables_top_update_rate:
         metric: objects.tables_top_update_rate
+        tags: [Tables]
         state: collapsed
       tables_top_delete_rate:
         metric: objects.tables_top_delete_rate
+        tags: [Tables]
         state: collapsed
       tables_top_hot_update_rate:
         metric: objects.tables_top_hot_update_rate
+        tags: [Tables]
         state: collapsed
       tables_top_heap_read_rate:
         metric: objects.tables_top_heap_read_rate
+        tags: [Tables, "I/O"]
         state: collapsed
       tables_top_index_block_read_rate:
         metric: objects.tables_top_index_block_read_rate
+        tags: [Tables, Indexes, "I/O"]
         state: collapsed
       indexes_top_scan_rate:
         metric: objects.indexes_top_scan_rate
+        tags: [Indexes]
         state: collapsed
       indexes_top_tuple_read_rate:
         metric: objects.indexes_top_tuple_read_rate
+        tags: [Indexes]
         state: collapsed
       indexes_top_tuple_fetch_rate:
         metric: objects.indexes_top_tuple_fetch_rate
+        tags: [Indexes]
         state: collapsed
       indexes_top_reads_per_scan:
         metric: objects.indexes_top_reads_per_scan
+        tags: [Indexes]
         state: collapsed
       indexes_top_fetches_per_scan:
         metric: objects.indexes_top_fetches_per_scan
+        tags: [Indexes]
         state: collapsed
       indexes_top_reads_per_fetch:
         metric: objects.indexes_top_reads_per_fetch
+        tags: [Indexes]
         state: collapsed

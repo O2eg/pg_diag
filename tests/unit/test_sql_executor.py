@@ -1,0 +1,78 @@
+from __future__ import annotations
+
+import asyncio
+from types import SimpleNamespace
+
+from pg_diag.executors.sql import execute_query_item
+from pg_diag.planner import PlannedItem
+
+
+class QueryCanceledError(Exception):
+    pass
+
+
+class FakeTransaction:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+
+class TimeoutPrepared:
+    def get_attributes(self):
+        return []
+
+    async def fetch(self):
+        raise QueryCanceledError("canceling statement due to statement timeout")
+
+
+class TimeoutConn:
+    def __init__(self) -> None:
+        self.executed: list[tuple[str, str]] = []
+
+    def transaction(self, readonly: bool):
+        assert readonly is True
+        return FakeTransaction()
+
+    async def execute(self, sql: str, value: str) -> None:
+        self.executed.append((sql, value))
+
+    async def prepare(self, sql: str):
+        return TimeoutPrepared()
+
+
+def test_sql_timeout_exception_is_recorded_in_item(tmp_path) -> None:
+    queries = tmp_path / "queries"
+    queries.mkdir()
+    (queries / "slow.sql").write_text("select pg_sleep(10)", encoding="utf-8")
+    content = SimpleNamespace(
+        path=tmp_path,
+        query_catalog={"query_catalog": {"sql_root": "queries"}},
+        report={"runtime_policy": {"default_sql_timeout_ms": 3000}},
+    )
+    planned = PlannedItem(
+        item_id="test.slow",
+        section_id="test",
+        item_key="slow",
+        title="Slow SQL",
+        source_kind="query",
+        status="planned",
+        source_id="test.slow",
+        sql_file="slow.sql",
+        source_metadata={"query_id": "test.slow"},
+    )
+    conn = TimeoutConn()
+
+    item = asyncio.run(execute_query_item(content, conn, planned))
+
+    assert ("select set_config('statement_timeout', $1, true)", "3000") in conn.executed
+    assert item["item_id"] == "test.slow"
+    assert item["status"] == "error"
+    assert "statement timeout" in item["reason"]
+    assert item["result"] == {"kind": "table", "columns": [], "rows": [], "row_count": 0}
+    assert item["source_metadata"]["source_text"] == "select pg_sleep(10)"
+    assert item["source_metadata"]["source_language"] == "sql"
+    assert item["diagnostics"][0]["code"] == "error"
+    assert "statement timeout" in item["diagnostics"][0]["message"]
+    assert "QueryCanceledError" in item["diagnostics"][0]["traceback"]

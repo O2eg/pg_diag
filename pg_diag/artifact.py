@@ -57,6 +57,7 @@ def create_artifact(
         },
         "sections": plan.sections,
         "items": {},
+        "query_texts": {},
         "snapshots": [],
         "diagnostics": [],
     }
@@ -137,6 +138,72 @@ def write_json(path: str | Path, artifact: dict[str, Any]) -> None:
     with output.open("w", encoding="utf-8") as handle:
         json.dump(artifact, handle, ensure_ascii=False, indent=2, sort_keys=True)
         handle.write("\n")
+
+
+def extract_item_query_texts(item: dict[str, Any], query_texts: dict[str, str]) -> None:
+    """Move SQL text columns paired with query_id columns into the artifact catalog."""
+    result = item.get("result") or {}
+    if result.get("kind") != "table":
+        return
+
+    columns = result.get("columns")
+    rows = result.get("rows")
+    if not isinstance(columns, list) or not isinstance(rows, list):
+        return
+
+    column_names = [_column_name(column, index) for index, column in enumerate(columns)]
+    name_to_index = {name: index for index, name in enumerate(column_names) if name}
+    query_pairs: list[tuple[int, int]] = []
+    remove_indexes: set[int] = set()
+    for query_id_index, column_name in enumerate(column_names):
+        if not column_name.endswith("query_id"):
+            continue
+        query_column_name = column_name.removesuffix("_id")
+        query_index = name_to_index.get(query_column_name)
+        if query_index is None:
+            continue
+        query_pairs.append((query_id_index, query_index))
+        remove_indexes.add(query_index)
+
+    if not query_pairs:
+        return
+
+    for row in rows:
+        if not isinstance(row, list):
+            continue
+        for query_id_index, query_index in query_pairs:
+            query_id = row[query_id_index] if query_id_index < len(row) else None
+            query_text = row[query_index] if query_index < len(row) else None
+            _remember_query_text(query_texts, query_id, query_text)
+
+    keep_indexes = [index for index in range(len(columns)) if index not in remove_indexes]
+    result["columns"] = [columns[index] for index in keep_indexes]
+    result["rows"] = [
+        [row[index] if index < len(row) else None for index in keep_indexes]
+        if isinstance(row, list)
+        else row
+        for row in rows
+    ]
+
+
+def _column_name(column: Any, index: int) -> str:
+    if isinstance(column, str):
+        return column
+    if isinstance(column, dict):
+        return str(column.get("name") or f"column_{index + 1}")
+    return f"column_{index + 1}"
+
+
+def _remember_query_text(query_texts: dict[str, str], query_id: Any, query_text: Any) -> None:
+    if query_id is None or query_text is None:
+        return
+    query_id_text = str(query_id).strip()
+    sql_text = str(query_text).strip()
+    if not query_id_text or not sql_text:
+        return
+    existing = query_texts.get(query_id_text)
+    if existing is None or len(sql_text) > len(existing):
+        query_texts[query_id_text] = sql_text
 
 
 def report_output_paths(

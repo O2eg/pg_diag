@@ -116,9 +116,13 @@ def test_collect_snapshots_writes_exact_output_files(tmp_path, monkeypatch) -> N
             "capabilities": {},
         }
 
+    async def collect_db_samples_stub(*args, **kwargs):
+        return []
+
     monkeypatch.setattr(snapshots_module, "validate_content", lambda content: [])
     monkeypatch.setattr(snapshots_module, "connect", connect_stub)
     monkeypatch.setattr(snapshots_module, "detect_runtime_context", detect_runtime_context_stub)
+    monkeypatch.setattr(snapshots_module, "_collect_db_samples", collect_db_samples_stub)
     monkeypatch.setattr(
         snapshots_module,
         "build_plan",
@@ -133,8 +137,8 @@ def test_collect_snapshots_writes_exact_output_files(tmp_path, monkeypatch) -> N
             dsn=None,
             connection_kwargs={},
             collection_mode=runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE,
-            duration_seconds=1,
-            interval_seconds=1,
+            duration_seconds=30,
+            interval_seconds=15,
             json_out=json_path,
             html_out=html_path,
         )

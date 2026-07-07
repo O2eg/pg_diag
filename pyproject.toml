@@ -39,6 +39,14 @@ pythonpath = ["."]
 [tool.setuptools.packages.find]
 include = ["pg_diag*"]
 
+[tool.setuptools.package-data]
+pg_diag = [
+  "render/templates/*.html",
+  "render/vendor/*.css",
+  "render/vendor/*.js",
+  "render/vendor/*.txt",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
