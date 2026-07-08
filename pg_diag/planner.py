@@ -213,6 +213,9 @@ def _with_item_metadata(
     tags = _item_tags(item)
     if tags:
         result["tags"] = tags
+    render = item.get("render")
+    if isinstance(render, dict):
+        result["render"] = dict(render)
     instruction = content.instructions.get(item_id)
     if instruction:
         result["instructions"] = instruction
@@ -313,6 +316,8 @@ def _plan_query_item(
         "sql_file": variant.get("sql_file"),
         "main_view": manifest.get("main_view"),
         "cost": manifest.get("cost"),
+        "source": manifest.get("source"),
+        "optional": bool(manifest.get("optional")),
         "display": manifest.get("display") or {},
         "semantic_columns": variant.get("semantic_columns") or {},
         **_query_usage_metadata(query_id, item_id, query_usage_index),
@@ -371,7 +376,7 @@ def _plan_script_item(
     script = content.scripts[script_id]
     if collection_mode == runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE and script.get("local_only", True):
         message = (content.report.get("runtime_policy") or {}).get(
-            "remote_db_only_shell_message", "no data bacause remote call"
+            "remote_db_only_shell_message", "no data because remote call"
         )
         return PlannedItem(
             item_id=item_id,
@@ -424,7 +429,7 @@ def _plan_python_item(
     python_source = content.pythons[python_id]
     if collection_mode == runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE and python_source.get("local_only", False):
         message = (content.report.get("runtime_policy") or {}).get(
-            "remote_db_only_shell_message", "no data bacause remote call"
+            "remote_db_only_shell_message", "no data because remote call"
         )
         return PlannedItem(
             item_id=item_id,

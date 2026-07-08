@@ -890,12 +890,12 @@ __APEXCHARTS_JS__
     }
 
     .badge.empty,
-    .badge.skipped,
-    .badge.unsupported {
+    .badge.skipped {
       background: var(--warn-bg);
       color: var(--warn-fg);
     }
 
+    .badge.unsupported,
     .badge.error {
       background: var(--err-bg);
       color: var(--err-fg);
@@ -2570,6 +2570,19 @@ __HIGHLIGHT_JS__
       return String((item || {}).collection_status).toLowerCase();
     }
 
+    function itemRenderOptions(item) {
+      const render = (((item || {}).source_metadata || {}).render || {});
+      return render && typeof render === "object" ? render : {};
+    }
+
+    function itemEmptyMessage(item, fallback) {
+      const message = itemRenderOptions(item).empty_message;
+      if (message === undefined || message === null || String(message).trim() === "") {
+        return fallback;
+      }
+      return String(message);
+    }
+
     function itemSeverityLevel(item) {
       return normalizeSeverityLevel((item || {}).severity_level);
     }
@@ -2696,7 +2709,7 @@ __HIGHLIGHT_JS__
 
       const body = document.createElement("div");
       body.className = "item-body";
-      if (item.reason && !isErrorItem(item)) {
+      if (item.reason && !isErrorItem(item) && !shouldRenderReasonAsResult(item)) {
         const reason = document.createElement("p");
         reason.className = "reason";
         setHighlightableText(reason, item.reason);
@@ -3348,6 +3361,9 @@ __HIGHLIGHT_JS__
 
     function renderResult(item) {
       const result = item.result || {kind: "none"};
+      if (shouldRenderReasonAsResult(item)) {
+        return renderReasonResult(item);
+      }
       if (result.kind === "table") {
         return renderTable(result, item);
       }
@@ -3357,12 +3373,43 @@ __HIGHLIGHT_JS__
       if (result.kind === "none") {
         const empty = document.createElement("div");
         empty.className = "empty-state";
-        empty.textContent = collectionStatus(item) === "ok" ? "No result payload" : "No data";
+        empty.textContent = itemEmptyMessage(
+          item,
+          collectionStatus(item) === "ok" ? "No result payload" : "No data"
+        );
         return empty;
       }
+      return renderPlainTextResult(result.data == null ? "" : stringifyValue(result.data));
+    }
+
+    function shouldRenderReasonAsResult(item) {
+      const status = collectionStatus(item);
+      const sourceKind = String(item.source_kind || "").toLowerCase();
+      return Boolean(
+        item
+        && item.reason
+        && !isErrorItem(item)
+        && (status === "unsupported" || (status !== "ok" && sourceKind === "python"))
+      );
+    }
+
+    function renderReasonResult(item) {
+      if (collectionStatus(item) !== "unsupported") {
+        return renderPlainTextResult(item.reason);
+      }
+      const box = document.createElement("div");
+      box.className = "item-error";
+      const message = document.createElement("p");
+      message.className = "item-error-message";
+      setHighlightableText(message, item.reason);
+      box.appendChild(message);
+      return box;
+    }
+
+    function renderPlainTextResult(text) {
       const pre = document.createElement("pre");
       pre.className = "plain";
-      setHighlightableText(pre, result.data == null ? "" : stringifyValue(result.data));
+      setHighlightableText(pre, text == null ? "" : String(text));
       return pre;
     }
 
@@ -3371,7 +3418,7 @@ __HIGHLIGHT_JS__
       if (!series.length) {
         const empty = document.createElement("div");
         empty.className = "empty-state";
-        empty.textContent = "No chart data";
+        empty.textContent = itemEmptyMessage(item, "No chart data");
         return empty;
       }
 
@@ -3595,6 +3642,12 @@ __HIGHLIGHT_JS__
       const itemId = item.item_id || "";
       const rows = Array.isArray(result.rows) ? result.rows : [];
       const columns = buildColumns(result.columns, rows);
+      if (!rows.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        empty.textContent = itemEmptyMessage(item, "No rows");
+        return empty;
+      }
       const defaultSort = normalizeDefaultSort(item, columns);
       const shell = document.createElement("div");
       shell.className = "table-shell";

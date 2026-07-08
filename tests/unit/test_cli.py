@@ -38,7 +38,7 @@ def test_explain_plan_cli(repo_root: Path) -> None:
     assert proc.returncode == 0, proc.stderr + proc.stdout
     assert "wal_io_checkpoints.pg_stat_io" in proc.stdout
     assert "io_pg_stat_io_pg18_plus" in proc.stdout
-    assert "no data bacause remote call" in proc.stdout
+    assert "no data because remote call" in proc.stdout
 
 
 def test_explain_plan_rejects_unsupported_pg_version(repo_root: Path) -> None:

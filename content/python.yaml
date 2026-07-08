@@ -7,7 +7,7 @@ python_catalog:
 python_sources:
   security.remote_superuser_access:
     title: Remote Superuser Access
-    description: Detect host-based pg_hba.conf rules that allow PostgreSQL superusers to connect remotely.
+    description: Detect and classify pg_hba.conf host rules that allow login superusers over loopback or non-loopback TCP.
     python_file: security/remote_superuser_access.py
     function: collect
     local_only: true

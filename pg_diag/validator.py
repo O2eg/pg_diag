@@ -125,6 +125,7 @@ def _validate_report_items(content: ContentPack, issues: list[ValidationIssue]) 
                 location,
             )
         _validate_report_item_tags(item, issues, location)
+        _validate_report_item_render(item, issues, location)
 
         if "query" in source_keys and item["query"] not in content.queries:
             _issue(issues, "missing_query", f"Unknown query id {item['query']!r}", location)
@@ -156,6 +157,26 @@ def _validate_report_item_tags(
         seen.add(tag)
         if tag not in ALLOWED_ITEM_TAGS:
             _issue(issues, "item_tags", f"Unknown report item tag {tag!r}", location)
+
+
+def _validate_report_item_render(
+    item: dict[str, Any],
+    issues: list[ValidationIssue],
+    location: str,
+) -> None:
+    render = item.get("render")
+    if render is None:
+        return
+    if not isinstance(render, dict):
+        _issue(issues, "render", "Report item render must be a mapping", location)
+        return
+    allowed_keys = {"empty_message"}
+    for key in render:
+        if key not in allowed_keys:
+            _issue(issues, "render", f"Unknown report item render key {key!r}", location)
+    empty_message = render.get("empty_message")
+    if empty_message is not None and (not isinstance(empty_message, str) or not empty_message.strip()):
+        _issue(issues, "render", "render.empty_message must be a non-empty string", location)
 
 
 def _validate_query_manifests(content: ContentPack, issues: list[ValidationIssue]) -> None:

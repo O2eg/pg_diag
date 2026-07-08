@@ -3,14 +3,15 @@
 This directory contains the bundled declarative content pack for `pg_diag`.
 
 The content pack defines the report structure, PostgreSQL SQL sources, local
-host script sources, snapshot metrics, and display hints. The Python runtime
-loads these files, validates references, chooses version-specific SQL variants,
-executes the selected sources, and renders a JSON/HTML report.
+host script sources, trusted Python sources, snapshot metrics, and display
+hints. The Python runtime loads these files, validates references, chooses
+version-specific SQL variants, executes the selected sources, and renders a
+JSON/HTML report.
 
 ## Files And Directories
 
 - `report.yaml` - report metadata, runtime policy, sections, item ordering, and
-  lightweight item references (`query`, `script`, or `metric`).
+  lightweight item references (`query`, `script`, `metric`, or `python`).
 - `queries.yaml` - query catalog index, query defaults, SQL root, and the exact
   list of query catalog files to load.
 - `catalog/` - grouped query manifest files referenced by `queries.yaml`.
@@ -18,10 +19,13 @@ executes the selected sources, and renders a JSON/HTML report.
   metrics sourced from local samplers.
 - `scripts.yaml` - local script declarations, script defaults, output types, and
   remote DB-only behavior.
+- `python.yaml` - trusted Python source declarations, defaults, function names,
+  timeouts, and local-only behavior.
 - `instructions/` - Markdown instructions embedded into report items and shown
   through the `Show Instruction` button.
 - `queries/` - SQL files referenced by query variants.
 - `scripts/` - local shell scripts referenced by `scripts.yaml`.
+- `python/` - trusted Python source files referenced by `python.yaml`.
 - `EXTENDING.md` - examples for adding new report items.
 
 `catalog/*.yaml` is not loaded by glob. A new catalog file must be listed in
@@ -40,6 +44,8 @@ items:
     script: os.kernel_version
   database_transaction_rate:
     metric: database.transaction_rate
+  remote_superuser_access:
+    python: security.remote_superuser_access
 ```
 
 The layout must not define SQL output columns. Table headers and PostgreSQL data
@@ -48,10 +54,13 @@ types are derived from actual cursor metadata of the selected SQL variant.
 Useful item-level keys include:
 
 - `state: expanded|collapsed|hidden`
-- `empty_message`
+- `tags`, validated against the built-in tag vocabulary and exposed to report
+  filters
+- `render.empty_message`, used by the HTML renderer for empty table, chart, or
+  no-payload states
 - `instruction` or `instructions` to override the default Markdown instruction
   path for the item
-- source reference: `query`, `script`, or `metric`
+- source reference: `query`, `script`, `metric`, or `python`
 
 ## Item Instructions
 
@@ -97,6 +106,8 @@ Important keys:
 - `main_view`
 - `description`
 - `cost`
+- `optional`, when a query depends on an optional extension or relation and a
+  missing relation should not make the whole item a collection error
 - `display.default_sort.column`
 - `display.default_sort.direction`
 - `collection.default`
@@ -161,6 +172,29 @@ Local-only scripts are skipped in `remote-db-only` collection mode. The skip
 reason comes from `remote_db_only_behavior` or the runtime policy in
 `report.yaml`.
 
+## Python Source Manifests
+
+Trusted Python sources are declared in `python.yaml` and loaded from `python/`.
+They are intended for checks that need runtime logic beyond a single SQL query
+or shell script.
+
+Important keys:
+
+- `title`
+- `description`
+- `python_file`
+- `function`
+- `local_only`
+- `timeout_ms`
+
+The configured function receives a `PythonSourceContext` and must return a
+`PythonSourceResult` or a compatible mapping. Python sources can return table,
+plain text, or empty result payloads and can attach diagnostics and structured
+issues.
+
+Local-only Python sources are skipped in `remote-db-only` collection mode. The
+skip reason comes from the runtime policy in `report.yaml`.
+
 ## Metrics
 
 `metrics.yaml` is used only in `snapshots` mode.
@@ -201,11 +235,12 @@ because they require repeated samples.
 `snapshots` mode collects repeated samples and builds rates, deltas, top-N
 series, and chart/table metrics.
 
-`remote-db-only` collection mode executes PostgreSQL SQL sources but skips local
-host scripts and local samplers.
+`remote-db-only` collection mode executes PostgreSQL SQL sources and non-local
+Python sources, but skips local host scripts, local-only Python sources, and
+local samplers.
 
-`local` collection mode executes PostgreSQL SQL sources and local host sources on
-the collector machine.
+`local` collection mode executes PostgreSQL SQL sources, local host scripts, and
+Python sources on the collector machine.
 
 ## Validation
 
@@ -216,8 +251,8 @@ pg-diag validate --content content
 ```
 
 The validator checks schema versions, duplicate YAML keys, report references,
-SQL/script file existence, version ranges, collection support, display sort
-hints, semantic metric references, shell fallback behavior, and read-only SQL
-shape.
+SQL/script/Python source file existence, Python function declarations, version
+ranges, collection support, display sort hint shape, semantic metric references,
+shell fallback behavior, and read-only SQL shape.
 
 For extension examples, see `EXTENDING.md`.

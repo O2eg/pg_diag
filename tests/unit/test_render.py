@@ -332,6 +332,16 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "renderDataTypeIcons" in html
     assert "sectionDataTypes(section)" in html
     assert "itemDataType(item)" in html
+    assert "itemRenderOptions(item)" in html
+    assert "itemEmptyMessage(item, \"No rows\")" in html
+    assert "itemEmptyMessage(item, \"No chart data\")" in html
+    assert "shouldRenderReasonAsResult(item)" in html
+    assert "renderReasonResult(item)" in html
+    assert 'collectionStatus(item) !== "unsupported"' in html
+    assert 'box.className = "item-error"' in html
+    assert ".badge.unsupported," in html
+    assert 'status === "unsupported"' in html
+    assert 'sourceKind === "python"' in html
     assert "details.dataset.itemType = itemDataType(item)" in html
     assert "const itemType = document.getElementById(\"itemTypeFilter\").value" in html
     assert "const matchesType = !itemType || item.dataset.itemType === itemType" in html

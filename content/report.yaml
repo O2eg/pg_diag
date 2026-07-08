@@ -13,7 +13,7 @@ report:
 runtime_policy:
   default_sql_timeout_ms: 3000
   default_shell_timeout_ms: 5000
-  remote_db_only_shell_message: "no data bacause remote call"
+  remote_db_only_shell_message: "no data because remote call"
   table_columns: dynamic_from_result
   fail_fast: false
 

@@ -10,18 +10,19 @@ snapshots for rate/delta charts, and writes two outputs:
 - `report.json` - machine-readable diagnostic artifact for other systems or renderers.
 - `report.html` - browser report rendered from the JSON artifact.
 
-The report layout, SQL queries, local scripts, and metrics are declarative files
-under `content/`. The Python runtime loads this content pack, validates it,
-selects SQL variants by PostgreSQL version, executes sources, and renders the
-result.
+The report layout, SQL queries, local scripts, trusted Python sources, and
+metrics are declarative files under `content/`. The Python runtime loads this
+content pack, validates it, selects SQL variants by PostgreSQL version, executes
+sources, and renders the result.
 
 ## Documentation
 
 - [Content pack overview](content/README.md) - bundled report structure, SQL
-  catalogs, local scripts, metrics, collection modes, and validation.
+  catalogs, local scripts, trusted Python sources, metrics, collection modes,
+  and validation.
 - [Extending the report](content/EXTENDING.md) - examples for adding SQL table
-  items, snapshot charts, top-N charts, delta tables, local Bash items, and OS
-  sampler charts.
+  items, snapshot charts, top-N charts, delta tables, local Bash items, trusted
+  Python items, and OS sampler charts.
 - [Tests](tests/README.md) - test layout, unit and integration test commands,
   and guidance for adding or correcting tests.
 
@@ -98,6 +99,22 @@ PostgreSQL target:
 - No extension is required for the core catalog, activity, locks, WAL,
   replication, storage, vacuum, index, and OS parts of the report.
 
+Recommended users:
+
+- For `remote-db-only` collection, run the CLI as any OS user that can start
+  `pg-diag`. Only PostgreSQL connection privileges matter in this mode.
+- For full `local` collection, run the CLI on the PostgreSQL host as an OS user
+  that can read local PostgreSQL configuration files and `/proc` process data.
+  In packaged Linux installs this is usually the `postgres` OS user, or a
+  dedicated diagnostics service user granted read access to files such as
+  `pg_hba.conf`.
+- Avoid running as `root` by default. Use a least-privilege diagnostics user and
+  grant narrow read access where possible. `pg_diag` only tries passwordless
+  `sudo -n` for `lshw` hardware inventory if it is already available.
+- If the OS user cannot read `pg_hba.conf`, the local security item
+  `cluster_inventory.remote_superuser_access` will report an execution error,
+  while the rest of the report continues.
+
 Optional PostgreSQL extensions:
 
 - `pg_stat_statements` enables SQL workload sections and SQL delta charts.
@@ -124,8 +141,8 @@ Local collection mode OS requirements:
 
 Missing local tools do not stop the report. Affected OS items become empty,
 skipped, unavailable, or add a diagnostic warning; PostgreSQL SQL collection
-continues. In `remote-db-only` mode, local host scripts and local OS samplers
-are intentionally skipped.
+continues. In `remote-db-only` mode, local host scripts, local-only Python
+sources, and local OS samplers are intentionally skipped.
 
 ## Validate Content
 
@@ -179,7 +196,8 @@ pg-diag run-query cluster.settings \
 
 ## Run A Single Snapshot
 
-Remote DB-only mode collects PostgreSQL data and skips local host scripts:
+Remote DB-only mode collects PostgreSQL data and skips local host scripts and
+local-only Python checks:
 
 ```bash
 export PGDIAG_PASSWORD='change-me'
@@ -328,7 +346,7 @@ The bundled content pack includes sections for:
 - Replication, WAL, checkpoints, and I/O views.
 - Storage, vacuum, wraparound, sequence, and XID horizon diagnostics.
 - Index health checks.
-- Cluster inventory and configuration checks.
+- Cluster inventory, security, and configuration checks.
 - Per-backend local process statistics in local snapshots mode.
 
 Availability depends on PostgreSQL version, installed extensions, database
@@ -341,15 +359,17 @@ content/
   report.yaml          # report structure and item ordering
   queries.yaml         # query catalog index
   scripts.yaml         # local script catalog
+  python.yaml          # trusted Python source catalog
   metrics.yaml         # chart/table metric definitions
   catalog/             # query manifests and version ranges
   queries/             # SQL source files
   scripts/             # local shell source files
+  python/              # trusted Python source files
 ```
 
-`report.yaml` references items by `query`, `script`, or `metric`. SQL result
-columns are read from actual cursor metadata; the report layout does not hardcode
-table columns.
+`report.yaml` references items by `query`, `script`, `metric`, or `python`. SQL
+result columns are read from actual cursor metadata; the report layout does not
+hardcode table columns.
 
 ## Development
 
@@ -383,5 +403,6 @@ PYTHONDONTWRITEBYTECODE=1 python -m py_compile \
   access.
 - SQL sources are executed in read-only transactions.
 - Unsupported PostgreSQL versions fail at runtime planning.
-- Local host data is skipped in `remote-db-only` mode.
+- Local host data and local-only Python sources are skipped in
+  `remote-db-only` mode.
 - Generated reports are ignored by Git by default.

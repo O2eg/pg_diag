@@ -13,8 +13,13 @@ from typing import Any
 
 from pg_diag.artifact import item_error_from_exception, item_from_plan
 from pg_diag.content_loader import ContentPack
+from pg_diag.executors.common import elapsed_ms, read_source_text, table_result_from_records
 from pg_diag.planner import PlannedItem
-from pg_diag.security import json_safe, redact_row
+
+
+COLLECTION_STATUSES = {"ok", "empty", "error", "unsupported", "skipped"}
+RESULT_KINDS = {"none", "plain_text", "table", "chart"}
+SEVERITY_LEVELS = {"high", "medium", "ok", "unknown"}
 
 
 @dataclass(frozen=True)
@@ -50,7 +55,7 @@ async def execute_python_item(content: ContentPack, conn: Any, planned: PlannedI
         )
 
     source_path = content.path / "python" / python_file
-    source_text = _read_source_text(source_path)
+    source_text = read_source_text(source_path)
     try:
         module = _load_module(source_id, source_path)
         function_name = source.get("function") or "collect"
@@ -71,7 +76,7 @@ async def execute_python_item(content: ContentPack, conn: Any, planned: PlannedI
             planned,
             collection_status=result.collection_status,
             reason=result.reason,
-            timing_ms=_elapsed_ms(started),
+            timing_ms=elapsed_ms(started),
             result=result.result,
             diagnostics=result.diagnostics,
             issues=result.issues,
@@ -83,7 +88,7 @@ async def execute_python_item(content: ContentPack, conn: Any, planned: PlannedI
         return item_error_from_exception(
             planned,
             exc,
-            timing_ms=_elapsed_ms(started),
+            timing_ms=elapsed_ms(started),
             source_text=source_text,
             source_language="python",
         )
@@ -111,11 +116,13 @@ def _load_module(source_id: str, source_path: Path) -> Any:
 
 def _normalize_result(value: Any) -> PythonSourceResult:
     if isinstance(value, PythonSourceResult):
-        return value
+        result = value
+        _validate_result_contract(result)
+        return result
     if isinstance(value, dict):
         if "collection_status" not in value:
             raise ValueError("Python source result must define collection_status")
-        return PythonSourceResult(
+        result = PythonSourceResult(
             collection_status=str(value.get("collection_status")),
             reason=value.get("reason"),
             result=value.get("result") or {"kind": "none"},
@@ -123,46 +130,32 @@ def _normalize_result(value: Any) -> PythonSourceResult:
             issues=dict(value.get("issues") or {}),
             severity_level=value.get("severity_level"),
         )
+        _validate_result_contract(result)
+        return result
     raise TypeError("Python source must return PythonSourceResult or dict")
 
 
+def _validate_result_contract(result: PythonSourceResult) -> None:
+    if result.collection_status not in COLLECTION_STATUSES:
+        raise ValueError(f"unsupported Python source collection_status {result.collection_status!r}")
+    if result.severity_level is not None and result.severity_level not in SEVERITY_LEVELS:
+        raise ValueError(f"unsupported Python source severity_level {result.severity_level!r}")
+    if not isinstance(result.result, dict):
+        raise ValueError("Python source result must be a mapping")
+    kind = result.result.get("kind", "none")
+    if kind not in RESULT_KINDS:
+        raise ValueError(f"unsupported Python source result kind {kind!r}")
+    if not isinstance(result.diagnostics, list):
+        raise ValueError("Python source diagnostics must be a list")
+    if not isinstance(result.issues, dict):
+        raise ValueError("Python source issues must be a mapping")
+
+
 def table_result(records: list[dict[str, Any]] | tuple[dict[str, Any], ...]) -> dict[str, Any]:
-    normalized_records = [record if isinstance(record, dict) else {"value": record} for record in records]
-    columns = _columns_from_records(normalized_records)
-    rows = [_row_from_record(columns, record) for record in normalized_records]
-    return {"kind": "table", "columns": columns, "rows": rows, "row_count": len(rows)}
-
-
-def _columns_from_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    columns: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for record in records:
-        for key in record:
-            name = str(key)
-            if name in seen:
-                continue
-            seen.add(name)
-            columns.append({"name": name, "pg_type": "json", "pg_type_oid": None})
-    return columns
-
-
-def _row_from_record(columns: list[dict[str, Any]], record: dict[str, Any]) -> list[Any]:
-    row = [json_safe(record.get(column["name"])) for column in columns]
-    return redact_row(columns, row)
+    return table_result_from_records(records)
 
 
 def _timeout_seconds(content: ContentPack, source: dict[str, Any]) -> float:
     defaults = (content.python_catalog.get("python_catalog") or {}).get("defaults") or {}
     timeout_ms = source.get("timeout_ms", defaults.get("timeout_ms", 5000))
     return float(timeout_ms) / 1000.0
-
-
-def _read_source_text(path: Path) -> str | None:
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-
-
-def _elapsed_ms(started: float) -> float:
-    return round((time.perf_counter() - started) * 1000, 3)

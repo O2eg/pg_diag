@@ -16,7 +16,8 @@ from .artifact import (
     write_json,
 )
 from .content_loader import ContentPack
-from .executors.remote_disabled_shell import skipped_shell_item
+from .executors.common import read_source_text
+from .executors.remote_disabled_shell import skipped_python_item, skipped_shell_item
 from .executors.python import execute_python_item
 from .executors.shell import execute_shell_item
 from .executors.sql import connect, detect_runtime_context, execute_query_item
@@ -66,14 +67,12 @@ async def collect_snapshot(
                 elif planned.source_kind == "script":
                     if collection_mode == runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE:
                         message = (content.report.get("runtime_policy") or {}).get(
-                            "remote_db_only_shell_message", "no data bacause remote call"
+                            "remote_db_only_shell_message", "no data because remote call"
                         )
-                        source_text = None
-                        if planned.script_file:
-                            try:
-                                source_text = (content.path / "scripts" / planned.script_file).read_text(encoding="utf-8")
-                            except OSError:
-                                source_text = None
+                        source_text = (
+                            read_source_text(content.path / "scripts" / planned.script_file)
+                            if planned.script_file else None
+                        )
                         artifact["items"][planned.item_id] = skipped_shell_item(planned, message, source_text=source_text)
                     else:
                         artifact["items"][planned.item_id] = execute_shell_item(content, planned)
@@ -82,22 +81,13 @@ async def collect_snapshot(
                         content.pythons.get(planned.source_id or "", {}).get("local_only", False)
                     ):
                         message = (content.report.get("runtime_policy") or {}).get(
-                            "remote_db_only_shell_message", "no data bacause remote call"
+                            "remote_db_only_shell_message", "no data because remote call"
                         )
-                        source_text = None
-                        if planned.python_file:
-                            try:
-                                source_text = (content.path / "python" / planned.python_file).read_text(encoding="utf-8")
-                            except OSError:
-                                source_text = None
-                        artifact["items"][planned.item_id] = item_from_plan(
-                            planned,
-                            collection_status="skipped",
-                            reason="remote_db_only",
-                            result={"kind": "plain_text", "data": message},
-                            source_text=source_text,
-                            source_language="python" if source_text is not None else None,
+                        source_text = (
+                            read_source_text(content.path / "python" / planned.python_file)
+                            if planned.python_file else None
                         )
+                        artifact["items"][planned.item_id] = skipped_python_item(planned, message, source_text)
                     else:
                         artifact["items"][planned.item_id] = await execute_python_item(content, conn, planned)
                 elif planned.source_kind == "metric":

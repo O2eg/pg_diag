@@ -4,8 +4,9 @@ This guide describes how to add new report items to the bundled `pg_diag`
 content pack.
 
 The content pack is declarative: `report.yaml` defines where an item appears,
-catalog files define SQL sources, `scripts.yaml` defines local Bash sources, and
-`metrics.yaml` defines charts and derived snapshot tables.
+catalog files define SQL sources, `scripts.yaml` defines local Bash sources,
+`python.yaml` defines trusted Python sources, and `metrics.yaml` defines charts
+and derived snapshot tables.
 
 ## Before You Start
 
@@ -98,16 +99,19 @@ Use this when the report needs another PostgreSQL result table.
    ```yaml
    activity_locks:
      items:
-       lock_mode_summary:
-         query: locks.mode_summary
-         state: collapsed
-         render:
-           empty_message: No locks visible to the current user.
+      lock_mode_summary:
+        query: locks.mode_summary
+        tags: [Locks]
+        state: collapsed
+        render:
+          empty_message: No locks found.
    ```
 
 The item title, description, SQL metadata, sort hint, and table shape are
 inherited from the query catalog unless explicitly overridden by supported
-report item keys.
+report item keys. Every report item must define at least one validated `tags`
+entry. Use `render.empty_message` when an empty table, empty chart, or no-result
+payload needs item-specific wording in the HTML report.
 
 4. Add the item instruction Markdown file.
 
@@ -219,9 +223,10 @@ Use this when the report needs a time-series chart from SQL samples.
    ```yaml
    snapshot_charts_db:
      items:
-       database_transaction_rate:
-         metric: metrics.transaction_rate
-         state: collapsed
+      database_transaction_rate:
+        metric: metrics.transaction_rate
+        tags: [Databases, Transactions]
+        state: collapsed
    ```
 
 The planner promotes the metric source query to repeated collection in
@@ -345,9 +350,10 @@ PostgreSQL SQL.
    ```yaml
    os:
      items:
-       kernel_cmdline:
-         script: os.kernel_cmdline
-         state: collapsed
+      kernel_cmdline:
+        script: os.kernel_cmdline
+        tags: [Kernel]
+        state: collapsed
    ```
 
 Scripts are local-only by default. In `remote-db-only` collection mode they are
@@ -355,6 +361,59 @@ kept in the report with skipped status and a skip message.
 
 4. Add `instructions/items/<section>/<item>.md` so the skipped or collected
    script still has DBA guidance in the HTML report.
+
+## Add A Trusted Python Item
+
+Use Python sources for trusted content-pack checks that need procedural logic,
+multiple SQL calls, local file parsing, or structured issue output.
+
+1. Add a Python file under `python/<group>/<name>.py`.
+
+   The function receives a `PythonSourceContext` and returns a
+   `PythonSourceResult` or compatible mapping:
+
+   ```python
+   from pg_diag.executors.python import PythonSourceResult, table_result
+
+
+   async def collect(ctx):
+       rows = await ctx.conn.fetch("select current_database() as datname")
+       return PythonSourceResult(
+           collection_status="ok",
+           result=table_result([dict(row) for row in rows]),
+           severity_level="ok",
+       )
+   ```
+
+2. Add a source declaration to `python.yaml`.
+
+   ```yaml
+   python_sources:
+     security.database_identity:
+       title: Database Identity
+       description: Example trusted Python source.
+       python_file: security/database_identity.py
+       function: collect
+       local_only: false
+       timeout_ms: 5000
+   ```
+
+3. Add the Python item to `report.yaml`.
+
+   ```yaml
+   cluster_inventory:
+     items:
+       database_identity:
+         python: security.database_identity
+         tags: [Security]
+         state: collapsed
+   ```
+
+Local-only Python sources are skipped in `remote-db-only` collection mode. Use
+`local_only: true` when the function reads collector-host files such as
+PostgreSQL configuration files.
+
+4. Add `instructions/items/<section>/<item>.md` for the item.
 
 ## Add An OS Sampler Chart
 
@@ -384,9 +443,10 @@ Then add the metric to `snapshot_charts_os`:
 ```yaml
 snapshot_charts_os:
   items:
-    os_disk_read_throughput:
-      metric: os.disk_read_throughput
-      state: collapsed
+      os_disk_read_throughput:
+        metric: os.disk_read_throughput
+        tags: [Disk, "I/O"]
+        state: collapsed
 ```
 
 ## Validation Checklist
@@ -394,17 +454,20 @@ snapshot_charts_os:
 Before committing a content change, check the following:
 
 - New catalog files are listed in `queries.yaml`.
-- Query IDs, script IDs, metric IDs, and report item IDs are unique.
+- Query IDs, script IDs, Python source IDs, metric IDs, and report item IDs are
+  unique.
 - PostgreSQL variants use correct `min_pg_version` and optional
   `max_pg_version` boundaries.
-- Every referenced SQL or Bash file exists.
+- Every referenced SQL, Bash, or Python source file exists.
 - Every report item has a non-empty Markdown instruction file.
 - Every SQL-backed chart query returns `snapshot_time`.
 - Every metric `value_ref`, `key_ref`, `label_ref`, and `partition_by` entry has
   a matching semantic column or sampler field.
 - Large cumulative views are pre-filtered in SQL before snapshot collection.
-- `display.default_sort` points to an actual result column.
-- Local-only scripts have reasonable timeouts and safe remote behavior.
+- `display.default_sort` uses the public result column name expected by the
+  renderer.
+- Local-only scripts and Python sources have reasonable timeouts and safe remote
+  behavior.
 
 Run:
 

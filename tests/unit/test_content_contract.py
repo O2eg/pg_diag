@@ -152,7 +152,7 @@ def test_snapshot_collection_policy(content_path: Path) -> None:
 
     by_id = {item.item_id: item for item in plan.items}
     assert by_id["os.kernel_version"].status == "skipped"
-    assert by_id["os.kernel_version"].reason == "no data bacause remote call"
+    assert by_id["os.kernel_version"].reason == "no data because remote call"
     assert by_id["snapshot_charts_db.database_transaction_rate"].status == "skipped"
     assert by_id["snapshot_charts_db.database_transaction_rate"].reason == "requires snapshots mode"
 
@@ -173,6 +173,7 @@ def test_plan_exposes_query_default_sort(content_path: Path) -> None:
     assert by_id["overview.server_version"].source_metadata["instructions"]["format"] == "markdown"
     assert by_id["overview.server_version"].source_metadata["tags"] == ["Configuration"]
     assert by_id["activity_locks.lock_waits"].source_metadata["tags"] == ["Locks", "Waits", "Sessions"]
+    assert by_id["activity_locks.lock_waits"].source_metadata["render"]["empty_message"] == "No lock waits detected."
     assert "## Checklist" in by_id["overview.server_version"].source_metadata["instructions"]["text"]
     assert by_id["overview.server_version"].source_metadata["query_usage"] == {
         "query_id": "cluster.server_version",

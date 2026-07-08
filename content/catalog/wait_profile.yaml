@@ -22,6 +22,7 @@ queries:
     main_view: pg_wait_sampling_profile
     description: Optional wait sampling profile if pg_wait_sampling is installed in the current database.
     source: pg_wait_sampling
+    optional: true
     cost: medium
     display:
       default_sort:

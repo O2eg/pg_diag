@@ -49,9 +49,13 @@ The main unit-test groups are:
 - `test_metric_engine.py` - rate, delta, top-N, ratio, chart, and table metric
   calculations from snapshots.
 - `test_os_metrics.py` - local OS sampler parsing and derived OS metric values.
+- `test_python_executor.py` - trusted content Python source execution and
+  source-specific behavior.
 - `test_public_output.py` - public artifact shape, column-name cleanup,
   redaction, source text embedding, and item-level error diagnostics.
 - `test_render.py` - generated HTML/JS/CSS behavior used by the report UI.
+- `test_report_output_paths.py` - snapshot and snapshots JSON/HTML output path
+  selection.
 
 ## Integration Tests
 
@@ -111,7 +115,9 @@ as skipped.
 ## When Adding Tests
 
 - Add content contract tests for new rules in `content/*.yaml`, query catalogs,
-  SQL files, scripts, or metric declarations.
+  SQL files, scripts, Python sources, or metric declarations.
+- Add Python executor tests for new trusted Python source behavior, especially
+  local file access, diagnostics, issues, and result shape.
 - Add metric engine tests for every new transform, top-N mode, ratio mode,
   chart shape, or table metric behavior.
 - Add renderer tests when HTML, CSS, JavaScript, item controls, chart controls,

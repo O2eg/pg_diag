@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import traceback
 import time
 from pathlib import Path
 from typing import Any
@@ -10,9 +9,9 @@ from typing import Any
 from pg_diag.artifact import item_from_plan
 from pg_diag.content_loader import ContentPack
 from pg_diag.errors import PgDiagError
+from pg_diag.executors.common import elapsed_ms, exception_diagnostic
 from pg_diag.planner import PlannedItem
 from pg_diag.security import json_safe, redact_error, redact_row
-from pg_diag.security import redact_text
 
 
 class MissingAsyncpgError(PgDiagError):
@@ -83,15 +82,15 @@ async def execute_query_item(content: ContentPack, conn: Any, planned: PlannedIt
             ]
             columns, rows = publicize_table_result(raw_columns, raw_rows)
     except Exception as exc:
-        status = _classify_sql_error(exc)
+        status = _classify_sql_error(exc, planned)
         message = redact_error(exc)
         return item_from_plan(
             planned,
             collection_status=status,
             reason=message,
-            timing_ms=_elapsed_ms(started),
+            timing_ms=elapsed_ms(started),
             result={"kind": "table", "columns": [], "rows": [], "row_count": 0},
-            diagnostics=[_exception_diagnostic(status, message, exc)],
+            diagnostics=[_sql_exception_diagnostic(status, message, exc)],
             source_text=sql_text,
             source_language="sql",
         )
@@ -100,7 +99,7 @@ async def execute_query_item(content: ContentPack, conn: Any, planned: PlannedIt
     return item_from_plan(
         planned,
         collection_status=status,
-        timing_ms=_elapsed_ms(started),
+        timing_ms=elapsed_ms(started),
         result={"kind": "table", "columns": columns, "rows": rows, "row_count": len(rows)},
         source_text=sql_text,
         source_language="sql",
@@ -173,17 +172,23 @@ def _dedupe_column_name(name: str, used_names: set[str]) -> str:
     return f"{name}_{counter}"
 
 
-def _classify_sql_error(exc: Exception) -> str:
+def _classify_sql_error(exc: Exception, planned: PlannedItem) -> str:
     name = exc.__class__.__name__
     if "FeatureNotSupported" in name:
+        return "unsupported"
+    if _is_missing_optional_relation(exc, planned):
         return "unsupported"
     return "error"
 
 
-def _exception_diagnostic(code: str, message: str, exc: BaseException) -> dict[str, Any]:
-    trace = redact_text("".join(traceback.format_exception(type(exc), exc, exc.__traceback__)))
-    return {"level": "error", "code": code, "message": message, "traceback": trace}
+def _is_missing_optional_relation(exc: Exception, planned: PlannedItem) -> bool:
+    name = exc.__class__.__name__
+    sqlstate = getattr(exc, "sqlstate", None)
+    return bool(planned.source_metadata.get("optional")) and (
+        "UndefinedTable" in name or sqlstate == "42P01"
+    )
 
 
-def _elapsed_ms(started: float) -> float:
-    return round((time.perf_counter() - started) * 1000, 3)
+def _sql_exception_diagnostic(status: str, message: str, exc: BaseException) -> dict[str, Any]:
+    level = "error" if status == "error" else "warning"
+    return exception_diagnostic(status, message, exc, level=level)
