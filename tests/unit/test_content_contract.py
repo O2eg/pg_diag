@@ -60,6 +60,20 @@ def test_report_items_have_markdown_instructions(content_path: Path) -> None:
     assert set(content.instructions) == set(item_ids)
 
 
+def test_overview_instructions_have_interpretation_sections(content_path: Path) -> None:
+    content = load_content(content_path)
+    overview_item_ids = [
+        item_id
+        for section_id, _item_key, item_id, _item in iter_report_items(content)
+        if section_id == "overview"
+    ]
+    assert len(overview_item_ids) == 11
+    for item_id in overview_item_ids:
+        text = content.instructions[item_id]["text"]
+        assert "## What to watch" in text, item_id
+        assert "## Common fault causes" in text, item_id
+
+
 def test_query_manifests_define_default_sort(content_path: Path) -> None:
     content = load_content(content_path)
     for query_id, manifest in content.queries.items():
@@ -81,6 +95,61 @@ def test_sql_metric_sources_expose_snapshot_time(content_path: Path) -> None:
             sql_file = variant["sql_file"]
             sql = (content.path / "queries" / sql_file).read_text(encoding="utf-8")
             assert "snapshot_time" in sql.lower(), f"{query_id} variant {variant['id']} lacks snapshot_time"
+
+
+def test_high_cardinality_metric_sources_keep_order_and_limit(content_path: Path) -> None:
+    content = load_content(content_path)
+    bounded_metrics = {
+        metric_id: metric
+        for metric_id, metric in content.metrics.items()
+        if metric.get("source_query")
+        and metric_id != "activity.wait_sample_profile"
+        and (metric.get("top_n") or (metric.get("table") and metric_id != "database.workload_delta"))
+    }
+    assert len(bounded_metrics) == 24
+
+    for metric_id, metric in bounded_metrics.items():
+        query = content.queries[metric["source_query"]]
+        for variant in query.get("variants") or []:
+            sql = (content.path / "queries" / variant["sql_file"]).read_text(encoding="utf-8")
+            assert re.search(r"\border\s+by\b", sql, re.IGNORECASE), metric_id
+            assert re.search(r"\blimit\s+\d+\b", sql, re.IGNORECASE), metric_id
+
+
+def test_overview_automatic_checks_expose_severity_evidence(content_path: Path) -> None:
+    content = load_content(content_path)
+    evaluated_query_ids = {
+        "cluster.settings",
+        "database.database_stats",
+        "security.security_logging_settings",
+        "security.password_encryption",
+        "security.password_complexity",
+        "security.auth_timeout_delay",
+        "security.listen_addresses_exposure",
+        "security.tls_server_configuration",
+        "security.weak_tls_ciphers",
+    }
+    for query_id in evaluated_query_ids:
+        for variant in content.queries[query_id].get("variants") or []:
+            sql = (content.path / "queries" / variant["sql_file"]).read_text(encoding="utf-8")
+            assert re.search(
+                r"\b(risk_level|pg_diag_internal_severity)\b",
+                sql,
+                re.IGNORECASE,
+            ), query_id
+
+
+def test_pg18_database_stats_exposes_parallel_worker_counters(content_path: Path) -> None:
+    content = load_content(content_path)
+    selection = select_query_variant(
+        "database.database_stats",
+        content.queries["database.database_stats"],
+        180000,
+    )
+    sql = (content.path / "queries" / selection.variant["sql_file"]).read_text(encoding="utf-8")
+
+    assert "parallel_workers_to_launch" in sql
+    assert "parallel_workers_launched" in sql
 
 
 def test_sql_query_id_columns_expose_query_text(content_path: Path) -> None:
@@ -122,11 +191,15 @@ def test_variant_selection_by_supported_pg_version(content_path: Path) -> None:
     assert select_query_variant("database.database_stats", query, 140000).variant["id"] == "database_stats_pg14"
     assert (
         select_query_variant("database.database_stats", query, 150000).variant["id"]
-        == "database_stats_pg15_plus"
+        == "database_stats_pg15_pg17"
     )
     assert (
         select_query_variant("database.database_stats", query, 180000).variant["id"]
-        == "database_stats_pg15_plus"
+        == "database_stats_pg18_plus"
+    )
+    assert (
+        select_query_variant("database.database_stats", query, 170000).variant["id"]
+        == "database_stats_pg15_pg17"
     )
 
 
@@ -166,6 +239,13 @@ def test_plan_exposes_query_default_sort(content_path: Path) -> None:
         "column": "setting_name",
         "direction": "asc",
     }
+    assert by_id["overview.pg_settings"].source_metadata["evaluation"] == {
+        "summary_title": "PostgreSQL settings require review",
+        "recommendation": (
+            "Review pending-restart settings and validate work_mem against concurrency "
+            "and query spill evidence before changing it globally."
+        ),
+    }
     assert by_id["storage_vacuum.autovacuum_queue"].source_metadata["display"]["default_sort"] == {
         "column": "autovacuum_overdue_factor",
         "direction": "desc",
@@ -189,14 +269,16 @@ def test_snapshots_promotes_metric_sources(content_path: Path) -> None:
     plan = build_plan(content, 180000, mode=SNAPSHOTS_MODE)
     by_source = {item.source_id: item for item in plan.items if item.source_kind == "query"}
     by_id = {item.item_id: item for item in plan.items}
-    assert by_source["database.database_stats"].collection_scope == "every_snapshot"
-    assert by_source["io.pg_stat_io"].collection_scope == "once:latest"
+    assert by_source["database.database_stats"].collection_scope == "once"
+    assert by_source["io.pg_stat_io"].collection_scope == "once"
     assert by_source["metrics.database_transaction_rate"].collection_scope == "every_snapshot"
     assert by_source["metrics.wal_growth_rate"].collection_scope == "every_snapshot"
     assert by_source["metrics.io_read_write_rate"].collection_scope == "every_snapshot"
-    assert by_source["objects.table_workload"].collection_scope == "every_snapshot"
-    assert by_source["objects.table_io"].collection_scope == "every_snapshot"
-    assert by_source["objects.index_workload"].collection_scope == "every_snapshot"
+    assert by_source["metrics.database_workload_delta"].collection_scope == "window_endpoints"
+    assert by_source["metrics.statements_total_time_delta"].collection_scope == "window_endpoints"
+    assert by_source["objects.table_workload"].collection_scope == "once"
+    assert by_source["objects.table_io"].collection_scope == "once"
+    assert by_source["objects.index_workload"].collection_scope == "once"
     assert by_source["metrics.database_transaction_rate"].source_metadata["internal"] is True
     database_usage = by_id["overview.database_stats"].source_metadata["query_usage"]
     assert database_usage["query_id"] == "database.database_stats"
@@ -268,9 +350,9 @@ def test_workload_sections_and_delta_dependencies_are_planned(content_path: Path
 
     assert {"sql_workload", "snapshot_delta_workload", "object_workload", "backend_os"}.issubset(section_ids)
     assert "wait_profile" not in section_ids
-    assert by_source["statements.top_by_total_time"].collection_scope == "every_snapshot"
-    assert by_source["objects.table_workload"].collection_scope == "every_snapshot"
-    assert by_source["backend.activity"].collection_scope == "every_snapshot"
+    assert by_source["statements.top_by_total_time"].collection_scope == "once"
+    assert by_source["objects.table_workload"].collection_scope == "once"
+    assert by_source["backend.activity"].collection_scope == "once"
     assert by_id["activity_locks.wait_event_sample_profile"].source_kind == "metric"
     assert by_id["activity_locks.pg_wait_sampling_capabilities"].source_kind == "query"
     assert by_id["backend_os.postgres_process_tree"].source_kind == "script"
@@ -282,7 +364,83 @@ def test_workload_sections_and_delta_dependencies_are_planned(content_path: Path
     assert by_id["backend_os.backend_proc_cpu"].source_metadata["source_sampler"] == "os.backend_proc"
 
 
+def test_snapshots_repeat_only_chart_query_sources(content_path: Path) -> None:
+    content = load_content(content_path)
+    plan = build_plan(content, 180000, mode=SNAPSHOTS_MODE)
+    metrics_by_source = {
+        metric.get("source_query"): metric
+        for metric in content.metrics.values()
+        if metric.get("source_query")
+    }
+
+    visible_queries = [
+        item
+        for item in plan.items
+        if item.source_kind == "query" and not item.source_metadata.get("internal")
+    ]
+    assert visible_queries
+    assert {item.collection_scope for item in visible_queries} == {"once"}
+
+    repeated_queries = [
+        item
+        for item in plan.items
+        if item.source_kind == "query" and item.collection_scope == "every_snapshot"
+    ]
+    assert repeated_queries
+    for item in repeated_queries:
+        metric = metrics_by_source[item.source_id]
+        assert metric.get("result") != "table"
+        assert not metric.get("table")
+
+    endpoint_queries = [
+        item
+        for item in plan.items
+        if item.source_kind == "query" and item.collection_scope == "window_endpoints"
+    ]
+    assert endpoint_queries
+    for item in endpoint_queries:
+        metric = metrics_by_source[item.source_id]
+        assert metric.get("result") == "table" or metric.get("table")
+
+    sampler_table_metrics = [
+        metric
+        for metric in content.metrics.values()
+        if metric.get("source_sampler")
+        and (metric.get("result") == "table" or metric.get("table"))
+    ]
+    assert sampler_table_metrics
+    for metric in sampler_table_metrics:
+        assert metric.get("requires_collection") == "window_endpoints"
+
+
 def test_metric_semantic_refs_are_resolvable(content_path: Path) -> None:
     content = load_content(content_path)
     issues = validate_content(content)
     assert not has_errors([issue for issue in issues if issue.code == "metric_ref"])
+
+
+def test_validator_rejects_repeated_sampler_table(content_path: Path) -> None:
+    content = load_content(content_path)
+    content.metrics["backend.proc_cpu_top"]["requires_collection"] = "every_snapshot"
+
+    issues = validate_content(content)
+
+    assert any(
+        issue.code == "metric_collection"
+        and issue.location == "metric:backend.proc_cpu_top"
+        for issue in issues
+    )
+
+
+def test_validator_rejects_unknown_query_evaluation_keys(content_path: Path) -> None:
+    content = load_content(content_path)
+    content.queries["cluster.settings"]["evaluation"]["threshold_magic"] = 1
+
+    issues = validate_content(content)
+
+    assert any(
+        issue.code == "evaluation"
+        and issue.location == "query:cluster.settings"
+        and "threshold_magic" in issue.message
+        for issue in issues
+    )

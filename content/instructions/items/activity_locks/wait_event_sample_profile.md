@@ -4,13 +4,15 @@ This instruction belongs to report item `activity_locks.wait_event_sample_profil
 
 ## What this item shows
 - Sampled wait events from repeated pg_stat_activity snapshots.
-- Wait event type/event distribution during the capture window.
+- Up to 12 wait groups with the highest average active-session count in each interval.
+- A timestamped stacked chart of wait event type, event, and query ID.
 - Short-window wait profile without requiring pg_wait_sampling.
 
 ## What to watch
 - One wait type dominates samples.
 - Lock, I/O, WAL, or Client waits during incident window.
 - Too few samples for intermittent waits.
+- `CPU` means an active session had no reported wait event; it is not proof that the session was executing on CPU.
 
 ## Common fault causes
 - Lock contention.

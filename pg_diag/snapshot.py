@@ -14,6 +14,7 @@ from .artifact import (
     report_output_paths,
     utc_now,
     write_json,
+    write_text_secure,
 )
 from .content_loader import ContentPack
 from .executors.common import read_source_text
@@ -21,6 +22,7 @@ from .executors.remote_disabled_shell import skipped_python_item, skipped_shell_
 from .executors.python import execute_python_item
 from .executors.shell import execute_shell_item
 from .executors.sql import connect, detect_runtime_context, execute_query_item
+from .errors import PgDiagError, UnsupportedServerVersion
 from .planner import build_plan
 from .render.html import render_html
 from .validator import has_errors, validate_content
@@ -40,6 +42,7 @@ async def collect_snapshot(
         details = "; ".join(f"{issue.location}: {issue.message}" for issue in issues if issue.level == "error")
         raise ValueError(f"Content validation failed: {details}")
 
+    json_path, html_path = report_output_paths(out_dir, json_out, html_out)
     conn = await connect(dsn=dsn, **connection_kwargs)
     try:
         runtime_context = await detect_runtime_context(conn)
@@ -50,6 +53,9 @@ async def collect_snapshot(
             mode=runtime_config.SNAPSHOT_MODE,
             collection_mode=collection_mode,
         )
+        if not plan.supported_server_version:
+            raise UnsupportedServerVersion(plan.reason or "Unsupported PostgreSQL server version")
+        fail_fast = bool((content.report.get("runtime_policy") or {}).get("fail_fast", False))
         started_at = utc_now()
         artifact = create_artifact(content, plan, runtime_context, started_at)
 
@@ -62,39 +68,48 @@ async def collect_snapshot(
                         reason=planned.reason,
                         result={"kind": "none"},
                     )
+                elif planned.status == "skipped" and planned.source_kind == "script":
+                    source_text = (
+                        read_source_text(content.path / "scripts" / planned.script_file)
+                        if planned.script_file else None
+                    )
+                    artifact["items"][planned.item_id] = skipped_shell_item(
+                        planned,
+                        planned.source_metadata.get("remote_message")
+                        or planned.reason
+                        or "Collection skipped",
+                        source_text=source_text,
+                    )
+                elif planned.status == "skipped" and planned.source_kind == "python":
+                    source_text = (
+                        read_source_text(content.path / "python" / planned.python_file)
+                        if planned.python_file else None
+                    )
+                    artifact["items"][planned.item_id] = skipped_python_item(
+                        planned,
+                        planned.source_metadata.get("remote_message")
+                        or planned.reason
+                        or "Collection skipped",
+                        source_text,
+                    )
+                elif planned.status == "skipped":
+                    artifact["items"][planned.item_id] = item_from_plan(
+                        planned,
+                        collection_status="skipped",
+                        reason=planned.reason,
+                        result={"kind": "none"},
+                    )
                 elif planned.source_kind == "query":
                     artifact["items"][planned.item_id] = await execute_query_item(content, conn, planned)
                 elif planned.source_kind == "script":
-                    if collection_mode == runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE:
-                        message = (content.report.get("runtime_policy") or {}).get(
-                            "remote_db_only_shell_message", "no data because remote call"
-                        )
-                        source_text = (
-                            read_source_text(content.path / "scripts" / planned.script_file)
-                            if planned.script_file else None
-                        )
-                        artifact["items"][planned.item_id] = skipped_shell_item(planned, message, source_text=source_text)
-                    else:
-                        artifact["items"][planned.item_id] = execute_shell_item(content, planned)
+                    artifact["items"][planned.item_id] = execute_shell_item(content, planned)
                 elif planned.source_kind == "python":
-                    if collection_mode == runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE and (
-                        content.pythons.get(planned.source_id or "", {}).get("local_only", False)
-                    ):
-                        message = (content.report.get("runtime_policy") or {}).get(
-                            "remote_db_only_shell_message", "no data because remote call"
-                        )
-                        source_text = (
-                            read_source_text(content.path / "python" / planned.python_file)
-                            if planned.python_file else None
-                        )
-                        artifact["items"][planned.item_id] = skipped_python_item(planned, message, source_text)
-                    else:
-                        artifact["items"][planned.item_id] = await execute_python_item(content, conn, planned)
+                    artifact["items"][planned.item_id] = await execute_python_item(content, conn, planned)
                 elif planned.source_kind == "metric":
                     artifact["items"][planned.item_id] = item_from_plan(
                         planned,
                         collection_status="skipped",
-                        reason="requires snapshots mode",
+                        reason=planned.reason or "requires snapshots mode",
                         result={"kind": "none"},
                     )
                 else:
@@ -104,16 +119,29 @@ async def collect_snapshot(
                         reason="Unknown source kind",
                         result={"kind": "none"},
                     )
+                if fail_fast and artifact["items"][planned.item_id].get("collection_status") == "error":
+                    raise PgDiagError(
+                        f"fail_fast stopped collection at {planned.item_id}: "
+                        f"{artifact['items'][planned.item_id].get('reason') or 'collection error'}"
+                    )
                 extract_item_query_texts(artifact["items"][planned.item_id], artifact["query_texts"])
             except Exception as exc:
+                if isinstance(exc, PgDiagError):
+                    raise
                 artifact["items"][planned.item_id] = item_error_from_exception(planned, exc)
+                if fail_fast:
+                    raise PgDiagError(
+                        f"fail_fast stopped collection at {planned.item_id}: "
+                        f"{artifact['items'][planned.item_id].get('reason') or 'collection error'}"
+                    ) from exc
 
         artifact["runtime"]["finished_at"] = utc_now()
-        json_path, html_path = report_output_paths(out_dir, json_out, html_out)
-        write_json(json_path, artifact)
         html_text = render_html(artifact)
-        html_path.parent.mkdir(parents=True, exist_ok=True)
-        html_path.write_text(html_text, encoding="utf-8")
+        write_text_secure(html_path, html_text)
+        write_json(json_path, artifact)
         return artifact
     finally:
-        await conn.close()
+        try:
+            await conn.close()
+        except Exception:
+            pass

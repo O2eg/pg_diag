@@ -11,6 +11,16 @@ with base as (
     category,
     vartype,
     pending_restart,
+    case
+      when name in ('lock_timeout', 'statement_timeout') and reset_val = boot_val then 'default'
+      when name in ('lock_timeout', 'statement_timeout') then 'pre-collector value'
+      else source
+    end as effective_source,
+    context,
+    sourcefile,
+    sourceline,
+    boot_val,
+    reset_val,
     -- For lock_timeout/statement_timeout, compare reset_val with boot_val
     -- since source becomes 'session' during collection.
     case
@@ -58,6 +68,25 @@ select
   pending_restart as pending_restart,
   category as category,
   vartype as vartype,
+  effective_source as source,
+  context,
+  sourcefile,
+  sourceline,
+  boot_val,
+  reset_val,
   case when is_default_bool then 1 else 0 end as is_default,
-  1 as configured
+  1 as configured,
+  case
+    when pending_restart then 'medium'
+    when name = 'work_mem' and is_default_bool then 'medium'
+    else 'ok'
+  end as pg_diag_internal_severity,
+  concat_ws(
+    '; ',
+    case when pending_restart then 'setting change is pending a PostgreSQL restart' end,
+    case
+      when name = 'work_mem' and is_default_bool
+        then 'work_mem remains at the PostgreSQL default; validate it against the workload before tuning'
+    end
+  ) as pg_diag_internal_reason
 from with_numeric

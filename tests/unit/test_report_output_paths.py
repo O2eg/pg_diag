@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 
+import pytest
+
 from pg_diag import runtime_config
+from pg_diag.artifact import item_from_plan
 from pg_diag.artifact import report_output_paths
+from pg_diag.errors import PgDiagError, UnsupportedServerVersion
 from pg_diag.planner import PlannedItem
 from pg_diag.snapshot import collect_snapshot
 from pg_diag.snapshots import collect_snapshots
@@ -28,6 +33,8 @@ def fake_plan(mode: str, collection_mode: str):
         mode=mode,
         collection_mode=collection_mode,
         server_version_num=180000,
+        supported_server_version=True,
+        reason=None,
         sections=[],
         items=[],
     )
@@ -38,6 +45,8 @@ def fake_plan_with_items(mode: str, collection_mode: str, items):
         mode=mode,
         collection_mode=collection_mode,
         server_version_num=180000,
+        supported_server_version=True,
+        reason=None,
         sections=[{"section_id": "os", "title": "OS", "items": [item.item_id for item in items]}],
         items=items,
     )
@@ -103,6 +112,7 @@ def test_collect_snapshot_writes_exact_output_files(tmp_path, monkeypatch) -> No
     )
 
     assert json_path.exists()
+    assert json.loads(json_path.read_text(encoding="utf-8"))["artifact_schema_version"] == 2
     assert html_path.read_text(encoding="utf-8") == "<html>snapshot</html>"
     assert not (tmp_path / "ignored" / "report.json").exists()
     assert not (tmp_path / "ignored" / "report.html").exists()
@@ -128,7 +138,7 @@ def test_collect_snapshots_writes_exact_output_files(tmp_path, monkeypatch) -> N
         }
 
     async def collect_db_samples_stub(*args, **kwargs):
-        return [], []
+        return [], [], {}
 
     monkeypatch.setattr(snapshots_module, "validate_content", lambda content: [])
     monkeypatch.setattr(snapshots_module, "connect", connect_stub)
@@ -191,7 +201,7 @@ def test_collect_snapshots_formats_remote_skipped_once_items(tmp_path, monkeypat
         }
 
     async def collect_db_samples_stub(*args, **kwargs):
-        return [], []
+        return [], [], {}
 
     monkeypatch.setattr(snapshots_module, "validate_content", lambda content: [])
     monkeypatch.setattr(snapshots_module, "connect", connect_stub)
@@ -224,3 +234,341 @@ def test_collect_snapshots_formats_remote_skipped_once_items(tmp_path, monkeypat
     assert item["collection_status"] == "skipped"
     assert item["reason"] == "remote_db_only"
     assert item["result"] == {"kind": "plain_text", "data": "no data because remote call"}
+
+
+def test_collect_snapshots_runs_static_items_before_chart_window(tmp_path, monkeypatch) -> None:
+    import pg_diag.snapshots as snapshots_module
+
+    static_item = PlannedItem(
+        item_id="overview.pg_settings",
+        section_id="overview",
+        item_key="pg_settings",
+        title="PostgreSQL Settings",
+        source_kind="query",
+        source_id="cluster.settings",
+        status="planned",
+        collection_scope="once",
+    )
+    chart_source = PlannedItem(
+        item_id="__metric_sources.chart",
+        section_id="__metric_sources",
+        item_key="chart",
+        title="Chart source",
+        source_kind="query",
+        source_id="metrics.chart",
+        status="planned",
+        state="hidden",
+        collection_scope="every_snapshot",
+        source_metadata={"internal": True},
+    )
+    endpoint_source = PlannedItem(
+        item_id="__metric_sources.delta",
+        section_id="__metric_sources",
+        item_key="delta",
+        title="Delta source",
+        source_kind="query",
+        source_id="metrics.delta",
+        status="planned",
+        state="hidden",
+        collection_scope="window_endpoints",
+        source_metadata={"internal": True},
+    )
+    plan = SimpleNamespace(
+        mode=runtime_config.SNAPSHOTS_MODE,
+        collection_mode=runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE,
+        server_version_num=180000,
+        supported_server_version=True,
+        reason=None,
+        sections=[
+            {
+                "section_id": "overview",
+                "title": "Overview",
+                "state": "expanded",
+                "items": [static_item.item_id],
+            }
+        ],
+        items=[static_item, chart_source, endpoint_source],
+    )
+    call_order = []
+
+    async def connect_stub(*args, **kwargs):
+        return FakeConn()
+
+    async def detect_runtime_context_stub(conn):
+        return {
+            "server_version_num": 180000,
+            "server_version": "PostgreSQL 18",
+            "current_database": "testdb",
+            "current_user": "app",
+            "in_recovery": False,
+            "capabilities": {},
+        }
+
+    async def execute_once_stub(content, conn, planned):
+        call_order.append(f"once:{planned.item_id}")
+        return item_from_plan(planned, collection_status="ok", result={"kind": "none"})
+
+    async def collect_endpoint_stub(content, conn, queries, *, phase, **kwargs):
+        call_order.append(f"endpoint:{phase}")
+        assert queries == [endpoint_source]
+        item = item_from_plan(endpoint_source, collection_status="empty", result={"kind": "none"})
+        return (
+            {
+                "timestamp": f"2026-07-10T00:00:0{0 if phase == 'start' else 2}+00:00",
+                "items": {
+                    endpoint_source.item_id: {
+                        "collection_status": "empty",
+                        "result": {"kind": "none"},
+                    }
+                },
+            },
+            [],
+            {endpoint_source.item_id: item},
+        )
+
+    async def collect_db_samples_stub(content, conn, queries, *args, **kwargs):
+        call_order.append("chart-window")
+        assert queries == [chart_source]
+        item = item_from_plan(chart_source, collection_status="empty", result={"kind": "none"})
+        return (
+            [
+                {
+                    "timestamp": "2026-07-10T00:00:01+00:00",
+                    "items": {
+                        chart_source.item_id: {
+                            "collection_status": "empty",
+                            "result": {"kind": "none"},
+                        }
+                    },
+                }
+            ],
+            [],
+            {chart_source.item_id: item},
+        )
+
+    content = fake_content(tmp_path)
+    content.report["runtime_policy"] = {"fail_fast": False}
+    content.metrics = {}
+    monkeypatch.setattr(snapshots_module, "validate_content", lambda value: [])
+    monkeypatch.setattr(snapshots_module, "connect", connect_stub)
+    monkeypatch.setattr(snapshots_module, "detect_runtime_context", detect_runtime_context_stub)
+    monkeypatch.setattr(snapshots_module, "build_plan", lambda *args, **kwargs: plan)
+    monkeypatch.setattr(snapshots_module, "_execute_once_item", execute_once_stub)
+    monkeypatch.setattr(snapshots_module, "_collect_window_endpoint", collect_endpoint_stub)
+    monkeypatch.setattr(snapshots_module, "_collect_db_samples", collect_db_samples_stub)
+    monkeypatch.setattr(snapshots_module, "render_html", lambda artifact: "<html></html>")
+
+    artifact = asyncio.run(
+        collect_snapshots(
+            content=content,
+            out_dir=tmp_path / "out",
+            dsn=None,
+            connection_kwargs={},
+            collection_mode=runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE,
+            duration_seconds=30,
+            interval_seconds=15,
+        )
+    )
+
+    assert call_order == [
+        "once:overview.pg_settings",
+        "endpoint:start",
+        "chart-window",
+        "endpoint:end",
+    ]
+    assert set(artifact["items"]) == {"overview.pg_settings"}
+    assert set(artifact["snapshots"][0]["items"]) == {chart_source.item_id}
+    assert artifact["runtime"]["once_item_count"] == 1
+    assert artifact["runtime"]["chart_queries_per_sample"] == 1
+    assert artifact["runtime"]["window_endpoint_query_count"] == 1
+
+
+def test_collect_snapshots_uses_backend_proc_window_endpoints(tmp_path, monkeypatch) -> None:
+    import pg_diag.snapshots as snapshots_module
+
+    metric_item = PlannedItem(
+        item_id="backend_os.backend_proc_cpu",
+        section_id="backend_os",
+        item_key="backend_proc_cpu",
+        title="PostgreSQL Backend /proc CPU",
+        source_kind="metric",
+        source_id="backend.proc_cpu_top",
+        status="planned",
+        collection_scope="window_endpoints",
+        source_metadata={"source_sampler": "os.backend_proc"},
+    )
+    plan = fake_plan_with_items(
+        runtime_config.SNAPSHOTS_MODE,
+        runtime_config.LOCAL_COLLECTION_MODE,
+        [metric_item],
+    )
+    call_order = []
+    endpoint_states = iter(
+        [
+            {"timestamp": "start", "monotonic": 1.0, "processes": {}},
+            {"timestamp": "end", "monotonic": 2.0, "processes": {}},
+        ]
+    )
+    endpoint_samples = [{"timestamp": "end", "rows": [{"pid": 101, "cpu_pct": 2.5}]}]
+
+    async def connect_stub(*args, **kwargs):
+        return FakeConn()
+
+    async def detect_runtime_context_stub(conn):
+        return {
+            "server_version_num": 180000,
+            "server_version": "PostgreSQL 18",
+            "current_database": "testdb",
+            "current_user": "app",
+            "in_recovery": False,
+            "capabilities": {},
+        }
+
+    async def collect_db_samples_stub(*args, **kwargs):
+        call_order.append("chart-window")
+        return [], [], {}
+
+    def capture_backend_proc_state_stub():
+        state = next(endpoint_states)
+        call_order.append(f"proc:{state['timestamp']}")
+        return state
+
+    def build_backend_proc_window_samples_stub(start, end):
+        assert start["timestamp"] == "start"
+        assert end["timestamp"] == "end"
+        return endpoint_samples
+
+    def collect_os_metrics_stub(*args, **kwargs):
+        return {}, []
+
+    def build_metric_item_stub(planned, metric, db_snapshots, os_samples, *args):
+        assert os_samples["os.backend_proc"] == endpoint_samples
+        call_order.append("metric")
+        return item_from_plan(planned, collection_status="ok", result={"kind": "table", "rows": []})
+
+    content = fake_content(tmp_path)
+    content.report["runtime_policy"] = {"fail_fast": False}
+    content.metrics = {
+        "backend.proc_cpu_top": {
+            "source_sampler": "os.backend_proc",
+            "requires_collection": "window_endpoints",
+            "result": "table",
+        }
+    }
+    monkeypatch.setattr(snapshots_module, "validate_content", lambda value: [])
+    monkeypatch.setattr(snapshots_module, "connect", connect_stub)
+    monkeypatch.setattr(snapshots_module, "detect_runtime_context", detect_runtime_context_stub)
+    monkeypatch.setattr(snapshots_module, "build_plan", lambda *args, **kwargs: plan)
+    monkeypatch.setattr(snapshots_module, "_collect_db_samples", collect_db_samples_stub)
+    monkeypatch.setattr(snapshots_module, "capture_backend_proc_state", capture_backend_proc_state_stub)
+    monkeypatch.setattr(
+        snapshots_module,
+        "build_backend_proc_window_samples",
+        build_backend_proc_window_samples_stub,
+    )
+    monkeypatch.setattr(snapshots_module, "collect_os_metrics", collect_os_metrics_stub)
+    monkeypatch.setattr(snapshots_module, "build_metric_item", build_metric_item_stub)
+    monkeypatch.setattr(snapshots_module, "render_html", lambda artifact: "<html></html>")
+
+    artifact = asyncio.run(
+        collect_snapshots(
+            content=content,
+            out_dir=tmp_path / "out",
+            dsn=None,
+            connection_kwargs={},
+            collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
+            duration_seconds=30,
+            interval_seconds=15,
+        )
+    )
+
+    assert call_order == ["proc:start", "chart-window", "proc:end", "metric"]
+    assert artifact["runtime"]["window_endpoint_sampler_count"] == 1
+
+
+def test_collect_snapshot_rejects_unsupported_server_before_writing(tmp_path, monkeypatch) -> None:
+    import pg_diag.snapshot as snapshot_module
+
+    async def connect_stub(*args, **kwargs):
+        return FakeConn()
+
+    async def detect_runtime_context_stub(conn):
+        return {"server_version_num": 130000}
+
+    unsupported_plan = fake_plan(runtime_config.SNAPSHOT_MODE, runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE)
+    unsupported_plan.supported_server_version = False
+    unsupported_plan.reason = "unsupported test version"
+
+    monkeypatch.setattr(snapshot_module, "validate_content", lambda content: [])
+    monkeypatch.setattr(snapshot_module, "connect", connect_stub)
+    monkeypatch.setattr(snapshot_module, "detect_runtime_context", detect_runtime_context_stub)
+    monkeypatch.setattr(snapshot_module, "build_plan", lambda *args, **kwargs: unsupported_plan)
+
+    with pytest.raises(UnsupportedServerVersion, match="unsupported test version"):
+        asyncio.run(
+            collect_snapshot(
+                content=fake_content(tmp_path),
+                out_dir=tmp_path / "out",
+                dsn=None,
+                connection_kwargs={},
+            )
+        )
+
+    assert not (tmp_path / "out" / "report.json").exists()
+    assert not (tmp_path / "out" / "report.html").exists()
+
+
+def test_collect_snapshot_honors_fail_fast_policy(tmp_path, monkeypatch) -> None:
+    import pg_diag.snapshot as snapshot_module
+
+    planned = PlannedItem(
+        item_id="s.q",
+        section_id="s",
+        item_key="q",
+        title="Query",
+        source_kind="query",
+        source_id="q",
+        status="planned",
+    )
+    content = fake_content(tmp_path)
+    content.report["runtime_policy"] = {"fail_fast": True}
+
+    async def connect_stub(*args, **kwargs):
+        return FakeConn()
+
+    async def detect_runtime_context_stub(conn):
+        return {"server_version_num": 180000}
+
+    async def execute_query_stub(content, conn, item):
+        return item_from_plan(
+            item,
+            collection_status="error",
+            reason="query failed",
+            result={"kind": "table", "columns": [], "rows": [], "row_count": 0},
+        )
+
+    monkeypatch.setattr(snapshot_module, "validate_content", lambda content: [])
+    monkeypatch.setattr(snapshot_module, "connect", connect_stub)
+    monkeypatch.setattr(snapshot_module, "detect_runtime_context", detect_runtime_context_stub)
+    monkeypatch.setattr(
+        snapshot_module,
+        "build_plan",
+        lambda *args, **kwargs: fake_plan_with_items(
+            runtime_config.SNAPSHOT_MODE,
+            runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE,
+            [planned],
+        ),
+    )
+    monkeypatch.setattr(snapshot_module, "execute_query_item", execute_query_stub)
+
+    with pytest.raises(PgDiagError, match="fail_fast stopped collection at s.q"):
+        asyncio.run(
+            collect_snapshot(
+                content=content,
+                out_dir=tmp_path / "out",
+                dsn=None,
+                connection_kwargs={},
+            )
+        )
+
+    assert not (tmp_path / "out" / "report.json").exists()

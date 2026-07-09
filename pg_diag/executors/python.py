@@ -6,6 +6,7 @@ import asyncio
 import importlib.util
 import inspect
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -56,10 +57,8 @@ async def execute_python_item(content: ContentPack, conn: Any, planned: PlannedI
 
     source_path = content.path / "python" / python_file
     source_text = read_source_text(source_path)
+    timeout_seconds = _timeout_seconds(content, source)
     try:
-        module = _load_module(source_id, source_path)
-        function_name = source.get("function") or "collect"
-        function = getattr(module, function_name)
         context = PythonSourceContext(
             content=content,
             conn=conn,
@@ -68,8 +67,13 @@ async def execute_python_item(content: ContentPack, conn: Any, planned: PlannedI
             source_path=source_path,
         )
         raw_result = await asyncio.wait_for(
-            _call_source(function, context),
-            timeout=_timeout_seconds(content, source),
+            _load_and_call_source(
+                source_id,
+                source_path,
+                source.get("function") or "collect",
+                context,
+            ),
+            timeout=timeout_seconds,
         )
         result = _normalize_result(raw_result)
         return item_from_plan(
@@ -84,6 +88,19 @@ async def execute_python_item(content: ContentPack, conn: Any, planned: PlannedI
             source_text=source_text,
             source_language="python",
         )
+    except TimeoutError:
+        timeout_ms = int(round(timeout_seconds * 1000))
+        message = f"Python source timed out after {timeout_ms} ms"
+        return item_from_plan(
+            planned,
+            collection_status="error",
+            reason=message,
+            timing_ms=elapsed_ms(started),
+            result={"kind": "none"},
+            diagnostics=[{"level": "error", "code": "python_timeout", "message": message}],
+            source_text=source_text,
+            source_language="python",
+        )
     except Exception as exc:
         return item_error_from_exception(
             planned,
@@ -94,11 +111,59 @@ async def execute_python_item(content: ContentPack, conn: Any, planned: PlannedI
         )
 
 
+async def _load_and_call_source(
+    source_id: str,
+    source_path: Path,
+    function_name: str,
+    context: PythonSourceContext,
+) -> Any:
+    module = await _run_sync_daemon(_load_module, source_id, source_path)
+    function = getattr(module, function_name)
+    return await _call_source(function, context)
+
+
 async def _call_source(function: Any, context: PythonSourceContext) -> Any:
-    value = function(context)
+    if inspect.iscoroutinefunction(function):
+        return await function(context)
+    value = await _run_sync_daemon(function, context)
     if inspect.isawaitable(value):
         return await value
     return value
+
+
+async def _run_sync_daemon(function: Any, *args: Any) -> Any:
+    """Run blocking trusted-source code without pinning the asyncio event loop."""
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[Any] = loop.create_future()
+
+    def settle_result(value: Any) -> None:
+        if not future.done():
+            future.set_result(value)
+
+    def settle_exception(exc: BaseException) -> None:
+        if future.done():
+            return
+        if isinstance(exc, Exception):
+            future.set_exception(exc)
+        else:
+            future.set_exception(RuntimeError(f"Python source terminated: {exc}"))
+
+    def runner() -> None:
+        try:
+            value = function(*args)
+        except BaseException as exc:  # pragma: no cover - defensive plugin boundary
+            try:
+                loop.call_soon_threadsafe(settle_exception, exc)
+            except RuntimeError:
+                pass
+        else:
+            try:
+                loop.call_soon_threadsafe(settle_result, value)
+            except RuntimeError:
+                pass
+
+    threading.Thread(target=runner, name="pg_diag_python_source", daemon=True).start()
+    return await future
 
 
 def _load_module(source_id: str, source_path: Path) -> Any:
@@ -154,13 +219,37 @@ def _validate_result_contract(result: PythonSourceResult) -> None:
         raise ValueError(f"unsupported Python source severity_level {result.severity_level!r}")
     if not isinstance(result.result, dict):
         raise ValueError("Python source result must be a mapping")
+    if result.reason is not None and not isinstance(result.reason, str):
+        raise ValueError("Python source reason must be a string or null")
     kind = result.result.get("kind", "none")
     if kind not in RESULT_KINDS:
         raise ValueError(f"unsupported Python source result kind {kind!r}")
-    if not isinstance(result.diagnostics, list):
-        raise ValueError("Python source diagnostics must be a list")
+    if not isinstance(result.diagnostics, list) or any(
+        not isinstance(diagnostic, dict) for diagnostic in result.diagnostics
+    ):
+        raise ValueError("Python source diagnostics must be a list of mappings")
     if not isinstance(result.issues, dict):
         raise ValueError("Python source issues must be a mapping")
+    if kind == "plain_text" and not isinstance(result.result.get("data", ""), str):
+        raise ValueError("Python source plain_text data must be a string")
+    if kind == "table":
+        columns = result.result.get("columns", [])
+        rows = result.result.get("rows", [])
+        if not isinstance(columns, list) or not isinstance(rows, list):
+            raise ValueError("Python source table columns and rows must be lists")
+        if any(
+            not isinstance(column, dict)
+            or not isinstance(column.get("name"), str)
+            or not column["name"]
+            for column in columns
+        ):
+            raise ValueError("Python source table columns must be named mappings")
+        if any(not isinstance(row, (list, tuple)) or len(row) != len(columns) for row in rows):
+            raise ValueError("Python source table rows must match the column count")
+    if kind == "chart":
+        series = result.result.get("series", [])
+        if not isinstance(series, list) or any(not isinstance(entry, dict) for entry in series):
+            raise ValueError("Python source chart series must be a list of mappings")
 
 
 def table_result(records: list[dict[str, Any]] | tuple[dict[str, Any], ...]) -> dict[str, Any]:

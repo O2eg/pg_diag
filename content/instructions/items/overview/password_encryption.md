@@ -1,13 +1,28 @@
 # Password Encryption
 
-This item reports `password_encryption` values weaker than `scram-sha-256`.
+This instruction belongs to report item `overview.password_encryption`. The item is backed by `security.password_encryption` (SQL query).
 
 ## What this item shows
 - Current `password_encryption` value.
 - Configuration source and pending restart flag.
 - Risk level for non-SCRAM password hashing.
 
+## What to watch
+- `md5` produces `high`; any other non-SCRAM value produces `medium`.
+- An empty result means new passwords created by sessions using this setting default to SCRAM.
+- This setting does not prove that existing role password verifiers have been migrated from MD5.
+
+## Common fault causes
+- Legacy clients cannot authenticate with SCRAM.
+- The cluster setting was changed but existing passwords were never rotated.
+- A role or database override changes `password_encryption` for selected sessions.
+
+## Applicability
+- The check matters only for roles using PostgreSQL-managed passwords.
+- Certificate, GSSAPI, LDAP, PAM, OAuth, and other external authentication paths have different password controls.
+
 ## Checklist
 - Set `password_encryption = 'scram-sha-256'`.
 - Rotate or reset old MD5 password hashes where possible.
-- Reload or restart PostgreSQL if the setting change requires it.
+- Verify client SCRAM support before changing authentication rules.
+- Apply the setting to new sessions; a PostgreSQL restart is not intrinsically required for this user-context parameter.

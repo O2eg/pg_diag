@@ -19,6 +19,11 @@ This instruction belongs to report item `overview.stat_reset_times`. The item is
 - PostgreSQL restart or statistics subsystem reset.
 - Maintenance, testing, or monitoring jobs that reset counters before a diagnostic capture.
 
+## Automatic evaluation
+- Reset age is not assigned a severity because planned resets and cluster age vary by environment.
+- `not_reported` means the view returned no timestamp; it is not converted to a pass, failure, or zero age.
+- pg_diag only reads these timestamps and never invokes statistics reset functions.
+
 ## Checklist
 - Check this item before relying on cumulative totals in database, WAL, table, index, and function workload sections.
 - Prefer snapshot delta items when a reset happened shortly before or during the capture window.

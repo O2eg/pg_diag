@@ -9,7 +9,7 @@ queries:
         column: query_age_seconds
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: backend_activity_pg14_plus

@@ -12,13 +12,41 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from . import runtime_config
+
 
 SampleMap = dict[str, list[dict[str, Any]]]
 
 
-def collect_os_metrics(duration_seconds: float, interval_seconds: float) -> tuple[SampleMap, list[dict[str, str]]]:
-    collector = _OSMetricsCollector(duration_seconds, interval_seconds)
+def collect_os_metrics(
+    duration_seconds: float,
+    interval_seconds: float,
+    stop_event: threading.Event | None = None,
+) -> tuple[SampleMap, list[dict[str, str]]]:
+    collector = _OSMetricsCollector(duration_seconds, interval_seconds, stop_event=stop_event)
     return collector.collect()
+
+
+def capture_backend_proc_state() -> dict[str, Any]:
+    """Capture one endpoint for window-wide PostgreSQL process rates."""
+    return {
+        "timestamp": datetime.now(UTC).isoformat(),
+        "monotonic": time.monotonic(),
+        "processes": _read_postgres_processes(),
+    }
+
+
+def build_backend_proc_window_samples(
+    start: dict[str, Any],
+    end: dict[str, Any],
+) -> list[dict[str, Any]]:
+    elapsed = max(float(end["monotonic"]) - float(start["monotonic"]), 0.001)
+    rows = _backend_proc_rows(
+        start.get("processes") or {},
+        end.get("processes") or {},
+        elapsed,
+    )
+    return [{"timestamp": str(end["timestamp"]), "rows": rows}]
 
 
 def parse_iostat_reports(output: str) -> list[list[dict[str, Any]]]:
@@ -88,18 +116,29 @@ def normalize_iostat_row(row: dict[str, Any]) -> dict[str, Any]:
 
 
 class _OSMetricsCollector:
-    def __init__(self, duration_seconds: float, interval_seconds: float) -> None:
+    def __init__(
+        self,
+        duration_seconds: float,
+        interval_seconds: float,
+        *,
+        stop_event: threading.Event | None = None,
+    ) -> None:
         self.duration_seconds = max(float(duration_seconds), 1.0)
         self.interval_seconds = max(float(interval_seconds), 1.0)
+        self.schedule_offsets = runtime_config.snapshots_schedule_offsets(
+            self.duration_seconds,
+            self.interval_seconds,
+        )
         self.data: SampleMap = {
             "os.cpu": [],
             "os.memory": [],
             "os.disk": [],
             "os.network": [],
-            "os.backend_proc": [],
         }
         self.errors: list[dict[str, str]] = []
         self._lock = threading.Lock()
+        self._stop_event = stop_event or threading.Event()
+        self._iostat_process: subprocess.Popen[str] | None = None
         self._start_dt = datetime.now(UTC)
         self._start_mono = time.monotonic()
 
@@ -109,26 +148,44 @@ class _OSMetricsCollector:
             threading.Thread(target=self._collect_memory, name="pg_diag_os_memory", daemon=True),
             threading.Thread(target=self._collect_network, name="pg_diag_os_network", daemon=True),
             threading.Thread(target=self._collect_disk_iostat, name="pg_diag_os_iostat", daemon=True),
-            threading.Thread(target=self._collect_backend_proc, name="pg_diag_os_backend_proc", daemon=True),
         ]
         for thread in threads:
             thread.start()
+
+        deadline = self._start_mono + self.duration_seconds + 10.0
+        while any(thread.is_alive() for thread in threads):
+            if self._stop_event.is_set() or time.monotonic() >= deadline:
+                self._stop_event.set()
+                self._terminate_iostat()
+                break
+            for thread in threads:
+                thread.join(0.1)
+
         for thread in threads:
-            thread.join(self.duration_seconds + self.interval_seconds + 20.0)
+            thread.join(1.0)
+            if thread.is_alive():
+                sampler = {
+                    "pg_diag_os_cpu": "os.cpu",
+                    "pg_diag_os_memory": "os.memory",
+                    "pg_diag_os_network": "os.network",
+                    "pg_diag_os_iostat": "os.disk",
+                }.get(thread.name, thread.name)
+                self._error(sampler, "sampler thread did not stop")
         return self.data, self.errors
 
     def _collect_cpu(self) -> None:
         try:
             previous = _read_proc_stat_cpu()
             previous_time = time.monotonic()
-            for index in range(1, self._interval_points() + 1):
-                self._sleep_until_index(index)
+            for offset in self.schedule_offsets[1:]:
+                if not self._sleep_until_offset(offset):
+                    break
                 current = _read_proc_stat_cpu()
                 current_time = time.monotonic()
                 rows = [_cpu_row(previous, current, current_time - previous_time)]
                 load = _read_loadavg()
                 rows[0].update(load)
-                self._append("os.cpu", self._timestamp_for_index(index), rows)
+                self._append("os.cpu", self._timestamp_now(), rows)
                 previous = current
                 previous_time = current_time
         except Exception as exc:  # pragma: no cover - defensive sampler isolation
@@ -136,10 +193,12 @@ class _OSMetricsCollector:
 
     def _collect_memory(self) -> None:
         try:
-            for index in range(0, self._interval_points() + 1):
-                if index:
-                    self._sleep_until_index(index)
-                self._append("os.memory", self._timestamp_for_index(index), [_memory_row()])
+            for offset in self.schedule_offsets:
+                if offset and not self._sleep_until_offset(offset):
+                    break
+                if self._stop_event.is_set():
+                    break
+                self._append("os.memory", self._timestamp_now(), [_memory_row()])
         except Exception as exc:  # pragma: no cover - defensive sampler isolation
             self._error("os.memory", str(exc))
 
@@ -147,42 +206,57 @@ class _OSMetricsCollector:
         try:
             previous = _read_proc_net_dev()
             previous_time = time.monotonic()
-            for index in range(1, self._interval_points() + 1):
-                self._sleep_until_index(index)
+            for offset in self.schedule_offsets[1:]:
+                if not self._sleep_until_offset(offset):
+                    break
                 current = _read_proc_net_dev()
                 current_time = time.monotonic()
                 rows = _network_rows(previous, current, current_time - previous_time)
-                self._append("os.network", self._timestamp_for_index(index), rows)
+                self._append("os.network", self._timestamp_now(), rows)
                 previous = current
                 previous_time = current_time
         except Exception as exc:  # pragma: no cover - defensive sampler isolation
             self._error("os.network", str(exc))
 
     def _collect_disk_iostat(self) -> None:
+        if self._stop_event.is_set():
+            return
         iostat = shutil.which("iostat")
         if not iostat:
             self._error("os.disk", "iostat executable not found")
             return
 
-        points = self._interval_points()
-        interval = str(max(1, int(round(self.interval_seconds))))
+        interval_seconds = max(1, int(round(min(self.interval_seconds, self.duration_seconds))))
+        points = max(1, int(self.duration_seconds // interval_seconds))
         try:
-            proc = subprocess.run(
-                [iostat, "-dxk", interval, str(points + 1)],
-                capture_output=True,
+            proc = subprocess.Popen(
+                [iostat, "-dxk", str(interval_seconds), str(points + 1)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=self.duration_seconds + self.interval_seconds + 15.0,
-                check=False,
             )
+            with self._lock:
+                self._iostat_process = proc
+            if self._stop_event.is_set():
+                self._terminate_iostat()
+            stdout, stderr = proc.communicate(timeout=self.duration_seconds + 5.0)
+        except subprocess.TimeoutExpired:
+            self._terminate_iostat()
+            self._error("os.disk", "iostat exceeded the collection window")
+            return
         except Exception as exc:  # pragma: no cover - depends on host utility behavior
             self._error("os.disk", str(exc))
             return
+        finally:
+            with self._lock:
+                self._iostat_process = None
 
         if proc.returncode != 0:
-            self._error("os.disk", proc.stderr.strip() or f"iostat exit_code={proc.returncode}")
+            if not self._stop_event.is_set():
+                self._error("os.disk", stderr.strip() or f"iostat exit_code={proc.returncode}")
             return
 
-        reports = parse_iostat_reports(proc.stdout)
+        reports = parse_iostat_reports(stdout)
         interval_reports = reports[-points:] if len(reports) >= points else reports
         first_index = max(1, points - len(interval_reports) + 1)
         for offset, report in enumerate(interval_reports):
@@ -192,34 +266,38 @@ class _OSMetricsCollector:
                 for row in report
                 if _is_interesting_disk(str(row.get("device") or ""))
             ]
-            self._append("os.disk", self._timestamp_for_index(index), rows)
+            self._append(
+                "os.disk",
+                self._timestamp_for_offset(min(index * interval_seconds, self.duration_seconds)),
+                rows,
+            )
 
-    def _collect_backend_proc(self) -> None:
-        try:
-            previous = _read_postgres_processes()
-            previous_time = time.monotonic()
-            for index in range(1, self._interval_points() + 1):
-                self._sleep_until_index(index)
-                current = _read_postgres_processes()
-                current_time = time.monotonic()
-                rows = _backend_proc_rows(previous, current, current_time - previous_time)
-                self._append("os.backend_proc", self._timestamp_for_index(index), rows)
-                previous = current
-                previous_time = current_time
-        except Exception as exc:  # pragma: no cover - defensive sampler isolation
-            self._error("os.backend_proc", str(exc))
-
-    def _interval_points(self) -> int:
-        return max(1, int(round(self.duration_seconds / self.interval_seconds)))
-
-    def _sleep_until_index(self, index: int) -> None:
-        target = self._start_mono + index * self.interval_seconds
+    def _sleep_until_offset(self, offset: float) -> bool:
+        target = self._start_mono + offset
         delay = target - time.monotonic()
         if delay > 0:
-            time.sleep(delay)
+            self._stop_event.wait(delay)
+        return not self._stop_event.is_set()
 
-    def _timestamp_for_index(self, index: int) -> str:
-        return (self._start_dt + timedelta(seconds=index * self.interval_seconds)).isoformat()
+    def _timestamp_for_offset(self, offset: float) -> str:
+        return (self._start_dt + timedelta(seconds=offset)).isoformat()
+
+    def _timestamp_now(self) -> str:
+        return datetime.now(UTC).isoformat()
+
+    def _terminate_iostat(self) -> None:
+        with self._lock:
+            proc = self._iostat_process
+        if proc is None or proc.poll() is not None:
+            return
+        try:
+            proc.terminate()
+            proc.wait(timeout=2.0)
+        except (OSError, subprocess.TimeoutExpired):
+            try:
+                proc.kill()
+            except OSError:
+                pass
 
     def _append(self, sampler: str, timestamp: str, rows: list[dict[str, Any]]) -> None:
         with self._lock:
@@ -420,6 +498,7 @@ def _read_process_snapshot(pid: int) -> dict[str, Any]:
         "comm": comm,
         "cmdline": cmdline,
         "state": stat["state"],
+        "starttime": stat["starttime"],
         "utime": stat["utime"],
         "stime": stat["stime"],
         "read_bytes": int(io_data.get("read_bytes", 0)),
@@ -439,12 +518,13 @@ def _read_proc_pid_stat(path: Path) -> dict[str, Any]:
     if left < 0 or right < 0:
         raise ValueError("malformed proc stat")
     after = text[right + 2 :].split()
-    if len(after) < 15:
+    if len(after) < 20:
         raise ValueError("short proc stat")
     return {
         "state": after[0],
         "utime": int(after[11]),
         "stime": int(after[12]),
+        "starttime": int(after[19]),
     }
 
 
@@ -499,7 +579,7 @@ def _backend_proc_rows(
     for pid in sorted(current):
         prev = previous.get(pid)
         cur = current[pid]
-        if not prev:
+        if not prev or prev.get("starttime") != cur.get("starttime"):
             continue
         cpu_ticks = max((cur["utime"] + cur["stime"]) - (prev["utime"] + prev["stime"]), 0)
         cpu_pct = round((cpu_ticks / clock_ticks) * 100.0 / seconds, 3) if clock_ticks else 0.0

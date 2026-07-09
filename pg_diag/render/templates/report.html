@@ -2004,7 +2004,7 @@ __HIGHLIGHT_JS__
         ["server", shortServerVersion(runtime.server_version)],
         ["duration", formatSeconds(runtime.duration_seconds)],
         ["interval", formatSeconds(runtime.interval_seconds)],
-        ["snapshots", (artifact.snapshots || []).length || null],
+        ["snapshots", runtime.snapshot_count ?? ((artifact.snapshots || []).length || null)],
       ].filter((entry) => entry[1] !== undefined && entry[1] !== null && entry[1] !== "");
       const runtimeDetails = document.getElementById("runtimeDetails");
       runtimeDetails.textContent = runtimeDetailParts
@@ -2679,6 +2679,9 @@ __HIGHLIGHT_JS__
       details.dataset.itemType = itemDataType(item);
       details.__tags = itemTags(item);
       details.__searchText = itemSearchText(item);
+      if (item.state === "hidden") {
+        details.classList.add("hidden");
+      }
       if (item.state === "expanded") {
         details.open = true;
       } else if (item.state === "collapsed" || item.state === "hidden") {
@@ -3043,6 +3046,9 @@ __HIGHLIGHT_JS__
         appendMetaValue(rows, "result.sample_count", result.sample_count);
         appendMetaValue(rows, "result.series_count", (result.series || []).length);
         appendMetaRows(rows, "result.chart", result.chart || {});
+      }
+      if (result.interval_coverage) {
+        appendMetaValue(rows, "result.interval_coverage", result.interval_coverage, true);
       }
 
       appendMetaRows(rows, "source", item.source_metadata || {});
@@ -3662,7 +3668,11 @@ __HIGHLIGHT_JS__
 
       const pageSize = document.createElement("select");
       pageSize.className = "select";
-      for (const value of ["15", "50", "100", "500", "all"]) {
+      const configuredPageSize = Number((((artifact.display || {}).table || {}).page_size) || 15);
+      const pageSizeValues = Array.from(new Set([
+        String(configuredPageSize), "15", "50", "100", "500", "all"
+      ]));
+      for (const value of pageSizeValues) {
         const option = document.createElement("option");
         option.value = value;
         option.textContent = value === "all" ? "All rows" : value + " rows";
@@ -3724,7 +3734,7 @@ __HIGHLIGHT_JS__
         columns,
         filteredRows: rows,
         page: 0,
-        pageSize: 15,
+        pageSize: configuredPageSize,
         filter,
         pageSizeInput: pageSize,
         previous,

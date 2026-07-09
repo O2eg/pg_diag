@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from hashlib import sha256
 from typing import Any
 
 from . import runtime_config
@@ -77,11 +78,10 @@ def build_plan(
     collection_mode: str = runtime_config.DEFAULT_COLLECTION_MODE,
 ) -> ExecutionPlan:
     unsupported_reason = supported_version_reason(server_version_num)
-    metric_dependencies = _metric_dependencies(content) if mode == runtime_config.SNAPSHOTS_MODE else set()
+    metric_dependencies = _metric_dependencies(content) if mode == runtime_config.SNAPSHOTS_MODE else {}
     query_usage_index = _query_usage_index(content)
     sections = _plan_sections(content)
     items: list[PlannedItem] = []
-    report_query_ids: set[str] = set()
 
     for section_id, item_key, item_id, item in iter_report_items(content):
         source_kind = _source_kind(item)
@@ -95,7 +95,7 @@ def build_plan(
                     source_kind=source_kind,
                     source_id=item.get(source_kind),
                     status="unsupported",
-                    state=_item_state(item),
+                    state=_item_state(content, item),
                     reason=unsupported_reason,
                     source_metadata=_with_item_metadata(content, item_id, item),
                 )
@@ -103,7 +103,6 @@ def build_plan(
             continue
 
         if source_kind == "query":
-            report_query_ids.add(item["query"])
             items.append(
                 _plan_query_item(
                     content,
@@ -122,7 +121,18 @@ def build_plan(
         elif source_kind == "python":
             items.append(_plan_python_item(content, section_id, item_key, item_id, item, collection_mode))
         elif source_kind == "metric":
-            items.append(_plan_metric_item(content, section_id, item_key, item_id, item, mode, query_usage_index))
+            items.append(
+                _plan_metric_item(
+                    content,
+                    section_id,
+                    item_key,
+                    item_id,
+                    item,
+                    mode,
+                    collection_mode,
+                    query_usage_index,
+                )
+            )
         else:
             items.append(
                 PlannedItem(
@@ -132,14 +142,14 @@ def build_plan(
                     title=item_key,
                     source_kind="unknown",
                     status="error",
-                    state=_item_state(item),
+                    state=_item_state(content, item),
                     reason="Cannot determine item source kind",
                     source_metadata=_with_item_metadata(content, item_id, item),
                 )
             )
 
     if unsupported_reason is None and metric_dependencies:
-        for query_id in sorted(metric_dependencies - report_query_ids):
+        for query_id in sorted(metric_dependencies):
             items.append(
                 _plan_hidden_metric_source_query(
                     content,
@@ -172,12 +182,16 @@ def _source_kind(item: dict[str, Any]) -> str:
 def _plan_sections(content: ContentPack) -> list[dict[str, Any]]:
     planned = []
     for section_id, section in (content.report.get("sections") or {}).items():
-        item_ids = [f"{section_id}.{item_key}" for item_key in ((section or {}).get("items") or {})]
+        item_ids = [
+            f"{section_id}.{item_key}"
+            for item_key, item in ((section or {}).get("items") or {}).items()
+            if _item_state(content, item or {}) != "hidden"
+        ]
         planned.append(
             {
                 "section_id": section_id,
                 "title": section.get("title", section_id),
-                "state": section.get("state", (content.report.get("defaults") or {}).get("item", {}).get("state")),
+                "state": _section_state(content, section),
                 "items": item_ids,
             }
         )
@@ -198,9 +212,26 @@ def _item_title(content: ContentPack, source_kind: str, item: dict[str, Any], it
     return item.get("title") or manifest.get("title") or item_key
 
 
-def _item_state(item: dict[str, Any]) -> str | None:
+def _item_state(content: ContentPack, item: dict[str, Any]) -> str:
     state = item.get("state")
-    return state if state in {"expanded", "collapsed", "hidden"} else None
+    if state in {"expanded", "collapsed", "hidden"}:
+        return state
+    defaults = content.report.get("defaults") or {}
+    default_state = (defaults.get("item") or {}).get("state")
+    if default_state not in {"expanded", "collapsed", "hidden"}:
+        default_state = (content.report.get("report") or {}).get("default_state")
+    return default_state if default_state in {"expanded", "collapsed", "hidden"} else "expanded"
+
+
+def _section_state(content: ContentPack, section: dict[str, Any]) -> str:
+    state = section.get("state")
+    if state in {"expanded", "collapsed", "hidden"}:
+        return state
+    defaults = content.report.get("defaults") or {}
+    default_state = (defaults.get("section") or {}).get("state")
+    if default_state not in {"expanded", "collapsed", "hidden"}:
+        default_state = (content.report.get("report") or {}).get("default_state")
+    return default_state if default_state in {"expanded", "collapsed", "hidden"} else "expanded"
 
 
 def _with_item_metadata(
@@ -277,7 +308,7 @@ def _plan_query_item(
     item: dict[str, Any],
     server_version_num: int,
     mode: str,
-    metric_dependencies: set[str],
+    metric_dependencies: dict[str, str],
     query_usage_index: dict[str, list[str]],
     internal: bool = False,
 ) -> PlannedItem:
@@ -296,18 +327,17 @@ def _plan_query_item(
             source_kind="query",
             source_id=query_id,
             status="unsupported",
-            state=_item_state(item),
+            state=_item_state(content, item),
             reason=selection.reason,
             source_metadata=_with_item_metadata(content, item_id, item, source_metadata),
         )
 
-    collection_scope = "once"
-    if mode == runtime_config.SNAPSHOTS_MODE:
-        collection = manifest.get("collection") or {}
-        if collection.get("default") == "every_snapshot" or query_id in metric_dependencies:
-            collection_scope = "every_snapshot"
-        else:
-            collection_scope = "once:latest"
+    collection_scope = runtime_config.ONCE_COLLECTION_SCOPE
+    if mode == runtime_config.SNAPSHOTS_MODE and internal:
+        collection_scope = metric_dependencies.get(
+            query_id,
+            runtime_config.ONCE_COLLECTION_SCOPE,
+        )
 
     variant = selection.variant
     source_metadata = {
@@ -319,6 +349,7 @@ def _plan_query_item(
         "source": manifest.get("source"),
         "optional": bool(manifest.get("optional")),
         "display": manifest.get("display") or {},
+        "evaluation": manifest.get("evaluation") or {},
         "semantic_columns": variant.get("semantic_columns") or {},
         **_query_usage_metadata(query_id, item_id, query_usage_index),
     }
@@ -333,7 +364,7 @@ def _plan_query_item(
         source_kind="query",
         source_id=query_id,
         status="planned",
-        state=_item_state(item),
+        state=_item_state(content, item),
         variant_id=variant.get("id"),
         sql_file=variant.get("sql_file"),
         collection_scope=collection_scope,
@@ -346,10 +377,11 @@ def _plan_hidden_metric_source_query(
     query_id: str,
     server_version_num: int,
     mode: str,
-    metric_dependencies: set[str],
+    metric_dependencies: dict[str, str],
     query_usage_index: dict[str, list[str]],
 ) -> PlannedItem:
-    item_key = query_id.replace(".", "_")
+    digest = sha256(query_id.encode("utf-8")).hexdigest()[:10]
+    item_key = f"{query_id.replace('.', '_')}_{digest}"
     return _plan_query_item(
         content,
         "__metric_sources",
@@ -375,9 +407,7 @@ def _plan_script_item(
     script_id = item["script"]
     script = content.scripts[script_id]
     if collection_mode == runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE and script.get("local_only", True):
-        message = (content.report.get("runtime_policy") or {}).get(
-            "remote_db_only_shell_message", "no data because remote call"
-        )
+        message = _remote_script_message(content, script)
         return PlannedItem(
             item_id=item_id,
             section_id=section_id,
@@ -386,7 +416,7 @@ def _plan_script_item(
             source_kind="script",
             source_id=script_id,
             status="skipped",
-            state=_item_state(item),
+            state=_item_state(content, item),
             reason=message,
             script_file=script.get("script_file"),
             collection_scope="once",
@@ -394,6 +424,7 @@ def _plan_script_item(
                 "script_id": script_id,
                 "script_file": script.get("script_file"),
                 "output": script.get("output"),
+                "remote_message": message,
             }),
         )
 
@@ -410,7 +441,7 @@ def _plan_script_item(
         source_kind="script",
         source_id=script_id,
         status="planned",
-        state=_item_state(item),
+        state=_item_state(content, item),
         script_file=script.get("script_file"),
         collection_scope="once",
         source_metadata=source_metadata,
@@ -439,7 +470,7 @@ def _plan_python_item(
             source_kind="python",
             source_id=python_id,
             status="skipped",
-            state=_item_state(item),
+            state=_item_state(content, item),
             reason=message,
             python_file=python_source.get("python_file"),
             collection_scope="once",
@@ -447,6 +478,7 @@ def _plan_python_item(
                 "python_id": python_id,
                 "python_file": python_source.get("python_file"),
                 "function": python_source.get("function"),
+                "remote_message": message,
             }),
         )
 
@@ -463,7 +495,7 @@ def _plan_python_item(
         source_kind="python",
         source_id=python_id,
         status="planned",
-        state=_item_state(item),
+        state=_item_state(content, item),
         python_file=python_source.get("python_file"),
         collection_scope="once",
         source_metadata=source_metadata,
@@ -477,6 +509,7 @@ def _plan_metric_item(
     item_id: str,
     item: dict[str, Any],
     mode: str,
+    collection_mode: str,
     query_usage_index: dict[str, list[str]],
 ) -> PlannedItem:
     metric_id = item["metric"]
@@ -492,7 +525,7 @@ def _plan_metric_item(
             source_kind="metric",
             source_id=metric_id,
             status="skipped",
-            state=_item_state(item),
+            state=_item_state(content, item),
             reason="requires snapshots mode",
             source_metadata=_with_item_metadata(content, item_id, item, {
                 "metric_id": metric_id,
@@ -501,6 +534,28 @@ def _plan_metric_item(
                 "chart": metric.get("chart") or {},
                 "display": metric.get("display") or {},
                 **query_usage_metadata,
+            }),
+        )
+
+    if (
+        collection_mode == runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE
+        and metric.get("source_sampler")
+    ):
+        return PlannedItem(
+            item_id=item_id,
+            section_id=section_id,
+            item_key=item_key,
+            title=_item_title(content, "metric", item, item_key),
+            source_kind="metric",
+            source_id=metric_id,
+            status="skipped",
+            state=_item_state(content, item),
+            reason="remote_db_only",
+            source_metadata=_with_item_metadata(content, item_id, item, {
+                "metric_id": metric_id,
+                "source_sampler": metric.get("source_sampler"),
+                "chart": metric.get("chart") or {},
+                "display": metric.get("display") or {},
             }),
         )
 
@@ -520,15 +575,47 @@ def _plan_metric_item(
         source_kind="metric",
         source_id=metric_id,
         status="planned",
-        state=_item_state(item),
+        state=_item_state(content, item),
         collection_scope="post_collection",
         source_metadata=source_metadata,
     )
 
 
-def _metric_dependencies(content: ContentPack) -> set[str]:
-    return {
-        metric.get("source_query")
-        for metric in content.metrics.values()
-        if metric.get("requires_collection") == "every_snapshot" and metric.get("source_query")
+def _metric_dependencies(content: ContentPack) -> dict[str, str]:
+    referenced_metric_ids = {
+        item.get("metric")
+        for _section_id, _item_key, _item_id, item in iter_report_items(content)
+        if item.get("metric")
     }
+    return {
+        str(metric["source_query"]): str(metric["requires_collection"])
+        for metric_id, metric in content.metrics.items()
+        if metric_id in referenced_metric_ids
+        if metric.get("requires_collection") in {
+            runtime_config.EVERY_SNAPSHOT_COLLECTION_SCOPE,
+            runtime_config.WINDOW_ENDPOINTS_COLLECTION_SCOPE,
+        }
+        and metric.get("source_query")
+    }
+
+
+def _remote_script_message(content: ContentPack, script: dict[str, Any]) -> str:
+    behavior = script.get("remote_db_only_behavior")
+    if isinstance(behavior, str) and behavior:
+        return behavior
+    if isinstance(behavior, dict):
+        message = behavior.get("message")
+        if isinstance(message, str) and message:
+            return message
+        message_ref = behavior.get("message_ref")
+        if isinstance(message_ref, str) and message_ref.startswith("runtime_policy."):
+            policy_key = message_ref.split(".", 1)[1]
+            configured = (content.report.get("runtime_policy") or {}).get(policy_key)
+            if isinstance(configured, str) and configured:
+                return configured
+    return str(
+        (content.report.get("runtime_policy") or {}).get(
+            "remote_db_only_shell_message",
+            "no data because remote call",
+        )
+    )

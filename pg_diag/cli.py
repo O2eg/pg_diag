@@ -10,11 +10,12 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__, runtime_config
-from .artifact import report_output_paths
+from .artifact import artifact_has_errors, report_output_paths
 from .content_loader import ContentPack, iter_report_items, load_content
-from .errors import ContentLoadError, PgDiagError
+from .errors import PgDiagError
 from .planner import build_plan
 from .render.html import render_from_json
+from .security import redact_error
 from .snapshot import collect_snapshot
 from .snapshots import collect_snapshots
 from .validator import has_errors, validate_content
@@ -58,11 +59,11 @@ def build_parser() -> argparse.ArgumentParser:
     explain_parser.add_argument("--json", action="store_true", help="Print plan as JSON")
     explain_parser.set_defaults(func=cmd_explain_plan)
 
-    run_query_parser = subparsers.add_parser("run-query", help="Run or dry-run one query")
+    run_query_parser = subparsers.add_parser("run-query", help="Inspect one selected query variant")
     run_query_parser.add_argument("query_id")
     _add_content_arg(run_query_parser)
     _add_pg_version_arg(run_query_parser)
-    run_query_parser.add_argument("--dry-run", action="store_true", help="Only show selected variant")
+    run_query_parser.add_argument("--dry-run", action="store_true", help=argparse.SUPPRESS)
     run_query_parser.set_defaults(func=cmd_run_query)
 
     snapshot_parser = subparsers.add_parser("snapshot", help="Collect one snapshot report")
@@ -73,6 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     snapshot_parser.add_argument("--database")
     snapshot_parser.add_argument("--user")
     snapshot_parser.add_argument("--password")
+    snapshot_parser.add_argument("--passfile", help="PostgreSQL password file path")
     snapshot_parser.add_argument("--out", default="report", help="Output directory")
     _add_report_output_file_args(snapshot_parser)
     snapshot_parser.add_argument(
@@ -95,6 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     snapshots_parser.add_argument("--database")
     snapshots_parser.add_argument("--user")
     snapshots_parser.add_argument("--password")
+    snapshots_parser.add_argument("--passfile", help="PostgreSQL password file path")
     snapshots_parser.add_argument("--out", default="report", help="Output directory")
     _add_report_output_file_args(snapshots_parser)
     snapshots_parser.add_argument(
@@ -114,15 +117,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     snapshots_parser.set_defaults(func=cmd_snapshots)
 
-    for name in ("run-item",):
-        sub = subparsers.add_parser(name, help=f"{name} command placeholder")
-        sub.set_defaults(func=cmd_not_implemented)
-
     return parser
 
 
 def _add_content_arg(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--content", default="content", help="Path to pg_diag content directory")
+    parser.add_argument(
+        "--content",
+        default=_default_content_path(),
+        help="Path to pg_diag content directory",
+    )
+
+
+def _default_content_path() -> str:
+    working_directory_content = Path("content")
+    if working_directory_content.is_dir():
+        return str(working_directory_content)
+    source_tree_content = Path(__file__).resolve().parents[1] / "content"
+    if source_tree_content.is_dir():
+        return str(source_tree_content)
+    return "content"
 
 
 def _add_report_output_file_args(parser: argparse.ArgumentParser) -> None:
@@ -230,16 +243,8 @@ def cmd_run_query(args: argparse.Namespace) -> int:
     print(f"query_id={args.query_id}")
     print(f"variant_id={variant.get('id')}")
     print(f"sql_file={variant.get('sql_file')}")
-    if args.dry_run:
-        print(sql_path.read_text(encoding="utf-8"))
-        return 0
-    print("ERROR: non-dry-run query execution is not implemented yet", file=sys.stderr)
-    return 2
-
-
-def cmd_not_implemented(args: argparse.Namespace) -> int:
-    print(f"ERROR: command {args.command!r} is not implemented yet", file=sys.stderr)
-    return 2
+    print(sql_path.read_text(encoding="utf-8"))
+    return 0
 
 
 def cmd_snapshot(args: argparse.Namespace) -> int:
@@ -256,9 +261,10 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
         "database": args.database,
         "user": args.user,
         "password": args.password,
+        "passfile": args.passfile,
     }
     try:
-        asyncio.run(
+        artifact = asyncio.run(
             collect_snapshot(
                 content=content,
                 out_dir=args.out,
@@ -270,11 +276,14 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
             )
         )
     except Exception as exc:
-        print(f"ERROR: snapshot failed: {exc}", file=sys.stderr)
+        print(f"ERROR: snapshot failed: {redact_error(exc)}", file=sys.stderr)
         return 1
     json_path, html_path = report_output_paths(args.out, args.json_out, args.html_out)
     print(f"Wrote {json_path}")
     print(f"Wrote {html_path}")
+    if artifact_has_errors(artifact):
+        print("ERROR: report was written with item collection errors", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -296,9 +305,10 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
         "database": args.database,
         "user": args.user,
         "password": args.password,
+        "passfile": args.passfile,
     }
     try:
-        asyncio.run(
+        artifact = asyncio.run(
             collect_snapshots(
                 content=content,
                 out_dir=args.out,
@@ -312,11 +322,14 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
             )
         )
     except Exception as exc:
-        print(f"ERROR: snapshots failed: {exc}", file=sys.stderr)
+        print(f"ERROR: snapshots failed: {redact_error(exc)}", file=sys.stderr)
         return 1
     json_path, html_path = report_output_paths(args.out, args.json_out, args.html_out)
     print(f"Wrote {json_path}")
     print(f"Wrote {html_path}")
+    if artifact_has_errors(artifact):
+        print("ERROR: report was written with item collection errors", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -324,7 +337,7 @@ def cmd_render(args: argparse.Namespace) -> int:
     try:
         render_from_json(args.from_json, args.out)
     except Exception as exc:
-        print(f"ERROR: render failed: {exc}", file=sys.stderr)
+        print(f"ERROR: render failed: {redact_error(exc)}", file=sys.stderr)
         return 1
     print(f"Wrote {args.out}")
     return 0

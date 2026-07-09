@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import getpass
+import json
+import os
 import platform
 import socket
+import tempfile
 import traceback
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,7 +16,13 @@ from typing import Any
 from . import __version__, runtime_config
 from .content_loader import ContentPack
 from .planner import ExecutionPlan, PlannedItem
-from .security import redact_error, redact_text
+from .security import (
+    json_safe,
+    redact_error,
+    redact_text,
+    sanitize_public_structure,
+    sanitize_result,
+)
 
 
 INTERNAL_TAG_PREFIX = "tag_"
@@ -55,11 +63,13 @@ def create_artifact(
             "started_at": started_at,
             "finished_at": None,
             "server_version_num": plan.server_version_num,
-            **runtime_context,
+            **json_safe(runtime_context),
         },
+        "display": json_safe(content.report.get("defaults") or {}),
         "sections": plan.sections,
         "items": {},
         "query_texts": {},
+        "snapshot_schemas": {},
         "snapshots": [],
         "diagnostics": [],
     }
@@ -88,9 +98,9 @@ def item_from_plan(
     source_text: str | None = None,
     source_language: str | None = None,
 ) -> dict[str, Any]:
-    normalized_issues = issues or {}
+    normalized_issues = sanitize_public_structure(issues or {})
     normalized_severity_level = _item_severity_level(collection_status, severity_level)
-    source_metadata = _publicize_metadata(planned.source_metadata)
+    source_metadata = json_safe(_publicize_metadata(planned.source_metadata))
     if source_text is not None:
         source_metadata["source_text"] = source_text
         source_metadata["source_language"] = source_language or planned.source_kind
@@ -102,11 +112,11 @@ def item_from_plan(
         "collection_status": collection_status,
         "severity_level": normalized_severity_level,
         "state": planned.state,
-        "reason": reason,
-        "result": result or {"kind": "none"},
-        "timing_ms": timing_ms,
+        "reason": redact_error(reason) if isinstance(reason, str) else json_safe(reason),
+        "result": sanitize_result(result),
+        "timing_ms": json_safe(timing_ms),
         "source_metadata": source_metadata,
-        "diagnostics": diagnostics or [],
+        "diagnostics": sanitize_public_structure(diagnostics or []),
         "issues": normalized_issues,
     }
 
@@ -152,11 +162,79 @@ def _item_severity_level(collection_status: str, severity_level: str | None) -> 
 
 
 def write_json(path: str | Path, artifact: dict[str, Any]) -> None:
+    from .artifact_schema import validate_artifact
+
+    validate_artifact(artifact)
+    payload = json.dumps(
+        artifact,
+        ensure_ascii=False,
+        allow_nan=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ) + "\n"
+    write_text_secure(path, payload)
+
+
+def write_text_secure(path: str | Path, text: str) -> None:
     output = Path(path)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with output.open("w", encoding="utf-8") as handle:
-        json.dump(artifact, handle, ensure_ascii=False, indent=2, sort_keys=True)
-        handle.write("\n")
+    output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd, temporary_name = tempfile.mkstemp(
+        dir=output.parent,
+        prefix=f".{output.name}.",
+        suffix=".tmp",
+        text=True,
+    )
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, output)
+        os.chmod(output, 0o600)
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def compact_snapshot_item(item: dict[str, Any]) -> dict[str, Any]:
+    """Keep only sample-varying fields; static metadata lives in top-level items."""
+    result = item.get("result") or {"kind": "none"}
+    if item.get("collection_status") not in {"ok", "empty"}:
+        compact_result = {"kind": "none"}
+    elif result.get("kind") == "table":
+        compact_result = {
+            "kind": "table",
+            "rows": result.get("rows") or [],
+        }
+    else:
+        compact_result = result
+    compact = {
+        "collection_status": item.get("collection_status"),
+        "result": compact_result,
+    }
+    if item.get("reason") is not None:
+        compact["reason"] = item["reason"]
+    return compact
+
+
+def artifact_has_errors(artifact: dict[str, Any]) -> bool:
+    if any(
+        isinstance(item, dict) and item.get("collection_status") == "error"
+        for item in (artifact.get("items") or {}).values()
+    ):
+        return True
+    return any(
+        isinstance(item, dict) and item.get("collection_status") == "error"
+        for snapshot in artifact.get("snapshots") or []
+        if isinstance(snapshot, dict)
+        for item in (snapshot.get("items") or {}).values()
+    )
 
 
 def extract_item_query_texts(item: dict[str, Any], query_texts: dict[str, str]) -> None:
@@ -233,6 +311,8 @@ def report_output_paths(
     output_dir = Path(out_dir)
     json_path = Path(json_out) if json_out else output_dir / "report.json"
     html_path = Path(html_out) if html_out else output_dir / "report.html"
+    if json_path.resolve(strict=False) == html_path.resolve(strict=False):
+        raise ValueError("JSON and HTML output paths must be different files")
     return json_path, html_path
 
 

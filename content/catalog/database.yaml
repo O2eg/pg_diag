@@ -33,8 +33,11 @@ queries:
       default_sort:
         column: xact_commit
         direction: desc
+    evaluation:
+      summary_title: Current database statistics contain operational findings
+      recommendation: Investigate checksum failures immediately; validate invalid indexes and deadlocks with their dedicated report items before remediation.
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: database_stats_pg11
@@ -52,7 +55,12 @@ queries:
         max_pg_version: 149999
         sql_file: database/database_stats_pg14.sql
         semantic_columns: *database_workload_counters
-      - id: database_stats_pg15_plus
+      - id: database_stats_pg15_pg17
         min_pg_version: 150000
+        max_pg_version: 179999
         sql_file: database/database_stats_pg15_plus.sql
+        semantic_columns: *database_workload_counters
+      - id: database_stats_pg18_plus
+        min_pg_version: 180000
+        sql_file: database/database_stats_pg18.sql
         semantic_columns: *database_workload_counters

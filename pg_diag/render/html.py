@@ -11,6 +11,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
+from pg_diag.artifact import write_text_secure
 from pg_diag.artifact_schema import validate_artifact
 from pg_diag.executors.sql import publicize_table_result
 
@@ -35,22 +36,18 @@ def render_html(artifact: dict[str, Any]) -> str:
             _read_render_resource("vendor", "THIRD_PARTY_LICENSES.txt")
         ),
     }
-    html_text = _html_template()
-    for placeholder, value in replacements.items():
-        html_text = html_text.replace(placeholder, value)
-    return html_text
+    placeholder_pattern = re.compile("|".join(re.escape(key) for key in replacements))
+    return placeholder_pattern.sub(lambda match: replacements[match.group(0)], _html_template())
 
 
 def render_from_json(json_path: str | Path, html_path: str | Path) -> None:
     artifact = json.loads(Path(json_path).read_text(encoding="utf-8"))
     html_text = render_html(artifact)
-    output = Path(html_path)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(html_text, encoding="utf-8")
+    write_text_secure(html_path, html_text)
 
 
 def _safe_json_payload(artifact: dict[str, Any]) -> str:
-    payload = json.dumps(artifact, ensure_ascii=False, separators=(",", ":"))
+    payload = json.dumps(artifact, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
     return (
         payload.replace("&", "\\u0026")
         .replace("<", "\\u003c")
@@ -80,6 +77,38 @@ def _inline_style(value: str) -> str:
 
 def _publicize_artifact_for_render(artifact: dict[str, Any]) -> dict[str, Any]:
     public_artifact = deepcopy(artifact)
+    snapshots = public_artifact.get("snapshots") or []
+    runtime = public_artifact.setdefault("runtime", {})
+    if isinstance(runtime, dict):
+        runtime.setdefault("snapshot_count", len(snapshots))
+    public_artifact["snapshots"] = []
+    public_artifact["snapshot_schemas"] = {}
+
+    public_sections = [
+        section
+        for section in public_artifact.get("sections") or []
+        if isinstance(section, dict) and section.get("state") != "hidden"
+    ]
+    all_items = public_artifact.get("items") or {}
+    for section in public_sections:
+        section["items"] = [
+            item_id
+            for item_id in section.get("items") or []
+            if isinstance(all_items.get(item_id), dict)
+            and all_items[item_id].get("state") != "hidden"
+        ]
+    public_artifact["sections"] = public_sections
+    visible_item_ids = {
+        item_id
+        for section in public_sections
+        for item_id in section.get("items") or []
+    }
+    public_artifact["items"] = {
+        item_id: item
+        for item_id, item in all_items.items()
+        if item_id in visible_item_ids
+    }
+
     for item in (public_artifact.get("items") or {}).values():
         result = item.get("result") or {}
         if result.get("kind") != "table":

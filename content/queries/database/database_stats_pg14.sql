@@ -1,3 +1,4 @@
+with database_stats as (
 select
   statement_timestamp() as snapshot_time,
   current_database() as datname,
@@ -43,3 +44,18 @@ from
   pg_stat_database, pg_control_system()
 where
   datname = current_database()
+)
+select
+  database_stats.*,
+  case
+    when coalesce(checksum_failures, 0) > 0 then 'high'
+    when invalid_indexes > 0 or deadlocks > 0 then 'medium'
+    else 'ok'
+  end as pg_diag_internal_severity,
+  concat_ws(
+    '; ',
+    case when coalesce(checksum_failures, 0) > 0 then checksum_failures::text || ' checksum failure(s) detected' end,
+    case when invalid_indexes > 0 then invalid_indexes::text || ' invalid index(es) detected' end,
+    case when deadlocks > 0 then deadlocks::text || ' cumulative deadlock(s) detected' end
+  ) as pg_diag_internal_reason
+from database_stats

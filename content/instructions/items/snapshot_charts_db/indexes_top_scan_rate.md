@@ -11,6 +11,12 @@ This instruction belongs to report item `snapshot_charts_db.indexes_top_scan_rat
 - Unexpected index becoming hot after release.
 - Scan rate without useful tuple fetches.
 
+## Bounded samples
+- Each SQL sample is ordered and limited before rows enter collector memory.
+- Each column ranks deltas only for keys present in both adjacent bounded samples.
+- Different index series between columns are expected; unmatched keys are not zero or errors.
+- Counter decreases and invalid values are omitted and reported separately.
+
 ## Common fault causes
 - Hot lookup path.
 - N+1 query pattern.

@@ -11,6 +11,12 @@ This instruction belongs to report item `snapshot_charts_db.indexes_top_fetches_
 - Unexpected broad index scans.
 - Fetches per scan rising after data distribution change.
 
+## Bounded samples
+- Each SQL sample is ordered and limited before rows enter collector memory.
+- Each column ranks deltas only for keys present in both adjacent bounded samples.
+- Different index series between columns are expected; unmatched keys are not zero or errors.
+- Counter decreases and invalid values are omitted and reported separately.
+
 ## Common fault causes
 - Low-selectivity predicate.
 - Missing additional filter column in index.

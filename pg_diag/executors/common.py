@@ -13,7 +13,7 @@ from pg_diag.security import json_safe, redact_row, redact_text
 def read_source_text(path: Path) -> str | None:
     try:
         return path.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeError):
         return None
 
 

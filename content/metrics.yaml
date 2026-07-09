@@ -736,7 +736,7 @@ metrics:
   database.workload_delta:
     title: Database Workload Delta
     source_query: metrics.database_workload_delta
-    requires_collection: every_snapshot
+    requires_collection: window_endpoints
     result: table
     display:
       default_sort:
@@ -775,7 +775,7 @@ metrics:
   statements.total_time_delta:
     title: SQL Time Delta
     source_query: metrics.statements_total_time_delta
-    requires_collection: every_snapshot
+    requires_collection: window_endpoints
     result: table
     display:
       default_sort:
@@ -821,7 +821,7 @@ metrics:
   statements.io_delta:
     title: SQL Shared I/O Delta
     source_query: metrics.statements_io_delta
-    requires_collection: every_snapshot
+    requires_collection: window_endpoints
     result: table
     display:
       default_sort:
@@ -863,7 +863,7 @@ metrics:
   statements.wal_delta:
     title: SQL WAL Delta
     source_query: metrics.statements_wal_delta
-    requires_collection: every_snapshot
+    requires_collection: window_endpoints
     result: table
     display:
       default_sort:
@@ -905,7 +905,7 @@ metrics:
   objects.table_dml_delta:
     title: Table DML Delta
     source_query: metrics.objects_table_dml_delta
-    requires_collection: every_snapshot
+    requires_collection: window_endpoints
     result: table
     display:
       default_sort:
@@ -951,7 +951,7 @@ metrics:
   objects.table_scan_delta:
     title: Table Scan Delta
     source_query: metrics.objects_table_scan_delta
-    requires_collection: every_snapshot
+    requires_collection: window_endpoints
     result: table
     display:
       default_sort:
@@ -993,7 +993,7 @@ metrics:
   objects.table_io_delta:
     title: Table I/O Delta
     source_query: metrics.objects_table_io_delta
-    requires_collection: every_snapshot
+    requires_collection: window_endpoints
     result: table
     display:
       default_sort:
@@ -1035,7 +1035,7 @@ metrics:
   objects.index_usage_delta:
     title: Index Usage Delta
     source_query: metrics.objects_index_usage_delta
-    requires_collection: every_snapshot
+    requires_collection: window_endpoints
     result: table
     display:
       default_sort:
@@ -1080,7 +1080,7 @@ metrics:
   objects.function_time_delta:
     title: Function Time Delta
     source_query: metrics.objects_function_time_delta
-    requires_collection: every_snapshot
+    requires_collection: window_endpoints
     result: table
     display:
       default_sort:
@@ -1119,76 +1119,41 @@ metrics:
     title: Wait Event Sample Profile
     source_query: metrics.activity_wait_sample_profile
     requires_collection: every_snapshot
-    result: table
-    display:
-      default_sort:
-        column: sampled_session_points
-        direction: desc
-    table:
-      mode: sample_sum
+    top_n:
+      mode: interval
+      limit: 12
       key_refs: [dimensions.database, dimensions.wait_event_type, dimensions.wait_event, dimensions.query_id]
-      limit: 100
-      sort:
-        column: sampled_session_points
-        direction: desc
-      columns:
-        - name: datname
-          role: key
-          key_index: 0
-        - name: wait_event_type
-          role: key
-          key_index: 1
-        - name: wait_event
-          role: key
-          key_index: 2
-        - name: query_id
-          role: key
-          key_index: 3
-        - name: samples_seen
-          transform: sample_count
-          pg_type: int8
-        - name: sampled_session_points
-          value_ref: gauges.sessions
-          transform: sum
-          pg_type: float8
-        - name: avg_sessions
-          value_ref: gauges.sessions
-          transform: avg
-          pg_type: float8
-        - name: max_sessions
-          value_ref: gauges.sessions
-          transform: max
-          pg_type: float8
+      label_refs: [dimensions.wait_event_type, dimensions.wait_event, dimensions.query_id]
+      value_ref: gauges.sessions
+      transform: avg
+      unit: sessions
+    chart:
+      kind: stacked_column
+      unit: sessions
 
   backend.proc_cpu_top:
     title: PostgreSQL Backend /proc CPU
     source_sampler: os.backend_proc
+    requires_collection: window_endpoints
     result: table
     display:
       default_sort:
-        column: max_cpu_pct
+        column: avg_cpu_pct
         direction: desc
     table:
       mode: sample_sum
       key_refs: [pid]
       limit: 50
       sort:
-        column: max_cpu_pct
+        column: avg_cpu_pct
         direction: desc
       columns:
         - name: pid
           role: key
           key_index: 0
-        - name: samples_seen
-          transform: sample_count
-          pg_type: int8
         - name: avg_cpu_pct
           value_ref: cpu_pct
           transform: avg
-          pg_type: float8
-        - name: max_cpu_pct
-          value_ref: cpu_pct
-          transform: max
           pg_type: float8
         - name: rss_bytes
           ref: rss_bytes
@@ -1204,25 +1169,23 @@ metrics:
   backend.proc_io_top:
     title: PostgreSQL Backend /proc I/O
     source_sampler: os.backend_proc
+    requires_collection: window_endpoints
     result: table
     display:
       default_sort:
-        column: max_read_bytes_per_sec
+        column: avg_read_bytes_per_sec
         direction: desc
     table:
       mode: sample_sum
       key_refs: [pid]
       limit: 50
       sort:
-        column: max_read_bytes_per_sec
+        column: avg_read_bytes_per_sec
         direction: desc
       columns:
         - name: pid
           role: key
           key_index: 0
-        - name: samples_seen
-          transform: sample_count
-          pg_type: int8
         - name: io_access
           ref: io_access
           transform: last
@@ -1230,17 +1193,9 @@ metrics:
           value_ref: read_bytes_per_sec
           transform: avg
           pg_type: float8
-        - name: max_read_bytes_per_sec
-          value_ref: read_bytes_per_sec
-          transform: max
-          pg_type: float8
         - name: avg_write_bytes_per_sec
           value_ref: write_bytes_per_sec
           transform: avg
-          pg_type: float8
-        - name: max_write_bytes_per_sec
-          value_ref: write_bytes_per_sec
-          transform: max
           pg_type: float8
         - name: process
           ref: process

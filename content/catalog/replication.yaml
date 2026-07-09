@@ -10,7 +10,7 @@ queries:
         column: reply_time_lag
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: replication_physical_replication_all
@@ -38,7 +38,7 @@ queries:
         column: status
         direction: asc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: replication_wal_receiver_all
@@ -56,7 +56,7 @@ queries:
         column: conflicts_total
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: replication_database_conflicts_pg09_pg17
@@ -78,7 +78,7 @@ queries:
         column: worker_running
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     requirements:
       unsupported_versions_reason: Initial catalog contains only the PostgreSQL 18 shape of pg_stat_subscription.
@@ -98,7 +98,7 @@ queries:
         column: decisions_total
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     requirements:
       unsupported_versions_reason: pg_stat_recovery_prefetch is available only on newer PostgreSQL versions.

@@ -11,6 +11,11 @@ This instruction belongs to report item `snapshot_delta_workload.database_worklo
 - Temp byte delta during the window.
 - Deadlock delta greater than zero.
 
+## Interval coverage
+- A delta is calculated only when the database and counter value exist at both endpoints.
+- Missing endpoint values are not converted to zero.
+- Counter decreases or invalid timestamps are omitted and reported as invalid coverage.
+
 ## Common fault causes
 - Traffic burst.
 - Retry loop.

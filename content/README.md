@@ -151,6 +151,15 @@ queries:
 `semantic_columns` maps stable metric references to physical SQL result columns.
 Metrics use these semantic references instead of hardcoding column names.
 
+Collection scopes have distinct runtime meanings:
+
+- `once` - ordinary report table/text item, executed once before the timed window;
+- `every_snapshot` - chart source, executed at every scheduled point;
+- `window_endpoints` - table delta/rate source, executed only at window start and end.
+
+Only hidden metric sources may be promoted to the latter two scopes. A visible
+query item is always planned as `once` in `snapshots` mode.
+
 ## Script Manifests
 
 Local scripts are declared in `scripts.yaml`.
@@ -192,8 +201,21 @@ The configured function receives a `PythonSourceContext` and must return a
 plain text, or empty result payloads and can attach diagnostics and structured
 issues.
 
+SQL sources can likewise drive a structured summary above a table. Public
+finding columns use `risk_level`/`risk_reason`; reserved
+`pg_diag_internal_severity`/`pg_diag_internal_reason` columns evaluate an
+ordinary table without exposing helper columns. Automatic severity is intended
+only for obvious, explicitly documented conditions.
+
 Local-only Python sources are skipped in `remote-db-only` collection mode. The
 skip reason comes from the runtime policy in `report.yaml`.
+
+`timeout_ms` bounds how long the collector waits for module loading and source
+execution. Synchronous sources run in a daemon thread so they cannot block the
+async collector; timed-out work is reported as an item error. CPython cannot
+forcibly terminate a running thread, so trusted synchronous sources must avoid
+unbounded work and external side effects. Async sources must remain cooperative
+and yield to the event loop for cancellation.
 
 ## Metrics
 
@@ -204,14 +226,15 @@ Metrics can produce:
 - charts from repeated SQL samples;
 - charts from local OS samplers;
 - top-N charts;
-- delta/rate tables from start/end or adjacent snapshots;
-- per-backend local process tables.
+- delta/rate tables from two in-memory window endpoints;
+- per-backend local process tables from two window endpoints.
 
 Important keys:
 
-- `source_query` - use repeated SQL samples from a dedicated metric query.
-- `source_sampler` - use local threaded sampler data.
+- `source_query` - use a dedicated SQL source for a chart or endpoint metric.
+- `source_sampler` - use local sampler data.
 - `requires_collection: every_snapshot`
+- `requires_collection: window_endpoints`
 - `partition_by`
 - `series`
 - `top_n`
@@ -219,21 +242,38 @@ Important keys:
 - `table`
 - `chart`
 
-For SQL-backed metrics, the referenced query must support `every_snapshot` when
-the metric requires repeated collection. Keep metric source queries item-specific
-under the `metrics.*` namespace; this keeps SQL editing isolated and avoids
-showing unrelated source columns in `Show SQL` or `Show meta`.
+For a SQL-backed chart, the referenced query must support `every_snapshot`. For
+a start/end table metric, it must support `window_endpoints`. Ordinary report
+queries always execute once at the beginning of `snapshots` mode, regardless of
+whether their catalog also advertises support for repeated collection. Keep
+metric source queries item-specific under the `metrics.*` namespace; this keeps
+SQL editing isolated and avoids showing unrelated source columns in `Show SQL`
+or `Show meta`.
 
 For sampler-backed metrics, `source_sampler` identifies local sampler data such
-as CPU, memory, disk, network, or backend process metrics.
+as CPU, memory, disk, network, or backend process metrics. CPU, memory, disk,
+and network samplers run through the chart window. `os.backend_proc` reads
+process counters only at the two window endpoints and feeds table metrics with
+window-average rates.
+
+High-cardinality SQL metric sources must remain sorted and limited in SQL before
+rows enter collector memory. Consequently, adjacent samples can contain
+different table/index/statement/function keys. Only keys present in both
+bounded samples produce a delta. `interval_coverage` records comparable,
+unmatched, and invalid key intervals without duplicating unmatched rows in the
+derived metric result.
+Unmatched keys are normal for stacked-column Top-N charts; counter decreases,
+invalid values, and invalid timestamps are omitted and reported as warnings.
 
 ## Collection Modes
 
 `snapshot` mode collects one point-in-time report. Metric items are skipped
 because they require repeated samples.
 
-`snapshots` mode collects repeated samples and builds rates, deltas, top-N
-series, and chart/table metrics.
+`snapshots` mode first collects ordinary report items once. During the timed
+window it repeats only chart sources. Delta/rate tables use two endpoint samples
+outside the public snapshot array. Local backend-process tables likewise use
+two `/proc` endpoint reads and are not sampled at every chart point.
 
 `remote-db-only` collection mode executes PostgreSQL SQL sources and non-local
 Python sources, but skips local host scripts, local-only Python sources, and
@@ -253,6 +293,18 @@ pg-diag validate --content content
 The validator checks schema versions, duplicate YAML keys, report references,
 SQL/script/Python source file existence, Python function declarations, version
 ranges, collection support, display sort hint shape, semantic metric references,
-shell fallback behavior, and read-only SQL shape.
+shell fallback behavior, executable script files, positive timeouts, report
+states/defaults, metric source exclusivity, and read-only SQL shape. Catalog and
+source paths must be relative and remain inside their declared content
+directories, including after symlink resolution.
+
+Structural YAML mappings are checked during loading, before planning. The
+runtime does not require a schema framework: contracts are enforced by the
+loader, validator, execution-plan dataclasses, and strict artifact validator.
+
+`runtime_policy.fail_fast` controls orchestration. When it is `false`, item
+errors are preserved in the report and the CLI exits non-zero after writing the
+artifact. When it is `true`, collection stops at the first item error and no
+partial report is written.
 
 For extension examples, see `EXTENDING.md`.

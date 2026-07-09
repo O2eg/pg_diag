@@ -1,16 +1,16 @@
 # PostgreSQL Backend /proc I/O
 
-This instruction belongs to report item `backend_os.backend_proc_io`. The item is backed by `backend.proc_io_top` (snapshot metric).
+This instruction belongs to report item `backend_os.backend_proc_io`. The item is backed by `backend.proc_io_top` (window-endpoint metric).
 
 ## What this item shows
-- Per-PostgreSQL-process read/write rates sampled from local /proc I/O counters.
-- Which backend PIDs generated local process I/O during snapshots mode.
-- OS-level I/O attribution by backend when permissions allow it.
+- Average read/write rates per local PostgreSQL process over the snapshots window.
+- The rates are calculated from two `/proc/<pid>/io` counter reads: one at window start and one at window end.
+- Only a process with the same PID and process start time at both endpoints can be included.
 
 ## What to watch
-- One backend producing most reads or writes.
+- One backend producing most reads or writes over the full window.
 - Zero values with io_access=false.
-- High write rate from maintenance or bulk load PID.
+- Missing short-lived backends that started or exited inside the window.
 
 ## Common fault causes
 - I/O-heavy query.
@@ -20,5 +20,6 @@ This instruction belongs to report item `backend_os.backend_proc_io`. The item i
 
 ## Checklist
 - Check io_access before trusting zeros.
-- Map PID to Backend Activity and SQL text.
+- Use the PID and command to correlate with Backend Activity and SQL text.
+- Treat the rates as window averages, not peak measurements.
 - Compare with pg_stat_io and OS disk charts.

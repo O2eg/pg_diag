@@ -22,7 +22,15 @@ def _construct_mapping(loader: UniqueKeySafeLoader, node: yaml.nodes.MappingNode
     mapping: dict[Any, Any] = {}
     for key_node, value_node in node.value:
         key = loader.construct_object(key_node, deep=deep)
-        if key in mapping:
+        try:
+            duplicate = key in mapping
+        except TypeError as exc:
+            mark = key_node.start_mark
+            raise ContentLoadError(
+                f"YAML mapping key must be hashable at "
+                f"{mark.name}:{mark.line + 1}:{mark.column + 1}"
+            ) from exc
+        if duplicate:
             mark = key_node.start_mark
             raise ContentLoadError(
                 f"Duplicate YAML key {key!r} at {mark.name}:{mark.line + 1}:{mark.column + 1}"
@@ -59,7 +67,7 @@ def load_yaml_file(path: Path) -> dict[str, Any]:
             data = yaml.load(handle, Loader=UniqueKeySafeLoader)
     except ContentLoadError:
         raise
-    except OSError as exc:
+    except (OSError, UnicodeError) as exc:
         raise ContentLoadError(f"Cannot read {path}: {exc}") from exc
     except yaml.YAMLError as exc:
         raise ContentLoadError(f"Cannot parse YAML {path}: {exc}") from exc
@@ -81,12 +89,61 @@ def _merge_defaults(defaults: dict[str, Any], value: dict[str, Any]) -> dict[str
     return result
 
 
+def resolve_under(base: str | Path, ref: Any, label: str) -> Path:
+    """Resolve a content reference without allowing it to escape its declared root."""
+    if not isinstance(ref, str) or not ref.strip():
+        raise ContentLoadError(f"{label} must be a non-empty relative path")
+    relative = Path(ref)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ContentLoadError(f"{label} must stay under {Path(base)}: {ref}")
+    root = Path(base).resolve()
+    candidate = (root / relative).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise ContentLoadError(f"{label} must stay under {root}: {ref}") from exc
+    return candidate
+
+
+def _mapping(value: Any, label: str, *, default_empty: bool = False) -> dict[str, Any]:
+    if value is None and default_empty:
+        return {}
+    if not isinstance(value, dict):
+        raise ContentLoadError(f"{label} must be a mapping")
+    return value
+
+
+def _manifest_mapping(
+    value: Any,
+    defaults: dict[str, Any],
+    label: str,
+) -> dict[str, dict[str, Any]]:
+    manifests = _mapping(value, label, default_empty=True)
+    result: dict[str, dict[str, Any]] = {}
+    for source_id, manifest in manifests.items():
+        if not isinstance(source_id, str) or not source_id:
+            raise ContentLoadError(f"{label} ids must be non-empty strings: {source_id!r}")
+        if not isinstance(manifest, dict):
+            raise ContentLoadError(f"{label} manifest must be a mapping: {source_id}")
+        result[source_id] = _merge_defaults(defaults, manifest)
+    return result
+
+
 def _content_checksum(paths: list[Path], root: Path) -> str:
     digest = sha256()
     for path in sorted(paths, key=lambda item: item.relative_to(root).as_posix()):
+        resolved = path.resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError as exc:
+            raise ContentLoadError(f"Checksum input must stay under content root: {path}") from exc
         digest.update(path.relative_to(root).as_posix().encode("utf-8"))
         digest.update(b"\0")
-        digest.update(path.read_bytes())
+        try:
+            data = resolved.read_bytes()
+        except OSError as exc:
+            raise ContentLoadError(f"Cannot checksum {path}: {exc}") from exc
+        digest.update(data)
         digest.update(b"\0")
     return "sha256:" + digest.hexdigest()
 
@@ -107,10 +164,7 @@ def instruction_ref_for_report_item(section_id: str, item_key: str, item: dict[s
 
 
 def _instruction_path(instructions_dir: Path, instruction_ref: str) -> Path:
-    path_ref = Path(instruction_ref)
-    if path_ref.is_absolute() or ".." in path_ref.parts:
-        raise ContentLoadError(f"Instruction path must stay under the instructions directory: {instruction_ref}")
-    return instructions_dir / path_ref
+    return resolve_under(instructions_dir, instruction_ref, "Instruction path")
 
 
 def load_content(content_path: str | Path) -> ContentPack:
@@ -122,14 +176,20 @@ def load_content(content_path: str | Path) -> ContentPack:
 
     report_path = root / "report.yaml"
     report = load_yaml_file(report_path)
-    catalogs = (report.get("report") or {}).get("catalogs") or {}
+    report_meta = _mapping(report.get("report"), "report.yaml:report", default_empty=True)
+    catalogs = _mapping(report_meta.get("catalogs"), "report.yaml:report.catalogs", default_empty=True)
 
-    query_index_path = root / catalogs.get("queries", "queries.yaml")
-    script_path = root / catalogs.get("scripts", "scripts.yaml")
-    metric_path = root / catalogs.get("metrics", "metrics.yaml")
+    query_index_path = resolve_under(root, catalogs.get("queries", "queries.yaml"), "Query catalog path")
+    script_path = resolve_under(root, catalogs.get("scripts", "scripts.yaml"), "Script catalog path")
+    metric_path = resolve_under(root, catalogs.get("metrics", "metrics.yaml"), "Metric catalog path")
     python_ref = catalogs.get("python")
-    python_path = root / python_ref if python_ref else root / "python.yaml"
+    python_path = resolve_under(
+        root,
+        "python.yaml" if python_ref is None else python_ref,
+        "Python catalog path",
+    )
     instructions_root = catalogs.get("instructions", "instructions")
+    instructions_dir = resolve_under(root, instructions_root, "Instructions root")
 
     query_index = load_yaml_file(query_index_path)
     script_catalog = load_yaml_file(script_path)
@@ -146,45 +206,74 @@ def load_content(content_path: str | Path) -> ContentPack:
     if not isinstance(query_catalog, dict):
         raise ContentLoadError(f"Missing query_catalog mapping in {query_index_path}")
 
-    query_defaults = query_catalog.get("defaults") or {}
+    query_defaults = _mapping(
+        query_catalog.get("defaults"),
+        f"{query_index_path}:query_catalog.defaults",
+        default_empty=True,
+    )
+    catalog_refs = query_catalog.get("files") or []
+    if not isinstance(catalog_refs, list):
+        raise ContentLoadError(f"query_catalog.files must be a list in {query_index_path}")
     catalog_files: list[Path] = []
     queries: dict[str, dict[str, Any]] = {}
-    for catalog_ref in query_catalog.get("files", []) or []:
-        catalog_path = (root / catalog_ref).resolve()
+    for catalog_ref in catalog_refs:
+        catalog_path = resolve_under(root, catalog_ref, "Query manifest catalog path")
         catalog_files.append(catalog_path)
         catalog_data = load_yaml_file(catalog_path)
-        catalog_queries = catalog_data.get("queries") or {}
-        if not isinstance(catalog_queries, dict):
-            raise ContentLoadError(f"queries must be a mapping in {catalog_path}")
+        catalog_queries = _mapping(
+            catalog_data.get("queries"),
+            f"queries in {catalog_path}",
+            default_empty=True,
+        )
         for query_id, manifest in catalog_queries.items():
+            if not isinstance(query_id, str) or not query_id:
+                raise ContentLoadError(f"Query ids must be non-empty strings in {catalog_path}")
             if query_id in queries:
                 raise ContentLoadError(f"Duplicate query id {query_id!r} in {catalog_path}")
             if not isinstance(manifest, dict):
                 raise ContentLoadError(f"Query manifest must be a mapping: {query_id}")
             queries[query_id] = _merge_defaults(query_defaults, manifest)
 
-    scripts_root = script_catalog.get("scripts") or {}
-    script_defaults = (script_catalog.get("script_catalog") or {}).get("defaults") or {}
-    scripts = {
-        script_id: _merge_defaults(script_defaults, script)
-        for script_id, script in scripts_root.items()
-    }
+    script_catalog_meta = _mapping(
+        script_catalog.get("script_catalog"),
+        f"{script_path}:script_catalog",
+        default_empty=True,
+    )
+    script_defaults = _mapping(
+        script_catalog_meta.get("defaults"),
+        f"{script_path}:script_catalog.defaults",
+        default_empty=True,
+    )
+    scripts = _manifest_mapping(script_catalog.get("scripts"), script_defaults, "scripts")
 
-    metrics_root = metric_catalog.get("metrics") or {}
-    metric_defaults = (metric_catalog.get("metric_catalog") or {}).get("defaults") or {}
-    metrics = {
-        metric_id: _merge_defaults(metric_defaults, metric)
-        for metric_id, metric in metrics_root.items()
-    }
+    metric_catalog_meta = _mapping(
+        metric_catalog.get("metric_catalog"),
+        f"{metric_path}:metric_catalog",
+        default_empty=True,
+    )
+    metric_defaults = _mapping(
+        metric_catalog_meta.get("defaults"),
+        f"{metric_path}:metric_catalog.defaults",
+        default_empty=True,
+    )
+    metrics = _manifest_mapping(metric_catalog.get("metrics"), metric_defaults, "metrics")
 
-    pythons_root = python_catalog.get("python_sources") or {}
-    python_defaults = (python_catalog.get("python_catalog") or {}).get("defaults") or {}
-    pythons = {
-        python_id: _merge_defaults(python_defaults, python_source)
-        for python_id, python_source in pythons_root.items()
-    }
+    python_catalog_meta = _mapping(
+        python_catalog.get("python_catalog"),
+        f"{python_path}:python_catalog",
+        default_empty=True,
+    )
+    python_defaults = _mapping(
+        python_catalog_meta.get("defaults"),
+        f"{python_path}:python_catalog.defaults",
+        default_empty=True,
+    )
+    pythons = _manifest_mapping(
+        python_catalog.get("python_sources"),
+        python_defaults,
+        "python_sources",
+    )
 
-    instructions_dir = root / instructions_root
     instructions: dict[str, dict[str, str]] = {}
     if instructions_dir.exists():
         for section_id, item_key, item_id, item in iter_report_items_from_report(report):
@@ -193,16 +282,24 @@ def load_content(content_path: str | Path) -> ContentPack:
                 continue
             path = _instruction_path(instructions_dir, instruction_ref)
             if path.exists() and path.is_file():
+                try:
+                    instruction_text = path.read_text(encoding="utf-8")
+                except (OSError, UnicodeError) as exc:
+                    raise ContentLoadError(f"Cannot read instruction {path}: {exc}") from exc
                 instructions[item_id] = {
                     "format": "markdown",
                     "path": f"{instructions_root}/{instruction_ref}",
-                    "text": path.read_text(encoding="utf-8"),
+                    "text": instruction_text,
                 }
 
     instruction_files = []
     if instructions_dir.exists():
         instruction_files = sorted(instructions_dir.rglob("*.md"))
 
+    sql_root_ref = query_catalog.get("sql_root", "queries")
+    sql_root_path = resolve_under(root, sql_root_ref, "SQL root")
+    scripts_root_path = resolve_under(root, "scripts", "Scripts root")
+    python_root_path = resolve_under(root, "python", "Python root")
     checksum_paths = [
         report_path,
         query_index_path,
@@ -210,9 +307,9 @@ def load_content(content_path: str | Path) -> ContentPack:
         metric_path,
         *([python_path] if python_path.exists() else []),
         *catalog_files,
-        *sorted((root / "queries").rglob("*.sql")),
-        *sorted((root / "scripts").rglob("*")),
-        *sorted((root / "python").rglob("*.py")),
+        *(sorted(sql_root_path.rglob("*.sql")) if sql_root_path.exists() else []),
+        *(sorted(scripts_root_path.rglob("*")) if scripts_root_path.exists() else []),
+        *(sorted(python_root_path.rglob("*.py")) if python_root_path.exists() else []),
         *instruction_files,
     ]
     checksum_paths = [path for path in checksum_paths if path.is_file()]
@@ -240,7 +337,13 @@ def iter_report_items(content: ContentPack):
 
 def iter_report_items_from_report(report: dict[str, Any]):
     sections = report.get("sections") or {}
+    if not isinstance(sections, dict):
+        return
     for section_id, section in sections.items():
-        items = (section or {}).get("items") or {}
+        if not isinstance(section, dict):
+            continue
+        items = section.get("items") or {}
+        if not isinstance(items, dict):
+            continue
         for item_key, item in items.items():
-            yield section_id, item_key, f"{section_id}.{item_key}", item or {}
+            yield section_id, item_key, f"{section_id}.{item_key}", item if isinstance(item, dict) else {}

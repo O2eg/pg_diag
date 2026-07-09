@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -10,6 +12,29 @@ from pg_diag.planner import PlannedItem
 
 
 SNAPSHOT_TIME_COLUMN = "snapshot_time"
+INTERVAL_OK = "ok"
+INTERVAL_NO_ACTIVITY = "no_activity"
+INTERVAL_MISSING_START = "missing_start"
+INTERVAL_MISSING_END = "missing_end"
+INTERVAL_COUNTER_DECREASE = "counter_decrease"
+INTERVAL_INVALID_VALUE = "invalid_value"
+INTERVAL_INVALID_INTERVAL = "invalid_interval"
+INTERVAL_COMPARABLE_STATUSES = {INTERVAL_OK, INTERVAL_NO_ACTIVITY}
+INTERVAL_STATUS_ORDER = (
+    INTERVAL_OK,
+    INTERVAL_NO_ACTIVITY,
+    INTERVAL_MISSING_START,
+    INTERVAL_MISSING_END,
+    INTERVAL_COUNTER_DECREASE,
+    INTERVAL_INVALID_VALUE,
+    INTERVAL_INVALID_INTERVAL,
+)
+
+
+@dataclass(frozen=True)
+class IntervalValue:
+    value: float | None
+    status: str
 
 
 def build_metric_item(
@@ -19,63 +44,154 @@ def build_metric_item(
     os_samples: dict[str, list[dict[str, Any]]],
     source_item_by_query: dict[str, str],
     source_metadata_by_item: dict[str, dict[str, Any]],
+    source_diagnostics: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     source_query = metric.get("source_query")
     source_sampler = metric.get("source_sampler")
     source_text: str | None = None
     source_language: str | None = None
+    metric_diagnostics: list[dict[str, Any]] = []
+    source_failure_status: str | None = None
+    source_failure_reason: str | None = None
     if source_query:
         source_item_id = source_item_by_query.get(source_query)
         if not source_item_id:
             return item_from_plan(
                 planned,
-                collection_status="empty",
+                collection_status="error",
                 reason=f"source query {source_query} was not collected",
-                result=_empty_chart(metric),
+                result=_empty_metric_result(metric),
+                diagnostics=[
+                    {
+                        "level": "error",
+                        "code": "metric_source_missing",
+                        "message": f"Source query {source_query} is absent from collected items",
+                    }
+                ],
+            )
+        source_metadata = source_metadata_by_item.get(source_item_id, {})
+        semantic_columns = source_metadata.get("semantic_columns") or {}
+        source_columns = source_metadata.get("_result_columns") or []
+        source_text = source_metadata.get("source_text")
+        source_language = source_metadata.get("source_language") or "sql"
+        source_items = [
+            snapshot.get("items", {}).get(source_item_id)
+            for snapshot in db_snapshots
+            if snapshot.get("items", {}).get(source_item_id) is not None
+        ]
+        if not source_items:
+            declared_status = source_metadata.get("_collection_status")
+            status = (
+                declared_status
+                if declared_status in {"error", "unsupported", "skipped"}
+                else "error"
+            )
+            reason = source_metadata.get("_reason") or (
+                f"source query {source_query} produced no samples"
+            )
+            return item_from_plan(
+                planned,
+                collection_status=status,
+                reason=str(reason),
+                result=_empty_metric_result(metric),
+                diagnostics=[
+                    {
+                        "level": "error" if status == "error" else "warning",
+                        "code": "metric_source_status",
+                        "message": (
+                            f"Source query {source_query} produced no sample items; "
+                            f"source status is {status}"
+                        ),
+                    }
+                ],
+                source_text=(
+                    _metric_source_text(metric, source_text, source_language)
+                    if source_text else None
+                ),
+                source_language=source_language,
+            )
+        source_failure_status, source_failure_reason, metric_diagnostics = _source_health(source_items)
+        if source_failure_status and not _has_successful_source_item(source_items):
+            return item_from_plan(
+                planned,
+                collection_status=source_failure_status,
+                reason=source_failure_reason,
+                result=_empty_metric_result(metric),
+                diagnostics=metric_diagnostics,
+                source_text=(
+                    _metric_source_text(metric, source_text, source_language)
+                    if source_text else None
+                ),
+                source_language=source_language,
             )
         samples = [
             {
                 "timestamp": snapshot["timestamp"],
-                "rows": _rows_from_item(snapshot.get("items", {}).get(source_item_id)),
+                "rows": _rows_from_item(
+                    snapshot.get("items", {}).get(source_item_id),
+                    source_columns,
+                ),
             }
             for snapshot in db_snapshots
+            if snapshot.get("items", {}).get(source_item_id) is not None
         ]
-        source_metadata = source_metadata_by_item.get(source_item_id, {})
-        semantic_columns = source_metadata.get("semantic_columns") or {}
-        source_text = source_metadata.get("source_text")
-        source_language = source_metadata.get("source_language") or "sql"
     elif source_sampler:
         samples = os_samples.get(source_sampler, [])
         semantic_columns = {}
         source_text = _sampler_source_text(source_sampler)
         source_language = "bash"
+        metric_diagnostics = list(source_diagnostics or [])
+        if not samples and metric_diagnostics:
+            return item_from_plan(
+                planned,
+                collection_status=_sampler_failure_status(metric_diagnostics),
+                reason=str(metric_diagnostics[0].get("message") or "sampler unavailable"),
+                result=_empty_metric_result(metric),
+                diagnostics=metric_diagnostics,
+                source_text=_metric_source_text(metric, source_text, source_language),
+                source_language=source_language,
+            )
     else:
         return item_from_plan(
             planned,
             collection_status="empty",
             reason="metric has no source",
-            result=_empty_chart(metric),
+            result=_empty_metric_result(metric),
         )
 
     source_text = _metric_source_text(metric, source_text, source_language) if source_text else None
 
     if metric.get("result") == "table" or metric.get("table"):
         table = build_table_result(metric, samples, semantic_columns)
+        coverage_reason, coverage_diagnostic = _interval_coverage_feedback(table)
+        if coverage_diagnostic:
+            metric_diagnostics.append(coverage_diagnostic)
         status = "ok" if table.get("rows") else "empty"
+        if status == "empty" and source_failure_status == "error":
+            status = "error"
         return item_from_plan(
             planned,
             collection_status=status,
+            reason=source_failure_reason if status == "error" else coverage_reason,
             result=table,
+            diagnostics=metric_diagnostics,
             source_text=source_text,
             source_language=source_language,
         )
 
     chart = build_chart_result(metric, samples, semantic_columns)
+    coverage_reason, coverage_diagnostic = _interval_coverage_feedback(chart)
+    if coverage_diagnostic:
+        metric_diagnostics.append(coverage_diagnostic)
     status = "ok" if _chart_has_points(chart) else "empty"
+    if status == "empty" and source_failure_status == "error":
+        status = "error"
     return item_from_plan(
         planned,
         collection_status=status,
+        reason=source_failure_reason if status == "error" else coverage_reason,
         result=chart,
+        diagnostics=metric_diagnostics,
         source_text=source_text,
         source_language=source_language,
     )
@@ -130,6 +246,8 @@ def _metric_source_header(metric: dict[str, Any], comment_prefix: str, source_la
         lines.append(f"{comment_prefix} table_metric: mode={table.get('mode', 'first_last_delta')} limit={table.get('limit', '')}")
     if source_language == "bash":
         lines.append(f"{comment_prefix} sampler source follows")
+    elif metric.get("requires_collection") == "window_endpoints":
+        lines.append(f"{comment_prefix} window endpoint SQL source follows")
     else:
         lines.append(f"{comment_prefix} sampled SQL source follows")
     return "\n".join(lines)
@@ -156,7 +274,8 @@ iostat -dxk "$INTERVAL_SECONDS" "$SAMPLE_COUNT"
 cat /proc/net/dev
 """,
         "os.backend_proc": """#!/usr/bin/env bash
-# pg_diag threaded sampler: per-PostgreSQL-process CPU, RSS and I/O counters.
+# pg_diag window-endpoint sampler: per-PostgreSQL-process CPU, RSS and I/O counters.
+# Process state is read once at window start and once at window end.
 # /proc/<pid>/io may be unreadable for another OS user; pg_diag then reports io_access=false.
 for pid_dir in /proc/[0-9]*; do
   cat "$pid_dir/comm" "$pid_dir/cmdline" "$pid_dir/stat" "$pid_dir/status" 2>/dev/null
@@ -173,6 +292,49 @@ done
     )
 
 
+def _has_successful_source_item(items: list[dict[str, Any]]) -> bool:
+    return any(item.get("collection_status") in {"ok", "empty"} for item in items)
+
+
+def _source_health(
+    items: list[dict[str, Any]],
+) -> tuple[str | None, str | None, list[dict[str, Any]]]:
+    statuses = Counter(str(item.get("collection_status") or "error") for item in items)
+    failures = sum(statuses.get(status, 0) for status in ("error", "unsupported", "skipped"))
+    if not failures:
+        return None, None, []
+
+    if statuses.get("error"):
+        status = "error"
+    elif statuses.get("unsupported"):
+        status = "unsupported"
+    else:
+        status = "skipped"
+    reason = next(
+        (
+            str(item.get("reason"))
+            for item in items
+            if item.get("collection_status") == status and item.get("reason")
+        ),
+        f"source samples include {failures} unsuccessful collection(s)",
+    )
+    level = "error" if not _has_successful_source_item(items) and status == "error" else "warning"
+    diagnostic = {
+        "level": level,
+        "code": "metric_source_samples",
+        "message": (
+            f"Metric source samples: {dict(sorted(statuses.items()))}; "
+            f"{failures} unsuccessful collection(s)"
+        ),
+    }
+    return status, reason, [diagnostic]
+
+
+def _sampler_failure_status(diagnostics: list[dict[str, Any]]) -> str:
+    message = " ".join(str(item.get("message") or "") for item in diagnostics).lower()
+    return "unsupported" if "not found" in message or "unavailable" in message else "error"
+
+
 def build_chart_result(
     metric: dict[str, Any],
     samples: list[dict[str, Any]],
@@ -183,10 +345,11 @@ def build_chart_result(
 
     raw_series: dict[str, dict[str, Any]] = {}
     sorted_samples = sorted(samples, key=lambda sample: str(sample.get("timestamp") or ""))
+    sample_timestamps = [_sample_timestamp(sample) for sample in sorted_samples]
     partition_refs = metric.get("partition_by") or []
 
-    for sample in sorted_samples:
-        sample_timestamp = _sample_timestamp(sample)
+    for sample_index, sample in enumerate(sorted_samples):
+        sample_timestamp = sample_timestamps[sample_index]
         for row in sample.get("rows") or []:
             timestamp = _row_timestamp(row, sample_timestamp)
             partition_values = [
@@ -206,30 +369,45 @@ def build_chart_result(
                         "unit": series_def.get("unit") or (metric.get("chart") or {}).get("unit"),
                         "color": series_def.get("color"),
                         "transform": series_def.get("transform") or "gauge",
-                        "raw_points": [],
+                        "raw_points": {},
                     },
                 )
-                raw["raw_points"].append({"t": timestamp, "value": value})
+                raw["raw_points"][sample_index] = {"t": timestamp, "value": value}
 
     series = []
+    interval_counts: Counter[str] = Counter()
     for raw in raw_series.values():
+        transform = raw.get("transform")
+        if transform in {"rate", "delta"}:
+            points, point_counts = _transform_interval_points(
+                raw["raw_points"],
+                sample_timestamps,
+                transform,
+            )
+            interval_counts.update(point_counts)
+        else:
+            points = [
+                {"t": point["t"], "value": point["value"]}
+                for _sample_index, point in sorted(raw["raw_points"].items())
+            ]
         series.append(
             {
                 "name": raw["name"],
                 "unit": raw.get("unit"),
                 "color": raw.get("color"),
-                "points": _transform_points(raw["raw_points"], raw.get("transform")),
+                "points": points,
             }
         )
 
     chart = metric.get("chart") or {"kind": "line"}
     ordered_series = series if chart.get("series_order") == "configured" else sorted(series, key=lambda item: item["name"])
-    return {
+    result = {
         "kind": "chart",
         "chart": chart,
         "series": ordered_series,
         "sample_count": len(sorted_samples),
     }
+    return _with_interval_coverage(result, interval_counts)
 
 
 def _build_top_n_chart_result(
@@ -242,17 +420,28 @@ def _build_top_n_chart_result(
     chart = dict(metric.get("chart") or {"kind": "stacked_column"})
     if top_n.get("mode") == "first_last":
         chart["x_type"] = "datetime"
-        series = _top_n_first_last_series(top_n, sorted_samples, semantic_columns, chart)
+        series, interval_counts = _top_n_first_last_series(
+            top_n,
+            sorted_samples,
+            semantic_columns,
+            chart,
+        )
     else:
         chart["x_type"] = "datetime"
-        series = _top_n_interval_series(top_n, sorted_samples, semantic_columns, chart)
+        series, interval_counts = _top_n_interval_series(
+            top_n,
+            sorted_samples,
+            semantic_columns,
+            chart,
+        )
 
-    return {
+    result = {
         "kind": "chart",
         "chart": chart,
         "series": series,
         "sample_count": len(sorted_samples),
     }
+    return _with_interval_coverage(result, interval_counts)
 
 
 def _top_n_interval_series(
@@ -260,9 +449,10 @@ def _top_n_interval_series(
     sorted_samples: list[dict[str, Any]],
     semantic_columns: dict[str, dict[str, str]],
     chart: dict[str, Any],
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], Counter[str]]:
+    interval_counts: Counter[str] = Counter()
     if len(sorted_samples) < 2:
-        return []
+        return [], interval_counts
 
     key_refs = top_n.get("key_refs") or top_n.get("partition_by") or []
     limit = _positive_int(top_n.get("limit"), 10)
@@ -275,14 +465,29 @@ def _top_n_interval_series(
         previous_rows = _rows_by_key(previous.get("rows") or [], key_refs, semantic_columns)
         current_rows = _rows_by_key(current.get("rows") or [], key_refs, semantic_columns)
         candidates: list[tuple[float, str, str]] = []
-        for key in sorted(current_rows):
-            last_row = current_rows[key]
+        for key in sorted(set(previous_rows) | set(current_rows)):
             first_row = previous_rows.get(key)
+            last_row = current_rows.get(key)
+            if first_row is None:
+                interval_counts[INTERVAL_MISSING_START] += 1
+                continue
+            if last_row is None:
+                interval_counts[INTERVAL_MISSING_END] += 1
+                continue
             interval_seconds = _row_interval_seconds(first_row, last_row, previous_timestamp, current_timestamp)
             if interval_seconds <= 0:
+                interval_counts[INTERVAL_INVALID_INTERVAL] += 1
                 continue
-            value = _top_n_metric_value(top_n, first_row, last_row, semantic_columns, interval_seconds)
-            if value is None or (drop_zero and value <= 0):
+            interval_value = _top_n_metric_value(
+                top_n,
+                first_row,
+                last_row,
+                semantic_columns,
+                interval_seconds,
+            )
+            interval_counts[interval_value.status] += 1
+            value = interval_value.value
+            if interval_value.status != INTERVAL_OK or value is None or (drop_zero and value <= 0):
                 continue
             timestamp = _row_timestamp(last_row, current_timestamp)
             candidates.append((value, _top_n_label(top_n, key, last_row, semantic_columns), timestamp))
@@ -301,7 +506,8 @@ def _top_n_interval_series(
             series["points"].append({"t": timestamp, "value": round(value, 6)})
             series["_total"] += value
 
-    return _strip_private_series_keys(_order_top_n_series(series_by_label.values(), chart))
+    series = _strip_private_series_keys(_order_top_n_series(series_by_label.values(), chart))
+    return series, interval_counts
 
 
 def _top_n_first_last_series(
@@ -309,9 +515,10 @@ def _top_n_first_last_series(
     sorted_samples: list[dict[str, Any]],
     semantic_columns: dict[str, dict[str, str]],
     chart: dict[str, Any],
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], Counter[str]]:
+    interval_counts: Counter[str] = Counter()
     if len(sorted_samples) < 2:
-        return []
+        return [], interval_counts
 
     first = sorted_samples[0]
     last = sorted_samples[-1]
@@ -323,14 +530,29 @@ def _top_n_first_last_series(
     last_rows = _rows_by_key(last.get("rows") or [], key_refs, semantic_columns)
     drop_zero = top_n.get("drop_zero", True)
     candidates: list[tuple[float, str, str]] = []
-    for key in sorted(last_rows):
-        last_row = last_rows[key]
+    for key in sorted(set(first_rows) | set(last_rows)):
         first_row = first_rows.get(key)
+        last_row = last_rows.get(key)
+        if first_row is None:
+            interval_counts[INTERVAL_MISSING_START] += 1
+            continue
+        if last_row is None:
+            interval_counts[INTERVAL_MISSING_END] += 1
+            continue
         interval_seconds = _row_interval_seconds(first_row, last_row, first_timestamp, last_timestamp)
         if interval_seconds <= 0:
+            interval_counts[INTERVAL_INVALID_INTERVAL] += 1
             continue
-        value = _top_n_metric_value(top_n, first_row, last_row, semantic_columns, interval_seconds)
-        if value is None or (drop_zero and value <= 0):
+        interval_value = _top_n_metric_value(
+            top_n,
+            first_row,
+            last_row,
+            semantic_columns,
+            interval_seconds,
+        )
+        interval_counts[interval_value.status] += 1
+        value = interval_value.value
+        if interval_value.status != INTERVAL_OK or value is None or (drop_zero and value <= 0):
             continue
         timestamp = _row_timestamp(last_row, last_timestamp)
         candidates.append((value, _top_n_label(top_n, key, last_row, semantic_columns), timestamp))
@@ -346,7 +568,7 @@ def _top_n_first_last_series(
         }
         for value, label, point_timestamp in candidates[:limit]
     ]
-    return _strip_private_series_keys(_order_top_n_series(series, chart))
+    return _strip_private_series_keys(_order_top_n_series(series, chart)), interval_counts
 
 
 def _order_top_n_series(series: Any, chart: dict[str, Any]) -> list[dict[str, Any]]:
@@ -362,33 +584,64 @@ def _top_n_metric_value(
     last_row: dict[str, Any],
     semantic_columns: dict[str, dict[str, str]],
     interval_seconds: float,
-) -> float | None:
+) -> IntervalValue:
     operation = top_n.get("operation") or "sum"
     value_refs = _top_n_value_refs(top_n)
     if operation == "ratio":
         numerator_refs = top_n.get("numerator_refs") or value_refs
         denominator_refs = top_n.get("denominator_refs") or [top_n.get("denominator_ref")]
-        numerator = sum(_counter_delta_for_ref(first_row, last_row, semantic_columns, ref) for ref in numerator_refs if ref)
-        denominator = sum(_counter_delta_for_ref(first_row, last_row, semantic_columns, ref) for ref in denominator_refs if ref)
-        if denominator <= 0:
-            return None
-        return round(numerator / denominator, 6)
+        numerator = _counter_delta_sum(
+            first_row,
+            last_row,
+            semantic_columns,
+            [str(ref) for ref in numerator_refs if ref],
+        )
+        if numerator.status != INTERVAL_OK:
+            return numerator
+        denominator = _counter_delta_sum(
+            first_row,
+            last_row,
+            semantic_columns,
+            [str(ref) for ref in denominator_refs if ref],
+        )
+        if denominator.status != INTERVAL_OK:
+            return denominator
+        if denominator.value is None or denominator.value <= 0:
+            return IntervalValue(None, INTERVAL_NO_ACTIVITY)
+        return IntervalValue(
+            round(float(numerator.value or 0.0) / denominator.value, 6),
+            INTERVAL_OK,
+        )
 
     transform = top_n.get("transform") or "rate"
-    values = []
+    values: list[float] = []
     for ref in value_refs:
         if not ref:
             continue
         if transform in {"delta", "rate"}:
-            values.append(_counter_delta_for_ref(first_row, last_row, semantic_columns, ref))
+            interval_value = _counter_delta_for_ref(
+                first_row,
+                last_row,
+                semantic_columns,
+                ref,
+            )
+            if interval_value.status != INTERVAL_OK or interval_value.value is None:
+                return interval_value
+            values.append(interval_value.value)
         elif transform == "avg":
-            values.append(_average_for_ref(first_row, last_row, semantic_columns, ref))
+            average = _average_for_ref(first_row, last_row, semantic_columns, ref)
+            if average is None:
+                return IntervalValue(None, INTERVAL_INVALID_VALUE)
+            values.append(average)
         else:
-            values.append(_number_or_none(_resolve_ref(last_row, semantic_columns, ref)) or 0.0)
+            value = _number_or_none(_resolve_ref(last_row, semantic_columns, ref))
+            if value is None:
+                return IntervalValue(None, INTERVAL_INVALID_VALUE)
+            values.append(value)
     value = sum(values)
     if transform == "rate":
-        return round(value / interval_seconds, 6)
-    return round(value, 6)
+        return IntervalValue(round(value / interval_seconds, 6), INTERVAL_OK)
+    return IntervalValue(round(value, 6), INTERVAL_OK)
 
 
 def _top_n_value_refs(top_n: dict[str, Any]) -> list[str]:
@@ -404,10 +657,34 @@ def _counter_delta_for_ref(
     last_row: dict[str, Any],
     semantic_columns: dict[str, dict[str, str]],
     ref: str,
-) -> float:
+) -> IntervalValue:
     first_value = _number_or_none(_resolve_ref(first_row or {}, semantic_columns, ref)) if first_row else None
     last_value = _number_or_none(_resolve_ref(last_row, semantic_columns, ref))
-    return _counter_delta(first_value, last_value)
+    return _counter_delta_value(first_value, last_value)
+
+
+def _counter_delta_sum(
+    first_row: dict[str, Any] | None,
+    last_row: dict[str, Any],
+    semantic_columns: dict[str, dict[str, str]],
+    refs: list[str],
+) -> IntervalValue:
+    values: list[float] = []
+    statuses: list[str] = []
+    for ref in refs:
+        interval_value = _counter_delta_for_ref(
+            first_row,
+            last_row,
+            semantic_columns,
+            ref,
+        )
+        statuses.append(interval_value.status)
+        if interval_value.value is not None:
+            values.append(interval_value.value)
+    status = _combined_interval_status(statuses)
+    if status != INTERVAL_OK:
+        return IntervalValue(None, status)
+    return IntervalValue(sum(values), INTERVAL_OK)
 
 
 def _average_for_ref(
@@ -415,11 +692,12 @@ def _average_for_ref(
     last_row: dict[str, Any],
     semantic_columns: dict[str, dict[str, str]],
     ref: str,
-) -> float:
+) -> float | None:
     last_value = _number_or_none(_resolve_ref(last_row, semantic_columns, ref))
     first_value = _number_or_none(_resolve_ref(first_row or {}, semantic_columns, ref)) if first_row else None
-    values = [value for value in (first_value, last_value) if value is not None]
-    return sum(values) / len(values) if values else 0.0
+    if first_value is None or last_value is None:
+        return None
+    return (first_value + last_value) / 2.0
 
 
 def _top_n_label(
@@ -475,12 +753,29 @@ def build_table_result(
     last_rows = _rows_by_key(last.get("rows") or [], key_refs, semantic_columns)
 
     rows: list[list[Any]] = []
-    for key in sorted(last_rows):
-        last_row = last_rows[key]
+    interval_counts: Counter[str] = Counter()
+    for key in sorted(set(first_rows) | set(last_rows)):
         first_row = first_rows.get(key)
+        last_row = last_rows.get(key)
+        if first_row is None:
+            interval_counts[INTERVAL_MISSING_START] += 1
+            continue
+        if last_row is None:
+            interval_counts[INTERVAL_MISSING_END] += 1
+            continue
         interval_seconds = _row_interval_seconds(first_row, last_row, first_timestamp, last_timestamp)
         if interval_seconds <= 0:
-            interval_seconds = 1.0
+            interval_counts[INTERVAL_INVALID_INTERVAL] += 1
+            continue
+        interval_status = _table_row_interval_status(
+            table,
+            first_row,
+            last_row,
+            semantic_columns,
+        )
+        interval_counts[interval_status] += 1
+        if interval_status != INTERVAL_OK:
+            continue
         rendered: list[Any] = []
         nonzero_metric = False
         for column in table.get("columns") or []:
@@ -496,7 +791,8 @@ def build_table_result(
     limit = table.get("limit")
     if isinstance(limit, int) and limit > 0:
         rows = rows[:limit]
-    return {"kind": "table", "columns": columns, "rows": rows, "row_count": len(rows)}
+    result = {"kind": "table", "columns": columns, "rows": rows, "row_count": len(rows)}
+    return _with_interval_coverage(result, interval_counts)
 
 
 def _build_sample_sum_table(
@@ -610,22 +906,124 @@ def _table_column_value(
         resolved = _resolve_ref(first_row or {}, semantic_columns, ref) if ref and first_row else None
         return resolved
     if transform == "delta":
-        return _counter_delta(first_value, last_value)
+        return _counter_delta_value(first_value, last_value).value
     if transform == "rate":
-        return round(_counter_delta(first_value, last_value) / interval_seconds, 6)
+        delta = _counter_delta_value(first_value, last_value).value
+        return round(delta / interval_seconds, 6) if delta is not None else None
     if transform == "pct_delta":
         previous = first_value or 0.0
-        delta = _counter_delta(first_value, last_value)
-        return round(delta * 100.0 / previous, 3) if previous > 0 else None
+        delta = _counter_delta_value(first_value, last_value).value
+        return round(delta * 100.0 / previous, 3) if delta is not None and previous > 0 else None
     return _resolve_ref(last_row, semantic_columns, ref) if ref else None
 
 
-def _counter_delta(first_value: float | None, last_value: float | None) -> float:
+def _counter_delta_value(
+    first_value: float | None,
+    last_value: float | None,
+) -> IntervalValue:
     if first_value is None or last_value is None:
-        return 0.0
+        return IntervalValue(None, INTERVAL_INVALID_VALUE)
     if last_value < first_value:
-        return 0.0
-    return round(last_value - first_value, 6)
+        return IntervalValue(None, INTERVAL_COUNTER_DECREASE)
+    return IntervalValue(round(last_value - first_value, 6), INTERVAL_OK)
+
+
+def _table_row_interval_status(
+    table: dict[str, Any],
+    first_row: dict[str, Any],
+    last_row: dict[str, Any],
+    semantic_columns: dict[str, dict[str, str]],
+) -> str:
+    statuses: list[str] = []
+    for column in table.get("columns") or []:
+        if column.get("transform") not in {"delta", "rate", "pct_delta"}:
+            continue
+        ref = column.get("value_ref") or column.get("ref")
+        if not ref:
+            statuses.append(INTERVAL_INVALID_VALUE)
+            continue
+        first_value = _number_or_none(_resolve_ref(first_row, semantic_columns, ref))
+        last_value = _number_or_none(_resolve_ref(last_row, semantic_columns, ref))
+        statuses.append(_counter_delta_value(first_value, last_value).status)
+    return _combined_interval_status(statuses)
+
+
+def _combined_interval_status(statuses: list[str]) -> str:
+    if not statuses:
+        return INTERVAL_OK
+    for status in (
+        INTERVAL_COUNTER_DECREASE,
+        INTERVAL_INVALID_VALUE,
+        INTERVAL_INVALID_INTERVAL,
+        INTERVAL_MISSING_START,
+        INTERVAL_MISSING_END,
+        INTERVAL_NO_ACTIVITY,
+    ):
+        if status in statuses:
+            return status
+    return INTERVAL_OK
+
+
+def _with_interval_coverage(
+    result: dict[str, Any],
+    counts: Counter[str],
+) -> dict[str, Any]:
+    total = sum(counts.values())
+    if total <= 0:
+        return result
+    comparable = sum(counts.get(status, 0) for status in INTERVAL_COMPARABLE_STATUSES)
+    unmatched = counts.get(INTERVAL_MISSING_START, 0) + counts.get(INTERVAL_MISSING_END, 0)
+    invalid = total - comparable - unmatched
+    result["interval_coverage"] = {
+        "total": total,
+        "comparable": comparable,
+        "unmatched": unmatched,
+        "invalid": invalid,
+        "counts": {
+            status: counts[status]
+            for status in INTERVAL_STATUS_ORDER
+            if counts.get(status, 0) > 0
+        },
+    }
+    return result
+
+
+def _interval_coverage_feedback(
+    result: dict[str, Any],
+) -> tuple[str | None, dict[str, Any] | None]:
+    coverage = result.get("interval_coverage") or {}
+    invalid = int(coverage.get("invalid") or 0)
+    counts = coverage.get("counts") or {}
+    if invalid > 0:
+        invalid_parts = [
+            f"{status}={counts.get(status, 0)}"
+            for status in (
+                INTERVAL_COUNTER_DECREASE,
+                INTERVAL_INVALID_VALUE,
+                INTERVAL_INVALID_INTERVAL,
+            )
+            if counts.get(status, 0)
+        ]
+        message = (
+            f"{invalid} interval value(s) could not be calculated and were omitted"
+            + (f" ({', '.join(invalid_parts)})" if invalid_parts else "")
+        )
+        return message, {
+            "level": "warning",
+            "code": "metric_interval_coverage",
+            "message": message,
+        }
+
+    comparable = int(coverage.get("comparable") or 0)
+    unmatched = int(coverage.get("unmatched") or 0)
+    has_output = bool(result.get("rows")) if result.get("kind") == "table" else _chart_has_points(result)
+    if comparable == 0 and unmatched > 0 and not has_output:
+        return (
+            "No keys were present in both limited endpoint selections; "
+            "the row set may legitimately differ between samples",
+            None,
+        )
+    return None, None
 
 
 def _sort_table_rows(rows: list[list[Any]], columns: list[dict[str, Any]], sort: dict[str, Any]) -> list[list[Any]]:
@@ -646,13 +1044,20 @@ def _sort_table_rows(rows: list[list[Any]], columns: list[dict[str, Any]], sort:
     return sorted(rows, key=key, reverse=direction == "desc")
 
 
-def _rows_from_item(item: dict[str, Any] | None) -> list[dict[str, Any]]:
+def _rows_from_item(
+    item: dict[str, Any] | None,
+    fallback_columns: list[Any] | None = None,
+) -> list[dict[str, Any]]:
     if not item:
         return []
     result = item.get("result") or {}
     if result.get("kind") != "table":
         return []
-    columns = [column.get("name") if isinstance(column, dict) else str(column) for column in result.get("columns") or []]
+    raw_columns = result.get("columns") or fallback_columns or []
+    columns = [
+        column.get("name") if isinstance(column, dict) else str(column)
+        for column in raw_columns
+    ]
     rows = []
     for raw_row in result.get("rows") or []:
         rows.append({column: raw_row[index] if index < len(raw_row) else None for index, column in enumerate(columns)})
@@ -709,27 +1114,59 @@ def _series_name(
     return base
 
 
-def _transform_points(raw_points: list[dict[str, Any]], transform: str | None) -> list[dict[str, Any]]:
-    if transform not in {"rate", "delta"}:
-        return [{"t": point["t"], "value": point["value"]} for point in raw_points]
-
+def _transform_interval_points(
+    raw_points: dict[int, dict[str, Any]],
+    sample_timestamps: list[str],
+    transform: str,
+) -> tuple[list[dict[str, Any]], Counter[str]]:
     points: list[dict[str, Any]] = []
+    interval_counts: Counter[str] = Counter()
     previous: dict[str, Any] | None = None
-    for point in raw_points:
-        value = point["value"]
-        if previous is None or value is None or previous.get("value") is None:
+    seen = False
+    for sample_index, sample_timestamp in enumerate(sample_timestamps):
+        point = raw_points.get(sample_index)
+        if point is None:
+            if previous is not None:
+                interval_counts[INTERVAL_MISSING_END] += 1
+                points.append({"t": sample_timestamp, "value": None})
+            previous = None
+            continue
+
+        if not seen:
+            points.append({"t": point["t"], "value": None})
+            if sample_index > 0:
+                interval_counts[INTERVAL_MISSING_START] += 1
+            seen = True
+            previous = point
+            continue
+
+        if previous is None:
+            interval_counts[INTERVAL_MISSING_START] += 1
             points.append({"t": point["t"], "value": None})
             previous = point
             continue
+
         seconds = _seconds_between(str(previous["t"]), str(point["t"]))
-        if seconds <= 0 or value < previous["value"]:
+        if seconds <= 0:
+            interval_counts[INTERVAL_INVALID_INTERVAL] += 1
             points.append({"t": point["t"], "value": None})
         else:
-            delta = value - previous["value"]
-            transformed = delta / seconds if transform == "rate" else delta
-            points.append({"t": point["t"], "value": round(transformed, 6)})
+            interval_value = _counter_delta_value(
+                _number_or_none(previous.get("value")),
+                _number_or_none(point.get("value")),
+            )
+            interval_counts[interval_value.status] += 1
+            if interval_value.status != INTERVAL_OK or interval_value.value is None:
+                points.append({"t": point["t"], "value": None})
+            else:
+                transformed = (
+                    interval_value.value / seconds
+                    if transform == "rate"
+                    else interval_value.value
+                )
+                points.append({"t": point["t"], "value": round(transformed, 6)})
         previous = point
-    return points
+    return points, interval_counts
 
 
 def _seconds_between(start: str, end: str) -> float:
@@ -759,6 +1196,17 @@ def _empty_chart(metric: dict[str, Any]) -> dict[str, Any]:
         "series": [],
         "sample_count": 0,
     }
+
+
+def _empty_metric_result(metric: dict[str, Any]) -> dict[str, Any]:
+    if metric.get("result") == "table" or metric.get("table"):
+        return {
+            "kind": "table",
+            "columns": _table_columns(metric.get("table") or {}),
+            "rows": [],
+            "row_count": 0,
+        }
+    return _empty_chart(metric)
 
 
 def _chart_has_points(chart: dict[str, Any]) -> bool:

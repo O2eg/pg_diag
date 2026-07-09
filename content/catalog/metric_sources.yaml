@@ -328,8 +328,8 @@ queries:
         column: xact_commit
         direction: desc
     collection:
-      default: every_snapshot
-      supports: [once, every_snapshot]
+      default: window_endpoints
+      supports: [once, window_endpoints]
     variants:
       - id: metrics_database_workload_delta_pg14_plus
         min_pg_version: 140000
@@ -354,8 +354,8 @@ queries:
         column: total_dml
         direction: desc
     collection:
-      default: every_snapshot
-      supports: [once, every_snapshot]
+      default: window_endpoints
+      supports: [once, window_endpoints]
     variants:
       - id: metrics_objects_table_dml_delta_pg14_plus
         min_pg_version: 140000
@@ -382,8 +382,8 @@ queries:
         column: seq_tup_read
         direction: desc
     collection:
-      default: every_snapshot
-      supports: [once, every_snapshot]
+      default: window_endpoints
+      supports: [once, window_endpoints]
     variants:
       - id: metrics_objects_table_scan_delta_pg14_plus
         min_pg_version: 140000
@@ -613,8 +613,8 @@ queries:
         column: total_blks_read
         direction: desc
     collection:
-      default: every_snapshot
-      supports: [once, every_snapshot]
+      default: window_endpoints
+      supports: [once, window_endpoints]
     variants:
       - id: metrics_objects_table_io_delta_pg14_plus
         min_pg_version: 140000
@@ -691,8 +691,8 @@ queries:
         column: idx_scan
         direction: desc
     collection:
-      default: every_snapshot
-      supports: [once, every_snapshot]
+      default: window_endpoints
+      supports: [once, window_endpoints]
     variants:
       - id: metrics_objects_index_usage_delta_pg14_plus
         min_pg_version: 140000
@@ -879,8 +879,8 @@ queries:
         column: total_time_ms
         direction: desc
     collection:
-      default: every_snapshot
-      supports: [once, every_snapshot]
+      default: window_endpoints
+      supports: [once, window_endpoints]
     variants:
       - id: metrics_objects_function_time_delta_pg14_plus
         min_pg_version: 140000
@@ -906,8 +906,8 @@ queries:
         column: total_exec_time_ms
         direction: desc
     collection:
-      default: every_snapshot
-      supports: [once, every_snapshot]
+      default: window_endpoints
+      supports: [once, window_endpoints]
     variants:
       - id: metrics_statements_total_time_delta_pg14_plus
         min_pg_version: 140000
@@ -933,8 +933,8 @@ queries:
         column: wal_bytes
         direction: desc
     collection:
-      default: every_snapshot
-      supports: [once, every_snapshot]
+      default: window_endpoints
+      supports: [once, window_endpoints]
     variants:
       - id: metrics_statements_wal_delta_pg14_plus
         min_pg_version: 140000
@@ -960,8 +960,8 @@ queries:
         column: shared_blks_read
         direction: desc
     collection:
-      default: every_snapshot
-      supports: [once, every_snapshot]
+      default: window_endpoints
+      supports: [once, window_endpoints]
     variants:
       - id: metrics_statements_io_delta_pg14_pg16
         min_pg_version: 140000

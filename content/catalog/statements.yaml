@@ -27,7 +27,7 @@ queries:
         column: total_exec_time_ms
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: statements_top_by_total_time_pg14_pg16
@@ -109,7 +109,7 @@ queries:
         column: shared_io_blks
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: statements_top_by_io_pg14_pg16
@@ -151,7 +151,7 @@ queries:
         column: wal_bytes
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: statements_top_by_wal_pg14_plus

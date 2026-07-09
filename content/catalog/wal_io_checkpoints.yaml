@@ -36,7 +36,7 @@ queries:
         column: buffers_alloc
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: checkpoints_bgwriter_pg11_pg16
@@ -58,7 +58,7 @@ queries:
         column: buffers_written
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     requirements:
       unsupported_versions_reason: On PostgreSQL versions before 17 checkpointer counters are covered by pg_stat_bgwriter.

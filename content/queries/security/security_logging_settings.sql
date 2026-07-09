@@ -19,7 +19,10 @@ evaluated as (
     case
       when c.setting_name in ('log_connections', 'log_disconnections') then s.setting = 'on'
       when c.setting_name = 'log_error_verbosity' then s.setting = 'verbose'
-      when c.setting_name = 'log_min_error_statement' then s.setting = 'error'
+      when c.setting_name = 'log_min_error_statement' then s.setting in (
+        'debug5', 'debug4', 'debug3', 'debug2', 'debug1',
+        'info', 'notice', 'warning', 'error'
+      )
       when c.setting_name = 'log_statement' then s.setting in ('ddl', 'mod', 'all')
       when c.setting_name = 'log_line_prefix' then
         strpos(s.setting, '%m') > 0

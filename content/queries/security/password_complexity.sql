@@ -6,10 +6,19 @@ settings as (
   from pg_catalog.pg_settings
   where name = 'shared_preload_libraries'
 ),
+preloaded_modules as (
+  select lower(regexp_replace(btrim(value), '^\$libdir/', '')) as module_name
+  from settings
+  cross join lateral regexp_split_to_table(shared_preload_libraries, ',') as value
+),
 module_state as (
   select
     w.module_name,
-    lower(coalesce(s.shared_preload_libraries, '')) like '%' || w.module_name || '%' as is_preloaded,
+    exists (
+      select 1
+      from preloaded_modules p
+      where p.module_name = w.module_name
+    ) as is_preloaded,
     ae.installed_version is not null as is_installed,
     ae.default_version is not null as is_available
   from wanted_modules w

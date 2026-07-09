@@ -11,6 +11,12 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_insert_ra
 - Unexpected ingest table activity.
 - Insert rate aligned with WAL pressure.
 
+## Bounded samples
+- Each SQL sample is ordered and limited before rows enter collector memory.
+- Each column ranks deltas only for keys present in both adjacent bounded samples.
+- Different table series between columns are expected; unmatched keys are not zero or errors.
+- Counter decreases and invalid values are omitted and reported separately.
+
 ## Common fault causes
 - Bulk load.
 - Queue/event table growth.

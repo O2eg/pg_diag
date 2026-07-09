@@ -34,7 +34,11 @@ evaluated as (
       when coalesce(auth_delay_failure_timeout ~ '^[0-9]+$', false) then auth_delay_failure_timeout::numeric
       else null
     end as auth_delay_failure_timeout_numeric,
-    lower(coalesce(shared_preload_libraries, '')) like '%auth_delay%' as auth_delay_preloaded
+    exists (
+      select 1
+      from regexp_split_to_table(coalesce(shared_preload_libraries, ''), ',') as library(value)
+      where lower(regexp_replace(btrim(library.value), '^\$libdir/', '')) = 'auth_delay'
+    ) as auth_delay_preloaded
   from settings
 )
 select

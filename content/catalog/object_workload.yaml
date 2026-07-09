@@ -10,7 +10,7 @@ queries:
         column: total_dml
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: objects_table_workload_pg14_plus
@@ -50,7 +50,7 @@ queries:
         column: total_blks_read
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: objects_table_io_pg14_plus
@@ -84,7 +84,7 @@ queries:
         column: idx_scan
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: objects_index_workload_pg14_plus
@@ -117,7 +117,7 @@ queries:
         column: total_time_ms
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: objects_function_workload_pg14_plus

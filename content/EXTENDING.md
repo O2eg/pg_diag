@@ -22,7 +22,10 @@ and derived snapshot tables.
 - SQL used by metrics should expose stable `semantic_columns` so metrics do not
   depend on physical column names.
 - SQL used by charts must return `statement_timestamp() as snapshot_time`.
-- SQL should be read-only and should not create temporary objects. Snapshot
+- Every database connection is opened with
+  `default_transaction_read_only=on` and fails closed if PostgreSQL does not
+  confirm read-only mode. SQL should also be read-only by construction and
+  should not create temporary objects. Snapshot
   joins, deltas, rates, and top-N calculations are done in the Python runtime.
 
 Run validation after every content change:
@@ -148,6 +151,9 @@ payload needs item-specific wording in the HTML report.
 Use this when the report needs a time-series chart from SQL samples.
 
 1. Add a minimal source query. Keep it narrow and specific to the chart.
+   High-cardinality sources must use deterministic `ORDER BY ... LIMIT` before
+   rows enter collector memory; do not remove this bound to obtain a global
+   Top-N.
 
    Example:
 
@@ -160,6 +166,12 @@ Use this when the report needs a time-series chart from SQL samples.
    from pg_stat_database
    where datname = current_database()
    ```
+
+   Different keys in adjacent bounded samples are expected. The metric engine
+   computes deltas only for the intersection and records
+   `missing_start`/`missing_end` as informational unmatched coverage. It never
+   substitutes zero for an unmatched key. Counter decreases and malformed
+   values are invalid intervals and produce gaps plus diagnostics.
 
 2. Add the query manifest. The query must support `every_snapshot`.
 
@@ -270,13 +282,21 @@ relation size before applying `limit 100`.
 Use a table metric when a report section should show start/end deltas or rates
 instead of raw cumulative counters.
 
+Its source query manifest must declare:
+
+```yaml
+collection:
+  default: window_endpoints
+  supports: [once, window_endpoints]
+```
+
 Example:
 
 ```yaml
 database.workload_delta:
   title: Database Workload Delta
   source_query: metrics.database_workload_delta
-  requires_collection: every_snapshot
+  requires_collection: window_endpoints
   result: table
   display:
     default_sort:
@@ -306,9 +326,9 @@ database.workload_delta:
         pg_type: float8
 ```
 
-Supported table transforms include key columns, `delta`, `rate`, `last`, sample
-counts, and aggregate transforms such as `sum`, `avg`, and `max` for sampled
-data.
+Supported endpoint-table transforms include key columns, `delta`, `rate`, and
+`last`. A window endpoint source executes only at the start and end of the timed
+chart window; its raw rows are not persisted in the artifact snapshot array.
 
 ## Add A Local Bash Item
 
@@ -415,10 +435,41 @@ PostgreSQL configuration files.
 
 4. Add `instructions/items/<section>/<item>.md` for the item.
 
+## Add SQL Result Evaluation
+
+Use automatic severity only for direct, low-ambiguity findings. A SQL finding
+table can expose `risk_level`/`risk_reason`. A normal diagnostic table can keep
+evaluation fields out of the displayed result by returning reserved columns:
+
+```sql
+case when obvious_problem then 'medium' else 'ok' end
+  as pg_diag_internal_severity,
+case when obvious_problem then 'why this row requires review' end
+  as pg_diag_internal_reason
+```
+
+The SQL executor removes `pg_diag_internal_*` columns from the public table,
+sets item severity from the highest row, and creates `issues.summary` above the
+table. Optional manifest text customizes that summary:
+
+```yaml
+evaluation:
+  summary_title: Configuration requires review
+  recommendation: Validate workload evidence before changing production settings.
+```
+
+Do not assign severity to contextual ratios or cumulative counters without a
+defensible threshold, reset scope, and applicability contract. The instruction
+must explain the trigger, false positives, evidence boundary, and safe next
+step.
+
 ## Add An OS Sampler Chart
 
-OS sampler metrics use threaded local samplers. They are available only in local
-collection modes and only in `snapshots` mode.
+OS chart metrics use threaded local samplers. They are available only in local
+collection modes and only in `snapshots` mode. Sampler-backed tables must use a
+dedicated `window_endpoints` sampler; they must not add table collection work to
+each chart iteration. The bundled `os.backend_proc` sampler is the reference:
+it reads process counters once at each window boundary.
 
 Example:
 

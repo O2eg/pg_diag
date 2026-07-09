@@ -10,7 +10,7 @@ queries:
         column: used_pct
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: activity_connection_pressure_pg14_plus
@@ -28,7 +28,7 @@ queries:
         column: sessions
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: activity_wait_events_pg14_plus
@@ -57,7 +57,7 @@ queries:
         column: xact_age_seconds
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: activity_long_transactions_pg14_plus
@@ -75,7 +75,7 @@ queries:
         column: idle_seconds
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: activity_idle_in_transaction_pg14_plus
@@ -93,7 +93,7 @@ queries:
         column: locks
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: locks_lock_modes_pg14_plus
@@ -111,7 +111,7 @@ queries:
         column: retained_wal_bytes
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: replication_slots_pg14_plus
@@ -128,7 +128,7 @@ queries:
         column: wal_bytes
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: wal_stat_wal_pg14_pg17
@@ -150,7 +150,7 @@ queries:
         column: pending_wal_count
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: wal_archiver_pg14_plus
@@ -168,7 +168,7 @@ queries:
         column: blks_read
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: slru_stat_slru_pg14_plus
@@ -186,7 +186,7 @@ queries:
         column: xid_age
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: vacuum_database_wraparound_pg14_plus
@@ -204,7 +204,7 @@ queries:
         column: catalog_horizon_age_tx
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: vacuum_xmin_horizon_pg14_plus
@@ -222,7 +222,7 @@ queries:
         column: age_tx
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: vacuum_xmin_horizon_blockers_pg14_plus
@@ -240,7 +240,7 @@ queries:
         column: prepared_age_seconds
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: vacuum_prepared_xacts_pg14_plus
@@ -258,7 +258,7 @@ queries:
         column: query_age_seconds
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: progress_vacuum_pg14_pg16
@@ -279,7 +279,7 @@ queries:
         column: xact_age_seconds
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: progress_create_index_pg14_plus
@@ -296,7 +296,7 @@ queries:
         column: xact_age_seconds
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: progress_cluster_pg14_plus
@@ -313,7 +313,7 @@ queries:
         column: xact_age_seconds
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: progress_copy_pg14_plus

@@ -59,8 +59,24 @@ def test_run_query_dry_run_cli(repo_root: Path) -> None:
         "--dry-run",
     )
     assert proc.returncode == 0, proc.stderr + proc.stdout
-    assert "variant_id=database_stats_pg15_plus" in proc.stdout
+    assert "variant_id=database_stats_pg15_pg17" in proc.stdout
     assert "pg_stat_database" in proc.stdout
+
+
+def test_run_query_is_always_an_inspection_command(repo_root: Path) -> None:
+    proc = run_cli(
+        repo_root,
+        "run-query",
+        "cluster.settings",
+        "--content",
+        "content",
+        "--pg-version",
+        "180000",
+    )
+
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert "variant_id=cluster_settings_all" in proc.stdout
+    assert "pg_settings" in proc.stdout
 
 
 def test_render_from_json_cli(repo_root: Path, tmp_path: Path) -> None:
@@ -140,3 +156,19 @@ def test_snapshots_cli_rejects_too_many_samples(repo_root: Path) -> None:
     assert proc.returncode == 2
     assert "sample count 5761 exceeds maximum 300" in proc.stderr
     assert "at least 289" in proc.stderr
+
+
+def test_snapshots_cli_rejects_interval_longer_than_duration(repo_root: Path) -> None:
+    proc = run_cli(
+        repo_root,
+        "snapshots",
+        "--dsn",
+        "postgresql://example/db",
+        "--duration-seconds",
+        "30",
+        "--interval-seconds",
+        "600",
+    )
+
+    assert proc.returncode == 2
+    assert "not greater than --duration-seconds" in proc.stderr

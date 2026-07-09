@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from pg_diag.metric_engine import build_chart_result, build_metric_item, build_table_result
+from pg_diag.metric_engine import (
+    _metric_source_text,
+    build_chart_result,
+    build_metric_item,
+    build_table_result,
+)
 from pg_diag.planner import PlannedItem
 
 
@@ -28,6 +33,23 @@ def test_delta_table_metric_uses_first_and_last_samples() -> None:
     result = build_table_result(metric, samples, semantic_columns)
 
     assert result["rows"] == [["db", 20.0, 4.0]]
+
+
+def test_window_endpoint_metric_source_header_names_endpoint_collection() -> None:
+    source = _metric_source_text(
+        {
+            "title": "SQL WAL Delta",
+            "source_query": "metrics.statements_wal_delta",
+            "requires_collection": "window_endpoints",
+            "table": {"mode": "first_last_delta", "limit": 50},
+        },
+        "select 1",
+        "sql",
+    )
+
+    assert "-- requires_collection: window_endpoints" in source
+    assert "-- window endpoint SQL source follows" in source
+    assert "sampled SQL source follows" not in source
 
 
 def test_delta_table_metric_uses_row_snapshot_time_for_rate_interval() -> None:
@@ -58,6 +80,52 @@ def test_delta_table_metric_uses_row_snapshot_time_for_rate_interval() -> None:
     result = build_table_result(metric, samples, semantic_columns)
 
     assert result["rows"] == [["db", 2.0]]
+
+
+def test_delta_table_omits_unknown_deltas_and_reports_compact_coverage() -> None:
+    metric = {
+        "table": {
+            "key_refs": ["name"],
+            "columns": [
+                {"name": "name", "role": "key", "key_index": 0},
+                {"name": "delta", "value_ref": "counter", "transform": "delta"},
+            ],
+        }
+    }
+    samples = [
+        {
+            "timestamp": "2026-07-05T00:00:00+00:00",
+            "rows": [
+                {"name": "valid", "counter": 10},
+                {"name": "decreased", "counter": 100},
+                {"name": "left_limit", "counter": 5},
+            ],
+        },
+        {
+            "timestamp": "2026-07-05T00:00:05+00:00",
+            "rows": [
+                {"name": "valid", "counter": 30},
+                {"name": "decreased", "counter": 1},
+                {"name": "entered_limit", "counter": 7},
+            ],
+        },
+    ]
+
+    result = build_table_result(metric, samples, {})
+
+    assert result["rows"] == [["valid", 20.0]]
+    assert result["interval_coverage"] == {
+        "total": 4,
+        "comparable": 1,
+        "unmatched": 2,
+        "invalid": 1,
+        "counts": {
+            "ok": 1,
+            "missing_start": 1,
+            "missing_end": 1,
+            "counter_decrease": 1,
+        },
+    }
 
 
 def test_sample_sum_table_metric_aggregates_all_samples() -> None:
@@ -124,6 +192,130 @@ def test_top_n_interval_chart_joins_adjacent_snapshots_in_memory() -> None:
             "points": [{"t": "2026-07-05T00:00:05+00:00", "value": 20.0}],
         }
     ]
+
+
+def test_top_n_interval_allows_different_limited_row_sets() -> None:
+    metric = {
+        "chart": {"kind": "stacked_column", "unit": "rows/s"},
+        "top_n": {
+            "mode": "interval",
+            "limit": 10,
+            "key_refs": ["table"],
+            "label_refs": ["table"],
+            "value_ref": "inserts",
+            "transform": "rate",
+            "unit": "rows/s",
+        },
+    }
+    samples = [
+        {
+            "timestamp": "2026-07-05T00:00:00+00:00",
+            "rows": [
+                {"table": "left_limit", "inserts": 10},
+                {"table": "shared", "inserts": 20},
+            ],
+        },
+        {
+            "timestamp": "2026-07-05T00:00:05+00:00",
+            "rows": [
+                {"table": "shared", "inserts": 30},
+                {"table": "entered_limit", "inserts": 40},
+            ],
+        },
+    ]
+
+    result = build_chart_result(metric, samples, {})
+
+    assert result["series"] == [
+        {
+            "name": "shared",
+            "unit": "rows/s",
+            "points": [{"t": "2026-07-05T00:00:05+00:00", "value": 2.0}],
+        }
+    ]
+    assert result["interval_coverage"] == {
+        "total": 3,
+        "comparable": 1,
+        "unmatched": 2,
+        "invalid": 0,
+        "counts": {"ok": 1, "missing_start": 1, "missing_end": 1},
+    }
+
+
+def test_metric_item_warns_for_invalid_delta_but_not_limited_row_churn() -> None:
+    planned = PlannedItem(
+        item_id="snapshot_charts_db.tables_top_insert_rate",
+        section_id="snapshot_charts_db",
+        item_key="tables_top_insert_rate",
+        title="Top Tables By Insert Rate",
+        source_kind="metric",
+        status="planned",
+        source_id="objects.tables_top_insert_rate",
+    )
+    metric = {
+        "title": "Top Tables By Insert Rate",
+        "source_query": "metrics.objects_tables_top_insert_rate",
+        "requires_collection": "every_snapshot",
+        "chart": {"kind": "stacked_column", "unit": "rows/s"},
+        "top_n": {
+            "mode": "interval",
+            "limit": 10,
+            "key_refs": ["table"],
+            "label_refs": ["table"],
+            "value_ref": "inserts",
+            "transform": "rate",
+        },
+    }
+    source_item_id = "__metric_sources.tables_top_insert_rate"
+
+    def snapshot(timestamp: str, rows: list[list[object]]) -> dict:
+        return {
+            "timestamp": timestamp,
+            "items": {
+                source_item_id: {
+                    "collection_status": "ok",
+                    "result": {
+                        "kind": "table",
+                        "columns": [{"name": "table"}, {"name": "inserts"}],
+                        "rows": rows,
+                    },
+                }
+            },
+        }
+
+    common_args = {
+        "planned": planned,
+        "metric": metric,
+        "os_samples": {},
+        "source_item_by_query": {metric["source_query"]: source_item_id},
+        "source_metadata_by_item": {
+            source_item_id: {"source_text": "select limited counters", "source_language": "sql"}
+        },
+    }
+    churn_item = build_metric_item(
+        db_snapshots=[
+            snapshot("2026-07-05T00:00:00+00:00", [["left", 10], ["shared", 20]]),
+            snapshot("2026-07-05T00:00:05+00:00", [["shared", 30], ["entered", 40]]),
+        ],
+        **common_args,
+    )
+
+    assert churn_item["collection_status"] == "ok"
+    assert churn_item["reason"] is None
+    assert churn_item["diagnostics"] == []
+    assert churn_item["result"]["interval_coverage"]["unmatched"] == 2
+
+    invalid_item = build_metric_item(
+        db_snapshots=[
+            snapshot("2026-07-05T00:00:00+00:00", [["shared", 100]]),
+            snapshot("2026-07-05T00:00:05+00:00", [["shared", 1]]),
+        ],
+        **common_args,
+    )
+
+    assert invalid_item["collection_status"] == "empty"
+    assert "could not be calculated" in invalid_item["reason"]
+    assert invalid_item["diagnostics"][0]["code"] == "metric_interval_coverage"
 
 
 def test_stacked_column_top_n_orders_largest_series_for_top_stack_position() -> None:
@@ -232,6 +424,30 @@ def test_chart_prefers_row_snapshot_time_over_wrapper_time() -> None:
             ],
         }
     ]
+
+
+def test_chart_counter_decrease_is_a_gap_with_invalid_coverage() -> None:
+    metric = {
+        "chart": {"kind": "line", "unit": "tx/s"},
+        "series": [
+            {"name": "commits", "value_ref": "xact_commit", "transform": "rate"}
+        ],
+    }
+    samples = [
+        {"timestamp": "2026-07-05T00:00:00+00:00", "rows": [{"xact_commit": 100}]},
+        {"timestamp": "2026-07-05T00:00:05+00:00", "rows": [{"xact_commit": 5}]},
+    ]
+
+    result = build_chart_result(metric, samples, {})
+
+    assert result["series"][0]["points"][-1]["value"] is None
+    assert result["interval_coverage"] == {
+        "total": 1,
+        "comparable": 0,
+        "unmatched": 0,
+        "invalid": 1,
+        "counts": {"counter_decrease": 1},
+    }
 
 
 def test_top_n_first_last_ratio_chart_uses_counter_deltas() -> None:

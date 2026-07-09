@@ -39,8 +39,11 @@ PYTHONDONTWRITEBYTECODE=1 python -m pytest -q \
 
 The main unit-test groups are:
 
-- `test_cli.py` - CLI command behavior for validation, planning, query dry-run,
+- `test_cli.py` - CLI command behavior for validation, planning, query inspection,
   and rendering from JSON.
+- `test_core_engine.py` - scheduler bounds, collection scopes, compact snapshots, strict artifact
+  validation, secure output, Python timeouts, renderer substitution safety,
+  metric source statuses, and content path/checksum contracts.
 - `test_content_contract.py` - declarative content rules: report references,
   version ranges, collection policy, default sort hints, snapshot promotion, and
   semantic metric references.
@@ -48,13 +51,15 @@ The main unit-test groups are:
   set small.
 - `test_metric_engine.py` - rate, delta, top-N, ratio, chart, and table metric
   calculations from snapshots.
-- `test_os_metrics.py` - local OS sampler parsing and derived OS metric values.
+- `test_os_metrics.py` - local OS sampler parsing, derived values, and backend
+  process window-endpoint rates.
 - `test_python_executor.py` - trusted content Python source execution and
   source-specific behavior.
 - `test_public_output.py` - public artifact shape, column-name cleanup,
   redaction, source text embedding, and item-level error diagnostics.
 - `test_render.py` - generated HTML/JS/CSS behavior used by the report UI.
-- `test_report_output_paths.py` - snapshot and snapshots JSON/HTML output path
+- `test_report_output_paths.py` - snapshot and snapshots JSON/HTML output path,
+  including once/endpoints/chart-window execution order
   selection.
 
 ## Integration Tests
@@ -124,6 +129,8 @@ as skipped.
   search, filtering, or navigation behavior changes.
 - Add public output tests when `report.json` shape, redaction, diagnostics,
   metadata, or public column naming changes.
+- Add core engine tests when scheduling, orchestration policy, artifact storage,
+  output security, or content loading contracts change.
 - Add integration coverage only for behavior that needs a real PostgreSQL
   server or external command execution.
 

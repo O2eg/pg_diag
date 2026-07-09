@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pg_diag.artifact import item_from_plan
 from pg_diag.planner import PlannedItem
 

@@ -27,6 +27,9 @@ queries:
       default_sort:
         column: setting_name
         direction: asc
+    evaluation:
+      summary_title: PostgreSQL settings require review
+      recommendation: Review pending-restart settings and validate work_mem against concurrency and query spill evidence before changing it globally.
     collection:
       default: once
       supports: [once]

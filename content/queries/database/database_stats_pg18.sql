@@ -30,6 +30,8 @@ select
   sessions_abandoned,
   sessions_fatal,
   sessions_killed,
+  parallel_workers_to_launch,
+  parallel_workers_launched,
   (select count(*) from pg_index i
     where not indisvalid
     and not exists ( /* leave out ones that are being actively rebuilt */

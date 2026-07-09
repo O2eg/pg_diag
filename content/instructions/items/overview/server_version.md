@@ -19,6 +19,10 @@ This instruction belongs to report item `overview.server_version`. The item is b
 - Package repository or managed-service track pinned to an older minor version.
 - Clients connected to a different instance or binary than expected.
 
+## Automatic evaluation
+- This item is informational and does not assign severity from the version string.
+- Determining latest minor release, vendor support, and end-of-life status requires a maintained external release/support dataset.
+
 ## Checklist
 - Check latest PostgreSQL minor releases at `https://www.postgresql.org/`
 - Check support policy at `https://www.postgresql.org/support/versioning/`

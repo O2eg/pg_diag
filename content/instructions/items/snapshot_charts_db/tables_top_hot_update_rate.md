@@ -12,6 +12,12 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_hot_updat
 - HOT low elsewhere despite high update rate.
 - HOT rate change after index addition.
 
+## Bounded samples
+- Each SQL sample is ordered and limited before rows enter collector memory.
+- Each column ranks deltas only for keys present in both adjacent bounded samples.
+- Different table series between columns are expected; unmatched keys are not zero or errors.
+- Counter decreases and invalid values are omitted and reported separately.
+
 ## Common fault causes
 - Update workload touches non-indexed columns.
 - Fillfactor leaves room for HOT.

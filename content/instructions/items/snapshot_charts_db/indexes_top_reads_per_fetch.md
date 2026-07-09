@@ -11,6 +11,12 @@ This instruction belongs to report item `snapshot_charts_db.indexes_top_reads_pe
 - Index read cost high while returned rows are low.
 - Storage reads concentrated in one index.
 
+## Bounded samples
+- Each SQL sample is ordered and limited before rows enter collector memory.
+- Each column ranks deltas only for keys present in both adjacent bounded samples.
+- Different index series between columns are expected; unmatched keys are not zero or errors.
+- Counter decreases and invalid values are omitted and reported separately.
+
 ## Common fault causes
 - Index bloat.
 - Poor cache locality.

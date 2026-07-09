@@ -3,7 +3,10 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
-from pg_diag.executors.sql import execute_query_item
+import pytest
+
+from pg_diag.errors import PgDiagError
+from pg_diag.executors.sql import connect, execute_query_item
 from pg_diag.planner import PlannedItem
 
 
@@ -71,6 +74,100 @@ class TimeoutConn:
 
     async def prepare(self, sql: str):
         return self.prepared
+
+
+class ConnectTestConn:
+    def __init__(self, session_default: str = "on", current_transaction: str = "on") -> None:
+        self.session_default = session_default
+        self.current_transaction = current_transaction
+        self.closed = False
+        self.verification_sql: str | None = None
+
+    async def fetchrow(self, sql: str):
+        self.verification_sql = sql
+        return {
+            "session_default": self.session_default,
+            "current_transaction": self.current_transaction,
+        }
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class AsyncpgConnectStub:
+    def __init__(self, conn: ConnectTestConn) -> None:
+        self.conn = conn
+        self.calls: list[dict[str, object]] = []
+
+    async def connect(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.conn
+
+
+def test_connect_dsn_enforces_read_only_startup_setting(monkeypatch) -> None:
+    conn = ConnectTestConn()
+    asyncpg = AsyncpgConnectStub(conn)
+    monkeypatch.setattr("pg_diag.executors.sql._load_asyncpg", lambda: asyncpg)
+
+    result = asyncio.run(
+        connect(
+            dsn="postgresql://app@example/appdb",
+            host="ignored-with-dsn",
+            server_settings={
+                "application_name": "pg_diag",
+                "default_transaction_read_only": "off",
+            },
+        )
+    )
+
+    assert result is conn
+    assert asyncpg.calls == [
+        {
+            "dsn": "postgresql://app@example/appdb",
+            "server_settings": {
+                "application_name": "pg_diag",
+                "default_transaction_read_only": "on",
+            },
+        }
+    ]
+    assert "transaction_read_only" in str(conn.verification_sql)
+
+
+def test_connect_parameters_enforce_read_only_startup_setting(monkeypatch) -> None:
+    conn = ConnectTestConn()
+    asyncpg = AsyncpgConnectStub(conn)
+    monkeypatch.setattr("pg_diag.executors.sql._load_asyncpg", lambda: asyncpg)
+
+    asyncio.run(
+        connect(
+            host="db.example",
+            port=5432,
+            database="appdb",
+            user="app",
+            password=None,
+        )
+    )
+
+    assert asyncpg.calls == [
+        {
+            "host": "db.example",
+            "port": 5432,
+            "database": "appdb",
+            "user": "app",
+            "server_settings": {"default_transaction_read_only": "on"},
+        }
+    ]
+
+
+def test_connect_fails_closed_when_session_is_not_read_only(monkeypatch) -> None:
+    conn = ConnectTestConn(session_default="off", current_transaction="off")
+    asyncpg = AsyncpgConnectStub(conn)
+    monkeypatch.setattr("pg_diag.executors.sql._load_asyncpg", lambda: asyncpg)
+
+    with pytest.raises(PgDiagError, match="connection is not read-only"):
+        asyncio.run(connect(host="db.example", database="appdb", user="app"))
+
+    assert conn.closed is True
 
 
 def test_sql_timeout_exception_is_recorded_in_item(tmp_path) -> None:
@@ -165,10 +262,18 @@ def test_sql_result_risk_level_sets_item_severity(tmp_path) -> None:
     )
     conn = TimeoutConn(
         RowsPrepared(
-            ["setting_name", "risk_level"],
+            ["setting_name", "risk_level", "risk_reason"],
             [
-                {"setting_name": "log_connections", "risk_level": "medium"},
-                {"setting_name": "log_statement", "risk_level": "high"},
+                {
+                    "setting_name": "log_connections",
+                    "risk_level": "medium",
+                    "risk_reason": "connection attempts are not logged",
+                },
+                {
+                    "setting_name": "log_statement",
+                    "risk_level": "high",
+                    "risk_reason": "DDL statements are not logged",
+                },
             ],
         )
     )
@@ -177,6 +282,69 @@ def test_sql_result_risk_level_sets_item_severity(tmp_path) -> None:
 
     assert item["collection_status"] == "ok"
     assert item["severity_level"] == "high"
+    assert item["issues"]["summary"]["severity"] == "high"
+    assert item["issues"]["summary"]["status"] == "fail"
+    assert "connection attempts are not logged" in item["issues"]["summary"]["description"]
+
+
+def test_sql_internal_evaluation_columns_create_summary_but_stay_hidden(tmp_path) -> None:
+    queries = tmp_path / "queries"
+    queries.mkdir()
+    (queries / "settings.sql").write_text("select * from pg_settings", encoding="utf-8")
+    content = SimpleNamespace(
+        path=tmp_path,
+        query_catalog={"query_catalog": {"sql_root": "queries"}},
+        report={"runtime_policy": {"default_sql_timeout_ms": 3000}},
+    )
+    planned = PlannedItem(
+        item_id="overview.pg_settings",
+        section_id="overview",
+        item_key="pg_settings",
+        title="PostgreSQL Settings",
+        source_kind="query",
+        status="planned",
+        source_id="cluster.settings",
+        sql_file="settings.sql",
+        source_metadata={
+            "query_id": "cluster.settings",
+            "evaluation": {
+                "summary_title": "PostgreSQL settings require review",
+                "recommendation": "Validate work_mem before changing it globally.",
+            },
+        },
+    )
+    conn = TimeoutConn(
+        RowsPrepared(
+            ["setting_name", "setting_value", "pg_diag_internal_severity", "pg_diag_internal_reason"],
+            [
+                {
+                    "setting_name": "work_mem",
+                    "setting_value": "4096",
+                    "pg_diag_internal_severity": "medium",
+                    "pg_diag_internal_reason": "work_mem remains at the PostgreSQL default",
+                }
+            ],
+        )
+    )
+
+    item = asyncio.run(execute_query_item(content, conn, planned))
+
+    assert item["severity_level"] == "medium"
+    assert [column["name"] for column in item["result"]["columns"]] == [
+        "setting_name",
+        "setting_value",
+    ]
+    assert item["result"]["rows"] == [["work_mem", "4096"]]
+    assert item["issues"]["summary"] == {
+        "severity": "medium",
+        "status": "review",
+        "title": "PostgreSQL settings require review",
+        "description": (
+            "1 finding row(s); highest severity is medium. "
+            "work_mem remains at the PostgreSQL default"
+        ),
+        "recommendation": "Validate work_mem before changing it globally.",
+    }
 
 
 def test_empty_sql_result_with_risk_level_column_is_ok_severity(tmp_path) -> None:

@@ -10,7 +10,7 @@ queries:
         column: count
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: activity_session_states_all
@@ -36,7 +36,7 @@ queries:
         column: blocked_ms
         direction: desc
     collection:
-      default: every_snapshot
+      default: once
       supports: [once, every_snapshot]
     variants:
       - id: locks_lock_waits_all

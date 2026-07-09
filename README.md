@@ -190,9 +190,11 @@ Inspect a selected SQL query variant:
 ```bash
 pg-diag run-query cluster.settings \
   --content content \
-  --pg-version 180000 \
-  --dry-run
+  --pg-version 180000
 ```
+
+`run-query` is an inspection command: it selects the version-specific variant
+and prints its metadata and SQL without connecting to PostgreSQL.
 
 ## Run A Single Snapshot
 
@@ -274,11 +276,35 @@ The collection window is bounded to keep `report.json`, self-contained HTML, and
 browser memory usage predictable:
 
 - `--duration-seconds`: 30 seconds to 86400 seconds (24 hours), default 30.
-- `--interval-seconds`: 5 seconds to 600 seconds, default 15.
-- Estimated snapshots: at most 300 (`round(duration / interval) + 1`).
+- `--interval-seconds`: 5 seconds to 600 seconds, default 15, and not greater
+  than the duration.
+- Scheduled snapshots: at most 300. Collection starts at offset zero, continues
+  at each interval, and includes the exact window end when it is not already an
+  interval boundary.
 
-For example, a 24 hour report needs an interval of about 5 minutes (289 seconds
-or more with the current sample count formula).
+The scheduled count is `floor(duration / interval) + 1` for an exact boundary,
+or `floor(duration / interval) + 2` when the final boundary must be added. For
+example, a 24 hour report needs an interval of at least 289 seconds.
+
+Point-in-time SQL, script, and Python items, including `PostgreSQL Settings`,
+are collected exactly once before the repeated window starts. Each scheduled
+point then executes only SQL sources for chart metrics. Start/end delta tables
+use a separate `window_endpoints` source scope and execute exactly twice: once
+before and once after the chart window. Endpoint source rows are used in memory
+and are not added to the public snapshot array. In local mode, per-backend
+`/proc` tables follow the same endpoint model: process counters are read at the
+two window boundaries and converted to window-average rates.
+
+Slow chart queries do not create a backlog: stale scheduled points are skipped
+and recorded in report diagnostics. One-time collection and the final endpoint
+queries can make total command runtime longer than `--duration-seconds`.
+
+High-cardinality statement, table, index, and function metric sources keep an
+SQL `ORDER BY ... LIMIT` on every endpoint/sample so a catalog with millions of
+objects cannot fill collector memory. Adjacent bounded samples may legitimately
+contain different keys. Deltas are calculated only for their intersection;
+unmatched keys are counted in compact `interval_coverage` metadata and are not
+treated as zero. Counter decreases or invalid values create a gap and warning.
 
 Example: collect for 60 seconds with a 5 second interval:
 
@@ -347,10 +373,17 @@ The bundled content pack includes sections for:
 - Storage, vacuum, wraparound, sequence, and XID horizon diagnostics.
 - Index health checks.
 - Cluster inventory, security, and configuration checks.
-- Per-backend local process statistics in local snapshots mode.
+- Per-backend local process statistics calculated from two window endpoints in
+  local snapshots mode.
 
 Availability depends on PostgreSQL version, installed extensions, database
 permissions, collection mode, and local host permissions.
+
+Repeated table samples store their column schema once in `snapshot_schemas` and
+keep only status, rows, and an optional failure reason in each snapshot point.
+Raw snapshot points are not duplicated into the self-contained HTML after
+derived metric items have been built. New reports use artifact schema version
+2; the renderer remains compatible with version 1 reports.
 
 ## Content Layout
 
@@ -401,8 +434,20 @@ PYTHONDONTWRITEBYTECODE=1 python -m py_compile \
 
 - Runtime dependencies are intentionally small: YAML parsing and PostgreSQL
   access.
-- SQL sources are executed in read-only transactions.
+- Every PostgreSQL connection requests `default_transaction_read_only=on` in
+  the startup settings and verifies both the session default and current
+  transaction before collection starts. SQL source transactions additionally
+  use an explicit read-only transaction.
+- pg_diag never resets PostgreSQL statistics counters. Counter discontinuities
+  are only detected and reported; reset functions are never invoked.
 - Unsupported PostgreSQL versions fail at runtime planning.
+- JSON and HTML are written atomically per file with mode `0600`; their output
+  paths must be different.
+- Report JSON uses strict JSON values. Non-finite runtime/source numbers are
+  normalized to `null`, and invalid external artifacts are rejected.
+- `snapshot` and `snapshots` return a non-zero CLI status when the written
+  report contains an item collection error. `runtime_policy.fail_fast: true`
+  stops collection at the first item error and does not write a partial report.
 - Local host data and local-only Python sources are skipped in
   `remote-db-only` mode.
 - Generated reports are ignored by Git by default.

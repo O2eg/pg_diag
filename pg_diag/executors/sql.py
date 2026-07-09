@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import time
 from pathlib import Path
 from typing import Any
@@ -20,7 +21,10 @@ class MissingAsyncpgError(PgDiagError):
 
 INTERNAL_TAG_PREFIX = "tag_"
 INTERNAL_TIME_COLUMN = "epoch_ns"
+INTERNAL_EVALUATION_PREFIX = "pg_diag_internal_"
 SEVERITY_LEVEL_RANK = {"ok": 0, "unknown": 1, "medium": 2, "high": 3}
+READ_ONLY_SERVER_SETTING = "default_transaction_read_only"
+READ_ONLY_SERVER_VALUE = "on"
 
 
 def _load_asyncpg():
@@ -35,9 +39,54 @@ def _load_asyncpg():
 
 async def connect(dsn: str | None = None, **kwargs: Any):
     asyncpg = _load_asyncpg()
+    server_settings = _read_only_server_settings(kwargs.get("server_settings"))
     if dsn:
-        return await asyncpg.connect(dsn=dsn)
-    return await asyncpg.connect(**{key: value for key, value in kwargs.items() if value is not None})
+        conn = await asyncpg.connect(dsn=dsn, server_settings=server_settings)
+    else:
+        connect_kwargs = {
+            key: value
+            for key, value in kwargs.items()
+            if value is not None and key != "server_settings"
+        }
+        conn = await asyncpg.connect(
+            **connect_kwargs,
+            server_settings=server_settings,
+        )
+    await _verify_read_only_connection(conn)
+    return conn
+
+
+def _read_only_server_settings(settings: Any) -> dict[str, str]:
+    if settings is None:
+        result: dict[str, str] = {}
+    elif isinstance(settings, Mapping):
+        result = {str(key): str(value) for key, value in settings.items()}
+    else:
+        raise TypeError("server_settings must be a mapping")
+    result[READ_ONLY_SERVER_SETTING] = READ_ONLY_SERVER_VALUE
+    return result
+
+
+async def _verify_read_only_connection(conn: Any) -> None:
+    try:
+        row = await conn.fetchrow(
+            "select current_setting('default_transaction_read_only') as session_default, "
+            "current_setting('transaction_read_only') as current_transaction"
+        )
+        session_default = str(row["session_default"]).lower()
+        current_transaction = str(row["current_transaction"]).lower()
+        if session_default != "on" or current_transaction != "on":
+            raise PgDiagError(
+                "PostgreSQL connection is not read-only "
+                f"(default_transaction_read_only={session_default}, "
+                f"transaction_read_only={current_transaction})"
+            )
+    except BaseException:
+        try:
+            await conn.close()
+        except Exception:
+            pass
+        raise
 
 
 async def detect_runtime_context(conn: Any) -> dict[str, Any]:
@@ -69,18 +118,30 @@ async def execute_query_item(content: ContentPack, conn: Any, planned: PlannedIt
 
     sql_root = (content.query_catalog.get("query_catalog") or {}).get("sql_root", "queries")
     sql_path = content.path / sql_root / sql_file
-    sql_text = Path(sql_path).read_text(encoding="utf-8")
+    sql_text: str | None = None
 
     try:
+        sql_text = Path(sql_path).read_text(encoding="utf-8")
         async with conn.transaction(readonly=True):
             await _set_local_runtime_guards(content, conn)
             prepared = await conn.prepare(sql_text)
             raw_columns = _columns_from_prepared(prepared)
             records = await prepared.fetch()
             raw_rows = [
-                redact_row(raw_columns, [record[column["name"]] for column in raw_columns])
+                redact_row(
+                    raw_columns,
+                    [
+                        _record_value(record, index, str(column.get("name") or ""))
+                        for index, column in enumerate(raw_columns)
+                    ],
+                )
                 for record in records
             ]
+            severity_level, issues = evaluate_table_findings(
+                raw_columns,
+                raw_rows,
+                planned,
+            )
             columns, rows = publicize_table_result(raw_columns, raw_rows)
     except Exception as exc:
         status = _classify_sql_error(exc, planned)
@@ -97,11 +158,11 @@ async def execute_query_item(content: ContentPack, conn: Any, planned: PlannedIt
         )
 
     status = "ok" if rows else "empty"
-    severity_level = infer_table_severity_level(columns, rows)
     return item_from_plan(
         planned,
         collection_status=status,
         severity_level=severity_level,
+        issues=issues,
         timing_ms=elapsed_ms(started),
         result={"kind": "table", "columns": columns, "rows": rows, "row_count": len(rows)},
         source_text=sql_text,
@@ -132,6 +193,14 @@ def _columns_from_prepared(prepared: Any) -> list[dict[str, Any]]:
     return columns
 
 
+def _record_value(record: Any, index: int, name: str) -> Any:
+    """Prefer positional access so duplicate SQL column names stay distinct."""
+    try:
+        return record[index]
+    except (IndexError, KeyError, TypeError):
+        return record[name]
+
+
 def publicize_table_result(
     raw_columns: list[dict[str, Any]],
     raw_rows: list[list[Any]],
@@ -142,7 +211,7 @@ def publicize_table_result(
 
     for index, column in enumerate(raw_columns):
         raw_name = str(column.get("name") or "")
-        if raw_name == INTERNAL_TIME_COLUMN:
+        if raw_name == INTERNAL_TIME_COLUMN or raw_name.startswith(INTERNAL_EVALUATION_PREFIX):
             continue
         public_name = public_column_name(raw_name)
         public_name = _dedupe_column_name(public_name, used_names)
@@ -183,7 +252,11 @@ def infer_table_severity_level(
     severity_indexes = [
         index
         for index, name in enumerate(column_names)
-        if name in {"risk_level", "severity_level"}
+        if name in {
+            "risk_level",
+            "severity_level",
+            f"{INTERNAL_EVALUATION_PREFIX}severity",
+        }
     ]
     if not severity_indexes:
         return None
@@ -201,6 +274,88 @@ def infer_table_severity_level(
             if SEVERITY_LEVEL_RANK[level] > SEVERITY_LEVEL_RANK[best]:
                 best = level
     return best
+
+
+def evaluate_table_findings(
+    columns: list[dict[str, Any]],
+    rows: list[list[Any]],
+    planned: PlannedItem,
+) -> tuple[str | None, dict[str, Any]]:
+    column_names = [str(column.get("name") or "").strip().lower() for column in columns]
+    severity_index = next(
+        (
+            index
+            for index, name in enumerate(column_names)
+            if name in {
+                "risk_level",
+                "severity_level",
+                f"{INTERNAL_EVALUATION_PREFIX}severity",
+            }
+        ),
+        None,
+    )
+    if severity_index is None:
+        return None, {}
+    if not rows:
+        return "ok", {}
+
+    reason_index = next(
+        (
+            index
+            for index, name in enumerate(column_names)
+            if name in {
+                "risk_reason",
+                "severity_reason",
+                f"{INTERNAL_EVALUATION_PREFIX}reason",
+            }
+        ),
+        None,
+    )
+    finding_levels: list[str] = []
+    reasons: list[str] = []
+    for row in rows:
+        if severity_index >= len(row):
+            continue
+        level = str(row[severity_index] or "").strip().lower()
+        if level not in SEVERITY_LEVEL_RANK:
+            continue
+        if level in {"medium", "high", "unknown"}:
+            finding_levels.append(level)
+            if reason_index is not None and reason_index < len(row):
+                reason = str(row[reason_index] or "").strip()
+                if reason and reason not in reasons:
+                    reasons.append(reason)
+
+    severity_level = infer_table_severity_level(columns, rows)
+    if not finding_levels or severity_level in {None, "ok"}:
+        return severity_level, {}
+
+    evaluation = planned.source_metadata.get("evaluation") or {}
+    summary_title = str(
+        evaluation.get("summary_title")
+        or f"{planned.title}: review required"
+    )
+    description = (
+        f"{len(finding_levels)} finding row(s); highest severity is {severity_level}."
+    )
+    if reasons:
+        description += " " + "; ".join(reasons[:3])
+        if len(reasons) > 3:
+            description += f"; and {len(reasons) - 3} more reason(s)"
+    recommendation = str(
+        evaluation.get("recommendation")
+        or "Review the finding rows and item instruction before changing production settings."
+    )
+    return severity_level, {
+        "summary": {
+            "severity": severity_level,
+            "status": "fail" if severity_level == "high" else "review",
+            "title": summary_title,
+            "description": description,
+            "recommendation": recommendation,
+        },
+        "items": [],
+    }
 
 
 def _classify_sql_error(exc: Exception, planned: PlannedItem) -> str:
