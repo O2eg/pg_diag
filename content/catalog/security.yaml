@@ -1,0 +1,680 @@
+queries:
+  security.privileged_login_roles:
+    title: Privileged Login Roles
+    group: Cluster Inventory
+    main_view: pg_roles
+    description: Login roles with cluster-level administrative privileges.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_privileged_login_roles_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/privileged_login_roles.sql
+
+  security.predefined_admin_role_membership:
+    title: Predefined Admin Role Membership
+    group: Cluster Inventory
+    main_view: pg_auth_members
+    description: Non-superuser roles that inherit powerful predefined PostgreSQL roles.
+    display:
+      default_sort:
+        column: inherited_admin_role
+        direction: asc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_predefined_admin_role_membership_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/predefined_admin_role_membership.sql
+
+  security.public_schema_privileges:
+    title: Public Schema Privileges
+    group: Cluster Inventory
+    main_view: pg_namespace
+    description: Risky grants on the public schema in the connected database.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_public_schema_privileges_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/public_schema_privileges.sql
+
+  security.excessive_dml_privileges:
+    title: Excessive DML Privileges
+    group: Object Workload
+    main_view: information_schema.table_privileges
+    description: Public or grantable DML privileges on non-system tables.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_excessive_dml_privileges_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/excessive_dml_privileges.sql
+
+  security.security_definer_functions:
+    title: Security Definer Functions
+    group: Object Workload
+    main_view: pg_proc
+    description: User-defined SECURITY DEFINER functions and their privilege-risk context.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_security_definer_functions_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/security_definer_functions.sql
+
+  security.security_logging_settings:
+    title: Security Logging Settings
+    group: Overview
+    main_view: pg_settings
+    description: Security-relevant PostgreSQL logging settings that do not match the expected audit posture.
+    display:
+      default_sort:
+        column: setting_name
+        direction: asc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_security_logging_settings_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/security_logging_settings.sql
+
+  security.password_encryption:
+    title: Password Encryption
+    group: Overview
+    main_view: pg_settings
+    description: password_encryption values that are weaker than scram-sha-256.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_password_encryption_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/password_encryption.sql
+
+  security.password_complexity:
+    title: Password Complexity
+    group: Overview
+    main_view: pg_settings
+    description: Missing password complexity hooks in shared_preload_libraries.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_password_complexity_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/password_complexity.sql
+
+  security.auth_timeout_delay:
+    title: Authentication Timeout And Delay
+    group: Overview
+    main_view: pg_settings
+    description: Authentication timeout and failed-authentication delay settings outside the expected security posture.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_auth_timeout_delay_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/auth_timeout_delay.sql
+
+  security.function_execute_privileges:
+    title: Function Execute Privileges
+    group: Object Workload
+    main_view: pg_proc
+    description: PUBLIC or grantable EXECUTE privileges on user-defined functions.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_function_execute_privileges_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/function_execute_privileges.sql
+
+  security.rls_configuration:
+    title: Row Level Security Configuration
+    group: Object Workload
+    main_view: pg_class
+    description: RLS policies that are inactive, incomplete, or not forced for table owners.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_rls_configuration_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/rls_configuration.sql
+
+  security.pgaudit_configuration:
+    title: pgAudit Configuration
+    group: Cluster Inventory
+    main_view: pg_settings
+    description: pgAudit preload and audit logging configuration gaps.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_pgaudit_configuration_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/pgaudit_configuration.sql
+
+  security.cryptographic_extensions:
+    title: Cryptographic Extensions
+    group: Cluster Inventory
+    main_view: pg_available_extensions
+    description: Missing pgcrypto or pgsodium support in the connected database.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_cryptographic_extensions_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/cryptographic_extensions.sql
+
+  security.anonymization_extensions:
+    title: Anonymization Extensions
+    group: Cluster Inventory
+    main_view: pg_available_extensions
+    description: Missing anonymization extension installation or preload configuration.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_anonymization_extensions_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/anonymization_extensions.sql
+
+  security.data_checksums:
+    title: Data Checksums
+    group: Storage & Vacuum
+    main_view: pg_settings
+    description: Disabled data page checksums or reported checksum failures.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_data_checksums_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/data_checksums.sql
+
+  security.listen_addresses_exposure:
+    title: Listen Addresses Exposure
+    group: Overview
+    main_view: pg_settings
+    description: listen_addresses values that expose PostgreSQL beyond loopback.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_listen_addresses_exposure_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/listen_addresses_exposure.sql
+
+  security.login_roles_without_connection_limit:
+    title: Login Roles Without Connection Limit
+    group: Cluster Inventory
+    main_view: pg_roles
+    description: Login roles with unlimited per-role connection count.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_login_roles_without_connection_limit_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/login_roles_without_connection_limit.sql
+
+  security.default_privileges_public_grants:
+    title: Default Privileges Public Grants
+    group: Object Workload
+    main_view: pg_default_acl
+    description: ALTER DEFAULT PRIVILEGES entries that grant PUBLIC or grantable future-object privileges.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_default_privileges_public_grants_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/default_privileges_public_grants.sql
+
+  security.sequence_privileges:
+    title: Sequence Privileges
+    group: Object Workload
+    main_view: pg_class
+    description: PUBLIC or grantable privileges on user-defined sequences.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_sequence_privileges_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/sequence_privileges.sql
+
+  security.non_public_schema_privileges:
+    title: Non-Public Schema Privileges
+    group: Cluster Inventory
+    main_view: pg_namespace
+    description: PUBLIC, CREATE, or grantable privileges on non-system schemas other than public.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_non_public_schema_privileges_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/non_public_schema_privileges.sql
+
+  security.installed_risky_extensions:
+    title: Installed Risky Extensions
+    group: Cluster Inventory
+    main_view: pg_extension
+    description: Installed extensions and untrusted procedural languages with elevated security impact.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_installed_risky_extensions_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/installed_risky_extensions.sql
+
+  security.tls_server_configuration:
+    title: TLS Server Configuration
+    group: Overview
+    main_view: pg_settings
+    description: TLS server settings that are disabled or weaker than the expected posture.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_tls_server_configuration_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/tls_server_configuration.sql
+
+  security.weak_tls_ciphers:
+    title: Weak TLS Ciphers
+    group: Overview
+    main_view: pg_settings
+    description: Weak or medium-strength TLS cipher classes allowed by ssl_ciphers.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_weak_tls_ciphers_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/weak_tls_ciphers.sql
+
+  security.replication_roles:
+    title: Replication Roles
+    group: Replication
+    main_view: pg_roles
+    description: Roles with REPLICATION privilege and privilege-risk context.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_replication_roles_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/replication_roles.sql
+
+  security.log_replication_commands:
+    title: Log Replication Commands
+    group: Replication
+    main_view: pg_settings
+    description: Missing logging of replication commands.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_log_replication_commands_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/log_replication_commands.sql
+
+  security.superuser_owned_user_objects:
+    title: Superuser-Owned User Objects
+    group: Object Workload
+    main_view: pg_class
+    description: User-defined relations, sequences, views, and functions owned by superusers.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_superuser_owned_user_objects_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/superuser_owned_user_objects.sql
+
+  security.object_owner_drift:
+    title: Object Owner Drift
+    group: Object Workload
+    main_view: pg_class
+    description: Schemas where same-kind user objects are split across multiple owners.
+    display:
+      default_sort:
+        column: owner_count
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_object_owner_drift_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/object_owner_drift.sql
+
+  security.database_owner_mismatch:
+    title: Database Owner Mismatch
+    group: Object Workload
+    main_view: pg_database
+    description: User objects whose owner differs from the connected database owner.
+    display:
+      default_sort:
+        column: schema_name
+        direction: asc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_database_owner_mismatch_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/database_owner_mismatch.sql
+
+  security.schema_owner_drift:
+    title: Schema Owner Drift
+    group: Object Workload
+    main_view: pg_namespace
+    description: User objects whose owner differs from the containing schema owner.
+    display:
+      default_sort:
+        column: schema_name
+        direction: asc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_schema_owner_drift_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/schema_owner_drift.sql
+
+  security.object_acl_drift:
+    title: Object ACL Drift
+    group: Object Workload
+    main_view: pg_class
+    description: Same-kind user objects in one schema with inconsistent ACL signatures.
+    display:
+      default_sort:
+        column: acl_signature_count
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_object_acl_drift_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/object_acl_drift.sql
+
+  security.direct_user_grants:
+    title: Direct User Grants
+    group: Object Workload
+    main_view: pg_class
+    description: Object privileges granted directly to login roles instead of group roles.
+    display:
+      default_sort:
+        column: grantee_name
+        direction: asc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_direct_user_grants_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/direct_user_grants.sql
+
+  security.grant_option_holders:
+    title: Grant Option Holders
+    group: Object Workload
+    main_view: pg_class
+    description: Non-owner roles that can re-grant privileges with grant option.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_grant_option_holders_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/grant_option_holders.sql
+
+  security.orphaned_object_owners:
+    title: Orphaned Object Owners
+    group: Object Workload
+    main_view: pg_roles
+    description: No-login roles that own user objects and should be verified as intentional owner roles.
+    display:
+      default_sort:
+        column: object_count
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_orphaned_object_owners_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/orphaned_object_owners.sql
+
+  security.sequence_table_owner_mismatch:
+    title: Sequence Table Owner Mismatch
+    group: Object Workload
+    main_view: pg_depend
+    description: Owned sequences whose owner differs from the dependent table owner.
+    display:
+      default_sort:
+        column: sequence_schema
+        direction: asc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_sequence_table_owner_mismatch_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/sequence_table_owner_mismatch.sql
+
+  security.security_definer_owner_drift:
+    title: Security Definer Owner Drift
+    group: Object Workload
+    main_view: pg_proc
+    description: SECURITY DEFINER functions owned by superusers or roles that differ from the schema owner.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_security_definer_owner_drift_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/security_definer_owner_drift.sql
+
+  security.extension_objects_acl_drift:
+    title: Extension Objects ACL Drift
+    group: Object Workload
+    main_view: pg_extension
+    description: Extension-owned relations and functions that carry manual ACL entries.
+    display:
+      default_sort:
+        column: extension_name
+        direction: asc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_extension_objects_acl_drift_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/extension_objects_acl_drift.sql
+
+  security.rls_table_privilege_mismatch:
+    title: RLS Table Privilege Mismatch
+    group: Object Workload
+    main_view: pg_class
+    description: RLS-enabled tables with broad, grantable, or direct login-role table privileges.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_rls_table_privilege_mismatch_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/rls_table_privilege_mismatch.sql
+
+  security.unused_privileged_grants:
+    title: Unused Privileged Grants
+    group: Object Workload
+    main_view: pg_stat_user_tables
+    description: Powerful table privileges on tables with no observed activity since statistics reset.
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_unused_privileged_grants_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/unused_privileged_grants.sql
+
+  security.privilege_surface_by_role:
+    title: Privilege Surface By Role
+    group: Cluster Inventory
+    main_view: pg_roles
+    description: Aggregated explicit object privilege footprint per grantee role.
+    display:
+      default_sort:
+        column: explicit_privilege_count
+        direction: desc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_privilege_surface_by_role_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/privilege_surface_by_role.sql
+
+  security.schema_privilege_matrix:
+    title: Schema Privilege Matrix
+    group: Cluster Inventory
+    main_view: pg_namespace
+    description: Schema owner, grantee, CREATE/USAGE, and object-count matrix for user schemas.
+    display:
+      default_sort:
+        column: schema_name
+        direction: asc
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: security_schema_privilege_matrix_pg14_plus
+        min_pg_version: 140000
+        sql_file: security/schema_privilege_matrix.sql

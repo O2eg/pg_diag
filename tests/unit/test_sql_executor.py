@@ -39,6 +39,24 @@ class MissingRelationPrepared:
         raise UndefinedTableError('relation "pg_wait_sampling_profile" does not exist')
 
 
+class FakeAttribute:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.type = SimpleNamespace(name="text", oid=25)
+
+
+class RowsPrepared:
+    def __init__(self, columns: list[str], rows: list[dict[str, object]]) -> None:
+        self.columns = columns
+        self.rows = rows
+
+    def get_attributes(self):
+        return [FakeAttribute(column) for column in self.columns]
+
+    async def fetch(self):
+        return self.rows
+
+
 class TimeoutConn:
     def __init__(self, prepared=None) -> None:
         self.executed: list[tuple[str, str]] = []
@@ -123,3 +141,67 @@ def test_optional_missing_relation_is_recorded_as_unsupported(tmp_path) -> None:
     assert item["result"] == {"kind": "table", "columns": [], "rows": [], "row_count": 0}
     assert item["diagnostics"][0]["level"] == "warning"
     assert item["diagnostics"][0]["code"] == "unsupported"
+
+
+def test_sql_result_risk_level_sets_item_severity(tmp_path) -> None:
+    queries = tmp_path / "queries"
+    queries.mkdir()
+    (queries / "security.sql").write_text("select 'medium' as risk_level", encoding="utf-8")
+    content = SimpleNamespace(
+        path=tmp_path,
+        query_catalog={"query_catalog": {"sql_root": "queries"}},
+        report={"runtime_policy": {"default_sql_timeout_ms": 3000}},
+    )
+    planned = PlannedItem(
+        item_id="overview.security_logging_settings",
+        section_id="overview",
+        item_key="security_logging_settings",
+        title="Security Logging Settings",
+        source_kind="query",
+        status="planned",
+        source_id="security.security_logging_settings",
+        sql_file="security.sql",
+        source_metadata={"query_id": "security.security_logging_settings"},
+    )
+    conn = TimeoutConn(
+        RowsPrepared(
+            ["setting_name", "risk_level"],
+            [
+                {"setting_name": "log_connections", "risk_level": "medium"},
+                {"setting_name": "log_statement", "risk_level": "high"},
+            ],
+        )
+    )
+
+    item = asyncio.run(execute_query_item(content, conn, planned))
+
+    assert item["collection_status"] == "ok"
+    assert item["severity_level"] == "high"
+
+
+def test_empty_sql_result_with_risk_level_column_is_ok_severity(tmp_path) -> None:
+    queries = tmp_path / "queries"
+    queries.mkdir()
+    (queries / "security.sql").write_text("select 'medium' as risk_level where false", encoding="utf-8")
+    content = SimpleNamespace(
+        path=tmp_path,
+        query_catalog={"query_catalog": {"sql_root": "queries"}},
+        report={"runtime_policy": {"default_sql_timeout_ms": 3000}},
+    )
+    planned = PlannedItem(
+        item_id="overview.security_logging_settings",
+        section_id="overview",
+        item_key="security_logging_settings",
+        title="Security Logging Settings",
+        source_kind="query",
+        status="planned",
+        source_id="security.security_logging_settings",
+        sql_file="security.sql",
+        source_metadata={"query_id": "security.security_logging_settings"},
+    )
+    conn = TimeoutConn(RowsPrepared(["setting_name", "risk_level"], []))
+
+    item = asyncio.run(execute_query_item(content, conn, planned))
+
+    assert item["collection_status"] == "empty"
+    assert item["severity_level"] == "ok"

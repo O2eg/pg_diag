@@ -110,7 +110,19 @@ def _load_module(source_id: str, source_path: Path) -> Any:
         raise RuntimeError(f"Cannot load Python source file: {source_path}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
-    spec.loader.exec_module(module)
+    source_dir = str(source_path.parent)
+    inserted_path = False
+    if source_dir not in sys.path:
+        sys.path.insert(0, source_dir)
+        inserted_path = True
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        if inserted_path:
+            try:
+                sys.path.remove(source_dir)
+            except ValueError:
+                pass
     return module
 
 

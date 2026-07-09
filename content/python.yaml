@@ -12,3 +12,206 @@ python_sources:
     function: collect
     local_only: true
     timeout_ms: 5000
+  security.pg_hba_insecure_auth_methods:
+    title: pg_hba Insecure Auth Methods
+    description: Detect pg_hba.conf rules that use trust, password, ident, or md5 authentication.
+    python_file: security/pg_hba_insecure_auth_methods.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.pg_hba_broad_network_ranges:
+    title: pg_hba Broad Network Ranges
+    description: Detect pg_hba.conf host rules that allow universal or overly broad client address ranges.
+    python_file: security/pg_hba_broad_network_ranges.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.pg_hba_generic_database_or_user:
+    title: pg_hba Generic Database Or User
+    description: Detect pg_hba.conf rules that use all for database or user matching.
+    python_file: security/pg_hba_generic_database_or_user.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.pg_hba_tls_enforcement:
+    title: pg_hba TLS Enforcement
+    description: Detect non-loopback pg_hba.conf rules that allow unencrypted TCP connections.
+    python_file: security/pg_hba_tls_enforcement.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.pg_hba_file_permissions:
+    title: pg_hba File Permissions
+    description: Detect pg_hba.conf file permissions broader than 0600 or 0640.
+    python_file: security/pg_hba_file_permissions.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.unix_socket_permissions:
+    title: Unix Socket Permissions
+    description: Detect PostgreSQL Unix socket permissions that allow access by other OS users.
+    python_file: security/unix_socket_permissions.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.pgdata_permissions:
+    title: PGDATA Permissions
+    description: Detect PostgreSQL data directory permissions broader than expected.
+    python_file: security/pgdata_permissions.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.postgres_client_secret_files:
+    title: PostgreSQL Client Secret Files
+    description: Detect local PostgreSQL client password and service files with secret or permission findings.
+    python_file: security/postgres_client_secret_files.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.postgres_config_file_permissions:
+    title: PostgreSQL Config File Permissions
+    description: Detect PostgreSQL configuration files with permissions broader than 0600 or 0640.
+    python_file: security/postgres_config_file_permissions.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.tls_key_file_permissions:
+    title: TLS Key File Permissions
+    description: Detect PostgreSQL TLS private key and support files with unsafe local permissions.
+    python_file: security/tls_key_file_permissions.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.log_file_permissions:
+    title: Log File Permissions
+    description: Detect PostgreSQL log directories or files readable or writable by untrusted OS users.
+    python_file: security/log_file_permissions.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.postgres_binary_integrity:
+    title: PostgreSQL Binary Integrity
+    description: Detect PostgreSQL executable paths writable by group or other OS users.
+    python_file: security/postgres_binary_integrity.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.extension_directory_permissions:
+    title: Extension Directory Permissions
+    description: Detect PostgreSQL extension directories writable by group or other OS users.
+    python_file: security/extension_directory_permissions.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.tablespace_directory_permissions:
+    title: Tablespace Directory Permissions
+    description: Detect tablespace directories with permissions broader than expected.
+    python_file: security/tablespace_directory_permissions.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.wal_archive_directory_permissions:
+    title: WAL Archive Directory Permissions
+    description: Detect WAL archive paths with permissions broader than expected.
+    python_file: security/wal_archive_directory_permissions.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.backup_repository_permissions:
+    title: Backup Repository Permissions
+    description: Detect common PostgreSQL backup repository paths with unsafe permissions.
+    python_file: security/backup_repository_permissions.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.postgres_os_group_members:
+    title: PostgreSQL OS Group Members
+    description: Detect non-service OS users in the postgres group.
+    python_file: security/postgres_os_group_members.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.sudoers_postgres_escalation:
+    title: sudoers PostgreSQL Escalation
+    description: Detect sudoers rules that may allow broad escalation to or from the postgres OS account.
+    python_file: security/sudoers_postgres_escalation.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.postgres_service_hardening:
+    title: PostgreSQL Service Hardening
+    description: Detect missing systemd hardening directives for PostgreSQL units.
+    python_file: security/postgres_service_hardening.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.postgres_env_secret_leaks:
+    title: PostgreSQL Environment Secret Leaks
+    description: Detect PostgreSQL credentials in readable process environments.
+    python_file: security/postgres_env_secret_leaks.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.postgres_history_files:
+    title: PostgreSQL History Files
+    description: Detect PostgreSQL history files with broad permissions or sensitive command entries.
+    python_file: security/postgres_history_files.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.world_writable_paths_in_pg_tree:
+    title: World-Writable Paths In PostgreSQL Trees
+    description: Detect world-writable files or directories in PostgreSQL-sensitive paths.
+    python_file: security/world_writable_paths_in_pg_tree.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.symlinks_in_sensitive_paths:
+    title: Symlinks In Sensitive Paths
+    description: Detect symlinks under PostgreSQL-sensitive paths for manual verification.
+    python_file: security/symlinks_in_sensitive_paths.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.firewall_postgres_exposure:
+    title: Firewall PostgreSQL Exposure
+    description: Detect broad local firewall exposure for a PostgreSQL port listening beyond loopback.
+    python_file: security/firewall_postgres_exposure.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.procfs_hardening:
+    title: procfs Hardening
+    description: Detect procfs and ptrace settings that expose process metadata too broadly.
+    python_file: security/procfs_hardening.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.core_dump_policy:
+    title: Core Dump Policy
+    description: Detect core dump settings that may expose PostgreSQL process memory.
+    python_file: security/core_dump_policy.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.disk_encryption_status:
+    title: Disk Encryption Status
+    description: Detect PostgreSQL-sensitive mounts that are not obviously encrypted.
+    python_file: security/disk_encryption_status.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.postgres_cron_timer_scripts:
+    title: PostgreSQL Cron And Timer Scripts
+    description: Detect writable PostgreSQL cron, timer, or maintenance script paths.
+    python_file: security/postgres_cron_timer_scripts.py
+    function: collect
+    local_only: true
+    timeout_ms: 5000
+  security.role_password_hashes:
+    title: Role Password Hashes
+    description: Detect visible login role password hashes weaker than SCRAM-SHA-256.
+    python_file: security/role_password_hashes.py
+    function: collect
+    local_only: false
+    timeout_ms: 5000

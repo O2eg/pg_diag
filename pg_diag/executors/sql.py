@@ -20,6 +20,7 @@ class MissingAsyncpgError(PgDiagError):
 
 INTERNAL_TAG_PREFIX = "tag_"
 INTERNAL_TIME_COLUMN = "epoch_ns"
+SEVERITY_LEVEL_RANK = {"ok": 0, "unknown": 1, "medium": 2, "high": 3}
 
 
 def _load_asyncpg():
@@ -96,9 +97,11 @@ async def execute_query_item(content: ContentPack, conn: Any, planned: PlannedIt
         )
 
     status = "ok" if rows else "empty"
+    severity_level = infer_table_severity_level(columns, rows)
     return item_from_plan(
         planned,
         collection_status=status,
+        severity_level=severity_level,
         timing_ms=elapsed_ms(started),
         result={"kind": "table", "columns": columns, "rows": rows, "row_count": len(rows)},
         source_text=sql_text,
@@ -170,6 +173,34 @@ def _dedupe_column_name(name: str, used_names: set[str]) -> str:
     while f"{name}_{counter}" in used_names:
         counter += 1
     return f"{name}_{counter}"
+
+
+def infer_table_severity_level(
+    columns: list[dict[str, Any]],
+    rows: list[list[Any]],
+) -> str | None:
+    column_names = [str(column.get("name") or "").strip().lower() for column in columns]
+    severity_indexes = [
+        index
+        for index, name in enumerate(column_names)
+        if name in {"risk_level", "severity_level"}
+    ]
+    if not severity_indexes:
+        return None
+    if not rows:
+        return "ok"
+
+    best = "ok"
+    for row in rows:
+        for index in severity_indexes:
+            if index >= len(row):
+                continue
+            level = str(row[index] or "").strip().lower()
+            if level not in SEVERITY_LEVEL_RANK:
+                continue
+            if SEVERITY_LEVEL_RANK[level] > SEVERITY_LEVEL_RANK[best]:
+                best = level
+    return best
 
 
 def _classify_sql_error(exc: Exception, planned: PlannedItem) -> str:

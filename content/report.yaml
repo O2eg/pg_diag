@@ -39,6 +39,48 @@ sections:
         query: cluster.stat_reset_times
         tags: [Databases]
         state: collapsed
+      security_logging_settings:
+        query: security.security_logging_settings
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: Security logging settings match the expected audit posture.
+      password_encryption:
+        query: security.password_encryption
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: password_encryption is set to scram-sha-256.
+      password_complexity:
+        query: security.password_complexity
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: Password complexity hooks are active.
+      auth_timeout_delay:
+        query: security.auth_timeout_delay
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: Authentication timeout and failed-authentication delay settings match the expected posture.
+      listen_addresses_exposure:
+        query: security.listen_addresses_exposure
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: listen_addresses does not expose PostgreSQL beyond loopback.
+      tls_server_configuration:
+        query: security.tls_server_configuration
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: TLS server settings match the expected posture.
+      weak_tls_ciphers:
+        query: security.weak_tls_ciphers
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: ssl_ciphers does not allow weak or medium-strength cipher classes.
       database_stats:
         query: database.database_stats
         tags: [Databases]
@@ -154,6 +196,86 @@ sections:
       lshw_generic:
         script: os.lshw_generic
         tags: [Hardware]
+        state: collapsed
+      postgres_config_file_permissions:
+        python: security.postgres_config_file_permissions
+        tags: [Security]
+        state: collapsed
+      tls_key_file_permissions:
+        python: security.tls_key_file_permissions
+        tags: [Security]
+        state: collapsed
+      log_file_permissions:
+        python: security.log_file_permissions
+        tags: [Security]
+        state: collapsed
+      postgres_binary_integrity:
+        python: security.postgres_binary_integrity
+        tags: [Security]
+        state: collapsed
+      extension_directory_permissions:
+        python: security.extension_directory_permissions
+        tags: [Security]
+        state: collapsed
+      tablespace_directory_permissions:
+        python: security.tablespace_directory_permissions
+        tags: [Security]
+        state: collapsed
+      wal_archive_directory_permissions:
+        python: security.wal_archive_directory_permissions
+        tags: [Security]
+        state: collapsed
+      backup_repository_permissions:
+        python: security.backup_repository_permissions
+        tags: [Security]
+        state: collapsed
+      postgres_os_group_members:
+        python: security.postgres_os_group_members
+        tags: [Security]
+        state: collapsed
+      sudoers_postgres_escalation:
+        python: security.sudoers_postgres_escalation
+        tags: [Security]
+        state: collapsed
+      postgres_service_hardening:
+        python: security.postgres_service_hardening
+        tags: [Security]
+        state: collapsed
+      postgres_env_secret_leaks:
+        python: security.postgres_env_secret_leaks
+        tags: [Security]
+        state: collapsed
+      postgres_history_files:
+        python: security.postgres_history_files
+        tags: [Security]
+        state: collapsed
+      world_writable_paths_in_pg_tree:
+        python: security.world_writable_paths_in_pg_tree
+        tags: [Security]
+        state: collapsed
+      symlinks_in_sensitive_paths:
+        python: security.symlinks_in_sensitive_paths
+        tags: [Security]
+        state: collapsed
+      firewall_postgres_exposure:
+        python: security.firewall_postgres_exposure
+        tags: [Security, Network]
+        state: collapsed
+      procfs_hardening:
+        python: security.procfs_hardening
+        tags: [Security, Kernel]
+        state: collapsed
+      core_dump_policy:
+        python: security.core_dump_policy
+        tags: [Security, Kernel]
+        state: collapsed
+      disk_encryption_status:
+        python: security.disk_encryption_status
+        tags: [Security, Disk]
+        state: collapsed
+      postgres_cron_timer_scripts:
+        python: security.postgres_cron_timer_scripts
+        tags: [Security]
         state: collapsed
 
   activity_locks:
@@ -310,6 +432,18 @@ sections:
         query: replication.recovery_prefetch
         tags: [Replication]
         state: collapsed
+      replication_roles:
+        query: security.replication_roles
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No roles with REPLICATION privilege found.
+      log_replication_commands:
+        query: security.log_replication_commands
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: log_replication_commands is enabled.
 
   wal_io_checkpoints:
     title: WAL, I/O & Checkpoints
@@ -408,6 +542,12 @@ sections:
       table_size_detailed:
         query: storage.table_size_detailed
         tags: [Tables, Storage]
+      data_checksums:
+        query: security.data_checksums
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: Data checksums are enabled and no checksum failures were reported.
 
   object_workload:
     title: Object Workload
@@ -428,7 +568,120 @@ sections:
       function_workload:
         query: objects.function_workload
         tags: [Functions]
+      excessive_dml_privileges:
+        query: security.excessive_dml_privileges
+        tags: [Security]
         state: collapsed
+        render:
+          empty_message: No PUBLIC or grantable DML privileges found on non-system tables.
+      security_definer_functions:
+        query: security.security_definer_functions
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No user-defined SECURITY DEFINER functions found.
+      function_execute_privileges:
+        query: security.function_execute_privileges
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No PUBLIC or grantable EXECUTE privileges found on user-defined functions.
+      rls_configuration:
+        query: security.rls_configuration
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No inactive or incomplete RLS configurations found.
+      default_privileges_public_grants:
+        query: security.default_privileges_public_grants
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No risky ALTER DEFAULT PRIVILEGES entries found.
+      sequence_privileges:
+        query: security.sequence_privileges
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No PUBLIC or grantable sequence privileges found.
+      superuser_owned_user_objects:
+        query: security.superuser_owned_user_objects
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No user objects owned by superusers found.
+      object_owner_drift:
+        query: security.object_owner_drift
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No mixed owner drift found for same-kind objects in user schemas.
+      database_owner_mismatch:
+        query: security.database_owner_mismatch
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No user objects owned outside the connected database owner role.
+      schema_owner_drift:
+        query: security.schema_owner_drift
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No user objects owned outside their schema owner role.
+      object_acl_drift:
+        query: security.object_acl_drift
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No inconsistent object ACL signatures found in user schemas.
+      direct_user_grants:
+        query: security.direct_user_grants
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No object privileges granted directly to login roles found.
+      grant_option_holders:
+        query: security.grant_option_holders
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No non-owner grant option holders found.
+      orphaned_object_owners:
+        query: security.orphaned_object_owners
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No no-login user object owner roles requiring verification found.
+      sequence_table_owner_mismatch:
+        query: security.sequence_table_owner_mismatch
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No sequence/table owner mismatches found.
+      security_definer_owner_drift:
+        query: security.security_definer_owner_drift
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No SECURITY DEFINER owner drift found.
+      extension_objects_acl_drift:
+        query: security.extension_objects_acl_drift
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No extension-owned objects with manual ACL entries found.
+      rls_table_privilege_mismatch:
+        query: security.rls_table_privilege_mismatch
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No broad grants found around RLS-enabled tables.
+      unused_privileged_grants:
+        query: security.unused_privileged_grants
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No powerful grants on inactive tables found.
 
   backend_os:
     title: Per-Backend Local OS
@@ -509,10 +762,110 @@ sections:
         state: collapsed
         render:
           empty_message: No privileged roles visible to the current user.
+      privileged_login_roles:
+        query: security.privileged_login_roles
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No login-enabled privileged roles visible to the current user.
+      role_password_hashes:
+        python: security.role_password_hashes
+        tags: [Security]
+        state: collapsed
+      privilege_surface_by_role:
+        query: security.privilege_surface_by_role
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No explicit object privilege surface found.
+      schema_privilege_matrix:
+        query: security.schema_privilege_matrix
+        tags: [Security]
+        state: collapsed
+      login_roles_without_connection_limit:
+        query: security.login_roles_without_connection_limit
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: All visible login roles have per-role connection limits.
+      predefined_admin_role_membership:
+        query: security.predefined_admin_role_membership
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No non-superuser roles inherit predefined administrative roles.
+      public_schema_privileges:
+        query: security.public_schema_privileges
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No risky grants on schema public found in the connected database.
+      non_public_schema_privileges:
+        query: security.non_public_schema_privileges
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No risky grants on non-public schemas found.
       remote_superuser_access:
         python: security.remote_superuser_access
         tags: [Security, Sessions]
         state: collapsed
+      pg_hba_insecure_auth_methods:
+        python: security.pg_hba_insecure_auth_methods
+        tags: [Security]
+        state: collapsed
+      pg_hba_broad_network_ranges:
+        python: security.pg_hba_broad_network_ranges
+        tags: [Security]
+        state: collapsed
+      pg_hba_generic_database_or_user:
+        python: security.pg_hba_generic_database_or_user
+        tags: [Security]
+        state: collapsed
+      pg_hba_tls_enforcement:
+        python: security.pg_hba_tls_enforcement
+        tags: [Security]
+        state: collapsed
+      pg_hba_file_permissions:
+        python: security.pg_hba_file_permissions
+        tags: [Security]
+        state: collapsed
+      unix_socket_permissions:
+        python: security.unix_socket_permissions
+        tags: [Security]
+        state: collapsed
+      pgdata_permissions:
+        python: security.pgdata_permissions
+        tags: [Security]
+        state: collapsed
+      postgres_client_secret_files:
+        python: security.postgres_client_secret_files
+        tags: [Security]
+        state: collapsed
+      pgaudit_configuration:
+        query: security.pgaudit_configuration
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: pgAudit is preloaded and pgaudit.log is configured.
+      installed_risky_extensions:
+        query: security.installed_risky_extensions
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: No installed high-impact extensions or untrusted procedural languages found.
+      cryptographic_extensions:
+        query: security.cryptographic_extensions
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: At least one cryptographic extension is installed in the connected database.
+      anonymization_extensions:
+        query: security.anonymization_extensions
+        tags: [Security]
+        state: collapsed
+        render:
+          empty_message: An anonymization extension is installed or preloaded.
       pending_restart_settings:
         query: cluster.pending_restart_settings
         tags: [Configuration]

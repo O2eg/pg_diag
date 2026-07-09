@@ -22,4 +22,5 @@ query_catalog:
     - catalog/wal_io_checkpoints.yaml
     - catalog/storage_vacuum.yaml
     - catalog/indexes.yaml
+    - catalog/security.yaml
     - catalog/dba_extra.yaml
