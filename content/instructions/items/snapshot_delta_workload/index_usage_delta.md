@@ -3,27 +3,28 @@
 This instruction belongs to report item `snapshot_delta_workload.index_usage_delta`. The item is backed by `objects.index_usage_delta` (snapshot metric).
 
 ## What this item shows
-- Per-index scan, tuple read, tuple fetch, and block I/O deltas during the capture window.
-- Which indexes were actively used during the snapshot window.
+- Index scans, index entries returned, live table rows fetched, index block reads/hits, and scans/s for stable index OIDs.
+- Current table/index labels with `(datid, indexrelid)` identity.
+- Up to 200 indexes selected by cumulative scans, then 50 derived rows.
 
 ## What to watch
-- High reads per scan.
-- High tuple reads with low tuple fetches.
-- Indexes active only during one workload phase.
+- High index entries read per scan, low table fetches relative to entries, and high block reads during the window.
+- Bitmap scans and index-only scans before interpreting `idx_tup_fetch`; index and table view semantics differ by scan type.
+
+## Automatic evaluation
+- No severity is assigned. High or low ratios depend on selectivity, scan type, cache state, and query purpose.
+- This item proves recent activity for comparable candidates; it cannot prove an index is safe to drop when absent.
 
 ## Interval coverage
-- The SQL source is sorted and limited before rows enter collector memory.
-- Only indexes present in both bounded endpoint selections have a calculable delta.
-- `missing_start` and `missing_end` are expected selection churn, not zero activity or errors.
-- Counter decreases or invalid values are omitted and reported as invalid coverage.
+- Database-wide reset epoch and counter decreases are checked; single-index resets have no exposed timestamp.
+- OID identity prevents overload/name collisions and survives renames.
+- Top-200 membership changes are informational unmatched coverage.
 
 ## Common fault causes
-- Low-selectivity index.
-- Bitmap scans.
-- Inefficient predicate.
-- Batch/report workload.
+- Low-selectivity index, bitmap or index-only plans, batch/report traffic, cold cache, or reset/selection churn.
 
 ## Checklist
-- Compare with index health findings.
-- Review query plans using the index.
-- Do not drop active indexes based on cumulative unused findings alone.
+- Review actual plans and the index definition before drawing efficiency conclusions.
+- Compare block reads with table/SQL I/O and OS evidence.
+- Never drop an index based only on absence from this bounded window.
+- Empty means no non-zero comparable candidate.

@@ -3,23 +3,27 @@
 This instruction belongs to report item `activity_locks.wait_events`. The item is backed by `activity.wait_events` (SQL query).
 
 ## What this item shows
-- Active sessions grouped by wait event type, wait event, database, and query_id.
-- Current wait concentration visible in pg_stat_activity.
-- Whether active work is blocked on locks, I/O, WAL, client, or extension waits.
+- One instantaneous cluster-wide sample of active PostgreSQL processes, grouped by database, application, wait event, query ID, and normalized query text.
+- At most 100 groups, ordered by current session count; pg_diag's own backend is excluded.
+- `Not waiting / Active without wait event` when PostgreSQL reports an active process with no wait event.
 
 ## What to watch
-- One wait event dominates active sessions.
-- Lock or LWLock waits during application latency.
-- Client waits that may indicate slow consumers rather than slow database work.
+- Lock, I/O, WAL, or extension waits concentrated in one query or application.
+- A large `Not waiting` group during CPU saturation, while remembering it is not proof that those processes were on CPU.
+- Missing query IDs or text, which can result from permissions or disabled query-ID computation.
+
+## Automatic evaluation
+- No severity is assigned from a single wait sample because transient waits are normal and thresholds are workload-specific.
+- Accurate cross-user query and wait details normally require `pg_read_all_stats` or `pg_monitor`.
+- The SQL limit bounds collector memory; groups outside the current top 100 are not represented.
 
 ## Common fault causes
-- Lock contention.
-- Storage latency.
-- WAL flush pressure.
-- Client backpressure.
-- Extension or background worker waits.
+- Lock contention, storage latency, or WAL flush pressure.
+- Client backpressure or synchronous replication.
+- CPU saturation, scheduler delay, or active computation for rows with no wait event.
 
 ## Checklist
-- Start with the largest wait group.
-- Map query_id and application_name to top SQL and application owner.
-- Use repeated snapshots if waits are intermittent.
+- Start with the largest group and correlate its timestamp with host and workload evidence.
+- Use `Lock Waits` for lock blockers and SQL workload items for query history.
+- Use the snapshot chart when the event is intermittent.
+- An empty table means no other active process was observed; an error means the sample is unavailable.

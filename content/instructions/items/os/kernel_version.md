@@ -16,6 +16,10 @@ This instruction belongs to report item `os.kernel_version`. The item is backed 
 - Collector running in a container or namespace that hides the real host.
 - Unsupported kernel/distribution combination.
 
+## Automatic evaluation
+- No severity is assigned because support, vulnerability, and reboot status require external vendor/package data.
+- The value comes from the collector's current UTS namespace; containers can expose a host kernel unrelated to the container image.
+
 ## Checklist
 - Confirm kernel support with the OS vendor baseline.
 - Check whether kernel security updates require reboot.

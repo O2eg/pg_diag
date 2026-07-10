@@ -19,9 +19,20 @@ union all
 select
   'profile_view_available',
   (to_regclass('pg_wait_sampling_profile') is not null)::text,
-  'to_regclass',
+  'to_regclass on pg_diag search_path',
   case
     when to_regclass('pg_wait_sampling_profile') is not null then 'ok'
-    else 'profile view is not available'
+    else 'profile view is not available on pg_catalog, public search_path'
   end
+union all
+select
+  'extension_schema',
+  coalesce(
+    (select namespace.nspname from pg_extension extension
+     join pg_namespace namespace on namespace.oid = extension.extnamespace
+     where extension.extname = 'pg_wait_sampling'),
+    '<not installed>'
+  ),
+  'pg_extension',
+  'informational: pg_diag can query the profile when its view is on the configured search path'
 order by capability

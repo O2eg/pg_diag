@@ -1,8 +1,12 @@
 select
   statement_timestamp() as snapshot_time,
+  (select oid from pg_database where datname = current_database()) as datid,
   current_database() as datname,
+  st.relid,
   st.schemaname,
   st.relname,
+  (select stats_reset from pg_stat_database where datname = current_database())
+    as database_stats_reset,
   st.seq_scan::int8 as seq_scan,
   st.seq_tup_read::int8 as seq_tup_read,
   st.idx_scan::int8 as idx_scan,

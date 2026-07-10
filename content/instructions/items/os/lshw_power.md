@@ -15,6 +15,10 @@ This instruction belongs to report item `os.lshw_power`. The item is backed by `
 - VM hides real power devices.
 - Power component replacement.
 
+## Automatic evaluation
+- No severity is assigned because lshw does not provide authoritative health telemetry.
+- Empty output is expected in VMs; use BMC/cloud monitoring for actual power health.
+
 ## Checklist
 - Use platform monitoring for real power health.
 - Treat virtual power devices as inventory noise.

@@ -3,27 +3,27 @@
 This instruction belongs to report item `snapshot_delta_workload.table_dml_delta`. The item is backed by `objects.table_dml_delta` (snapshot metric).
 
 ## What this item shows
-- Per-table insert, update, delete, and HOT update deltas during the capture window.
-- Current write hotspots by table.
+- Insert, update, delete, HOT-update, total-DML delta, and total DML/s for table OIDs present at both endpoints.
+- Current schema/table labels with stable `(datid, relid)` identity.
+- Up to 200 lifetime-DML candidates per endpoint, reduced to 50 derived rows.
 
 ## What to watch
-- One table dominating DML.
-- High update rate with low HOT update ratio.
-- Unexpected deletes or inserts.
+- One relation dominating writes, unexpected deletes/inserts, or updates greatly exceeding HOT updates.
+
+## Automatic evaluation
+- No severity is assigned because write volume and desired HOT ratio are schema/workload-specific.
+- HOT updates are a subset of updates; compare their deltas rather than treating either counter as a percentage.
 
 ## Interval coverage
-- The SQL source is sorted and limited before rows enter collector memory.
-- Only tables present in both bounded endpoint selections have a calculable delta.
-- `missing_start` and `missing_end` are expected selection churn, not zero activity or errors.
-- Counter decreases or invalid values are omitted and reported as invalid coverage.
+- A database-wide `stats_reset` change invalidates comparable rows even if counters regrew above their starting values.
+- Single-table reset has no timestamp in these views. A decrease is detected, but a reset followed by growth above the start value remains a PostgreSQL observability limitation.
+- OID identity survives renames; drop/recreate or bounded Top-200 churn appears as unmatched endpoints.
 
 ## Common fault causes
-- Application hotspot.
-- Batch job.
-- Missing fillfactor or HOT-unfriendly indexes.
-- Retention purge.
+- Application hotspot, batch processing, retention purge, HOT-unfriendly indexes/fillfactor, or external statistics reset.
 
 ## Checklist
-- Identify table owner and workload path.
-- Check autovacuum pressure for hot tables.
-- Compare with SQL WAL delta.
+- Correlate hot relations with WAL, autovacuum, and statement deltas.
+- Inspect update/index patterns before changing fillfactor or indexes.
+- Treat this as a bounded candidate set, not a scan of every relation in large databases.
+- Empty means no non-zero comparable candidate.

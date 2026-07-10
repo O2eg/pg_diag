@@ -8,15 +8,14 @@ if [ -z "$class_name" ]; then
 fi
 
 if ! command -v lshw >/dev/null 2>&1; then
-  echo "[]"
-  exit 0
+  echo "lshw executable not found" >&2
+  exit 3
 fi
 
 if command -v sudo >/dev/null 2>&1; then
-  if sudo -n true >/dev/null 2>&1; then
-    sudo -n lshw -class "$class_name" -json
-    exit $?
+  if LC_ALL=C sudo -n lshw -class "$class_name" -json 2>/dev/null; then
+    exit 0
   fi
 fi
 
-lshw -class "$class_name" -json
+LC_ALL=C lshw -class "$class_name" -json

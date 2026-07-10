@@ -96,22 +96,22 @@ def normalize_iostat_row(row: dict[str, Any]) -> dict[str, Any]:
     r_await = _first_number(row, ["r_await"])
     w_await = _first_number(row, ["w_await"])
     await_ms = _first_number(row, ["await"])
-    if await_ms is None:
-        await_ms = max(value for value in [r_await or 0.0, w_await or 0.0])
+    if await_ms is None and (r_await is not None or w_await is not None):
+        await_ms = max(value for value in (r_await, w_await) if value is not None)
 
     return {
         "device": str(row.get("device") or ""),
         "read_bytes_per_sec": _throughput_bytes(read_kb, read_mb),
         "write_bytes_per_sec": _throughput_bytes(write_kb, write_mb),
         "discard_bytes_per_sec": _throughput_bytes(discard_kb, discard_mb),
-        "read_iops": _first_number(row, ["r/s"]) or 0.0,
-        "write_iops": _first_number(row, ["w/s"]) or 0.0,
-        "discard_iops": _first_number(row, ["d/s"]) or 0.0,
-        "util_pct": _first_number(row, ["%util"]) or 0.0,
-        "await_ms": await_ms or 0.0,
-        "r_await_ms": r_await or 0.0,
-        "w_await_ms": w_await or 0.0,
-        "queue_size": _first_number(row, ["aqu-sz", "avgqu-sz"]) or 0.0,
+        "read_iops": _first_number(row, ["r/s"]),
+        "write_iops": _first_number(row, ["w/s"]),
+        "discard_iops": _first_number(row, ["d/s"]),
+        "util_pct": _first_number(row, ["%util"]),
+        "await_ms": await_ms,
+        "r_await_ms": r_await,
+        "w_await_ms": w_await,
+        "queue_size": _first_number(row, ["aqu-sz", "avgqu-sz"]),
     }
 
 
@@ -234,6 +234,7 @@ class _OSMetricsCollector:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                env={**os.environ, "LC_ALL": "C", "LANG": "C"},
             )
             with self._lock:
                 self._iostat_process = proc
@@ -257,6 +258,9 @@ class _OSMetricsCollector:
             return
 
         reports = parse_iostat_reports(stdout)
+        if not reports:
+            self._error("os.disk", "iostat output contained no parseable device reports")
+            return
         interval_reports = reports[-points:] if len(reports) >= points else reports
         first_index = max(1, points - len(interval_reports) + 1)
         for offset, report in enumerate(interval_reports):
@@ -318,7 +322,13 @@ def _read_proc_stat_cpu() -> dict[str, int]:
 
 def _cpu_row(previous: dict[str, int], current: dict[str, int], elapsed: float) -> dict[str, Any]:
     deltas = {key: current.get(key, 0) - previous.get(key, 0) for key in current}
-    total = sum(max(value, 0) for value in deltas.values())
+    # Linux includes guest time in user/nice already, so adding guest fields again
+    # inflates the denominator and makes the stacked CPU series sum below 100%.
+    total = sum(
+        max(value, 0)
+        for key, value in deltas.items()
+        if key not in {"guest", "guest_nice"}
+    )
     idle = max(deltas.get("idle", 0), 0) + max(deltas.get("iowait", 0), 0)
     busy = max(total - idle, 0)
 
@@ -604,9 +614,9 @@ def _backend_proc_rows(
     return rows
 
 
-def _counter_rate(previous: int, current: int, seconds: float) -> float:
+def _counter_rate(previous: int, current: int, seconds: float) -> float | None:
     if current < previous:
-        return 0.0
+        return None
     return round((current - previous) / seconds, 3)
 
 
@@ -614,12 +624,12 @@ def _is_interesting_disk(device: str) -> bool:
     return not re.match(r"^(loop|ram|zram|fd)\d+", device)
 
 
-def _throughput_bytes(kb_value: float | None, mb_value: float | None) -> float:
+def _throughput_bytes(kb_value: float | None, mb_value: float | None) -> float | None:
     if mb_value is not None:
         return round(mb_value * 1024 * 1024, 3)
     if kb_value is not None:
         return round(kb_value * 1024, 3)
-    return 0.0
+    return None
 
 
 def _first_number(row: dict[str, Any], keys: list[str]) -> float | None:

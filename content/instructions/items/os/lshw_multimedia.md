@@ -15,6 +15,10 @@ This instruction belongs to report item `os.lshw_multimedia`. The item is backed
 - Desktop-class host image.
 - Hypervisor defaults.
 
+## Automatic evaluation
+- No severity is assigned; multimedia devices are inventory-only evidence.
+- Empty output is normal on server systems.
+
 ## Checklist
 - Treat as inventory only.
 - Remove or disable devices only if policy requires it.

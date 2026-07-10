@@ -181,6 +181,9 @@ async def collect_snapshots(
             snapshot_schemas=artifact["snapshot_schemas"],
         )
         artifact["runtime"]["snapshot_window_finished_at"] = utc_now()
+        artifact["runtime"]["collector_db_transactions_between_endpoints"] = (
+            len(snapshots) + (1 if endpoint_queries else 0)
+        )
         artifact["diagnostics"].extend(db_sample_diagnostics)
         artifact["snapshots"] = snapshots
         source_latest_items.update(latest_sample_items)
@@ -266,6 +269,12 @@ async def collect_snapshots(
                     source_item_by_query,
                     source_metadata_by_item,
                     os_diagnostics_by_sampler.get(str(metric.get("source_sampler") or ""), []),
+                    {
+                        "collector_db_transactions_between_endpoints": artifact["runtime"].get(
+                            "collector_db_transactions_between_endpoints",
+                            0,
+                        )
+                    },
                 )
                 _raise_if_fail_fast(fail_fast, artifact["items"][planned.item_id])
             except Exception as exc:
@@ -341,28 +350,29 @@ async def _collect_db_samples(
             skipped_samples += 1
             continue
         snapshot = {"timestamp": utc_now(), "items": {}}
-        for planned in sampled_queries:
-            try:
-                item = await execute_query_item(content, conn, planned)
-            except Exception as exc:
-                item = item_error_from_exception(planned, exc)
-            if query_texts is not None:
-                extract_item_query_texts(item, query_texts)
-            result = item.get("result") or {}
-            if (
-                snapshot_schemas is not None
-                and result.get("kind") == "table"
-                and result.get("columns")
-            ):
-                snapshot_schemas.setdefault(
-                    planned.item_id,
-                    {"columns": result["columns"]},
-                )
-            latest_items[planned.item_id] = item
-            snapshot["items"][planned.item_id] = compact_snapshot_item(item)
-            if item.get("collection_status") == "error":
-                sample_error_counts[planned.item_id] += 1
-            _raise_if_fail_fast(fail_fast, item)
+        async with conn.transaction(readonly=True):
+            for planned in sampled_queries:
+                try:
+                    item = await execute_query_item(content, conn, planned)
+                except Exception as exc:
+                    item = item_error_from_exception(planned, exc)
+                if query_texts is not None:
+                    extract_item_query_texts(item, query_texts)
+                result = item.get("result") or {}
+                if (
+                    snapshot_schemas is not None
+                    and result.get("kind") == "table"
+                    and result.get("columns")
+                ):
+                    snapshot_schemas.setdefault(
+                        planned.item_id,
+                        {"columns": result["columns"]},
+                    )
+                latest_items[planned.item_id] = item
+                snapshot["items"][planned.item_id] = compact_snapshot_item(item)
+                if item.get("collection_status") == "error":
+                    sample_error_counts[planned.item_id] += 1
+                _raise_if_fail_fast(fail_fast, item)
         snapshots.append(snapshot)
     diagnostics = []
     if lagged_samples or skipped_samples:
@@ -435,28 +445,29 @@ async def _execute_query_batch(
     snapshot = {"timestamp": utc_now(), "items": {}}
     items: dict[str, dict[str, Any]] = {}
     error_counts: Counter[str] = Counter()
-    for planned in queries:
-        try:
-            item = await execute_query_item(content, conn, planned)
-        except Exception as exc:
-            item = item_error_from_exception(planned, exc)
-        if query_texts is not None:
-            extract_item_query_texts(item, query_texts)
-        result = item.get("result") or {}
-        if (
-            snapshot_schemas is not None
-            and result.get("kind") == "table"
-            and result.get("columns")
-        ):
-            snapshot_schemas.setdefault(
-                planned.item_id,
-                {"columns": result["columns"]},
-            )
-        items[planned.item_id] = item
-        snapshot["items"][planned.item_id] = compact_snapshot_item(item)
-        if item.get("collection_status") == "error":
-            error_counts[planned.item_id] += 1
-        _raise_if_fail_fast(fail_fast, item)
+    async with conn.transaction(readonly=True):
+        for planned in queries:
+            try:
+                item = await execute_query_item(content, conn, planned)
+            except Exception as exc:
+                item = item_error_from_exception(planned, exc)
+            if query_texts is not None:
+                extract_item_query_texts(item, query_texts)
+            result = item.get("result") or {}
+            if (
+                snapshot_schemas is not None
+                and result.get("kind") == "table"
+                and result.get("columns")
+            ):
+                snapshot_schemas.setdefault(
+                    planned.item_id,
+                    {"columns": result["columns"]},
+                )
+            items[planned.item_id] = item
+            snapshot["items"][planned.item_id] = compact_snapshot_item(item)
+            if item.get("collection_status") == "error":
+                error_counts[planned.item_id] += 1
+            _raise_if_fail_fast(fail_fast, item)
     return snapshot, items, error_counts
 
 

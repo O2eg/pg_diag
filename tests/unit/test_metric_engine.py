@@ -5,6 +5,7 @@ from pg_diag.metric_engine import (
     build_chart_result,
     build_metric_item,
     build_table_result,
+    evaluate_metric_table_findings,
 )
 from pg_diag.planner import PlannedItem
 
@@ -33,6 +34,109 @@ def test_delta_table_metric_uses_first_and_last_samples() -> None:
     result = build_table_result(metric, samples, semantic_columns)
 
     assert result["rows"] == [["db", 20.0, 4.0]]
+
+
+def test_delta_table_rejects_changed_counter_epoch_even_when_counter_increases() -> None:
+    metric = {
+        "table": {
+            "key_refs": ["dimensions.database_id"],
+            "epoch_refs": ["dimensions.stats_reset"],
+            "columns": [
+                {"name": "datid", "role": "key", "key_index": 0},
+                {"name": "delta", "value_ref": "counters.value", "transform": "delta"},
+            ],
+        }
+    }
+    semantics = {
+        "dimensions": {"database_id": "datid", "stats_reset": "stats_reset"},
+        "counters": {"value": "value"},
+    }
+    samples = [
+        {
+            "timestamp": "2026-07-05T00:00:00+00:00",
+            "rows": [{"datid": 1, "stats_reset": "2026-07-01", "value": 10}],
+        },
+        {
+            "timestamp": "2026-07-05T00:00:05+00:00",
+            "rows": [{"datid": 1, "stats_reset": "2026-07-05", "value": 50}],
+        },
+    ]
+
+    result = build_table_result(metric, samples, semantics)
+
+    assert result["rows"] == []
+    assert result["interval_coverage"]["invalid"] == 1
+    assert result["interval_coverage"]["counts"] == {"epoch_changed": 1}
+
+
+def test_delta_table_can_remove_known_collector_transaction_overhead() -> None:
+    metric = {
+        "table": {
+            "key_refs": ["database"],
+            "columns": [
+                {"name": "database", "role": "key", "key_index": 0},
+                {"name": "raw", "value_ref": "commits", "transform": "delta"},
+                {
+                    "name": "overhead",
+                    "transform": "context",
+                    "context_key": "collector_transactions",
+                },
+                {
+                    "name": "adjusted",
+                    "value_ref": "commits",
+                    "transform": "delta_minus_context",
+                    "context_key": "collector_transactions",
+                },
+                {
+                    "name": "adjusted_rate",
+                    "value_ref": "commits",
+                    "transform": "rate_minus_context",
+                    "context_key": "collector_transactions",
+                },
+            ],
+        }
+    }
+    samples = [
+        {"timestamp": "2026-07-05T00:00:00+00:00", "rows": [{"database": "db", "commits": 10}]},
+        {"timestamp": "2026-07-05T00:00:05+00:00", "rows": [{"database": "db", "commits": 20}]},
+    ]
+
+    result = build_table_result(
+        metric,
+        samples,
+        {},
+        {"collector_transactions": 3},
+    )
+
+    assert result["rows"] == [["db", 10.0, 3, 7.0, 1.4]]
+
+
+def test_metric_table_evaluation_builds_summary_for_matching_rows() -> None:
+    result = {
+        "kind": "table",
+        "columns": [{"name": "seq_scans_per_sec"}, {"name": "seq_tup_read_per_sec"}],
+        "rows": [[12.0, 15000.0], [1.0, 100.0]],
+    }
+    evaluation = {
+        "summary_title": "Sequential scans require review",
+        "recommendation": "Inspect representative plans.",
+        "rules": [
+            {
+                "severity": "medium",
+                "reason": "Sustained sequential scans",
+                "all": [
+                    {"column": "seq_scans_per_sec", "operator": "gte", "value": 10},
+                    {"column": "seq_tup_read_per_sec", "operator": "gte", "value": 10000},
+                ],
+            }
+        ],
+    }
+
+    severity, issues = evaluate_metric_table_findings(result, evaluation)
+
+    assert severity == "medium"
+    assert issues["summary"]["title"] == "Sequential scans require review"
+    assert "Sustained sequential scans" in issues["summary"]["description"]
 
 
 def test_window_endpoint_metric_source_header_names_endpoint_collection() -> None:

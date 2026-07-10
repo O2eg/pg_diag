@@ -3,7 +3,7 @@ queries:
     title: pg_wait_sampling Capability Check
     group: Wait Profile
     main_view: pg_extension
-    description: Optional pg_wait_sampling extension availability and installation state.
+    description: Optional pg_wait_sampling package, extension, schema, and profile-view visibility state.
     display:
       default_sort:
         column: capability
@@ -20,7 +20,7 @@ queries:
     title: pg_wait_sampling Profile
     group: Wait Profile
     main_view: pg_wait_sampling_profile
-    description: Optional wait sampling profile if pg_wait_sampling is installed in the current database.
+    description: Top cumulative wait-sampling profile rows if pg_wait_sampling is installed and visible in the current database.
     source: pg_wait_sampling
     optional: true
     cost: medium

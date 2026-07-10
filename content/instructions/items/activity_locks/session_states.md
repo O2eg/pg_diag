@@ -3,22 +3,27 @@
 This instruction belongs to report item `activity_locks.session_states`. The item is backed by `activity.session_states` (SQL query).
 
 ## What this item shows
-- Current backend counts grouped by session state and application.
-- Whether sessions are active, idle, idle in transaction, or waiting.
-- Maximum transaction age for state groups.
+- An instantaneous count of client sessions in the connected database, grouped by `application_name` and PostgreSQL state.
+- Maximum open-transaction age in seconds for each populated state group.
+- Zero-count rows for known states when no session currently has that state. pg_diag's own backend is excluded.
 
 ## What to watch
-- Large active count during latency incidents.
-- Idle-in-transaction count above zero.
-- One application_name dominating the session population.
+- An application dominating active or total session counts.
+- Any sustained `idle in transaction` or `idle in transaction (aborted)` population.
+- Transaction age much longer than the application's expected request or batch duration.
+
+## Automatic evaluation
+- This summary does not assign severity because state counts are workload-dependent and instantaneous.
+- State and wait are separate dimensions: `active` does not mean CPU use, and this item does not report waiting-session counts.
+- Other users' activity details require sufficient statistics visibility; without it, group attribution can be partial.
 
 ## Common fault causes
-- Connection pool burst.
-- Slow query pileup.
-- Clients leaving transactions open.
-- Background job fan-out.
+- Connection-pool bursts or background-job fan-out.
+- Slow queries increasing the active population.
+- Missing commit or rollback paths.
 
 ## Checklist
-- Group by application_name first.
-- Inspect representative active and idle-in-transaction PIDs.
-- Check whether high active count aligns with CPU, I/O, or lock waits.
+- Compare application groups with configured pool limits.
+- Use `Active Wait Events` to separate running work from waits.
+- Use `Idle In Transaction Over 1 Minute` for actionable session details.
+- Zero counts are valid observations; collection `error` or `unsupported` is unavailable evidence.

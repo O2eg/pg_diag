@@ -3,23 +3,27 @@
 This instruction belongs to report item `activity_locks.connection_pressure`. The item is backed by `activity.connection_pressure` (SQL query).
 
 ## What this item shows
-- Current connections compared with `max_connections` and reserved connection slots.
-- Counts of active, idle, idle-in-transaction, and waiting sessions.
-- How much connection headroom remains for applications and administration.
+- An instantaneous, cluster-wide count of `client backend` processes that consume `max_connections` slots.
+- Ordinary, reserved-role, and total connection limits and remaining headroom. `reserved_connections` is reported as zero on PostgreSQL 14-15, where that setting does not exist.
+- Active, idle, idle-in-transaction (including aborted), and actively waiting client-session counts.
 
 ## What to watch
-- Used percentage close to ordinary or total connection limit.
-- Many idle sessions consuming connection slots.
-- Waiting sessions while connection count is high.
+- `ordinary_available_connections` at zero means ordinary roles can no longer connect.
+- Low `reserved_role_available_connections` or `total_available_connections` means emergency access is being consumed.
+- Many idle sessions often indicate oversized pools; many waiting sessions indicate occupied backends are also stalled.
+
+## Automatic evaluation
+- `high`: at most one total client connection slot remains.
+- `medium`: ordinary-role headroom is at or below 5%, with a minimum threshold of two slots.
+- The total count includes pg_diag's own connection because it consumes a real slot. State and wait breakdowns are complete only with sufficient statistics visibility, normally `pg_read_all_stats` or `pg_monitor`.
 
 ## Common fault causes
-- Connection pool size too large.
-- Connection leak or clients not closing sessions.
+- Oversized connection pools or a connection leak.
 - Slow transactions keeping backends occupied.
-- Application retry storm.
+- Retry storms or too many independently sized application pools.
 
 ## Checklist
-- Keep emergency admin access available.
-- Compare application pool limits with PostgreSQL limits.
-- Identify which application_name or client group owns the growth.
-- Fix pool/leak behavior before raising max_connections.
+- Preserve superuser and reserved-role emergency access.
+- Identify the applications and roles owning connection growth in `Session States`.
+- Fix pool or leak behavior before raising `max_connections`, because a higher value increases server resource allocation.
+- A collection error is not evidence of free capacity; this item normally returns exactly one row.

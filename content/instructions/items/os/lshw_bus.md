@@ -16,6 +16,10 @@ This instruction belongs to report item `os.lshw_bus`. The item is backed by `os
 - VM configuration change.
 - Hardware replacement.
 
+## Automatic evaluation
+- No severity is assigned without an expected hardware topology.
+- Empty class output is valid; an lshw warning means the inventory may be partial.
+
 ## Checklist
 - Use with network/storage lshw sections for device-specific checks.
 - Confirm device topology after hardware or VM changes.

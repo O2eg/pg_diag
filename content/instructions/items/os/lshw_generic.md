@@ -16,6 +16,10 @@ This instruction belongs to report item `os.lshw_generic`. The item is backed by
 - Firmware change.
 - VM hardware profile change.
 
+## Automatic evaluation
+- No severity is assigned; generic devices require platform-specific identification.
+- Empty output is valid and unknown devices are not automatically security or performance findings.
+
 ## Checklist
 - Review only entries related to database storage, network, or security policy.
 - Compare before/after hardware maintenance.

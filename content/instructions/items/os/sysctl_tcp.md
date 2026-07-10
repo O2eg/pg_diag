@@ -17,6 +17,10 @@ This instruction belongs to report item `os.sysctl_tcp`. The item is backed by `
 - Firewall idle timeouts.
 - Configuration drift.
 
+## Automatic evaluation
+- No severity is assigned without proxy, firewall, kernel, and connection-rate context.
+- Only readable runtime `net.ipv4.tcp*` keys are shown; IPv6 and persistence are outside this item.
+
 ## Checklist
 - Compare TCP settings with application pool and proxy behavior.
 - Check connection pressure before changing network queues.

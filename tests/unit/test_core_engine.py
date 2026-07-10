@@ -27,7 +27,7 @@ from pg_diag.executors.python import execute_python_item
 from pg_diag.metric_engine import build_metric_item
 from pg_diag.planner import PlannedItem, build_plan
 from pg_diag.render.html import _publicize_artifact_for_render, render_html
-from pg_diag.snapshots import _collect_db_samples
+from pg_diag.snapshots import _collect_db_samples, _execute_query_batch
 from pg_diag.validator import validate_content
 
 
@@ -42,6 +42,24 @@ def _planned_query() -> PlannedItem:
         status="planned",
         collection_scope="every_snapshot",
     )
+
+
+class _BatchTransaction:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+
+class _BatchConnection:
+    def __init__(self) -> None:
+        self.readonly_transactions = 0
+
+    def transaction(self, *, readonly: bool):
+        assert readonly is True
+        self.readonly_transactions += 1
+        return _BatchTransaction()
 
 
 def _artifact(*, title: str = "Test", data: str = "ok") -> dict:
@@ -125,10 +143,11 @@ def test_db_snapshots_store_only_varying_table_data(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(runtime_config, "snapshots_schedule_offsets", lambda *_args: [0.0])
     monkeypatch.setattr("pg_diag.snapshots.execute_query_item", execute_stub)
 
+    conn = _BatchConnection()
     snapshots, diagnostics, latest = asyncio.run(
         _collect_db_samples(
             SimpleNamespace(),
-            SimpleNamespace(),
+            conn,
             [planned],
             30,
             15,
@@ -152,6 +171,7 @@ def test_db_snapshots_store_only_varying_table_data(monkeypatch: pytest.MonkeyPa
         "value",
     ]
     assert diagnostics == []
+    assert conn.readonly_transactions == 1
 
 
 def test_db_sampler_does_not_start_stale_final_sample(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -170,13 +190,43 @@ def test_db_sampler_does_not_start_stale_final_sample(monkeypatch: pytest.Monkey
     monkeypatch.setattr(runtime_config, "snapshots_schedule_offsets", lambda *_args: [0.0, 0.05])
     monkeypatch.setattr("pg_diag.snapshots.execute_query_item", execute_stub)
 
+    conn = _BatchConnection()
     snapshots, diagnostics, _latest = asyncio.run(
-        _collect_db_samples(SimpleNamespace(), SimpleNamespace(), [_planned_query()], 0.05, 0.05)
+        _collect_db_samples(SimpleNamespace(), conn, [_planned_query()], 0.05, 0.05)
     )
 
     assert calls == 1
     assert len(snapshots) == 1
     assert diagnostics[0]["code"] == "db_sampler_lag"
+    assert conn.readonly_transactions == 1
+
+
+def test_window_endpoint_queries_share_one_read_only_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    async def execute_stub(content, conn, item):
+        calls.append(item.item_id)
+        return item_from_plan(
+            item,
+            collection_status="ok",
+            result={"kind": "table", "columns": [], "rows": [], "row_count": 0},
+        )
+
+    monkeypatch.setattr("pg_diag.snapshots.execute_query_item", execute_stub)
+    conn = _BatchConnection()
+    queries = [_planned_query(), replace(_planned_query(), item_id="s.q2", item_key="q2")]
+
+    snapshot, items, error_counts = asyncio.run(
+        _execute_query_batch(SimpleNamespace(), conn, queries)
+    )
+
+    assert calls == ["s.q", "s.q2"]
+    assert set(snapshot["items"]) == {"s.q", "s.q2"}
+    assert set(items) == {"s.q", "s.q2"}
+    assert not error_counts
+    assert conn.readonly_transactions == 1
 
 
 def test_python_source_timeout_does_not_block_event_loop(tmp_path: Path) -> None:

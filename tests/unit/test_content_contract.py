@@ -74,6 +74,351 @@ def test_overview_instructions_have_interpretation_sections(content_path: Path) 
         assert "## Common fault causes" in text, item_id
 
 
+def test_os_instructions_define_complete_interpretation_contract(content_path: Path) -> None:
+    content = load_content(content_path)
+    os_item_ids = [
+        item_id
+        for section_id, _item_key, item_id, _item in iter_report_items(content)
+        if section_id == "os"
+    ]
+    assert len(os_item_ids) == 47
+    for item_id in os_item_ids:
+        text = content.instructions[item_id]["text"]
+        assert "This instruction belongs to" in text, item_id
+        assert "## What to watch" in text, item_id
+        assert "## Automatic evaluation" in text, item_id
+        assert "## Common fault causes" in text, item_id
+
+
+def test_activity_lock_instructions_define_complete_interpretation_contract(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    item_ids = [
+        item_id
+        for section_id, _item_key, item_id, _item in iter_report_items(content)
+        if section_id == "activity_locks"
+    ]
+    assert len(item_ids) == 10
+    for item_id in item_ids:
+        text = content.instructions[item_id]["text"]
+        assert "This instruction belongs to" in text, item_id
+        assert "## What to watch" in text, item_id
+        assert "## Automatic evaluation" in text, item_id
+        assert "## Common fault causes" in text, item_id
+
+
+def test_activity_lock_sql_uses_supported_bounded_semantics(content_path: Path) -> None:
+    content = load_content(content_path)
+    query_root = content.path / "queries"
+
+    connection_sql = (query_root / "activity/connection_pressure.sql").read_text(
+        encoding="utf-8"
+    ).lower()
+    assert "backend_type = 'client backend'" in connection_sql
+    assert "current_setting('reserved_connections', true)" in connection_sql
+    assert "'cluster'::text as scope" in connection_sql
+
+    lock_waits_sql = (query_root / "locks/lock_waits.sql").read_text(encoding="utf-8").lower()
+    assert "pg_blocking_pids(activity.pid)" in lock_waits_sql
+    assert "waitstart" in lock_waits_sql
+    assert "limit 10000" in lock_waits_sql
+    assert "blocked.relation = blocker.relation" not in lock_waits_sql
+
+    wait_sql = (query_root / "activity/wait_events.sql").read_text(encoding="utf-8").lower()
+    sampled_wait_sql = (query_root / "metrics/activity_wait_sample_profile.sql").read_text(
+        encoding="utf-8"
+    ).lower()
+    for sql in (wait_sql, sampled_wait_sql):
+        assert "pid <> pg_backend_pid()" in sql
+        assert "active without wait event" in sql
+        assert "'cpu'" not in sql
+        assert "limit 100" in sql
+
+
+def test_sql_workload_instructions_define_complete_interpretation_contract(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    item_ids = [
+        item_id
+        for section_id, _item_key, item_id, _item in iter_report_items(content)
+        if section_id == "sql_workload"
+    ]
+    assert len(item_ids) == 7
+    for item_id in item_ids:
+        text = content.instructions[item_id]["text"]
+        assert "This instruction belongs to" in text, item_id
+        assert "## What to watch" in text, item_id
+        assert "## Automatic evaluation" in text, item_id
+        assert "## Common fault causes" in text, item_id
+
+
+def test_sql_workload_queries_use_complete_bounded_statement_identity(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    top_query_ids = {
+        "statements.top_by_total_time",
+        "statements.top_by_mean_time",
+        "statements.top_by_calls",
+        "statements.top_by_io",
+        "statements.top_by_temp_io",
+        "statements.top_by_wal",
+    }
+
+    for query_id in top_query_ids:
+        query = content.queries[query_id]
+        assert query["optional"] is True
+        assert query["collection"] == {"default": "once", "supports": ["once"]}
+        for variant in query["variants"]:
+            sql = (content.path / "queries" / variant["sql_file"]).read_text(
+                encoding="utf-8"
+            ).lower()
+            assert "s.dbid" in sql, query_id
+            assert "s.userid" in sql, query_id
+            assert "s.queryid" in sql, query_id
+            assert "s.toplevel" in sql, query_id
+            assert "limit 50" in sql, query_id
+            assert "pg_diag_internal_severity" in sql, query_id
+
+
+def test_sql_workload_version_specific_columns(content_path: Path) -> None:
+    content = load_content(content_path)
+
+    pg16 = select_query_variant(
+        "statements.top_by_total_time",
+        content.queries["statements.top_by_total_time"],
+        160000,
+    )
+    pg17 = select_query_variant(
+        "statements.top_by_total_time",
+        content.queries["statements.top_by_total_time"],
+        170000,
+    )
+    pg18 = select_query_variant(
+        "statements.top_by_total_time",
+        content.queries["statements.top_by_total_time"],
+        180000,
+    )
+    pg16_sql = (content.path / "queries" / pg16.variant["sql_file"]).read_text(encoding="utf-8")
+    pg17_sql = (content.path / "queries" / pg17.variant["sql_file"]).read_text(encoding="utf-8")
+    pg18_sql = (content.path / "queries" / pg18.variant["sql_file"]).read_text(encoding="utf-8")
+
+    assert "stats_since" not in pg16_sql
+    assert "shared_blk_read_time" in pg17_sql
+    assert "stats_since" in pg17_sql
+    assert "parallel_workers_to_launch" not in pg17_sql
+    assert "parallel_workers_to_launch" in pg18_sql
+    assert "parallel_workers_launched" in pg18_sql
+
+
+def test_statement_delta_sources_do_not_collapse_hidden_query_ids(content_path: Path) -> None:
+    content = load_content(content_path)
+    expected_keys = [
+        "dimensions.database_id",
+        "dimensions.user_id",
+        "dimensions.query_id",
+        "dimensions.toplevel",
+    ]
+    metric_ids = {
+        "statements.total_time_delta",
+        "statements.io_delta",
+        "statements.wal_delta",
+    }
+    for metric_id in metric_ids:
+        metric = content.metrics[metric_id]
+        assert metric["table"]["key_refs"] == expected_keys
+        source = content.queries[metric["source_query"]]
+        assert source["optional"] is True
+        for variant in source["variants"]:
+            sql = (content.path / "queries" / variant["sql_file"]).read_text(
+                encoding="utf-8"
+            ).lower()
+            assert "s.queryid is not null" in sql, metric_id
+            assert "s.toplevel" in sql, metric_id
+            assert "''::text as query" in sql, metric_id
+
+
+def test_snapshot_delta_workload_defines_complete_interval_contract(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    item_ids = [
+        item_id
+        for section_id, _item_key, item_id, _item in iter_report_items(content)
+        if section_id == "snapshot_delta_workload"
+    ]
+
+    assert len(item_ids) == 9
+    for item_id in item_ids:
+        text = content.instructions[item_id]["text"]
+        assert "This instruction belongs to" in text, item_id
+        assert "## What to watch" in text, item_id
+        assert "## Automatic evaluation" in text, item_id
+        assert "## Interval coverage" in text, item_id
+        assert "## Common fault causes" in text, item_id
+
+        metric_ref = next(
+            item["metric"]
+            for section_id, _item_key, report_item_id, item in iter_report_items(content)
+            if section_id == "snapshot_delta_workload" and report_item_id == item_id
+        )
+        assert metric_ref in content.metrics
+        assert content.metrics[metric_ref]["requires_collection"] == "window_endpoints"
+
+
+def test_snapshot_delta_sources_keep_bounded_oid_identity_and_reset_epochs(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    expected = {
+        "database.workload_delta": (["dimensions.database_id"], None),
+        "statements.total_time_delta": (
+            [
+                "dimensions.database_id",
+                "dimensions.user_id",
+                "dimensions.query_id",
+                "dimensions.toplevel",
+            ],
+            50,
+        ),
+        "statements.io_delta": (
+            [
+                "dimensions.database_id",
+                "dimensions.user_id",
+                "dimensions.query_id",
+                "dimensions.toplevel",
+            ],
+            50,
+        ),
+        "statements.wal_delta": (
+            [
+                "dimensions.database_id",
+                "dimensions.user_id",
+                "dimensions.query_id",
+                "dimensions.toplevel",
+            ],
+            50,
+        ),
+        "objects.table_dml_delta": (
+            ["dimensions.database_id", "dimensions.relation_id"],
+            200,
+        ),
+        "objects.table_scan_delta": (
+            ["dimensions.database_id", "dimensions.relation_id"],
+            200,
+        ),
+        "objects.table_io_delta": (
+            ["dimensions.database_id", "dimensions.relation_id"],
+            200,
+        ),
+        "objects.index_usage_delta": (
+            ["dimensions.database_id", "dimensions.index_id"],
+            200,
+        ),
+        "objects.function_time_delta": (
+            ["dimensions.database_id", "dimensions.function_id"],
+            100,
+        ),
+    }
+
+    for metric_id, (key_refs, source_limit) in expected.items():
+        metric = content.metrics[metric_id]
+        assert metric["table"]["key_refs"] == key_refs
+        assert metric["table"]["epoch_refs"], metric_id
+        source = content.queries[metric["source_query"]]
+        assert source["collection"] == {
+            "default": "window_endpoints",
+            "supports": ["once", "window_endpoints"],
+        }
+        for variant in source["variants"]:
+            sql = (content.path / "queries" / variant["sql_file"]).read_text(
+                encoding="utf-8"
+            ).lower()
+            assert "order by" not in sql if source_limit is None else "order by" in sql
+            assert "limit" not in sql if source_limit is None else f"limit {source_limit}" in sql
+            assert not re.search(r"\bpg_stat(?:ements)?_reset\w*\s*\(", sql), metric_id
+
+
+def test_snapshot_delta_version_epochs_and_database_output_are_complete(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    database_sql = (
+        content.path / "queries/metrics/database_workload_delta.sql"
+    ).read_text(encoding="utf-8").lower()
+    for column in (
+        "stats_reset",
+        "blks_read",
+        "blks_hit",
+        "tup_returned",
+        "tup_fetched",
+        "tup_inserted",
+        "tup_updated",
+        "tup_deleted",
+        "blk_read_time",
+        "blk_write_time",
+    ):
+        assert column in database_sql
+
+    for metric_id in (
+        "statements.total_time_delta",
+        "statements.io_delta",
+        "statements.wal_delta",
+    ):
+        source = content.queries[content.metrics[metric_id]["source_query"]]
+        pg16 = select_query_variant(source["title"], source, 160000)
+        pg17 = select_query_variant(source["title"], source, 170000)
+        pg16_sql = (content.path / "queries" / pg16.variant["sql_file"]).read_text(
+            encoding="utf-8"
+        ).lower()
+        pg17_sql = (content.path / "queries" / pg17.variant["sql_file"]).read_text(
+            encoding="utf-8"
+        ).lower()
+        assert "pg_stat_statements_info" in pg16_sql
+        assert "stats_since" not in pg16_sql
+        assert "pg_stat_statements_info" in pg17_sql
+        assert "stats_since" in pg17_sql
+
+    database_metric = content.metrics["database.workload_delta"]
+    database_columns = {
+        column["name"]: column for column in database_metric["table"]["columns"]
+    }
+    assert database_columns["commit_delta_raw"]["transform"] == "delta"
+    assert database_columns["commit_delta"]["transform"] == "delta_minus_context"
+    assert database_columns["commits_per_sec"]["transform"] == "rate_minus_context"
+    assert database_metric["evaluation"]["rules"][0]["severity"] == "medium"
+    assert content.metrics["objects.table_scan_delta"]["evaluation"]["rules"][0][
+        "severity"
+    ] == "medium"
+
+
+def test_pg_stat_statements_capability_preserves_hidden_setting_state(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    variant = content.queries["statements.pg_stat_statements_capabilities"]["variants"][0]
+    sql = (content.path / "queries" / variant["sql_file"]).read_text(encoding="utf-8")
+
+    assert "pg_read_all_stats" in sql
+    assert "pg_read_all_settings" in sql
+    assert "'<hidden>'" in sql
+    assert "required_view_columns" in sql
+    assert "parallel_workers_to_launch" in sql
+    assert "track_functions" not in sql
+    assert "track_wal_io_timing" not in sql
+
+
+def test_os_shell_scripts_do_not_require_fixed_sbin_paths(content_path: Path) -> None:
+    content = load_content(content_path)
+    for script_id, manifest in content.scripts.items():
+        if not script_id.startswith("os."):
+            continue
+        script = (content.path / "scripts" / manifest["script_file"]).read_text(encoding="utf-8")
+        assert "/sbin/sysctl" not in script, script_id
+
+
 def test_query_manifests_define_default_sort(content_path: Path) -> None:
     content = load_content(content_path)
     for query_id, manifest in content.queries.items():

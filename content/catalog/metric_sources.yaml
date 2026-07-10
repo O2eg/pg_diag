@@ -105,7 +105,7 @@ queries:
     title: Wait Event Sample Profile Source
     group: Metric Sources
     main_view: pg_stat_activity
-    description: Narrow sampled SQL source used only by the Wait Event Sample Profile item.
+    description: Bounded active-process sample used only by the Wait Event Sample Profile item.
     source: pg_diag
     display:
       default_sort:
@@ -337,11 +337,25 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            database_id: datid
+            stats_reset: stats_reset
           counters:
             xact_commit: xact_commit
             xact_rollback: xact_rollback
+            total_xacts: total_xacts
+            blks_read: blks_read
+            blks_hit: blks_hit
+            blks_read_bytes: blks_read_bytes
+            tup_returned: tup_returned
+            tup_fetched: tup_fetched
+            tup_inserted: tup_inserted
+            tup_updated: tup_updated
+            tup_deleted: tup_deleted
+            temp_files: temp_files
             temp_bytes: temp_bytes
             deadlocks: deadlocks
+            blk_read_time_ms: blk_read_time_ms
+            blk_write_time_ms: blk_write_time_ms
 
   metrics.objects_table_dml_delta:
     title: Table DML Delta Source
@@ -363,13 +377,17 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            database_id: datid
             schema: schemaname
             table: relname
+            relation_id: relid
+            database_stats_reset: database_stats_reset
           counters:
             n_tup_ins: n_tup_ins
             n_tup_upd: n_tup_upd
             n_tup_del: n_tup_del
             n_tup_hot_upd: n_tup_hot_upd
+            total_dml: total_dml
 
   metrics.objects_table_scan_delta:
     title: Table Scan Delta Source
@@ -391,8 +409,11 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            database_id: datid
             schema: schemaname
             table: relname
+            relation_id: relid
+            database_stats_reset: database_stats_reset
           counters:
             seq_scan: seq_scan
             seq_tup_read: seq_tup_read
@@ -622,8 +643,11 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            database_id: datid
             schema: schemaname
             table: relname
+            relation_id: relid
+            database_stats_reset: database_stats_reset
           counters:
             heap_blks_read: heap_blks_read
             idx_blks_read: idx_blks_read
@@ -700,14 +724,19 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            database_id: datid
             schema: schemaname
             table: relname
             index: indexrelname
+            relation_id: relid
+            index_id: indexrelid
+            database_stats_reset: database_stats_reset
           counters:
             idx_scan: idx_scan
             idx_tup_read: idx_tup_read
             idx_tup_fetch: idx_tup_fetch
             idx_blks_read: idx_blks_read
+            idx_blks_hit: idx_blks_hit
 
   metrics.objects_indexes_top_scan_rate:
     title: Top Indexes By Scan Rate Source
@@ -888,8 +917,11 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            database_id: datid
             schema: schemaname
             function: funcname
+            function_id: funcid
+            database_stats_reset: database_stats_reset
           counters:
             calls: calls
             total_time_ms: total_time_ms
@@ -901,6 +933,7 @@ queries:
     main_view: pg_stat_statements
     description: Narrow sampled SQL source used only by the SQL Time Delta item.
     source: pg_diag
+    optional: true
     display:
       default_sort:
         column: total_exec_time_ms
@@ -909,18 +942,28 @@ queries:
       default: window_endpoints
       supports: [once, window_endpoints]
     variants:
-      - id: metrics_statements_total_time_delta_pg14_plus
+      - id: metrics_statements_total_time_delta_pg14_pg16
         min_pg_version: 140000
+        max_pg_version: 169999
         sql_file: metrics/statements_total_time_delta.sql
-        semantic_columns:
+        semantic_columns: &metrics_statements_total_time_delta_semantics
           dimensions:
             database: datname
             user: rolname
+            database_id: dbid
+            user_id: userid
             query_id: query_id
+            toplevel: toplevel
+            global_stats_reset: global_stats_reset
+            entry_stats_since: entry_stats_since
           counters:
             calls: calls
             rows: rows
             total_exec_time_ms: total_exec_time_ms
+      - id: metrics_statements_total_time_delta_pg17_plus
+        min_pg_version: 170000
+        sql_file: metrics/statements_total_time_delta_pg17_plus.sql
+        semantic_columns: *metrics_statements_total_time_delta_semantics
 
   metrics.statements_wal_delta:
     title: SQL WAL Delta Source
@@ -928,6 +971,7 @@ queries:
     main_view: pg_stat_statements
     description: Narrow sampled SQL source used only by the SQL WAL Delta item.
     source: pg_diag
+    optional: true
     display:
       default_sort:
         column: wal_bytes
@@ -936,18 +980,28 @@ queries:
       default: window_endpoints
       supports: [once, window_endpoints]
     variants:
-      - id: metrics_statements_wal_delta_pg14_plus
+      - id: metrics_statements_wal_delta_pg14_pg16
         min_pg_version: 140000
+        max_pg_version: 169999
         sql_file: metrics/statements_wal_delta.sql
-        semantic_columns:
+        semantic_columns: &metrics_statements_wal_delta_semantics
           dimensions:
             database: datname
             user: rolname
+            database_id: dbid
+            user_id: userid
             query_id: query_id
+            toplevel: toplevel
+            global_stats_reset: global_stats_reset
+            entry_stats_since: entry_stats_since
           counters:
             wal_bytes: wal_bytes
             wal_records: wal_records
             wal_fpi: wal_fpi
+      - id: metrics_statements_wal_delta_pg17_plus
+        min_pg_version: 170000
+        sql_file: metrics/statements_wal_delta_pg17_plus.sql
+        semantic_columns: *metrics_statements_wal_delta_semantics
 
   metrics.statements_io_delta:
     title: SQL Shared I/O Delta Source
@@ -955,6 +1009,7 @@ queries:
     main_view: pg_stat_statements
     description: Narrow sampled statement I/O counters used only by the SQL shared I/O delta item.
     source: pg_diag
+    optional: true
     display:
       default_sort:
         column: shared_blks_read
@@ -971,7 +1026,12 @@ queries:
           dimensions:
             database: datname
             user: rolname
+            database_id: dbid
+            user_id: userid
             query_id: query_id
+            toplevel: toplevel
+            global_stats_reset: global_stats_reset
+            entry_stats_since: entry_stats_since
           counters:
             shared_blks_read: shared_blks_read
             shared_blks_written: shared_blks_written

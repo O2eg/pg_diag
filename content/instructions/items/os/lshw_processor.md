@@ -16,6 +16,10 @@ This instruction belongs to report item `os.lshw_processor`. The item is backed 
 - Host migration to different CPU class.
 - lshw permission limits.
 
+## Automatic evaluation
+- No severity is assigned without an approved CPU baseline.
+- Empty or partial lshw output should be cross-checked with `CPU Information` from `lscpu`.
+
 ## Checklist
 - Compare with `CPU Information`
 - Check extension or JIT assumptions that depend on CPU features.

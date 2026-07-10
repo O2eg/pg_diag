@@ -1,7 +1,12 @@
 #!/bin/sh
 set -eu
 
-lshw_output="$("$(dirname "$0")/lshw_json.sh" volume 2>/dev/null || true)"
+lshw_output=""
+if lshw_output="$("$(dirname "$0")/lshw_json.sh" volume 2>/dev/null)"; then
+  lshw_status=0
+else
+  lshw_status=$?
+fi
 
 if command -v python3 >/dev/null 2>&1; then
   if printf '%s' "$lshw_output" | python3 -c '
@@ -21,21 +26,32 @@ sys.exit(1)
     printf '%s\n' "$lshw_output"
     exit 0
   fi
-else
+elif [ "$lshw_status" -eq 0 ] && [ -n "$lshw_output" ]; then
   printf '%s\n' "$lshw_output"
   exit 0
 fi
 
 if ! command -v lsblk >/dev/null 2>&1; then
-  echo "[]"
-  exit 0
+  echo "neither usable lshw volume data nor lsblk is available" >&2
+  exit 3
+fi
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "python3 is required to normalize lsblk JSON" >&2
+  exit 3
 fi
 
 columns="NAME,PATH,PKNAME,TYPE,SIZE,FSTYPE,LABEL,UUID,FSAVAIL,FSUSE%,MOUNTPOINTS,MODEL,SERIAL"
-lsblk_output="$(lsblk --json --bytes -o "$columns" 2>/dev/null || true)"
+if lsblk_output="$(LC_ALL=C lsblk --json --bytes -o "$columns" 2>/dev/null)"; then
+  :
+else
+  lsblk_output=""
+fi
 if [ -z "$lsblk_output" ]; then
   columns="NAME,PATH,TYPE,SIZE,FSTYPE,MOUNTPOINT"
-  lsblk_output="$(lsblk --json --bytes -o "$columns" 2>/dev/null || printf '{"blockdevices":[]}')"
+  if ! lsblk_output="$(LC_ALL=C lsblk --json --bytes -o "$columns")"; then
+    echo "lsblk JSON collection failed" >&2
+    exit 1
+  fi
 fi
 
 printf '%s' "$lsblk_output" | python3 -c '
@@ -45,8 +61,7 @@ import sys
 try:
     payload = json.load(sys.stdin)
 except Exception:
-    print("[]")
-    raise SystemExit(0)
+    raise SystemExit("cannot parse lsblk JSON output")
 
 rows = []
 

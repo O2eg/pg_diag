@@ -16,6 +16,10 @@ This instruction belongs to report item `os.sysctl_vm`. The item is backed by `o
 - Sysctl change not persisted.
 - Configuration management drift.
 
+## Automatic evaluation
+- No severity is assigned: safe VM values depend on RAM, storage latency, kernel release, and workload.
+- Only readable runtime `vm.*` keys are shown; this does not verify persistence in sysctl configuration files.
+
 ## Checklist
 - Compare VM sysctl values with platform baseline.
 - Relate dirty/writeback settings to checkpoint and disk latency evidence.

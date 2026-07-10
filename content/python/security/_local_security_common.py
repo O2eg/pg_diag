@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -8,10 +9,16 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from pg_diag.executors.python import PythonSourceContext, PythonSourceResult, table_result
+from pg_diag.executors.python import (
+    PythonSourceContext,
+    PythonSourceResult,
+    run_blocking,
+    table_result,
+)
 
 
 RISK_RANK = {"ok": 0, "medium": 1, "high": 2}
+
 
 def _unavailable_result(reason: str, code: str) -> PythonSourceResult:
     return PythonSourceResult(
@@ -29,6 +36,22 @@ def _unavailable_result(reason: str, code: str) -> PythonSourceResult:
     )
 
 
+def _not_applicable_result(reason: str, code: str) -> PythonSourceResult:
+    return PythonSourceResult(
+        collection_status="skipped",
+        reason=reason,
+        result=table_result([]),
+        severity_level="unknown",
+        diagnostics=[
+            {
+                "level": "info",
+                "code": code,
+                "message": reason,
+            }
+        ],
+    )
+
+
 def _result(
     rows: list[dict[str, Any]],
     *,
@@ -36,15 +59,22 @@ def _result(
     fail_title: str,
     recommendation: str,
     diagnostic_code: str,
+    coverage_complete: bool = True,
+    coverage_note: str = "",
 ) -> PythonSourceResult:
     severity_level = _max_risk(row.get("risk_level") for row in rows)
+    if not rows and not coverage_complete:
+        severity_level = "unknown"
     if rows:
         issues = {
             "summary": {
                 "severity": severity_level,
                 "status": "fail",
                 "title": fail_title,
-                "description": f"{len(rows)} local security finding(s) matched this check.",
+                "description": (
+                    f"{len(rows)} local security finding(s) matched this check."
+                    + (f" Coverage note: {coverage_note}" if coverage_note else "")
+                ),
                 "recommendation": recommendation,
             },
             "items": [
@@ -58,7 +88,7 @@ def _result(
                 for row in rows
             ],
         }
-    else:
+    elif coverage_complete:
         issues = {
             "summary": {
                 "severity": "ok",
@@ -69,16 +99,30 @@ def _result(
             },
             "items": [],
         }
+    else:
+        issues = {
+            "summary": {
+                "severity": "unknown",
+                "status": "review",
+                "title": "Local security evidence is incomplete",
+                "description": coverage_note or "The collector could inspect only part of the required local evidence.",
+                "recommendation": recommendation,
+            },
+            "items": [],
+        }
     return PythonSourceResult(
-        collection_status="ok" if rows else "empty",
+        collection_status="ok" if rows or not coverage_complete else "empty",
         result=table_result(rows),
         issues=issues,
         severity_level=severity_level,
         diagnostics=[
             {
-                "level": "info",
+                "level": "info" if coverage_complete else "warning",
                 "code": diagnostic_code,
-                "message": f"Collected {len(rows)} local security finding(s)",
+                "message": (
+                    f"Collected {len(rows)} local security finding(s)"
+                    + (f"; coverage incomplete: {coverage_note}" if coverage_note else "")
+                ),
             }
         ],
     )
@@ -367,6 +411,51 @@ def _permission_findings(
     ]
 
 
+def _tls_private_key_findings(path: Path) -> list[dict[str, Any]]:
+    try:
+        file_stat = path.stat()
+    except FileNotFoundError:
+        return [
+            {
+                "path": str(path),
+                "component": "tls_private_key",
+                "file_mode": "",
+                "expected_mode": "0600, or root-owned with group-read only",
+                "risk_level": "medium",
+                "risk_reason": "PostgreSQL TLS private key path is missing",
+            }
+        ]
+    except OSError as exc:
+        return [
+            {
+                "path": str(path),
+                "component": "tls_private_key",
+                "file_mode": "",
+                "expected_mode": "0600, or root-owned with group-read only",
+                "risk_level": "medium",
+                "risk_reason": f"collector cannot inspect PostgreSQL TLS private key: {exc}",
+            }
+        ]
+
+    mode = stat.S_IMODE(file_stat.st_mode)
+    owner_only = mode & 0o077 == 0
+    root_group_read = file_stat.st_uid == 0 and mode & 0o077 == 0o040
+    if owner_only or root_group_read:
+        return []
+    return [
+        {
+            "path": str(path),
+            "component": "tls_private_key",
+            "file_mode": _octal(mode),
+            "owner": _uid_name(file_stat.st_uid),
+            "group": _gid_name(file_stat.st_gid),
+            "expected_mode": "0600, or root-owned with group-read only",
+            "risk_level": "high" if mode & 0o007 else "medium",
+            "risk_reason": "PostgreSQL TLS private key permissions exceed supported owner/root-group-read patterns",
+        }
+    ]
+
+
 def _dedupe_paths(paths: list[Path]) -> list[Path]:
     result: list[Path] = []
     seen: set[str] = set()
@@ -462,6 +551,7 @@ async def _postgres_systemd_unit_names(ctx: PythonSourceContext) -> list[str]:
         match = re.search(r"/postgresql/(?P<version>[^/]+)/(?P<cluster>[^/]+)(?:/|$)", value)
         if match:
             names.append(f"postgresql@{match.group('version')}-{match.group('cluster')}.service")
+    names.extend(await run_blocking(_discover_postgres_systemd_units))
     seen = set()
     result = []
     for name in names:
@@ -470,6 +560,41 @@ async def _postgres_systemd_unit_names(ctx: PythonSourceContext) -> list[str]:
         seen.add(name)
         result.append(name)
     return result
+
+
+def _discover_postgres_systemd_units() -> list[str]:
+    if not shutil.which("systemctl"):
+        return []
+    try:
+        completed = subprocess.run(
+            (
+                "systemctl",
+                "list-units",
+                "--type=service",
+                "--all",
+                "--plain",
+                "--no-legend",
+                "--no-pager",
+            ),
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+            env={**os.environ, "LC_ALL": "C", "LANG": "C"},
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if completed.returncode != 0:
+        return []
+    names = []
+    for line in completed.stdout.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        name = parts[0]
+        if re.match(r"^postgres(?:ql)?(?:[-@].*)?\.service$", name):
+            names.append(name)
+    return names
 
 
 def _systemctl_service_hardening_findings(unit_names: list[str]) -> list[dict[str, Any]] | None:
@@ -489,6 +614,7 @@ def _systemctl_service_hardening_findings(unit_names: list[str]) -> list[dict[st
         return None
 
     rows: list[dict[str, Any]] = []
+    loaded_units = 0
     for props in _parse_systemctl_show_blocks(completed.stdout):
         unit_name = props.get("Id", "")
         if not unit_name:
@@ -496,8 +622,9 @@ def _systemctl_service_hardening_findings(unit_names: list[str]) -> list[dict[st
         load_state = props.get("LoadState", "")
         if load_state and load_state not in {"loaded", "linked", "linked-runtime"}:
             continue
+        loaded_units += 1
         rows.extend(_service_hardening_rows(unit_name, props))
-    return rows
+    return rows if loaded_units else None
 
 
 def _parse_systemctl_show_blocks(text: str) -> list[dict[str, str]]:
@@ -666,20 +793,42 @@ def _inspect_history_file(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def _world_writable_tree_findings(root: Path, *, max_depth: int, max_rows: int) -> list[dict[str, Any]]:
+def _world_writable_tree_findings(
+    root: Path,
+    *,
+    max_depth: int,
+    max_rows: int,
+    max_entries: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     if not root.exists():
-        return rows
+        return rows, {"complete": False, "entries": 0, "reason": f"root is unavailable: {root}"}
     base_depth = len(root.parts)
-    for dirpath, dirnames, filenames in os.walk(root):
+    entries = 0
+    errors: list[str] = []
+
+    def onerror(exc: OSError) -> None:
+        errors.append(str(exc))
+
+    for dirpath, dirnames, filenames in os.walk(root, onerror=onerror):
         current = Path(dirpath)
-        if len(current.parts) - base_depth >= max_depth:
+        at_depth_limit = len(current.parts) - base_depth >= max_depth
+        if at_depth_limit:
             dirnames[:] = []
-        for name in ["."] + dirnames + filenames:
+        names = ["."] if at_depth_limit else ["."] + dirnames + filenames
+        for name in names:
+            entries += 1
+            if entries > max_entries:
+                return rows, {
+                    "complete": False,
+                    "entries": entries - 1,
+                    "reason": f"entry scan limit {max_entries} reached under {root}",
+                }
             path = current if name == "." else current / name
             try:
                 mode = stat.S_IMODE(path.lstat().st_mode)
-            except OSError:
+            except OSError as exc:
+                errors.append(f"{path}: {exc}")
                 continue
             if mode & 0o002:
                 rows.append(
@@ -692,26 +841,56 @@ def _world_writable_tree_findings(root: Path, *, max_depth: int, max_rows: int) 
                     }
                 )
             if len(rows) >= max_rows:
-                return rows
-    return rows
+                return rows, {
+                    "complete": False,
+                    "entries": entries,
+                    "reason": f"finding limit {max_rows} reached under {root}",
+                }
+    return rows, {
+        "complete": not errors,
+        "entries": entries,
+        "reason": "; ".join(errors[:3]),
+    }
 
 
-def _symlink_findings(root: Path, *, max_depth: int, max_rows: int) -> list[dict[str, Any]]:
+def _symlink_findings(
+    root: Path,
+    *,
+    max_depth: int,
+    max_rows: int,
+    max_entries: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     if not root.exists():
-        return rows
+        return rows, {"complete": False, "entries": 0, "reason": f"root is unavailable: {root}"}
     base_depth = len(root.parts)
-    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+    entries = 0
+    errors: list[str] = []
+
+    def onerror(exc: OSError) -> None:
+        errors.append(str(exc))
+
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False, onerror=onerror):
         current = Path(dirpath)
-        if len(current.parts) - base_depth >= max_depth:
+        at_depth_limit = len(current.parts) - base_depth >= max_depth
+        if at_depth_limit:
             dirnames[:] = []
-        for name in dirnames + filenames:
+        names = [] if at_depth_limit else dirnames + filenames
+        for name in names:
+            entries += 1
+            if entries > max_entries:
+                return rows, {
+                    "complete": False,
+                    "entries": entries - 1,
+                    "reason": f"entry scan limit {max_entries} reached under {root}",
+                }
             path = current / name
             try:
                 if not path.is_symlink():
                     continue
                 target = os.readlink(path)
-            except OSError:
+            except OSError as exc:
+                errors.append(f"{path}: {exc}")
                 continue
             rows.append(
                 {
@@ -723,8 +902,16 @@ def _symlink_findings(root: Path, *, max_depth: int, max_rows: int) -> list[dict
                 }
             )
             if len(rows) >= max_rows:
-                return rows
-    return rows
+                return rows, {
+                    "complete": False,
+                    "entries": entries,
+                    "reason": f"finding limit {max_rows} reached under {root}",
+                }
+    return rows, {
+        "complete": not errors,
+        "entries": entries,
+        "reason": "; ".join(errors[:3]),
+    }
 
 
 def _listen_is_loopback_only(value: str) -> bool:
@@ -748,9 +935,10 @@ def _run_command(args: tuple[str, ...]) -> str:
 
 
 def _firewall_has_broad_accept(text: str, port: str) -> bool:
+    port_pattern = re.compile(rf"(?<!\d){re.escape(port)}(?!\d)")
     for line in text.splitlines():
         lower = line.lower()
-        if port not in lower:
+        if not port_pattern.search(lower):
             continue
         if "accept" in lower and ("0.0.0.0/0" in lower or "::/0" in lower or " anywhere" in lower or " any " in lower):
             return True
@@ -760,7 +948,8 @@ def _firewall_has_broad_accept(text: str, port: str) -> bool:
 
 
 def _matching_firewall_lines(text: str, port: str) -> str:
-    lines = [line.strip() for line in text.splitlines() if port in line]
+    port_pattern = re.compile(rf"(?<!\d){re.escape(port)}(?!\d)")
+    lines = [line.strip() for line in text.splitlines() if port_pattern.search(line)]
     return "\n".join(lines[:8])[:1000]
 
 
@@ -813,10 +1002,60 @@ def _mount_for_path(path: Path, mounts: list[dict[str, str]]) -> dict[str, str] 
 
 def _mount_looks_encrypted(source: str, fstype: str) -> bool:
     encrypted_fs = {"ecryptfs", "encfs", "fuse.encfs"}
-    if fstype in encrypted_fs:
+    return fstype.lower() in encrypted_fs
+
+
+def _encrypted_block_sources() -> set[str] | None:
+    if not shutil.which("lsblk"):
+        return None
+    try:
+        completed = subprocess.run(
+            ("lsblk", "--json", "--paths", "--output", "NAME,PATH,TYPE"),
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+            env={**os.environ, "LC_ALL": "C", "LANG": "C"},
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0 or not completed.stdout.strip():
+        return None
+    try:
+        payload = json.loads(completed.stdout)
+    except (TypeError, ValueError):
+        return None
+
+    encrypted: set[str] = set()
+
+    def visit(node: dict[str, Any], encrypted_parent: bool = False) -> None:
+        path = str(node.get("path") or "")
+        is_encrypted = encrypted_parent or str(node.get("type") or "").lower() == "crypt"
+        if is_encrypted and path:
+            encrypted.add(path)
+            try:
+                encrypted.add(str(Path(path).resolve(strict=False)))
+            except OSError:
+                pass
+        for child in node.get("children") or []:
+            if isinstance(child, dict):
+                visit(child, is_encrypted)
+
+    for device in payload.get("blockdevices") or []:
+        if isinstance(device, dict):
+            visit(device)
+    return encrypted
+
+
+def _source_is_confirmed_encrypted(source: str, fstype: str, encrypted_sources: set[str]) -> bool:
+    if _mount_looks_encrypted(source, fstype):
         return True
-    encrypted_markers = ("/dev/mapper/", "/dev/dm-", "crypt", "luks")
-    return any(marker in source.lower() for marker in encrypted_markers)
+    candidates = {source}
+    try:
+        candidates.add(str(Path(source).resolve(strict=False)))
+    except OSError:
+        pass
+    return bool(candidates.intersection(encrypted_sources))
 
 
 def _cron_files() -> list[Path]:
@@ -942,6 +1181,7 @@ __all__ = [
             "Path",
             "PythonSourceContext",
             "PythonSourceResult",
+            "run_blocking",
             "os",
             "re",
             "shutil",

@@ -90,8 +90,8 @@ python_sources:
     local_only: true
     timeout_ms: 5000
   security.postgres_binary_integrity:
-    title: PostgreSQL Binary Integrity
-    description: Detect PostgreSQL executable paths writable by group or other OS users.
+    title: PostgreSQL Binary Permissions
+    description: Detect discovered PostgreSQL executable paths with unsafe ownership or write permissions; this is not a package-integrity or checksum check.
     python_file: security/postgres_binary_integrity.py
     function: collect
     local_only: true
@@ -195,8 +195,8 @@ python_sources:
     local_only: true
     timeout_ms: 5000
   security.disk_encryption_status:
-    title: Disk Encryption Status
-    description: Detect PostgreSQL-sensitive mounts that are not obviously encrypted.
+    title: Disk Encryption Evidence
+    description: Report PostgreSQL-sensitive mounts whose encryption cannot be confirmed from filesystem type and lsblk TYPE=crypt ancestry.
     python_file: security/disk_encryption_status.py
     function: collect
     local_only: true

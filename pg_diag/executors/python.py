@@ -166,6 +166,15 @@ async def _run_sync_daemon(function: Any, *args: Any) -> Any:
     return await future
 
 
+async def run_blocking(function: Any, *args: Any, **kwargs: Any) -> Any:
+    """Run bounded blocking work for an async trusted content source."""
+    if kwargs:
+        from functools import partial
+
+        function = partial(function, **kwargs)
+    return await _run_sync_daemon(function, *args)
+
+
 def _load_module(source_id: str, source_path: Path) -> Any:
     module_name = "pg_diag_content_python_" + "".join(
         char if char.isalnum() else "_" for char in source_id

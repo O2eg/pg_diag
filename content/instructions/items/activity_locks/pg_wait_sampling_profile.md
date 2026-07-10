@@ -3,23 +3,27 @@
 This instruction belongs to report item `activity_locks.pg_wait_sampling_profile`. The item is backed by `wait.pg_wait_sampling_profile` (SQL query).
 
 ## What this item shows
-- Rows from pg_wait_sampling_profile when pg_wait_sampling is installed.
-- Historical sampled waits by PID, event type, event, queryid, and sample count.
-- Wait profile beyond the current pg_stat_activity instant.
+- The top 100 cumulative rows from `pg_wait_sampling_profile`, ordered by sample count.
+- PID, event type, event, query ID, samples, and percentage of all current profile samples. Query text is unavailable from this extension view and remains empty.
+- Profile data accumulated by the extension rather than a pg_diag snapshot-window delta.
 
 ## What to watch
-- High sample count for one wait event or queryid.
-- Profile unavailable because relation does not exist.
-- Old samples that do not match current incident window.
+- Dominant lock, I/O, WAL, activity, or client events.
+- Query ID zero when profile query tracking is disabled or unavailable.
+- Historical PIDs that have exited or been reused; do not treat PID as durable session identity.
+
+## Automatic evaluation
+- No severity is assigned because counts depend on the extension's sampling interval, uptime, and last profile reset.
+- `sample_share_pct` uses the full profile total before the output is limited to 100 rows.
+- Missing optional relation is `unsupported`; an empty result means the visible profile currently has no samples.
 
 ## Common fault causes
-- Lock contention.
-- I/O latency.
-- WAL pressure.
-- Extension not installed.
-- Profile reset or sampling disabled.
+- Workload contention or latency represented by the dominant event.
+- A recent extension restart/reset, disabled sampling, or unavailable query-ID computation.
+- An incident outside the cumulative profile's relevant time window.
 
 ## Checklist
-- Check capability item first when unavailable.
-- Correlate queryid with SQL workload.
-- Reset or window samples intentionally when measuring a specific incident.
+- Check the capability item first when this item is unsupported.
+- Correlate query IDs with SQL workload, but validate timing because the profile has no per-row timestamp.
+- Reset the extension profile only under monitoring policy; pg_diag never resets it.
+- Use the pg_diag snapshot wait chart for an explicitly bounded capture window.

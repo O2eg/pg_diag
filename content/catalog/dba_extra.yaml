@@ -9,6 +9,9 @@ queries:
       default_sort:
         column: used_pct
         direction: desc
+    evaluation:
+      summary_title: Client connection capacity is nearly exhausted
+      recommendation: Reduce application pool demand or connection leaks before raising max_connections; preserve reserved administrative access.
     collection:
       default: once
       supports: [once, every_snapshot]
@@ -21,7 +24,7 @@ queries:
     title: Active Wait Events
     group: Activity & Locks
     main_view: pg_stat_activity
-    description: Active sessions grouped by wait event, state, database, and query_id.
+    description: Active processes grouped by database, application, wait event, query_id, and query text.
     source: queries_collection/pg_stat_activity_wait_events.md
     display:
       default_sort:
@@ -37,7 +40,7 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
-            state: state
+            application: application_name
             wait_event_type: wait_event_type
             wait_event: wait_event
             query_id: query_id
@@ -46,16 +49,19 @@ queries:
             sessions: sessions
 
   activity.long_transactions:
-    title: Long Active Transactions
+    title: Transactions Over 1 Minute
     group: Activity & Locks
     main_view: pg_stat_activity
-    description: Long active and idle-in-transaction sessions with XID age and query text.
+    description: Active and idle-in-transaction client sessions with transactions open for more than one minute.
     source: queries_collection/pg_stat_activity_dba_long_queries_db_converter.md
     cost: medium
     display:
       default_sort:
         column: xact_age_seconds
         direction: desc
+    evaluation:
+      summary_title: Long transactions require review
+      recommendation: Confirm the workload owner and blocking or xmin impact before cancelling a backend; correct transaction boundaries and timeouts at the application layer.
     collection:
       default: once
       supports: [once, every_snapshot]
@@ -74,6 +80,9 @@ queries:
       default_sort:
         column: idle_seconds
         direction: desc
+    evaluation:
+      summary_title: Sessions are idle in open transactions
+      recommendation: Confirm the owner before termination, then fix missing commit or rollback paths and consider idle_in_transaction_session_timeout.
     collection:
       default: once
       supports: [once, every_snapshot]
@@ -86,12 +95,15 @@ queries:
     title: Lock Mode Counts
     group: Activity & Locks
     main_view: pg_locks
-    description: Current lock counts by mode and granted state in the connected database.
+    description: Current lock counts by type, mode, and granted state for the connected database and its sessions.
     source: queries_collection/pg_locks_locks_mode.md
     display:
       default_sort:
         column: locks
         direction: desc
+    evaluation:
+      summary_title: Lock requests are waiting
+      recommendation: Use Lock Waits to identify exact blocker chains before cancelling or terminating any backend.
     collection:
       default: once
       supports: [once, every_snapshot]

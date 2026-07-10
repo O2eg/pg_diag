@@ -16,6 +16,10 @@ This instruction belongs to report item `os.lshw_bridge`. The item is backed by 
 - VM hardware version change.
 - Driver or permission issue.
 
+## Automatic evaluation
+- No severity is assigned; bridge/controller presence is platform-specific.
+- Empty class output can be normal for a VM; lshw stderr warnings mark incomplete evidence.
+
 ## Checklist
 - Review after storage/network device changes.
 - Use with device-specific lshw sections.

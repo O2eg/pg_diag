@@ -3,22 +3,27 @@
 This instruction belongs to report item `sql_workload.top_sql_by_shared_io`. The item is backed by `statements.top_by_io` (SQL query).
 
 ## What this item shows
-- Statements ranked by shared block reads plus writes.
-- Which SQL drives buffer cache misses or shared-buffer write activity.
-- Block hit/read/dirtied/written counters for normalized statements.
+- Up to 50 current-database entries ranked by cumulative shared blocks read plus blocks written by the statement backend.
+- Shared hits/read/dirtied/written, calculated read-plus-written bytes, I/O timing, execution time, rows, identity, and SQL text.
+- `stats_since` on PostgreSQL 17+; PG17 also renamed statement shared-block timing columns, which the selected variant handles.
 
 ## What to watch
-- High shared_blks_read relative to calls.
-- High dirtied or written blocks for statements expected to be read-only.
-- I/O-heavy SQL with low execution time but high system impact.
+- High shared reads per call and high read time when `track_io_timing` is enabled.
+- Dirtied/written blocks from statements expected to be read-only.
+- Cache-hit counts interpreted as logical buffer accesses, not physical disk reads.
+
+## Automatic evaluation
+- I/O totals do not assign severity because large scans and writes can be legitimate.
+- `unknown` means some statement identity is hidden, not that its counters are invalid.
+- `shared_io_bytes` is block reads plus backend writes multiplied by `block_size`; it is cumulative I/O volume, not unique data size or all later checkpoint writes.
 
 ## Common fault causes
-- Large scans.
-- Missing or ineffective indexes.
-- Cold cache.
-- Write-heavy plans or bulk updates.
+- Large scans, ineffective indexes, cold cache, bulk DML, or expected reporting workloads.
+- `track_io_timing = off`, which leaves timing at zero while block counters remain valid.
+- Long statistics windows or entry churn distorting comparisons.
 
 ## Checklist
-- Review plans with BUFFERS output.
-- Check whether reads are expected batch/report traffic.
-- Compare with table I/O and OS disk charts.
+- Normalize counters by calls and entry age before comparing query shapes.
+- Review plans with `BUFFERS` and correlate with table and host I/O evidence.
+- Do not infer physical storage latency from block counts alone.
+- Empty/unsupported semantics follow the capability item; collection is one-shot and bounded to 50 rows.

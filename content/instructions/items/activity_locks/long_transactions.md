@@ -1,24 +1,29 @@
-# Long Active Transactions
+# Transactions Over 1 Minute
 
 This instruction belongs to report item `activity_locks.long_transactions`. The item is backed by `activity.long_transactions` (SQL query).
 
 ## What this item shows
-- Active and idle transactions ordered by transaction age.
-- XID age and query text for sessions that can hold locks or xmin.
-- Which user, application, and client owns long-running transactions.
+- Up to 100 client sessions in the cluster with an open transaction older than one minute.
+- Active, idle-in-transaction, and aborted-idle states with transaction, state, query, wait, XID, and xmin context.
+- Ages in seconds; `xid_age` remains null when neither `backend_xid` nor `backend_xmin` is available.
 
 ## What to watch
-- Transactions older than normal request duration.
-- Long xact age combined with lock waits or xmin blockers.
-- Long queries from unexpected application_name.
+- Idle transactions, high transaction age, or an old xmin horizon.
+- Active transactions much longer than the expected batch or request duration.
+- A session that also appears as a lock blocker.
+
+## Automatic evaluation
+- `high`: an idle transaction is at least one hour old, or an active transaction is at least one day old.
+- `medium`: any idle transaction over one minute, or an active transaction at least 15 minutes old.
+- Active transactions between one and 15 minutes are shown without severity because legitimate batch work is environment-specific.
 
 ## Common fault causes
-- Batch jobs without timeout.
-- Report queries left running.
-- Application transaction boundaries too broad.
-- Client paused while transaction remains open.
+- Missing commit or rollback, a paused client, or an abandoned interactive session.
+- Batch/report queries with broad transaction scope.
+- Application or job timeouts that do not cancel the database transaction.
 
 ## Checklist
-- Check whether the transaction is blocking vacuum or other sessions.
-- Contact owner before cancellation when possible.
-- Set statement and idle transaction timeouts where appropriate.
+- Confirm ownership, workload expectations, blocker impact, and xmin impact before cancellation.
+- Prefer `pg_cancel_backend` for active work; terminate a session only when cancellation cannot resolve the open transaction and operational policy permits it.
+- Correct transaction boundaries and configure appropriate statement and idle-transaction timeouts.
+- An empty table means no matching transaction was observed; it does not describe transactions that ended before collection.

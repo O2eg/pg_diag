@@ -1,10 +1,20 @@
 # procfs Hardening
 
-This item checks process-inspection hardening settings.
+This instruction belongs to `os.procfs_hardening`, backed by local Python source `security.procfs_hardening`.
 
 ## What this item shows
 - `kernel.yama.ptrace_scope`.
 - `/proc` mount options such as `hidepid`.
+
+## What to watch
+- `ptrace_scope=0` or `/proc` without `hidepid=1/2` on a multi-user host.
+
+## Automatic evaluation
+- Each missing hardening control is `medium`, not proof of exploitability.
+- If neither sysctl nor mount evidence can be read, the item is `unsupported`. Containers may expose namespace-specific mount options.
+
+## Common fault causes
+- Distribution defaults, monitoring compatibility requirements, container procfs mounts, or hardening changes not persisted.
 
 ## Checklist
 - Use `ptrace_scope` to limit same-user process inspection.

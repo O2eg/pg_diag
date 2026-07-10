@@ -16,6 +16,10 @@ This instruction belongs to report item `os.lshw_disk`. The item is backed by `o
 - Wrong volume attached.
 - Cloud disk resized without filesystem expansion.
 
+## Automatic evaluation
+- No severity is assigned because model, rotational state, and tier require an environment baseline.
+- lshw may omit disks without sufficient privileges; compare with the volume, mount, and filesystem items.
+
 ## Checklist
 - Map disks to mounts used by PostgreSQL.
 - Compare disk identity with storage monitoring.

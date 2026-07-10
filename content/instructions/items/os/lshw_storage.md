@@ -16,6 +16,10 @@ This instruction belongs to report item `os.lshw_storage`. The item is backed by
 - Driver issue.
 - Hardware replacement.
 
+## Automatic evaluation
+- No severity is assigned without an expected storage-controller baseline.
+- Empty/partial output does not prove that storage is absent; virtual and unprivileged environments commonly hide controller details.
+
 ## Checklist
 - Compare with disk and mount evidence.
 - Check controller driver/firmware during I/O incidents.

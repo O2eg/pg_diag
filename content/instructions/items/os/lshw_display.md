@@ -14,6 +14,10 @@ This instruction belongs to report item `os.lshw_display`. The item is backed by
 - Generic server image with unused display devices.
 - VM graphics adapter exposed by hypervisor.
 
+## Automatic evaluation
+- No severity is assigned because display adapters are not inherently unsafe or harmful to PostgreSQL.
+- An empty table normally means no device in this class was reported.
+
 ## Checklist
 - Treat this as inventory only.
 - Confirm no GPU/display workload is colocated with PostgreSQL.

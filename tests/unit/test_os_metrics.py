@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from pg_diag.os_metrics import (
     _cpu_row,
+    _counter_rate,
     _memory_row_from_values,
     build_backend_proc_window_samples,
+    normalize_iostat_row,
+    parse_iostat_reports,
 )
 
 
@@ -38,6 +41,51 @@ def test_cpu_row_reports_idle_iowait_and_steal_separately() -> None:
     assert row["steal_pct"] == 2.0
     assert row["util_pct"] == 22.0
     assert row["elapsed_seconds"] == 1.25
+
+
+def test_cpu_row_does_not_double_count_guest_time() -> None:
+    previous = {name: 0 for name in (
+        "user", "nice", "system", "idle", "iowait", "irq", "softirq", "steal", "guest", "guest_nice"
+    )}
+    current = {**previous, "user": 30, "system": 20, "idle": 50, "guest": 10}
+
+    row = _cpu_row(previous, current, 1.0)
+
+    assert row["user_pct"] == 30.0
+    assert row["system_pct"] == 20.0
+    assert row["idle_pct"] == 50.0
+    assert row["util_pct"] == 50.0
+
+
+def test_iostat_parser_supports_old_and_new_extended_headers() -> None:
+    reports = parse_iostat_reports(
+        """
+Linux host
+Device: r/s rkB/s w/s wkB/s await avgqu-sz %util
+sda 1.0 2.0 3.0 4.0 5.0 6.0 7.0
+
+Device r/s rkB/s r_await w/s wkB/s w_await aqu-sz %util
+nvme0n1 10.0 20.0 1.5 30.0 40.0 2.5 0.5 80.0
+"""
+    )
+
+    assert len(reports) == 2
+    old = normalize_iostat_row(reports[0][0])
+    new = normalize_iostat_row(reports[1][0])
+    assert old["await_ms"] == 5.0
+    assert old["queue_size"] == 6.0
+    assert new["await_ms"] == 2.5
+    assert new["read_bytes_per_sec"] == 20.0 * 1024
+
+
+def test_iostat_missing_fields_remain_unknown() -> None:
+    row = normalize_iostat_row({"device": "sda", "r/s": 1.0})
+
+    assert row["read_iops"] == 1.0
+    assert row["write_iops"] is None
+    assert row["read_bytes_per_sec"] is None
+    assert row["await_ms"] is None
+    assert _counter_rate(10, 5, 1.0) is None
 
 
 def test_memory_row_from_values_calculates_stack_components() -> None:

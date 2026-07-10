@@ -16,6 +16,10 @@ This instruction belongs to report item `os.cpu_info`. The item is backed by `os
 - BIOS or hypervisor CPU policy change.
 - Container CPU quota hiding actual host capacity.
 
+## Automatic evaluation
+- No severity is assigned without an approved CPU/NUMA baseline.
+- `unsupported` means `lscpu` was unavailable; the output may reflect a VM or container namespace rather than physical hardware.
+
 ## Checklist
 - Compare CPU count with PostgreSQL worker settings.
 - Check NUMA and virtualization notes before tuning CPU-bound workload.

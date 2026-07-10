@@ -15,6 +15,10 @@ This instruction belongs to report item `os.sysctl_udp`. The item is backed by `
 - High monitoring packet volume.
 - Configuration drift.
 
+## Automatic evaluation
+- No severity is assigned because PostgreSQL itself does not normally use UDP and adjacent services differ by deployment.
+- Only readable runtime `net.ipv4.udp*` keys are shown; IPv6 and persistence are outside this item.
+
 ## Checklist
 - Confirm whether PostgreSQL-adjacent tooling uses UDP on this host.
 - Compare with packet-drop evidence outside this report.

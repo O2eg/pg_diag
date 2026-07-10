@@ -3,27 +3,27 @@
 This instruction belongs to report item `snapshot_delta_workload.table_scan_delta`. The item is backed by `objects.table_scan_delta` (snapshot metric).
 
 ## What this item shows
-- Per-table sequential scan and index scan deltas during the capture window.
-- Tables currently scanned by sequential or index access.
+- Sequential scan/tuple-read and index scan/tuple-fetch deltas for stable table OIDs.
+- Sequential scans/s and sequential tuples read/s during the actual endpoint interval.
+- Up to 200 candidates selected by cumulative sequential tuples read, then 50 derived rows.
 
 ## What to watch
-- High sequential scan rate on large tables.
-- Index scan rate collapse after release.
-- Rows read per scan much higher than expected.
+- Sustained sequential scans and tuple reads on relations not intentionally scanned.
+- High sequential tuple reads with little index activity, interpreted with table size and workload purpose.
+
+## Automatic evaluation
+- `medium`: at least 10 sequential scans/s and 10000 sequential tuples read/s for the same relation.
+- The dual threshold avoids classifying a few large scans or many scans of a tiny table from only one signal. It is a review prompt, not an instruction to create an index.
 
 ## Interval coverage
-- The SQL source is sorted and limited before rows enter collector memory.
-- Only tables present in both bounded endpoint selections have a calculable delta.
-- `missing_start` and `missing_end` are expected selection churn, not zero activity or errors.
-- Counter decreases or invalid values are omitted and reported as invalid coverage.
+- `(datid, relid)` identity, database reset epoch, counter decreases, and bounded-selection behavior match `Table DML Delta`.
+- Single-table resets that regrow beyond the starting value cannot be proven because PostgreSQL exposes no per-table reset timestamp.
 
 ## Common fault causes
-- Missing index.
-- Planner estimate drift.
-- Reporting query.
-- Small table intentionally scanned.
+- Missing/ineffective index, low-selectivity predicate, deliberate batch scan, small lookup table, or reset/selection churn.
 
 ## Checklist
-- Check table size before treating seq scans as bad.
-- Review top SQL plans.
-- Run ANALYZE if stats are stale.
+- Check relation size, cache behavior, query predicates, and representative plans.
+- Do not create an index from this summary alone.
+- Correlate with SQL time/I/O and table I/O deltas.
+- Empty means no non-zero comparable candidate, not proof that no scans occurred outside the bounded set.

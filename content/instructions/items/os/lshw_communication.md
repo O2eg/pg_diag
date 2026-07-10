@@ -15,6 +15,10 @@ This instruction belongs to report item `os.lshw_communication`. The item is bac
 - Out-of-band device exposure.
 - VM virtual device defaults.
 
+## Automatic evaluation
+- No severity is assigned because communication-device policy is deployment-specific.
+- Empty class output is normal; unexpected devices require comparison with the platform baseline.
+
 ## Checklist
 - Review only for inventory or security policy questions.
 - Confirm unexpected devices with platform owners.

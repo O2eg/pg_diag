@@ -742,33 +742,115 @@ metrics:
       default_sort:
         column: commits_per_sec
         direction: desc
+    evaluation:
+      summary_title: Deadlocks occurred during the snapshot window
+      recommendation: Inspect lock ordering and the transactions involved; use PostgreSQL logs and the lock section to identify the conflicting paths.
+      rules:
+        - severity: medium
+          reason: One or more deadlocks occurred during the snapshot window
+          all:
+            - column: deadlocks_delta
+              operator: gt
+              value: 0
     table:
-      key_refs: [dimensions.database]
+      key_refs: [dimensions.database_id]
+      epoch_refs: [dimensions.stats_reset]
       sort:
         column: commits_per_sec
         direction: desc
       columns:
         - name: datname
+          value_ref: dimensions.database
+          transform: last
+          pg_type: text
+        - name: datid
           role: key
           key_index: 0
-        - name: commit_delta
+        - name: commit_delta_raw
           value_ref: counters.xact_commit
           transform: delta
           pg_type: float8
+        - name: pg_diag_commit_overhead
+          transform: context
+          context_key: collector_db_transactions_between_endpoints
+          pg_type: float8
+        - name: commit_delta
+          value_ref: counters.xact_commit
+          transform: delta_minus_context
+          context_key: collector_db_transactions_between_endpoints
+          pg_type: float8
         - name: commits_per_sec
           value_ref: counters.xact_commit
-          transform: rate
+          transform: rate_minus_context
+          context_key: collector_db_transactions_between_endpoints
           pg_type: float8
         - name: rollback_delta
           value_ref: counters.xact_rollback
+          transform: delta
+          pg_type: float8
+        - name: rollbacks_per_sec
+          value_ref: counters.xact_rollback
+          transform: rate
+          pg_type: float8
+        - name: transactions_per_sec
+          value_ref: counters.total_xacts
+          transform: rate_minus_context
+          context_key: collector_db_transactions_between_endpoints
+          pg_type: float8
+        - name: blks_read_delta
+          value_ref: counters.blks_read
+          transform: delta
+          pg_type: float8
+        - name: blks_hit_delta
+          value_ref: counters.blks_hit
+          transform: delta
+          pg_type: float8
+        - name: blks_read_bytes_delta
+          value_ref: counters.blks_read_bytes
+          transform: delta
+          pg_type: float8
+        - name: tup_returned_delta
+          value_ref: counters.tup_returned
+          transform: delta
+          pg_type: float8
+        - name: tup_fetched_delta
+          value_ref: counters.tup_fetched
+          transform: delta
+          pg_type: float8
+        - name: tup_inserted_delta
+          value_ref: counters.tup_inserted
+          transform: delta
+          pg_type: float8
+        - name: tup_updated_delta
+          value_ref: counters.tup_updated
+          transform: delta
+          pg_type: float8
+        - name: tup_deleted_delta
+          value_ref: counters.tup_deleted
+          transform: delta
+          pg_type: float8
+        - name: temp_files_delta
+          value_ref: counters.temp_files
           transform: delta
           pg_type: float8
         - name: temp_bytes_delta
           value_ref: counters.temp_bytes
           transform: delta
           pg_type: float8
+        - name: temp_bytes_per_sec
+          value_ref: counters.temp_bytes
+          transform: rate
+          pg_type: float8
         - name: deadlocks_delta
           value_ref: counters.deadlocks
+          transform: delta
+          pg_type: float8
+        - name: blk_read_time_ms_delta
+          value_ref: counters.blk_read_time_ms
+          transform: delta
+          pg_type: float8
+        - name: blk_write_time_ms_delta
+          value_ref: counters.blk_write_time_ms
           transform: delta
           pg_type: float8
 
@@ -782,21 +864,33 @@ metrics:
         column: exec_time_ms_per_sec
         direction: desc
     table:
-      key_refs: [dimensions.database, dimensions.user, dimensions.query_id]
+      key_refs: [dimensions.database_id, dimensions.user_id, dimensions.query_id, dimensions.toplevel]
+      epoch_refs: [dimensions.global_stats_reset, dimensions.entry_stats_since]
       limit: 50
       sort:
         column: exec_time_ms_per_sec
         direction: desc
       columns:
         - name: datname
+          value_ref: dimensions.database
+          transform: last
+          pg_type: text
+        - name: rolname
+          value_ref: dimensions.user
+          transform: last
+          pg_type: text
+        - name: dbid
           role: key
           key_index: 0
-        - name: rolname
+        - name: userid
           role: key
           key_index: 1
         - name: query_id
           role: key
           key_index: 2
+        - name: toplevel
+          role: key
+          key_index: 3
         - name: calls_delta
           value_ref: counters.calls
           transform: delta
@@ -828,21 +922,33 @@ metrics:
         column: shared_read_blks_delta
         direction: desc
     table:
-      key_refs: [dimensions.database, dimensions.user, dimensions.query_id]
+      key_refs: [dimensions.database_id, dimensions.user_id, dimensions.query_id, dimensions.toplevel]
+      epoch_refs: [dimensions.global_stats_reset, dimensions.entry_stats_since]
       limit: 50
       sort:
         column: shared_read_blks_delta
         direction: desc
       columns:
         - name: datname
+          value_ref: dimensions.database
+          transform: last
+          pg_type: text
+        - name: rolname
+          value_ref: dimensions.user
+          transform: last
+          pg_type: text
+        - name: dbid
           role: key
           key_index: 0
-        - name: rolname
+        - name: userid
           role: key
           key_index: 1
         - name: query_id
           role: key
           key_index: 2
+        - name: toplevel
+          role: key
+          key_index: 3
         - name: shared_read_blks_delta
           value_ref: counters.shared_blks_read
           transform: delta
@@ -850,6 +956,14 @@ metrics:
         - name: shared_written_blks_delta
           value_ref: counters.shared_blks_written
           transform: delta
+          pg_type: float8
+        - name: shared_read_blks_per_sec
+          value_ref: counters.shared_blks_read
+          transform: rate
+          pg_type: float8
+        - name: shared_written_blks_per_sec
+          value_ref: counters.shared_blks_written
+          transform: rate
           pg_type: float8
         - name: read_time_ms_delta
           value_ref: counters.blk_read_time_ms
@@ -870,21 +984,33 @@ metrics:
         column: wal_bytes_per_sec
         direction: desc
     table:
-      key_refs: [dimensions.database, dimensions.user, dimensions.query_id]
+      key_refs: [dimensions.database_id, dimensions.user_id, dimensions.query_id, dimensions.toplevel]
+      epoch_refs: [dimensions.global_stats_reset, dimensions.entry_stats_since]
       limit: 50
       sort:
         column: wal_bytes_per_sec
         direction: desc
       columns:
         - name: datname
+          value_ref: dimensions.database
+          transform: last
+          pg_type: text
+        - name: rolname
+          value_ref: dimensions.user
+          transform: last
+          pg_type: text
+        - name: dbid
           role: key
           key_index: 0
-        - name: rolname
+        - name: userid
           role: key
           key_index: 1
         - name: query_id
           role: key
           key_index: 2
+        - name: toplevel
+          role: key
+          key_index: 3
         - name: wal_bytes_delta
           value_ref: counters.wal_bytes
           transform: delta
@@ -912,21 +1038,31 @@ metrics:
         column: total_dml_delta
         direction: desc
     table:
-      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      key_refs: [dimensions.database_id, dimensions.relation_id]
+      epoch_refs: [dimensions.database_stats_reset]
       limit: 50
       sort:
         column: total_dml_delta
         direction: desc
       columns:
         - name: datname
+          value_ref: dimensions.database
+          transform: last
+          pg_type: text
+        - name: schemaname
+          value_ref: dimensions.schema
+          transform: last
+          pg_type: text
+        - name: relname
+          value_ref: dimensions.table
+          transform: last
+          pg_type: text
+        - name: datid
           role: key
           key_index: 0
-        - name: schemaname
+        - name: relid
           role: key
           key_index: 1
-        - name: relname
-          role: key
-          key_index: 2
         - name: inserts_delta
           value_ref: counters.n_tup_ins
           transform: delta
@@ -944,8 +1080,12 @@ metrics:
           transform: delta
           pg_type: float8
         - name: total_dml_delta
-          value_ref: total_dml
+          value_ref: counters.total_dml
           transform: delta
+          pg_type: float8
+        - name: total_dml_per_sec
+          value_ref: counters.total_dml
+          transform: rate
           pg_type: float8
 
   objects.table_scan_delta:
@@ -957,22 +1097,45 @@ metrics:
       default_sort:
         column: seq_tup_read_delta
         direction: desc
+    evaluation:
+      summary_title: Sustained sequential-scan workload requires review
+      recommendation: Confirm that the table is intentionally scanned, then inspect representative plans and index selectivity before creating an index.
+      rules:
+        - severity: medium
+          reason: A table exceeded both 10 sequential scans/s and 10000 sequential tuples read/s
+          all:
+            - column: seq_scans_per_sec
+              operator: gte
+              value: 10
+            - column: seq_tup_read_per_sec
+              operator: gte
+              value: 10000
     table:
-      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      key_refs: [dimensions.database_id, dimensions.relation_id]
+      epoch_refs: [dimensions.database_stats_reset]
       limit: 50
       sort:
         column: seq_tup_read_delta
         direction: desc
       columns:
         - name: datname
+          value_ref: dimensions.database
+          transform: last
+          pg_type: text
+        - name: schemaname
+          value_ref: dimensions.schema
+          transform: last
+          pg_type: text
+        - name: relname
+          value_ref: dimensions.table
+          transform: last
+          pg_type: text
+        - name: datid
           role: key
           key_index: 0
-        - name: schemaname
+        - name: relid
           role: key
           key_index: 1
-        - name: relname
-          role: key
-          key_index: 2
         - name: seq_scan_delta
           value_ref: counters.seq_scan
           transform: delta
@@ -980,6 +1143,14 @@ metrics:
         - name: seq_tup_read_delta
           value_ref: counters.seq_tup_read
           transform: delta
+          pg_type: float8
+        - name: seq_scans_per_sec
+          value_ref: counters.seq_scan
+          transform: rate
+          pg_type: float8
+        - name: seq_tup_read_per_sec
+          value_ref: counters.seq_tup_read
+          transform: rate
           pg_type: float8
         - name: idx_scan_delta
           value_ref: counters.idx_scan
@@ -1000,21 +1171,31 @@ metrics:
         column: total_blks_read_delta
         direction: desc
     table:
-      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      key_refs: [dimensions.database_id, dimensions.relation_id]
+      epoch_refs: [dimensions.database_stats_reset]
       limit: 50
       sort:
         column: total_blks_read_delta
         direction: desc
       columns:
         - name: datname
+          value_ref: dimensions.database
+          transform: last
+          pg_type: text
+        - name: schemaname
+          value_ref: dimensions.schema
+          transform: last
+          pg_type: text
+        - name: relname
+          value_ref: dimensions.table
+          transform: last
+          pg_type: text
+        - name: datid
           role: key
           key_index: 0
-        - name: schemaname
+        - name: relid
           role: key
           key_index: 1
-        - name: relname
-          role: key
-          key_index: 2
         - name: heap_blks_read_delta
           value_ref: counters.heap_blks_read
           transform: delta
@@ -1031,6 +1212,10 @@ metrics:
           value_ref: counters.total_blks_hit
           transform: delta
           pg_type: float8
+        - name: total_blks_read_per_sec
+          value_ref: counters.total_blks_read
+          transform: rate
+          pg_type: float8
 
   objects.index_usage_delta:
     title: Index Usage Delta
@@ -1042,24 +1227,35 @@ metrics:
         column: idx_scan_delta
         direction: desc
     table:
-      key_refs: [dimensions.database, dimensions.schema, dimensions.table, dimensions.index]
+      key_refs: [dimensions.database_id, dimensions.index_id]
+      epoch_refs: [dimensions.database_stats_reset]
       limit: 50
       sort:
         column: idx_scan_delta
         direction: desc
       columns:
         - name: datname
+          value_ref: dimensions.database
+          transform: last
+          pg_type: text
+        - name: schemaname
+          value_ref: dimensions.schema
+          transform: last
+          pg_type: text
+        - name: relname
+          value_ref: dimensions.table
+          transform: last
+          pg_type: text
+        - name: indexrelname
+          value_ref: dimensions.index
+          transform: last
+          pg_type: text
+        - name: datid
           role: key
           key_index: 0
-        - name: schemaname
+        - name: indexrelid
           role: key
           key_index: 1
-        - name: relname
-          role: key
-          key_index: 2
-        - name: indexrelname
-          role: key
-          key_index: 3
         - name: idx_scan_delta
           value_ref: counters.idx_scan
           transform: delta
@@ -1076,6 +1272,14 @@ metrics:
           value_ref: counters.idx_blks_read
           transform: delta
           pg_type: float8
+        - name: idx_blks_hit_delta
+          value_ref: counters.idx_blks_hit
+          transform: delta
+          pg_type: float8
+        - name: idx_scans_per_sec
+          value_ref: counters.idx_scan
+          transform: rate
+          pg_type: float8
 
   objects.function_time_delta:
     title: Function Time Delta
@@ -1087,21 +1291,31 @@ metrics:
         column: total_time_ms_delta
         direction: desc
     table:
-      key_refs: [dimensions.database, dimensions.schema, dimensions.function]
+      key_refs: [dimensions.database_id, dimensions.function_id]
+      epoch_refs: [dimensions.database_stats_reset]
       limit: 50
       sort:
         column: total_time_ms_delta
         direction: desc
       columns:
         - name: datname
+          value_ref: dimensions.database
+          transform: last
+          pg_type: text
+        - name: schemaname
+          value_ref: dimensions.schema
+          transform: last
+          pg_type: text
+        - name: funcname
+          value_ref: dimensions.function
+          transform: last
+          pg_type: text
+        - name: datid
           role: key
           key_index: 0
-        - name: schemaname
+        - name: funcid
           role: key
           key_index: 1
-        - name: funcname
-          role: key
-          key_index: 2
         - name: calls_delta
           value_ref: counters.calls
           transform: delta
@@ -1113,6 +1327,14 @@ metrics:
         - name: self_time_ms_delta
           value_ref: counters.self_time_ms
           transform: delta
+          pg_type: float8
+        - name: calls_per_sec
+          value_ref: counters.calls
+          transform: rate
+          pg_type: float8
+        - name: total_time_ms_per_sec
+          value_ref: counters.total_time_ms
+          transform: rate
           pg_type: float8
 
   activity.wait_sample_profile:

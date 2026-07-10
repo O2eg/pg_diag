@@ -14,6 +14,10 @@ This instruction belongs to report item `os.lshw_input`. The item is backed by `
 - Hypervisor exposing generic input devices.
 - Non-standard host image.
 
+## Automatic evaluation
+- No severity is assigned; input devices are inventory-only evidence.
+- Empty output is normal on headless servers and many VMs.
+
 ## Checklist
 - Treat as inventory context only.
 - Ignore normal virtual input devices unless security policy requires review.

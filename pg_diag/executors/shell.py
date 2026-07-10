@@ -19,6 +19,9 @@ from pg_diag.planner import PlannedItem
 from pg_diag.security import redact_error, redact_text
 
 
+UNSUPPORTED_EXIT_CODE = 3
+
+
 def execute_shell_item(content: ContentPack, planned: PlannedItem) -> dict[str, Any]:
     started = time.perf_counter()
     script_file = planned.script_file
@@ -50,8 +53,13 @@ def execute_shell_item(content: ContentPack, planned: PlannedItem) -> dict[str, 
             source_language="bash",
         )
 
-    output = proc.stdout if proc.stdout else proc.stderr
-    status = "ok" if proc.returncode == 0 else "error"
+    output = proc.stdout if proc.returncode == 0 or proc.stdout else proc.stderr
+    if proc.returncode == UNSUPPORTED_EXIT_CODE:
+        status = "unsupported"
+    elif proc.returncode == 0:
+        status = "ok" if (proc.stdout or "").strip() else "empty"
+    else:
+        status = "error"
     if status == "ok" and _script_output_mode(content, planned) == "table_json":
         try:
             result = table_json_result(output)
@@ -75,6 +83,7 @@ def execute_shell_item(content: ContentPack, planned: PlannedItem) -> dict[str, 
             collection_status="ok" if result["row_count"] else "empty",
             timing_ms=elapsed_ms(started),
             result=result,
+            diagnostics=_success_diagnostics(proc),
             source_text=source_text,
             source_language="bash",
         )
@@ -82,10 +91,10 @@ def execute_shell_item(content: ContentPack, planned: PlannedItem) -> dict[str, 
     return item_from_plan(
         planned,
         collection_status=status,
-        reason=None if proc.returncode == 0 else f"exit_code={proc.returncode}",
+        reason=_process_reason(proc, status),
         timing_ms=elapsed_ms(started),
         result={"kind": "plain_text", "data": redact_text(output)},
-        diagnostics=[] if proc.returncode == 0 else [_process_diagnostic(proc)],
+        diagnostics=_success_diagnostics(proc) if proc.returncode == 0 else [_process_diagnostic(proc)],
         source_text=source_text,
         source_language="bash",
     )
@@ -135,3 +144,26 @@ def _process_diagnostic(proc: subprocess.CompletedProcess[str]) -> dict[str, Any
         "stdout": redact_text(proc.stdout or ""),
         "stderr": redact_text(proc.stderr or ""),
     }
+
+
+def _process_reason(proc: subprocess.CompletedProcess[str], status: str) -> str | None:
+    if proc.returncode == 0:
+        return None
+    if status == "unsupported":
+        message = (proc.stderr or proc.stdout or "required local command is unavailable").strip()
+        return redact_text(message[:500])
+    return f"exit_code={proc.returncode}"
+
+
+def _success_diagnostics(proc: subprocess.CompletedProcess[str]) -> list[dict[str, Any]]:
+    stderr = redact_text(proc.stderr or "").strip()
+    if not stderr:
+        return []
+    return [
+        {
+            "level": "warning",
+            "code": "shell_stderr",
+            "message": "Shell command completed with diagnostic output",
+            "stderr": stderr,
+        }
+    ]

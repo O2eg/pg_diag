@@ -18,6 +18,7 @@ INTERVAL_COVERAGE_STATUSES = {
     "no_activity",
     "missing_start",
     "missing_end",
+    "epoch_changed",
     "counter_decrease",
     "invalid_value",
     "invalid_interval",

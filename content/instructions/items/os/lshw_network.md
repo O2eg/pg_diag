@@ -16,6 +16,10 @@ This instruction belongs to report item `os.lshw_network`. The item is backed by
 - Driver/firmware mismatch.
 - Host moved to different network class.
 
+## Automatic evaluation
+- No severity is assigned without expected NIC, driver, speed, and bonding policy.
+- Missing link details can result from permissions or virtualization; correlate with runtime addresses and network monitoring.
+
 ## Checklist
 - Compare with `Network Addresses And Hosts`
 - Check NIC speed and driver when network throughput or replication lag is suspected.

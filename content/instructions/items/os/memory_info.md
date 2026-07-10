@@ -3,7 +3,7 @@
 This instruction belongs to report item `os.memory_info`. The item is backed by `os.memory_info` (local host script).
 
 ## What this item shows
-- Detailed `/proc/meminfo` counters including available memory, swap, buffers, cache, and huge pages.
+- Selected `/proc/meminfo` counters including available memory, swap, buffers, cache, dirty/writeback state, commit accounting, and huge pages.
 - Current host memory pressure context at collection time.
 
 ## What to watch
@@ -17,6 +17,10 @@ This instruction belongs to report item `os.memory_info`. The item is backed by 
 - Large work_mem consumers or maintenance jobs.
 - OS memory pressure from colocated services.
 - Huge page reservation mismatch.
+
+## Automatic evaluation
+- No severity is assigned from this point-in-time snapshot. Low available memory and nonzero swap require rate/PSI evidence and workload context.
+- Missing kernel-version-specific fields are normal; `unsupported` means `/proc/meminfo` itself was unavailable.
 
 ## Checklist
 - Compare `MemAvailable` with PostgreSQL memory settings.

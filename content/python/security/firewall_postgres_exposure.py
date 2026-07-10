@@ -15,15 +15,18 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
             diagnostic_code="security_firewall_postgres_exposure",
         )
 
-    firewall_text = "\n".join(
-        output
-        for output in (
-            _run_command(("nft", "list", "ruleset")),
-            _run_command(("iptables", "-S")),
-            _run_command(("ufw", "status", "verbose")),
+    def collect_firewall_text() -> str:
+        return "\n".join(
+            output
+            for output in (
+                _run_command(("nft", "list", "ruleset")),
+                _run_command(("iptables", "-S")),
+                _run_command(("ufw", "status", "verbose")),
+            )
+            if output
         )
-        if output
-    )
+
+    firewall_text = await run_blocking(collect_firewall_text)
     rows = []
     if not firewall_text:
         rows.append(
@@ -45,7 +48,7 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
                 "risk_reason": "Local firewall rules appear to allow broad access to the PostgreSQL port",
             }
         )
-    elif port not in firewall_text:
+    elif not re.search(rf"(?<!\d){re.escape(port)}(?!\d)", firewall_text):
         rows.append(
             {
                 "port": port,
@@ -61,4 +64,8 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
         fail_title="PostgreSQL firewall exposure findings found",
         recommendation="Restrict the PostgreSQL port to trusted source networks at the host firewall and network perimeter.",
         diagnostic_code="security_firewall_postgres_exposure",
+        coverage_complete=False,
+        coverage_note=(
+            "Local nftables/iptables/ufw text is heuristic evidence and does not prove effective rule ordering, cloud firewall, or network perimeter policy"
+        ),
     )

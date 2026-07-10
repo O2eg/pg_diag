@@ -824,6 +824,32 @@ def _validate_metrics(content: ContentPack, issues: list[ValidationIssue]) -> No
                 _issue(issues, "metric_ref", "name_from_ref must be a non-empty string", location)
             elif name_ref and not _semantic_ref_exists(supported_variants, name_ref):
                 _issue(issues, "metric_ref", f"Unresolvable name_from_ref {name_ref!r}", location)
+        table = metric.get("table") or {}
+        if isinstance(table, dict):
+            for ref_key in ("key_refs", "epoch_refs"):
+                refs = table.get(ref_key) or []
+                if not isinstance(refs, list) or any(
+                    not isinstance(ref, str) or not ref for ref in refs
+                ):
+                    _issue(
+                        issues,
+                        "metric_ref",
+                        f"table.{ref_key} must be a list of non-empty strings",
+                        location,
+                    )
+                    continue
+                for ref in refs:
+                    if not _semantic_ref_exists(supported_variants, ref):
+                        _issue(issues, "metric_ref", f"Unresolvable table.{ref_key} ref {ref!r}", location)
+            for column in table.get("columns") or []:
+                if not isinstance(column, dict):
+                    continue
+                ref = column.get("value_ref") or column.get("ref")
+                if isinstance(ref, str) and "." in ref and not _semantic_ref_exists(
+                    supported_variants,
+                    ref,
+                ):
+                    _issue(issues, "metric_ref", f"Unresolvable table column ref {ref!r}", location)
         _validate_metric_result_shape(metric, issues, location)
 
 
@@ -839,6 +865,42 @@ def _validate_metric_result_shape(
         value = metric.get(key)
         if value is not None and not isinstance(value, dict):
             _issue(issues, "metric_result", f"Metric {key} must be a mapping", location)
+    evaluation = metric.get("evaluation")
+    if evaluation is None:
+        return
+    if not isinstance(evaluation, dict):
+        _issue(issues, "metric_evaluation", "Metric evaluation must be a mapping", location)
+        return
+    rules = evaluation.get("rules") or []
+    if not isinstance(rules, list):
+        _issue(issues, "metric_evaluation", "Metric evaluation.rules must be a list", location)
+        return
+    table_columns = {
+        str(column.get("name") or "")
+        for column in ((metric.get("table") or {}).get("columns") or [])
+        if isinstance(column, dict)
+    }
+    for index, rule in enumerate(rules):
+        rule_location = f"{location}.evaluation.rules[{index}]"
+        if not isinstance(rule, dict):
+            _issue(issues, "metric_evaluation", "Evaluation rule must be a mapping", rule_location)
+            continue
+        if rule.get("severity") not in {"medium", "high"}:
+            _issue(issues, "metric_evaluation", "Rule severity must be medium or high", rule_location)
+        conditions = rule.get("all") or []
+        if not isinstance(conditions, list) or not conditions:
+            _issue(issues, "metric_evaluation", "Rule all must be a non-empty list", rule_location)
+            continue
+        for condition in conditions:
+            if not isinstance(condition, dict):
+                _issue(issues, "metric_evaluation", "Rule condition must be a mapping", rule_location)
+                continue
+            if condition.get("column") not in table_columns:
+                _issue(issues, "metric_evaluation", "Rule references an unknown table column", rule_location)
+            if condition.get("operator") not in {"gt", "gte", "lt", "lte", "eq"}:
+                _issue(issues, "metric_evaluation", "Rule operator is unsupported", rule_location)
+            if not isinstance(condition.get("value"), (int, float)):
+                _issue(issues, "metric_evaluation", "Rule value must be numeric", rule_location)
 
 
 def _validate_instructions(content: ContentPack, issues: list[ValidationIssue]) -> None:

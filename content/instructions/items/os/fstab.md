@@ -17,6 +17,10 @@ This instruction belongs to report item `os.fstab`. The item is backed by `os.fs
 - Cloud block device renamed.
 - Wrong mount options copied from another host.
 
+## Automatic evaluation
+- No severity is assigned; comments, templates, automounts, containers, and non-fstab storage managers require manual comparison with runtime mounts.
+- `unsupported` means `/etc/fstab` was unreadable, not that persistent mounts are absent.
+
 ## Checklist
 - Compare fstab with currently mounted filesystems.
 - Prefer stable UUID/LABEL/device mapper names where appropriate.

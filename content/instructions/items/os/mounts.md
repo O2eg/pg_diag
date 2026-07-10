@@ -17,6 +17,10 @@ This instruction belongs to report item `os.mounts`. The item is backed by `os.m
 - Storage failover or device replacement.
 - Container bind mount hiding host layout.
 
+## Automatic evaluation
+- No severity is assigned because the intended mount layout and approved options are environment-specific.
+- The result is the collector mount namespace; containerized collection may not expose host mounts.
+
 ## Checklist
 - Compare with fstab and disk usage.
 - Confirm PGDATA, WAL, logs, and temp directories are on intended mounts.

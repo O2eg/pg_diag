@@ -15,6 +15,10 @@ This instruction belongs to report item `os.lshw_memory`. The item is backed by 
 - BIOS configuration change.
 - lshw permission limits.
 
+## Automatic evaluation
+- No severity is assigned; absent module details are common in VMs and unprivileged collection.
+- Compare capacity with `/proc/meminfo`; an empty table is not proof that memory hardware is missing.
+
 ## Checklist
 - Compare with `Total RAM Capacity`
 - Check hardware monitoring for memory faults.

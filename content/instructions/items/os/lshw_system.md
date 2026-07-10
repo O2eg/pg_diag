@@ -16,6 +16,10 @@ This instruction belongs to report item `os.lshw_system`. The item is backed by 
 - Host replacement not reflected in inventory.
 - lshw run without enough privileges.
 
+## Automatic evaluation
+- No severity is assigned; inventory must be compared with CMDB or cloud metadata.
+- `empty` means no object of this lshw class was returned. `unsupported` means `lshw` was unavailable; stderr warnings indicate potentially incomplete unprivileged inventory.
+
 ## Checklist
 - Compare with CMDB or cloud instance metadata.
 - Confirm the report was collected on the intended host.

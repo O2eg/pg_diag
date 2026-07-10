@@ -16,6 +16,7 @@ INTERVAL_OK = "ok"
 INTERVAL_NO_ACTIVITY = "no_activity"
 INTERVAL_MISSING_START = "missing_start"
 INTERVAL_MISSING_END = "missing_end"
+INTERVAL_EPOCH_CHANGED = "epoch_changed"
 INTERVAL_COUNTER_DECREASE = "counter_decrease"
 INTERVAL_INVALID_VALUE = "invalid_value"
 INTERVAL_INVALID_INTERVAL = "invalid_interval"
@@ -25,10 +26,12 @@ INTERVAL_STATUS_ORDER = (
     INTERVAL_NO_ACTIVITY,
     INTERVAL_MISSING_START,
     INTERVAL_MISSING_END,
+    INTERVAL_EPOCH_CHANGED,
     INTERVAL_COUNTER_DECREASE,
     INTERVAL_INVALID_VALUE,
     INTERVAL_INVALID_INTERVAL,
 )
+SEVERITY_LEVEL_RANK = {"ok": 0, "unknown": 1, "medium": 2, "high": 3}
 
 
 @dataclass(frozen=True)
@@ -45,6 +48,7 @@ def build_metric_item(
     source_item_by_query: dict[str, str],
     source_metadata_by_item: dict[str, dict[str, Any]],
     source_diagnostics: list[dict[str, Any]] | None = None,
+    collection_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     source_query = metric.get("source_query")
     source_sampler = metric.get("source_sampler")
@@ -162,7 +166,11 @@ def build_metric_item(
     source_text = _metric_source_text(metric, source_text, source_language) if source_text else None
 
     if metric.get("result") == "table" or metric.get("table"):
-        table = build_table_result(metric, samples, semantic_columns)
+        table = build_table_result(metric, samples, semantic_columns, collection_context)
+        severity_level, issues = evaluate_metric_table_findings(
+            table,
+            metric.get("evaluation") or {},
+        )
         coverage_reason, coverage_diagnostic = _interval_coverage_feedback(table)
         if coverage_diagnostic:
             metric_diagnostics.append(coverage_diagnostic)
@@ -173,6 +181,8 @@ def build_metric_item(
             planned,
             collection_status=status,
             reason=source_failure_reason if status == "error" else coverage_reason,
+            severity_level=severity_level,
+            issues=issues,
             result=table,
             diagnostics=metric_diagnostics,
             source_text=source_text,
@@ -734,6 +744,7 @@ def build_table_result(
     metric: dict[str, Any],
     samples: list[dict[str, Any]],
     semantic_columns: dict[str, dict[str, str]],
+    collection_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     table = metric.get("table") or {}
     sorted_samples = sorted(samples, key=lambda sample: str(sample.get("timestamp") or ""))
@@ -779,7 +790,15 @@ def build_table_result(
         rendered: list[Any] = []
         nonzero_metric = False
         for column in table.get("columns") or []:
-            value = _table_column_value(column, key, first_row, last_row, semantic_columns, interval_seconds)
+            value = _table_column_value(
+                column,
+                key,
+                first_row,
+                last_row,
+                semantic_columns,
+                interval_seconds,
+                collection_context,
+            )
             rendered.append(value)
             if column.get("role") != "key" and isinstance(value, (int, float)) and value != 0:
                 nonzero_metric = True
@@ -868,6 +887,77 @@ def _table_columns(table: dict[str, Any]) -> list[dict[str, Any]]:
     return columns
 
 
+def evaluate_metric_table_findings(
+    result: dict[str, Any],
+    evaluation: dict[str, Any],
+) -> tuple[str | None, dict[str, Any]]:
+    rules = evaluation.get("rules") or []
+    if not rules:
+        return None, {}
+
+    column_names = [str(column.get("name") or "") for column in result.get("columns") or []]
+    findings: list[tuple[str, str]] = []
+    for row in result.get("rows") or []:
+        values = {
+            name: row[index] if index < len(row) else None
+            for index, name in enumerate(column_names)
+        }
+        for rule in rules:
+            if not isinstance(rule, dict):
+                continue
+            severity = str(rule.get("severity") or "").lower()
+            conditions = rule.get("all") or []
+            if severity not in {"medium", "high"} or not conditions:
+                continue
+            if all(_metric_evaluation_condition_matches(values, condition) for condition in conditions):
+                findings.append((severity, str(rule.get("reason") or "Review derived metric values")))
+
+    if not findings:
+        return "ok", {}
+    severity_level = max(findings, key=lambda finding: SEVERITY_LEVEL_RANK[finding[0]])[0]
+    reasons = list(dict.fromkeys(reason for _severity, reason in findings if reason))
+    description = f"{len(findings)} finding row(s); highest severity is {severity_level}."
+    if reasons:
+        description += " " + "; ".join(reasons[:3])
+    return severity_level, {
+        "summary": {
+            "severity": severity_level,
+            "status": "fail" if severity_level == "high" else "review",
+            "title": str(evaluation.get("summary_title") or "Derived metric findings require review"),
+            "description": description,
+            "recommendation": str(
+                evaluation.get("recommendation")
+                or "Review the derived rows and item instruction before remediation."
+            ),
+        },
+        "items": [],
+    }
+
+
+def _metric_evaluation_condition_matches(
+    values: dict[str, Any],
+    condition: Any,
+) -> bool:
+    if not isinstance(condition, dict):
+        return False
+    actual = _number_or_none(values.get(str(condition.get("column") or "")))
+    expected = _number_or_none(condition.get("value"))
+    if actual is None or expected is None:
+        return False
+    operator = str(condition.get("operator") or "")
+    if operator == "gt":
+        return actual > expected
+    if operator == "gte":
+        return actual >= expected
+    if operator == "lt":
+        return actual < expected
+    if operator == "lte":
+        return actual <= expected
+    if operator == "eq":
+        return actual == expected
+    return False
+
+
 def _rows_by_key(
     rows: list[dict[str, Any]],
     key_refs: list[str],
@@ -888,6 +978,7 @@ def _table_column_value(
     last_row: dict[str, Any],
     semantic_columns: dict[str, dict[str, str]],
     interval_seconds: float,
+    collection_context: dict[str, Any] | None = None,
 ) -> Any:
     role = column.get("role")
     if role == "key":
@@ -896,8 +987,22 @@ def _table_column_value(
 
     ref = column.get("value_ref") or column.get("ref")
     transform = column.get("transform") or "last"
+    if transform == "context":
+        return (collection_context or {}).get(str(column.get("context_key") or ""))
     last_value = _number_or_none(_resolve_ref(last_row, semantic_columns, ref)) if ref else None
     first_value = _number_or_none(_resolve_ref(first_row or {}, semantic_columns, ref)) if ref and first_row else None
+
+    if transform in {"delta_minus_context", "rate_minus_context"}:
+        delta = _counter_delta_value(first_value, last_value).value
+        adjustment = _number_or_none(
+            (collection_context or {}).get(str(column.get("context_key") or ""))
+        )
+        if delta is None or adjustment is None or delta < adjustment:
+            return None
+        adjusted = delta - adjustment
+        if transform == "rate_minus_context":
+            return round(adjusted / interval_seconds, 6) if interval_seconds > 0 else None
+        return adjusted
 
     if transform == "last":
         resolved = _resolve_ref(last_row, semantic_columns, ref) if ref else None
@@ -935,8 +1040,20 @@ def _table_row_interval_status(
     semantic_columns: dict[str, dict[str, str]],
 ) -> str:
     statuses: list[str] = []
+    for ref in table.get("epoch_refs") or []:
+        first_epoch = _resolve_ref(first_row, semantic_columns, ref)
+        last_epoch = _resolve_ref(last_row, semantic_columns, ref)
+        if first_epoch in (None, "") and last_epoch in (None, ""):
+            continue
+        if first_epoch in (None, "") or last_epoch in (None, ""):
+            statuses.append(INTERVAL_INVALID_VALUE)
+            continue
+        if str(first_epoch) != str(last_epoch):
+            statuses.append(INTERVAL_EPOCH_CHANGED)
     for column in table.get("columns") or []:
-        if column.get("transform") not in {"delta", "rate", "pct_delta"}:
+        if column.get("transform") not in {
+            "delta", "rate", "pct_delta", "delta_minus_context", "rate_minus_context"
+        }:
             continue
         ref = column.get("value_ref") or column.get("ref")
         if not ref:
@@ -952,6 +1069,7 @@ def _combined_interval_status(statuses: list[str]) -> str:
     if not statuses:
         return INTERVAL_OK
     for status in (
+        INTERVAL_EPOCH_CHANGED,
         INTERVAL_COUNTER_DECREASE,
         INTERVAL_INVALID_VALUE,
         INTERVAL_INVALID_INTERVAL,
@@ -998,6 +1116,7 @@ def _interval_coverage_feedback(
         invalid_parts = [
             f"{status}={counts.get(status, 0)}"
             for status in (
+                INTERVAL_EPOCH_CHANGED,
                 INTERVAL_COUNTER_DECREASE,
                 INTERVAL_INVALID_VALUE,
                 INTERVAL_INVALID_INTERVAL,

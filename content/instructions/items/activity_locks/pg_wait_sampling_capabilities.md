@@ -3,21 +3,24 @@
 This instruction belongs to report item `activity_locks.pg_wait_sampling_capabilities`. The item is backed by `wait.pg_wait_sampling_capabilities` (SQL query).
 
 ## What this item shows
-- Whether pg_wait_sampling is available, installed, and exposes the profile view.
-- Why pg_wait_sampling profile data may be unavailable.
-- Extension readiness for historical wait sampling.
+- Whether the optional `pg_wait_sampling` package is available and installed in the connected database.
+- The extension schema and whether `pg_wait_sampling_profile` is visible on pg_diag's `pg_catalog, public` search path.
+- Why the profile item may be unsupported.
 
 ## What to watch
-- Extension package not available.
-- Extension not installed in current database.
-- Profile view missing.
+- Installed extension in a schema not visible on the configured search path.
+- Installed extension with a missing profile view.
+- Managed-service or package policy that intentionally makes the extension unavailable.
+
+## Automatic evaluation
+- No severity is assigned: `pg_wait_sampling` is optional and its absence is not a database fault.
+- Capability `false` is evidence of unavailability, while a collection error means the capability check itself failed.
 
 ## Common fault causes
-- Package not installed on host.
-- CREATE EXTENSION not run.
-- Extension not allowed in managed service.
+- Host package not installed, `CREATE EXTENSION` not run, or extension disallowed by the provider.
+- Extension installed outside `public` while pg_diag uses a restricted search path.
 
 ## Checklist
-- Install only if operational policy allows it.
-- Use pg_stat_activity wait samples when pg_wait_sampling is unavailable.
-- Confirm extension overhead and retention expectations.
+- Use the built-in snapshot wait chart when the extension is unavailable.
+- Install or relocate the extension only under the site's change and security policy.
+- Confirm sampling interval, overhead, profile query-ID configuration, and reset policy before operational use.

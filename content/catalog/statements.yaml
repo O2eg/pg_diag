@@ -8,6 +8,9 @@ queries:
       default_sort:
         column: capability
         direction: asc
+    evaluation:
+      summary_title: pg_stat_statements evidence is incomplete
+      recommendation: Fix extension activation or visibility only under the site's change and least-privilege policy; pg_diag never resets statement statistics.
     collection:
       default: once
       supports: [once]
@@ -21,14 +24,18 @@ queries:
     group: SQL Workload
     main_view: pg_stat_statements
     description: Statements with the highest cumulative execution time.
+    optional: true
     cost: medium
     display:
       default_sort:
         column: total_exec_time_ms
         direction: desc
+    evaluation: &statement_visibility_evaluation
+      summary_title: Some Top SQL identities are hidden
+      recommendation: Use a dedicated monitoring role with pg_read_all_stats only when cross-user SQL visibility is approved; raw counters remain useful but hidden statements cannot be safely attributed.
     collection:
       default: once
-      supports: [once, every_snapshot]
+      supports: [once]
     variants:
       - id: statements_top_by_total_time_pg14_pg16
         min_pg_version: 140000
@@ -38,7 +45,10 @@ queries:
           dimensions:
             database: datname
             user: rolname
+            database_id: dbid
+            user_id: userid
             query_id: query_id
+            toplevel: toplevel
           counters:
             calls: calls
             rows: rows
@@ -59,7 +69,12 @@ queries:
             mean_exec_time_ms: mean_exec_time_ms
       - id: statements_top_by_total_time_pg17_plus
         min_pg_version: 170000
+        max_pg_version: 179999
         sql_file: statements/top_by_total_time_pg17_plus.sql
+        semantic_columns: *statement_semantics
+      - id: statements_top_by_total_time_pg18_plus
+        min_pg_version: 180000
+        sql_file: statements/top_by_total_time_pg18_plus.sql
         semantic_columns: *statement_semantics
 
   statements.top_by_mean_time:
@@ -67,50 +82,64 @@ queries:
     group: SQL Workload
     main_view: pg_stat_statements
     description: Statements with the highest mean execution time.
+    optional: true
     cost: medium
     display:
       default_sort:
         column: mean_exec_time_ms
         direction: desc
+    evaluation: *statement_visibility_evaluation
     collection:
       default: once
       supports: [once]
     variants:
-      - id: statements_top_by_mean_time_pg14_plus
+      - id: statements_top_by_mean_time_pg14_pg16
         min_pg_version: 140000
+        max_pg_version: 169999
         sql_file: statements/top_by_mean_time.sql
+      - id: statements_top_by_mean_time_pg17_plus
+        min_pg_version: 170000
+        sql_file: statements/top_by_mean_time_pg17_plus.sql
 
   statements.top_by_calls:
     title: Top SQL By Calls
     group: SQL Workload
     main_view: pg_stat_statements
     description: Most frequently executed statements.
+    optional: true
     cost: medium
     display:
       default_sort:
         column: calls
         direction: desc
+    evaluation: *statement_visibility_evaluation
     collection:
       default: once
       supports: [once]
     variants:
-      - id: statements_top_by_calls_pg14_plus
+      - id: statements_top_by_calls_pg14_pg16
         min_pg_version: 140000
+        max_pg_version: 169999
         sql_file: statements/top_by_calls.sql
+      - id: statements_top_by_calls_pg17_plus
+        min_pg_version: 170000
+        sql_file: statements/top_by_calls_pg17_plus.sql
 
   statements.top_by_io:
     title: Top SQL By Shared Block I/O
     group: SQL Workload
     main_view: pg_stat_statements
     description: Statements with the most shared block reads and writes.
+    optional: true
     cost: medium
     display:
       default_sort:
         column: shared_io_blks
         direction: desc
+    evaluation: *statement_visibility_evaluation
     collection:
       default: once
-      supports: [once, every_snapshot]
+      supports: [once]
     variants:
       - id: statements_top_by_io_pg14_pg16
         min_pg_version: 140000
@@ -127,34 +156,47 @@ queries:
     group: SQL Workload
     main_view: pg_stat_statements
     description: Statements spilling the most temporary blocks.
+    optional: true
     cost: medium
     display:
       default_sort:
         column: temp_io_blks
         direction: desc
+    evaluation: *statement_visibility_evaluation
     collection:
       default: once
       supports: [once]
     variants:
-      - id: statements_top_by_temp_io_pg14_plus
+      - id: statements_top_by_temp_io_pg14_pg16
         min_pg_version: 140000
+        max_pg_version: 169999
         sql_file: statements/top_by_temp_io.sql
+      - id: statements_top_by_temp_io_pg17_plus
+        min_pg_version: 170000
+        sql_file: statements/top_by_temp_io_pg17_plus.sql
 
   statements.top_by_wal:
     title: Top SQL By WAL Generated
     group: SQL Workload
     main_view: pg_stat_statements
     description: Statements generating the most WAL bytes, records, and full-page images.
+    optional: true
     cost: medium
     display:
       default_sort:
         column: wal_bytes
         direction: desc
+    evaluation: *statement_visibility_evaluation
     collection:
       default: once
-      supports: [once, every_snapshot]
+      supports: [once]
     variants:
-      - id: statements_top_by_wal_pg14_plus
+      - id: statements_top_by_wal_pg14_pg16
         min_pg_version: 140000
+        max_pg_version: 169999
         sql_file: statements/top_by_wal.sql
+        semantic_columns: *statement_semantics
+      - id: statements_top_by_wal_pg17_plus
+        min_pg_version: 170000
+        sql_file: statements/top_by_wal_pg17_plus.sql
         semantic_columns: *statement_semantics

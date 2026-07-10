@@ -3,27 +3,26 @@
 This instruction belongs to report item `snapshot_delta_workload.table_io_delta`. The item is backed by `objects.table_io_delta` (snapshot metric).
 
 ## What this item shows
-- Per-table heap, index, toast, and toast-index block I/O deltas during the capture window.
-- Object-level read and cache pressure by table.
+- Heap/index read deltas, total read/hit deltas, and total block reads/s for stable table OIDs.
+- Total counters include heap, indexes, TOAST, and TOAST indexes; labels identify the owning table.
+- Up to 200 candidates selected by cumulative total reads, then 50 derived rows.
 
 ## What to watch
-- High heap block read rate.
-- High index block read rate on one table.
-- Toast reads from large values.
+- High read rate on one relation, heap/index concentration, and TOAST contribution implied by total exceeding displayed heap plus index reads.
+
+## Automatic evaluation
+- No severity is assigned because block volume depends on relation size, cache warmth, and workload intent.
+- A PostgreSQL block read is a buffer miss/read request; the OS page cache can prevent physical device I/O. Buffer hits are logical accesses, not disk reads.
 
 ## Interval coverage
-- The SQL source is sorted and limited before rows enter collector memory.
-- Only tables present in both bounded endpoint selections have a calculable delta.
-- `missing_start` and `missing_end` are expected selection churn, not zero activity or errors.
-- Counter decreases or invalid values are omitted and reported as invalid coverage.
+- OID identity, database reset epoch, counter-decrease detection, and bounded churn follow the table delta contract.
+- Single-table reset followed by sufficient regrowth can remain undetectable.
 
 ## Common fault causes
-- Large scans.
-- Cold cache.
-- Inefficient index access.
-- TOAST-heavy rows.
+- Large scans, cold cache, inefficient access paths, TOAST-heavy rows, batch work, or external resets.
 
 ## Checklist
-- Compare with SQL shared I/O delta.
-- Check whether the object is expected to be hot.
-- Review indexes and query predicates for hot tables.
+- Compare with statement shared I/O and OS disk latency.
+- Inspect relation size, indexes, predicates, and large-value access.
+- Do not calculate physical bytes by assuming every block read reached storage.
+- Empty means no non-zero comparable bounded candidate.

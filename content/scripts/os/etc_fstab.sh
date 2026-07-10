@@ -1,3 +1,9 @@
-#!/bin/bash
+#!/bin/sh
+set -eu
 
-cat /etc/fstab
+if [ ! -r /etc/fstab ]; then
+  echo "/etc/fstab is unavailable" >&2
+  exit 3
+fi
+
+exec cat /etc/fstab

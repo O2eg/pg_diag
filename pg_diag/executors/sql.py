@@ -362,16 +362,18 @@ def _classify_sql_error(exc: Exception, planned: PlannedItem) -> str:
     name = exc.__class__.__name__
     if "FeatureNotSupported" in name:
         return "unsupported"
-    if _is_missing_optional_relation(exc, planned):
+    if _is_missing_optional_source_shape(exc, planned):
         return "unsupported"
     return "error"
 
 
-def _is_missing_optional_relation(exc: Exception, planned: PlannedItem) -> bool:
+def _is_missing_optional_source_shape(exc: Exception, planned: PlannedItem) -> bool:
     name = exc.__class__.__name__
     sqlstate = getattr(exc, "sqlstate", None)
     return bool(planned.source_metadata.get("optional")) and (
-        "UndefinedTable" in name or sqlstate == "42P01"
+        "UndefinedTable" in name
+        or "UndefinedColumn" in name
+        or sqlstate in {"42P01", "42703"}
     )
 
 

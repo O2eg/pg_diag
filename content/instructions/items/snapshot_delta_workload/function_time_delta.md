@@ -3,26 +3,26 @@
 This instruction belongs to report item `snapshot_delta_workload.function_time_delta`. The item is backed by `objects.function_time_delta` (snapshot metric).
 
 ## What this item shows
-- Per-function call and time deltas during the capture window.
-- Procedural code consuming time during snapshots mode.
+- Calls, total/self time deltas, calls/s, and total function milliseconds per second for stable function OIDs.
+- Current schema/function labels with `(datid, funcid)` identity, so overloaded functions do not collapse by name.
+- Up to 100 candidates selected by cumulative total time, then 50 derived rows.
 
 ## What to watch
-- High function time per second.
-- High call rate for a PL function.
-- Missing data because track_functions is disabled.
+- High total time/s, high call rate, and a large gap between total and self time indicating time in called functions.
+
+## Automatic evaluation
+- No severity is assigned because procedural function cost and expected invocation rates are workload-specific.
+- Data exists only for function types enabled by `track_functions`; inlined SQL functions may not be represented as expected.
 
 ## Interval coverage
-- The SQL source is sorted and limited before rows enter collector memory.
-- Only functions present in both bounded endpoint selections have a calculable delta.
-- `missing_start` and `missing_end` are expected selection churn, not zero activity or errors.
-- Counter decreases or invalid values are omitted and reported as invalid coverage.
+- Database-wide reset epoch and counter decreases are checked. A single-function reset has no timestamp and can evade detection if counters regrow above the start.
+- OID identity distinguishes overloads and survives renames; drop/recreate or bounded Top-100 churn becomes unmatched coverage.
 
 ## Common fault causes
-- Expensive PL/pgSQL loops.
-- Function hides SQL work.
-- Application calls function too frequently.
+- Expensive procedural loops, nested function work, high call frequency, disabled tracking, reset, or selection churn.
 
 ## Checklist
-- Confirm `track_functions` setting.
-- Profile high-time functions.
-- Review function body and called SQL.
+- Confirm `track_functions` and whether the function can be inlined.
+- Compare total versus self time and profile called SQL/functions.
+- Treat the result as a bounded endpoint intersection, not a complete function inventory.
+- Empty can mean no tracked calls, disabled tracking, or no comparable bounded candidate.

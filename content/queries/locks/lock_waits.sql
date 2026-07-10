@@ -1,56 +1,136 @@
-with sa_snapshot as (
-  select *
-  from pg_stat_activity
+with blocked_sessions as (
+  select
+    activity.pid as blocked_pid,
+    activity.datname,
+    activity.usename,
+    activity.application_name,
+    activity.state,
+    activity.query_id,
+    activity.query,
+    pg_blocking_pids(activity.pid) as blocker_pids
+  from pg_stat_activity activity
   where
-    datname = current_database()
-    and pid <> pg_backend_pid()
-    and state in ('active', 'idle in transaction', 'idle in transaction (aborted)')
+    activity.datname = current_database()
+    and activity.pid <> pg_backend_pid()
+    and activity.backend_type = 'client backend'
+    and activity.state = 'active'
+    and activity.wait_event_type = 'Lock'
 ),
-pid_tables as (
-  select distinct on (pid) pid, relation::regclass::text as table_name
-  from pg_catalog.pg_locks
-  where relation is not null
-    and locktype in ('tuple', 'relation')
-    and relation::regclass::text not like '%_pkey'
-    and relation::regclass::text not like '%_idx'
-  order by pid, locktype
+blocking_pairs as (
+  select
+    blocked.*,
+    blockers.blocker_pid
+  from blocked_sessions blocked
+  cross join lateral (
+    select distinct blocker_pid
+    from unnest(blocked.blocker_pids) as blockers(blocker_pid)
+  ) blockers
 )
 select
-  blocked.pid::text as blocked_pid,
-  current_database() as datname,
-  blocked_stm.usename::text as blocked_user,
-  blocked_stm.application_name::text as blocked_appname,
-  blocked.mode as blocked_mode,
-  blocked.locktype as blocked_locktype,
-  coalesce(blocked.relation::regclass::text, blocked_tbl.table_name, '') as blocked_table,
-  blocked_stm.query_id::text as blocked_query_id,
-  left(regexp_replace(coalesce(blocked_stm.query, ''), '\s+', ' ', 'g'), 1000) as blocked_query,
-  (extract(epoch from (clock_timestamp() - blocked_stm.state_change)) * 1000)::bigint as blocked_ms,
-  blocker.pid::text as blocker_pid,
-  blocker_stm.usename::text as blocker_user,
-  blocker_stm.application_name::text as blocker_appname,
-  blocker.mode as blocker_mode,
-  blocker.locktype as blocker_locktype,
-  coalesce(blocker.relation::regclass::text, blocker_tbl.table_name, '') as blocker_table,
-  blocker_stm.query_id::text as blocker_query_id,
-  left(regexp_replace(coalesce(blocker_stm.query, ''), '\s+', ' ', 'g'), 1000) as blocker_query,
-  (extract(epoch from (clock_timestamp() - blocker_stm.xact_start)) * 1000)::bigint as blocker_tx_ms
-from pg_catalog.pg_locks as blocked
-join sa_snapshot as blocked_stm on blocked_stm.pid = blocked.pid
-join pg_catalog.pg_locks as blocker on
-  blocked.pid <> blocker.pid
-  and blocker.granted
-  and (
-    (blocked.database = blocker.database)
-    or (blocked.database is null and blocker.database is null)
-  )
-  and (
-    blocked.relation = blocker.relation
-    or blocked.transactionid = blocker.transactionid
-  )
-join sa_snapshot as blocker_stm on blocker_stm.pid = blocker.pid
-left join pid_tables as blocked_tbl on blocked_tbl.pid = blocked.pid
-left join pid_tables as blocker_tbl on blocker_tbl.pid = blocker.pid
-where not blocked.granted
-order by blocked_ms desc
+  pairs.blocked_pid::text as blocked_pid,
+  pairs.datname,
+  pairs.usename::text as blocked_user,
+  pairs.application_name::text as blocked_appname,
+  pairs.state as blocked_state,
+  waiting_lock.mode as blocked_mode,
+  waiting_lock.locktype as blocked_locktype,
+  case
+    when waiting_lock.relation is not null then concat_ws(
+      ':',
+      waiting_lock.relation::regclass::text,
+      case when waiting_lock.page is not null then 'page=' || waiting_lock.page::text end,
+      case when waiting_lock.tuple is not null then 'tuple=' || waiting_lock.tuple::text end
+    )
+    when waiting_lock.transactionid is not null then 'transactionid:' || waiting_lock.transactionid::text
+    when waiting_lock.virtualxid is not null then 'virtualxid:' || waiting_lock.virtualxid
+    when waiting_lock.locktype = 'advisory' then format(
+      'advisory:%s:%s:%s', waiting_lock.classid, waiting_lock.objid, waiting_lock.objsubid
+    )
+    else concat_ws(':', waiting_lock.locktype, waiting_lock.database, waiting_lock.classid, waiting_lock.objid)
+  end as blocked_target,
+  pairs.query_id::text as blocked_query_id,
+  left(regexp_replace(coalesce(pairs.query, ''), '\s+', ' ', 'g'), 1000) as blocked_query,
+  case
+    when waiting_lock.waitstart is null then null
+    else greatest(
+      (extract(epoch from clock_timestamp() - waiting_lock.waitstart) * 1000)::bigint,
+      0
+    )
+  end as blocked_ms,
+  pairs.blocker_pid::text as blocker_pid,
+  blocker.usename::text as blocker_user,
+  blocker.application_name::text as blocker_appname,
+  blocker.state as blocker_state,
+  blocker_lock.mode as blocker_mode,
+  blocker_lock.granted as blocker_lock_granted,
+  blocker.query_id::text as blocker_query_id,
+  left(regexp_replace(coalesce(blocker.query, ''), '\s+', ' ', 'g'), 1000) as blocker_query,
+  case
+    when blocker.xact_start is null then null
+    else greatest(
+      (extract(epoch from clock_timestamp() - blocker.xact_start) * 1000)::bigint,
+      0
+    )
+  end as blocker_tx_ms,
+  case
+    when pairs.blocker_pid = 0 then true
+    else coalesce(cardinality(upstream.blocker_pids), 0) = 0
+  end as blocker_is_root,
+  case
+    when pairs.blocker_pid = 0 then null
+    else array_to_string(upstream.blocker_pids, ',')
+  end as blocker_blocked_by_pids,
+  case
+    when waiting_lock.waitstart is not null
+      and clock_timestamp() - waiting_lock.waitstart >= interval '5 minutes' then 'high'
+    when waiting_lock.waitstart is not null
+      and clock_timestamp() - waiting_lock.waitstart >= interval '5 seconds' then 'medium'
+    else 'ok'
+  end as pg_diag_internal_severity,
+  case
+    when waiting_lock.waitstart is not null
+      and clock_timestamp() - waiting_lock.waitstart >= interval '5 minutes'
+      then 'A lock wait has lasted at least five minutes'
+    when waiting_lock.waitstart is not null
+      and clock_timestamp() - waiting_lock.waitstart >= interval '5 seconds'
+      then 'A lock wait has lasted at least five seconds'
+    else ''
+  end as pg_diag_internal_reason
+from blocking_pairs pairs
+left join pg_stat_activity blocker on blocker.pid = pairs.blocker_pid
+left join lateral (
+  select lock_row.*
+  from pg_locks lock_row
+  where lock_row.pid = pairs.blocked_pid and not lock_row.granted
+  order by lock_row.waitstart nulls last, lock_row.locktype, lock_row.mode
+  limit 1
+) waiting_lock on true
+left join lateral (
+  select lock_row.*
+  from pg_locks lock_row
+  where
+    lock_row.pid = pairs.blocker_pid
+    and lock_row.locktype is not distinct from waiting_lock.locktype
+    and lock_row.database is not distinct from waiting_lock.database
+    and lock_row.relation is not distinct from waiting_lock.relation
+    and lock_row.page is not distinct from waiting_lock.page
+    and lock_row.tuple is not distinct from waiting_lock.tuple
+    and lock_row.virtualxid is not distinct from waiting_lock.virtualxid
+    and lock_row.transactionid is not distinct from waiting_lock.transactionid
+    and lock_row.classid is not distinct from waiting_lock.classid
+    and lock_row.objid is not distinct from waiting_lock.objid
+    and lock_row.objsubid is not distinct from waiting_lock.objsubid
+  order by lock_row.granted desc, lock_row.waitstart nulls last
+  limit 1
+) blocker_lock on true
+left join lateral (
+  select array_agg(distinct upstream_pid order by upstream_pid) as blocker_pids
+  from unnest(
+    case
+      when pairs.blocker_pid > 0 then pg_blocking_pids(pairs.blocker_pid)
+      else array[]::int[]
+    end
+  ) as blockers(upstream_pid)
+) upstream on true
+order by blocked_ms desc nulls last, pairs.blocked_pid, pairs.blocker_pid
 limit 10000

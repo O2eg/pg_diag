@@ -3,23 +3,27 @@
 This instruction belongs to report item `activity_locks.idle_in_transaction`. The item is backed by `activity.idle_in_transaction` (SQL query).
 
 ## What this item shows
-- Sessions idle inside an open transaction for more than one minute.
-- User, application, client, xact age, and last query for idle transactions.
-- Potential xmin and lock retention sources.
+- Up to 100 client sessions idle in an open transaction for more than one minute, including aborted transactions.
+- Idle and transaction ages, user/application/client ownership, waits, XID/xmin context, and the last query.
+- `xid_age` as null when no XID or xmin evidence is available rather than treating unavailable data as zero.
 
 ## What to watch
-- Any row in this item on OLTP systems.
-- High xact age or backend_xmin age.
-- Idle transaction from application pool connections.
+- Any persistent row on latency-sensitive OLTP systems.
+- High transaction or XID age, especially with lock waits or vacuum lag.
+- Repeated ownership by one pool or application path.
+
+## Automatic evaluation
+- `high`: idle in transaction for at least one hour.
+- `medium`: idle in transaction for more than one minute.
+- This is an instantaneous observation; a session that ended before collection is not represented.
 
 ## Common fault causes
-- Application did not commit or rollback.
-- Client disconnected without cleanup.
-- Pooler used in session mode with open transactions.
-- Interactive psql session left open.
+- Application omitted commit or rollback.
+- A client paused or disconnected while its server session remained alive.
+- Pooler/session reuse with an open transaction.
 
 ## Checklist
-- Confirm owner and last query.
-- Terminate stale sessions when safe.
-- Fix application code or pooler behavior.
-- Consider idle_in_transaction_session_timeout.
+- Confirm the owner and transaction impact before terminating a backend.
+- Fix application cleanup and rollback paths.
+- Consider `idle_in_transaction_session_timeout` with an application-compatible value.
+- Empty means no matching session at collection time; error or partial visibility is not a clean result.

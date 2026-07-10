@@ -18,6 +18,10 @@ class UndefinedTableError(Exception):
     sqlstate = "42P01"
 
 
+class UndefinedColumnError(Exception):
+    sqlstate = "42703"
+
+
 class FakeTransaction:
     async def __aenter__(self):
         return self
@@ -40,6 +44,14 @@ class MissingRelationPrepared:
 
     async def fetch(self):
         raise UndefinedTableError('relation "pg_wait_sampling_profile" does not exist')
+
+
+class MissingColumnPrepared:
+    def get_attributes(self):
+        return []
+
+    async def fetch(self):
+        raise UndefinedColumnError('column "stats_since" does not exist')
 
 
 class FakeAttribute:
@@ -236,6 +248,38 @@ def test_optional_missing_relation_is_recorded_as_unsupported(tmp_path) -> None:
 
     assert item["collection_status"] == "unsupported"
     assert item["result"] == {"kind": "table", "columns": [], "rows": [], "row_count": 0}
+    assert item["diagnostics"][0]["level"] == "warning"
+    assert item["diagnostics"][0]["code"] == "unsupported"
+
+
+def test_optional_extension_shape_mismatch_is_recorded_as_unsupported(tmp_path) -> None:
+    queries = tmp_path / "queries"
+    queries.mkdir()
+    (queries / "top_sql.sql").write_text(
+        "select stats_since from pg_stat_statements",
+        encoding="utf-8",
+    )
+    content = SimpleNamespace(
+        path=tmp_path,
+        query_catalog={"query_catalog": {"sql_root": "queries"}},
+        report={"runtime_policy": {"default_sql_timeout_ms": 3000}},
+    )
+    planned = PlannedItem(
+        item_id="sql_workload.top_sql_by_total_time",
+        section_id="sql_workload",
+        item_key="top_sql_by_total_time",
+        title="Top SQL By Total Time",
+        source_kind="query",
+        status="planned",
+        source_id="statements.top_by_total_time",
+        sql_file="top_sql.sql",
+        source_metadata={"query_id": "statements.top_by_total_time", "optional": True},
+    )
+    conn = TimeoutConn(MissingColumnPrepared())
+
+    item = asyncio.run(execute_query_item(content, conn, planned))
+
+    assert item["collection_status"] == "unsupported"
     assert item["diagnostics"][0]["level"] == "warning"
     assert item["diagnostics"][0]["code"] == "unsupported"
 

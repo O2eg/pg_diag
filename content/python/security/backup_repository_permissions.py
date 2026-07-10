@@ -13,17 +13,27 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
         Path("/backup"),
         Path("/backups"),
     ]
-    rows = []
-    for path in candidates:
-        rows.extend(
-            _permission_findings(
-                path,
-                component="backup_repository",
-                expected_mode="not group/world writable and not world accessible",
-                disallowed_bits=0o027,
-                missing_ok=True,
-                risk_reason="PostgreSQL backup repository path permissions are broader than expected",
+    def inspect() -> tuple[int, list[dict[str, Any]]]:
+        existing = [path for path in candidates if path.exists()]
+        rows = []
+        for path in existing:
+            rows.extend(
+                _permission_findings(
+                    path,
+                    component="backup_repository",
+                    expected_mode="not group/world writable and not world accessible",
+                    disallowed_bits=0o027,
+                    missing_ok=True,
+                    risk_reason="PostgreSQL backup repository path permissions are broader than expected",
+                )
             )
+        return len(existing), rows
+
+    path_count, rows = await run_blocking(inspect)
+    if not path_count:
+        return _unavailable_result(
+            "No known local PostgreSQL backup repository path was discovered; custom and remote repositories are not covered",
+            "security_backup_repository_not_discovered",
         )
     return _result(
         rows,

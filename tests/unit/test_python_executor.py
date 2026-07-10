@@ -76,6 +76,21 @@ class FakeConn:
         raise AssertionError(sql)
 
 
+class FakeLocalSettingsConn:
+    def __init__(self, settings: dict[str, str]) -> None:
+        self.settings = settings
+
+    async def fetchval(self, sql: str, *args: Any) -> str | None:
+        if "where name = $1" in sql:
+            return self.settings.get(str(args[0]))
+        raise AssertionError((sql, args))
+
+    async def fetch(self, sql: str, *args: Any) -> list[dict[str, Any]]:
+        if "from pg_tablespace" in sql:
+            return []
+        raise AssertionError((sql, args))
+
+
 def test_remote_superuser_access_python_source_detects_hba_rule(content_path: Path, tmp_path: Path) -> None:
     hba_file = tmp_path / "pg_hba.conf"
     hba_file.write_text(
@@ -371,3 +386,63 @@ def test_p2_python_security_sources_detect_local_and_role_findings(
     finding_types = {row[secret_columns.index("finding_type")] for row in secret_rows}
     assert "pgpass_present" in finding_types
     assert "service_password" in finding_types
+
+
+def test_log_permission_check_does_not_pass_when_directory_is_missing(
+    content_path: Path,
+    tmp_path: Path,
+) -> None:
+    content = load_content(content_path)
+    plan = build_plan(content, 180000, collection_mode=LOCAL_COLLECTION_MODE)
+    planned = {item.item_id: item for item in plan.items}["os.log_file_permissions"]
+    conn = FakeLocalSettingsConn(
+        {
+            "logging_collector": "on",
+            "log_directory": str(tmp_path / "missing-log-directory"),
+            "data_directory": str(tmp_path),
+        }
+    )
+
+    item = asyncio.run(execute_python_item(content, conn, planned))
+
+    assert item["collection_status"] == "ok"
+    assert item["severity_level"] == "medium"
+    assert item["result"]["row_count"] == 1
+    assert "cannot enumerate" in item["issues"]["summary"]["description"]
+
+
+def test_wal_archive_permission_check_reports_archive_library_as_unsupported(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    plan = build_plan(content, 180000, collection_mode=LOCAL_COLLECTION_MODE)
+    planned = {item.item_id: item for item in plan.items}["os.wal_archive_directory_permissions"]
+    conn = FakeLocalSettingsConn(
+        {
+            "archive_mode": "on",
+            "archive_command": "",
+            "archive_library": "custom_archive_library",
+        }
+    )
+
+    item = asyncio.run(execute_python_item(content, conn, planned))
+
+    assert item["collection_status"] == "unsupported"
+    assert item["severity_level"] == "unknown"
+    assert "archive_library" in item["reason"]
+
+
+def test_tls_key_permission_check_is_skipped_when_tls_is_disabled(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    plan = build_plan(content, 180000, collection_mode=LOCAL_COLLECTION_MODE)
+    planned = {item.item_id: item for item in plan.items}["os.tls_key_file_permissions"]
+
+    item = asyncio.run(
+        execute_python_item(content, FakeLocalSettingsConn({"ssl": "off"}), planned)
+    )
+
+    assert item["collection_status"] == "skipped"
+    assert item["severity_level"] == "unknown"
+    assert "disabled" in item["reason"]
