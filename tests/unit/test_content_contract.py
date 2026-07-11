@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from copy import deepcopy
+from dataclasses import replace
 import re
 from pathlib import Path
 
 import pytest
 
+from pg_diag.artifact import create_artifact
 from pg_diag.content_loader import ContentLoadError, iter_report_items, load_content, load_yaml_file
 from pg_diag.planner import build_plan
 from pg_diag.runtime_config import REMOTE_DB_ONLY_COLLECTION_MODE, SNAPSHOT_MODE, SNAPSHOTS_MODE
@@ -16,6 +19,111 @@ def test_content_manifests_are_valid(content_path: Path) -> None:
     content = load_content(content_path)
     issues = validate_content(content)
     assert not issues
+
+
+def test_content_pack_exposes_one_effective_document_with_file_provenance(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    document = content.document
+
+    assert document["report"] == content.report["report"]
+    assert document["sections"] == content.report["sections"]
+    assert document["queries"] == content.queries
+    assert document["scripts"] == content.scripts
+    assert document["metrics"] == content.metrics
+    assert document["python_sources"] == content.pythons
+    assert document["field_reference"]["sections/*/items/*/render"]
+    assert content.provenance["sections"] == ["report.yaml"]
+    assert content.provenance["queries/indexes.redundant_indexes"] == [
+        "queries.yaml",
+        "catalog/dba_extra.yaml",
+    ]
+
+    source_roots = {
+        "query": "queries",
+        "script": "scripts",
+        "metric": "metrics",
+        "python": "python_sources",
+    }
+    for _section_id, _item_key, item_id, item in iter_report_items(content):
+        source_kind = next(iter({"query", "script", "metric", "python"}.intersection(item)))
+        assert item[source_kind] in document[source_roots[source_kind]], item_id
+
+    artifact = create_artifact(
+        content,
+        build_plan(content, 180000, mode=SNAPSHOT_MODE),
+        {},
+        "2026-07-11T00:00:00+00:00",
+    )
+    assert artifact["content"]["document"]["queries"] == content.queries
+    assert artifact["content"]["provenance"] == content.provenance
+
+
+def test_content_contract_has_no_legacy_report_state(content_path: Path) -> None:
+    content = load_content(content_path)
+
+    assert "default_state" not in content.report["report"]
+    assert content.report["defaults"]["item"]["state"] == "expanded"
+    assert content.report["defaults"]["section"]["state"] == "expanded"
+
+
+def test_field_reference_covers_every_unified_content_node(content_path: Path) -> None:
+    content = load_content(content_path)
+    reference = content.document["field_reference"]
+    patterns = [path.split("/") for path in reference if path != "*"]
+    missing: set[str] = set()
+
+    def covered(path: list[str]) -> bool:
+        return any(
+            len(pattern) == len(path)
+            and all(expected == "*" or expected == actual for expected, actual in zip(pattern, path))
+            for pattern in patterns
+        )
+
+    def visit(value: object, path: list[str]) -> None:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                child_path = [*path, str(key)]
+                if not covered(child_path):
+                    missing.add("/".join(child_path))
+                visit(child, child_path)
+        elif isinstance(value, list):
+            list_path = [*path[:-1], path[-1] + "[]"]
+            if not covered(list_path):
+                missing.add("/".join(list_path))
+            for child in value:
+                visit(child, list_path)
+
+    for root, value in content.document.items():
+        if root == "field_reference":
+            continue
+        if not covered([root]):
+            missing.add(root)
+        visit(value, [root])
+
+    assert not missing
+
+
+def test_validator_rejects_missing_or_catch_all_field_help(content_path: Path) -> None:
+    content = load_content(content_path)
+    reference_catalog = deepcopy(content.field_reference_catalog)
+    fields = reference_catalog["field_reference"]["fields"]
+    del fields["report/id"]
+    fields["*"] = "Generic help is not allowed."
+    document = deepcopy(content.document)
+    document["field_reference"] = deepcopy(fields)
+    invalid = replace(
+        content,
+        field_reference_catalog=reference_catalog,
+        document=document,
+    )
+
+    issues = validate_content(invalid)
+    messages = [issue.message for issue in issues if issue.code == "field_reference"]
+
+    assert any("must not contain a catch-all" in message for message in messages)
+    assert any("report/id" in message for message in messages)
 
 
 def test_report_references_exist(content_path: Path) -> None:

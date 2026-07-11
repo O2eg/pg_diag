@@ -21,6 +21,8 @@ JSON/HTML report.
   remote DB-only behavior.
 - `python.yaml` - trusted Python source declarations, defaults, function names,
   timeouts, and local-only behavior.
+- `field_reference.yaml` - wildcard-aware help text for every declarative field
+  shown as comments in the Raw metadata view.
 - `instructions/` - Markdown instructions embedded into report items and shown
   through the `Show Instruction` button.
 - `queries/` - SQL files referenced by query variants.
@@ -30,6 +32,30 @@ JSON/HTML report.
 
 `catalog/*.yaml` is not loaded by glob. A new catalog file must be listed in
 `queries.yaml` under `query_catalog.files`; otherwise it is ignored.
+
+## Unified Content Document
+
+`load_content()` constructs one effective document from the split files. Source
+defaults are already merged into manifests under these canonical paths:
+
+- `sections/<section_id>/items/<item_key>`
+- `queries/<query_id>`
+- `scripts/<script_id>`
+- `metrics/<metric_id>`
+- `python_sources/<python_id>`
+- `instructions/<section_id.item_key>`
+
+The same loader records the source files contributing to each path. The report
+artifact stores the document and provenance once; it does not duplicate a raw
+configuration object in every item. The `Raw` tab in `Show meta` selects the
+branches related to the current item and generates valid YAML whose comments
+come from `field_reference.yaml` and name the contributing files.
+
+Content schema version 3 is strict. `report.catalogs` must name every catalog,
+`defaults.item.state` and `defaults.section.state` must both be declared, and
+the field reference must cover every effective document path. Missing fields,
+catalogs, instructions, or help entries stop validation instead of selecting an
+alternate path or synthesizing a value.
 
 ## Report Layout
 
@@ -300,7 +326,7 @@ pg-diag validate --content content
 The validator checks schema versions, duplicate YAML keys, report references,
 SQL/script/Python source file existence, Python function declarations, version
 ranges, collection support, display sort hint shape, semantic metric references,
-shell fallback behavior, executable script files, positive timeouts, report
+remote DB-only shell behavior, executable script files, positive timeouts, report
 states/defaults, metric source exclusivity, and read-only SQL shape. Catalog and
 source paths must be relative and remain inside their declared content
 directories, including after symlink resolution.

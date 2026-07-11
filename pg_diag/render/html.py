@@ -11,9 +11,8 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-from pg_diag.artifact import apply_database_scope_presentation, write_text_secure
+from pg_diag.artifact import write_text_secure
 from pg_diag.artifact_schema import validate_artifact
-from pg_diag.executors.sql import publicize_table_result
 
 _SCRIPT_END_RE = re.compile(r"</script", re.IGNORECASE)
 _STYLE_END_RE = re.compile(r"</style", re.IGNORECASE)
@@ -24,7 +23,7 @@ def render_html(artifact: dict[str, Any], *, validate: bool = True) -> str:
         validate_artifact(artifact)
     artifact = _publicize_artifact_for_render(artifact)
     payload = _safe_json_payload(artifact)
-    title = html.escape(str((artifact.get("report") or {}).get("title") or "pg_diag report"))
+    title = html.escape(artifact["report"]["title"])
     replacements = {
         "__TITLE__": title,
         "__PAYLOAD__": payload,
@@ -77,7 +76,7 @@ def _inline_style(value: str) -> str:
 
 
 def _publicize_artifact_for_render(artifact: dict[str, Any]) -> dict[str, Any]:
-    snapshots = artifact.get("snapshots") or []
+    snapshots = artifact["snapshots"]
     public_artifact = deepcopy(
         {
             key: value
@@ -85,20 +84,18 @@ def _publicize_artifact_for_render(artifact: dict[str, Any]) -> dict[str, Any]:
             if key not in {"sections", "items", "snapshots", "snapshot_schemas"}
         }
     )
-    runtime = public_artifact.setdefault("runtime", {})
-    if isinstance(runtime, dict):
-        runtime.setdefault("snapshot_count", len(snapshots))
+    public_artifact["runtime"]["snapshot_count"] = len(snapshots)
     public_artifact["snapshots"] = []
     public_artifact["snapshot_schemas"] = {}
 
     public_sections = deepcopy(
         [
             section
-            for section in artifact.get("sections") or []
+            for section in artifact["sections"]
             if isinstance(section, dict) and section.get("state") != "hidden"
         ]
     )
-    all_items = artifact.get("items") or {}
+    all_items = artifact["items"]
     for section in public_sections:
         section["items"] = [
             item_id
@@ -120,15 +117,4 @@ def _publicize_artifact_for_render(artifact: dict[str, Any]) -> dict[str, Any]:
         }
     )
 
-    for item in (public_artifact.get("items") or {}).values():
-        result = item.get("result") or {}
-        if result.get("kind") != "table":
-            continue
-        columns = result.get("columns") or []
-        rows = result.get("rows") or []
-        public_columns, public_rows = publicize_table_result(columns, rows)
-        result["columns"] = public_columns
-        result["rows"] = public_rows
-        result["row_count"] = len(public_rows)
-    apply_database_scope_presentation(public_artifact)
     return public_artifact

@@ -22,9 +22,33 @@ class FakeConn:
 
 
 def fake_content(tmp_path):
+    report = {
+        "report": {"id": "test", "title": "Test"},
+        "runtime_policy": {"fail_fast": False},
+        "defaults": {
+            "table": {"page_size": 25},
+            "item": {"state": "expanded", "database_scope": "all_databases"},
+            "section": {"state": "expanded"},
+        },
+        "sections": {},
+    }
     return SimpleNamespace(
         path=tmp_path,
-        report={"report": {"id": "test", "title": "Test"}, "sections": {}},
+        report=report,
+        document={
+            "report": report["report"],
+            "runtime_policy": report["runtime_policy"],
+            "defaults": report["defaults"],
+            "sections": report["sections"],
+            "catalogs": {},
+            "queries": {},
+            "scripts": {},
+            "metrics": {},
+            "python_sources": {},
+            "instructions": {},
+            "field_reference": {"report": "Report metadata."},
+        },
+        provenance={"report": ["report.yaml"]},
         checksum="sha256:test",
     )
 
@@ -49,7 +73,14 @@ def fake_plan_with_items(mode: str, collection_mode: str, items):
         server_version_num=180000,
         supported_server_version=True,
         reason=None,
-        sections=[{"section_id": "os", "title": "OS", "items": [item.item_id for item in items]}],
+        sections=[
+            {
+                "section_id": "os",
+                "title": "OS",
+                "state": "expanded",
+                "items": [item.item_id for item in items],
+            }
+        ],
         items=items,
         source_jobs=[],
     )
@@ -113,7 +144,10 @@ def test_collect_snapshot_writes_exact_output_files(tmp_path, monkeypatch) -> No
     )
 
     assert json_path.exists()
-    assert json.loads(json_path.read_text(encoding="utf-8"))["artifact_schema_version"] == 2
+    assert (
+        json.loads(json_path.read_text(encoding="utf-8"))["artifact_schema_version"]
+        == runtime_config.ARTIFACT_SCHEMA_VERSION
+    )
     assert html_path.read_text(encoding="utf-8") == "<html>snapshot</html>"
     assert not (tmp_path / "ignored" / "report.json").exists()
     assert not (tmp_path / "ignored" / "report.html").exists()
@@ -182,6 +216,7 @@ def test_collect_snapshots_formats_remote_skipped_once_items(tmp_path, monkeypat
         title="Kernel Version",
         source_kind="script",
         status="skipped",
+        state="expanded",
         reason="no data because remote call",
         source_id="os.kernel_version",
         script_file="os/kernel_version.sh",
@@ -248,6 +283,7 @@ def test_collect_snapshots_runs_static_items_before_chart_window(tmp_path, monke
         source_kind="query",
         source_id="cluster.settings",
         status="planned",
+        state="expanded",
         collection_scope="once",
     )
     chart_source = SourceJob(
@@ -386,6 +422,7 @@ def test_collect_snapshots_uses_backend_proc_window_endpoints(tmp_path, monkeypa
         source_kind="metric",
         source_id="backend.proc_cpu_top",
         status="planned",
+        state="expanded",
         collection_scope="window_endpoints",
         source_metadata={"source_sampler": "os.backend_proc"},
     )
@@ -517,6 +554,7 @@ def test_collect_snapshot_honors_fail_fast_policy(tmp_path, monkeypatch) -> None
         source_kind="query",
         source_id="q",
         status="planned",
+        state="expanded",
     )
     content = fake_content(tmp_path)
     content.report["runtime_policy"] = {"fail_fast": True}

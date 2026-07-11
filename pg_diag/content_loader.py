@@ -10,7 +10,6 @@ from typing import Any
 
 import yaml
 
-from . import runtime_config
 from .errors import ContentLoadError
 
 
@@ -52,11 +51,14 @@ class ContentPack:
     script_catalog: dict[str, Any]
     metric_catalog: dict[str, Any]
     python_catalog: dict[str, Any]
+    field_reference_catalog: dict[str, Any]
     instructions: dict[str, dict[str, str]]
     queries: dict[str, dict[str, Any]]
     scripts: dict[str, dict[str, Any]]
     metrics: dict[str, dict[str, Any]]
     pythons: dict[str, dict[str, Any]]
+    document: dict[str, Any]
+    provenance: dict[str, list[str]]
     catalog_files: list[Path]
     checksum: str
 
@@ -105,9 +107,7 @@ def resolve_under(base: str | Path, ref: Any, label: str) -> Path:
     return candidate
 
 
-def _mapping(value: Any, label: str, *, default_empty: bool = False) -> dict[str, Any]:
-    if value is None and default_empty:
-        return {}
+def _mapping(value: Any, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ContentLoadError(f"{label} must be a mapping")
     return value
@@ -118,7 +118,7 @@ def _manifest_mapping(
     defaults: dict[str, Any],
     label: str,
 ) -> dict[str, dict[str, Any]]:
-    manifests = _mapping(value, label, default_empty=True)
+    manifests = _mapping(value, label)
     result: dict[str, dict[str, Any]] = {}
     for source_id, manifest in manifests.items():
         if not isinstance(source_id, str) or not source_id:
@@ -148,10 +148,117 @@ def _content_checksum(paths: list[Path], root: Path) -> str:
     return "sha256:" + digest.hexdigest()
 
 
+def _relative_content_path(root: Path, path: Path) -> str:
+    return path.resolve().relative_to(root).as_posix()
+
+
+def _build_content_document(
+    *,
+    report: dict[str, Any],
+    query_catalog: dict[str, Any],
+    script_catalog: dict[str, Any],
+    metric_catalog: dict[str, Any],
+    python_catalog: dict[str, Any],
+    field_reference_catalog: dict[str, Any],
+    queries: dict[str, dict[str, Any]],
+    scripts: dict[str, dict[str, Any]],
+    metrics: dict[str, dict[str, Any]],
+    pythons: dict[str, dict[str, Any]],
+    instructions: dict[str, dict[str, str]],
+) -> dict[str, Any]:
+    reference_meta = _mapping(
+        field_reference_catalog.get("field_reference"),
+        "field_reference.yaml:field_reference",
+    )
+    instruction_refs = {
+        item_id: {key: value for key, value in instruction.items() if key != "text"}
+        for item_id, instruction in instructions.items()
+    }
+    return {
+        "report": deepcopy(_mapping(report.get("report"), "report.yaml:report")),
+        "runtime_policy": deepcopy(
+            _mapping(report.get("runtime_policy"), "report.yaml:runtime_policy")
+        ),
+        "defaults": deepcopy(_mapping(report.get("defaults"), "report.yaml:defaults")),
+        "sections": deepcopy(_mapping(report.get("sections"), "report.yaml:sections")),
+        "catalogs": {
+            "queries": deepcopy(
+                _mapping(query_catalog.get("query_catalog"), "queries.yaml:query_catalog")
+            ),
+            "scripts": deepcopy(
+                _mapping(script_catalog.get("script_catalog"), "scripts.yaml:script_catalog")
+            ),
+            "metrics": deepcopy(
+                _mapping(metric_catalog.get("metric_catalog"), "metrics.yaml:metric_catalog")
+            ),
+            "python": deepcopy(
+                _mapping(python_catalog.get("python_catalog"), "python.yaml:python_catalog")
+            ),
+        },
+        "queries": deepcopy(queries),
+        "scripts": deepcopy(scripts),
+        "metrics": deepcopy(metrics),
+        "python_sources": deepcopy(pythons),
+        "instructions": instruction_refs,
+        "field_reference": deepcopy(
+            _mapping(reference_meta.get("fields"), "field_reference.yaml:field_reference.fields")
+        ),
+    }
+
+
+def _build_content_provenance(
+    *,
+    root: Path,
+    report_path: Path,
+    query_index_path: Path,
+    script_path: Path,
+    metric_path: Path,
+    python_path: Path,
+    field_reference_path: Path,
+    query_source_files: dict[str, Path],
+    queries: dict[str, dict[str, Any]],
+    scripts: dict[str, dict[str, Any]],
+    metrics: dict[str, dict[str, Any]],
+    pythons: dict[str, dict[str, Any]],
+    instructions: dict[str, dict[str, str]],
+) -> dict[str, list[str]]:
+    report_source = [_relative_content_path(root, report_path)]
+    query_index_source = _relative_content_path(root, query_index_path)
+    provenance: dict[str, list[str]] = {
+        "report": report_source,
+        "runtime_policy": report_source,
+        "defaults": report_source,
+        "sections": report_source,
+        "catalogs/queries": [query_index_source],
+        "catalogs/scripts": [_relative_content_path(root, script_path)],
+        "catalogs/metrics": [_relative_content_path(root, metric_path)],
+        "catalogs/python": [_relative_content_path(root, python_path)],
+    }
+    provenance["field_reference"] = [_relative_content_path(root, field_reference_path)]
+    for query_id in queries:
+        sources = [query_index_source]
+        source = _relative_content_path(root, query_source_files[query_id])
+        if source not in sources:
+            sources.append(source)
+        provenance[f"queries/{query_id}"] = sources
+    script_source = [_relative_content_path(root, script_path)]
+    metric_source = [_relative_content_path(root, metric_path)]
+    python_source = [_relative_content_path(root, python_path)]
+    if scripts:
+        provenance["scripts"] = script_source
+    if metrics:
+        provenance["metrics"] = metric_source
+    if pythons:
+        provenance["python_sources"] = python_source
+    for item_id, instruction in instructions.items():
+        path = instruction.get("path")
+        if path:
+            provenance[f"instructions/{item_id}"] = [path]
+    return provenance
+
+
 def instruction_ref_for_report_item(section_id: str, item_key: str, item: dict[str, Any]) -> str | None:
     ref = item.get("instruction")
-    if ref is None:
-        ref = item.get("instructions")
     if ref is False:
         return None
     if ref is None:
@@ -176,31 +283,28 @@ def load_content(content_path: str | Path) -> ContentPack:
 
     report_path = root / "report.yaml"
     report = load_yaml_file(report_path)
-    report_meta = _mapping(report.get("report"), "report.yaml:report", default_empty=True)
-    catalogs = _mapping(report_meta.get("catalogs"), "report.yaml:report.catalogs", default_empty=True)
+    report_meta = _mapping(report.get("report"), "report.yaml:report")
+    catalogs = _mapping(report_meta.get("catalogs"), "report.yaml:report.catalogs")
 
-    query_index_path = resolve_under(root, catalogs.get("queries", "queries.yaml"), "Query catalog path")
-    script_path = resolve_under(root, catalogs.get("scripts", "scripts.yaml"), "Script catalog path")
-    metric_path = resolve_under(root, catalogs.get("metrics", "metrics.yaml"), "Metric catalog path")
-    python_ref = catalogs.get("python")
-    python_path = resolve_under(
+    query_index_path = resolve_under(root, catalogs.get("queries"), "Query catalog path")
+    script_path = resolve_under(root, catalogs.get("scripts"), "Script catalog path")
+    metric_path = resolve_under(root, catalogs.get("metrics"), "Metric catalog path")
+    python_path = resolve_under(root, catalogs.get("python"), "Python catalog path")
+    field_reference_path = resolve_under(
         root,
-        "python.yaml" if python_ref is None else python_ref,
-        "Python catalog path",
+        catalogs.get("field_reference"),
+        "Field reference path",
     )
-    instructions_root = catalogs.get("instructions", "instructions")
+    instructions_root = catalogs.get("instructions")
     instructions_dir = resolve_under(root, instructions_root, "Instructions root")
+    if not instructions_dir.is_dir():
+        raise ContentLoadError(f"Instructions root must be a directory: {instructions_dir}")
 
     query_index = load_yaml_file(query_index_path)
     script_catalog = load_yaml_file(script_path)
     metric_catalog = load_yaml_file(metric_path)
-    if python_ref or python_path.exists():
-        python_catalog = load_yaml_file(python_path)
-    else:
-        python_catalog = {
-            "python_catalog": {"schema_version": runtime_config.SUPPORTED_CONTENT_SCHEMA_VERSION},
-            "python_sources": {},
-        }
+    python_catalog = load_yaml_file(python_path)
+    field_reference_catalog = load_yaml_file(field_reference_path)
 
     query_catalog = query_index.get("query_catalog")
     if not isinstance(query_catalog, dict):
@@ -209,13 +313,13 @@ def load_content(content_path: str | Path) -> ContentPack:
     query_defaults = _mapping(
         query_catalog.get("defaults"),
         f"{query_index_path}:query_catalog.defaults",
-        default_empty=True,
     )
-    catalog_refs = query_catalog.get("files") or []
-    if not isinstance(catalog_refs, list):
-        raise ContentLoadError(f"query_catalog.files must be a list in {query_index_path}")
+    catalog_refs = query_catalog.get("files")
+    if not isinstance(catalog_refs, list) or not catalog_refs:
+        raise ContentLoadError(f"query_catalog.files must be a non-empty list in {query_index_path}")
     catalog_files: list[Path] = []
     queries: dict[str, dict[str, Any]] = {}
+    query_source_files: dict[str, Path] = {}
     for catalog_ref in catalog_refs:
         catalog_path = resolve_under(root, catalog_ref, "Query manifest catalog path")
         catalog_files.append(catalog_path)
@@ -223,7 +327,6 @@ def load_content(content_path: str | Path) -> ContentPack:
         catalog_queries = _mapping(
             catalog_data.get("queries"),
             f"queries in {catalog_path}",
-            default_empty=True,
         )
         for query_id, manifest in catalog_queries.items():
             if not isinstance(query_id, str) or not query_id:
@@ -233,40 +336,35 @@ def load_content(content_path: str | Path) -> ContentPack:
             if not isinstance(manifest, dict):
                 raise ContentLoadError(f"Query manifest must be a mapping: {query_id}")
             queries[query_id] = _merge_defaults(query_defaults, manifest)
+            query_source_files[query_id] = catalog_path
 
     script_catalog_meta = _mapping(
         script_catalog.get("script_catalog"),
         f"{script_path}:script_catalog",
-        default_empty=True,
     )
     script_defaults = _mapping(
         script_catalog_meta.get("defaults"),
         f"{script_path}:script_catalog.defaults",
-        default_empty=True,
     )
     scripts = _manifest_mapping(script_catalog.get("scripts"), script_defaults, "scripts")
 
     metric_catalog_meta = _mapping(
         metric_catalog.get("metric_catalog"),
         f"{metric_path}:metric_catalog",
-        default_empty=True,
     )
     metric_defaults = _mapping(
         metric_catalog_meta.get("defaults"),
         f"{metric_path}:metric_catalog.defaults",
-        default_empty=True,
     )
     metrics = _manifest_mapping(metric_catalog.get("metrics"), metric_defaults, "metrics")
 
     python_catalog_meta = _mapping(
         python_catalog.get("python_catalog"),
         f"{python_path}:python_catalog",
-        default_empty=True,
     )
     python_defaults = _mapping(
         python_catalog_meta.get("defaults"),
         f"{python_path}:python_catalog.defaults",
-        default_empty=True,
     )
     pythons = _manifest_mapping(
         python_catalog.get("python_sources"),
@@ -275,28 +373,26 @@ def load_content(content_path: str | Path) -> ContentPack:
     )
 
     instructions: dict[str, dict[str, str]] = {}
-    if instructions_dir.exists():
-        for section_id, item_key, item_id, item in iter_report_items_from_report(report):
-            instruction_ref = instruction_ref_for_report_item(section_id, item_key, item)
-            if instruction_ref is None:
-                continue
-            path = _instruction_path(instructions_dir, instruction_ref)
-            if path.exists() and path.is_file():
-                try:
-                    instruction_text = path.read_text(encoding="utf-8")
-                except (OSError, UnicodeError) as exc:
-                    raise ContentLoadError(f"Cannot read instruction {path}: {exc}") from exc
-                instructions[item_id] = {
-                    "format": "markdown",
-                    "path": f"{instructions_root}/{instruction_ref}",
-                    "text": instruction_text,
-                }
+    for section_id, item_key, item_id, item in iter_report_items_from_report(report):
+        instruction_ref = instruction_ref_for_report_item(section_id, item_key, item)
+        if instruction_ref is None:
+            continue
+        path = _instruction_path(instructions_dir, instruction_ref)
+        if not path.is_file():
+            raise ContentLoadError(f"Instruction file does not exist: {path}")
+        try:
+            instruction_text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise ContentLoadError(f"Cannot read instruction {path}: {exc}") from exc
+        instructions[item_id] = {
+            "format": "markdown",
+            "path": f"{instructions_root}/{instruction_ref}",
+            "text": instruction_text,
+        }
 
-    instruction_files = []
-    if instructions_dir.exists():
-        instruction_files = sorted(instructions_dir.rglob("*.md"))
+    instruction_files = sorted(instructions_dir.rglob("*.md"))
 
-    sql_root_ref = query_catalog.get("sql_root", "queries")
+    sql_root_ref = query_catalog.get("sql_root")
     sql_root_path = resolve_under(root, sql_root_ref, "SQL root")
     scripts_root_path = resolve_under(root, "scripts", "Scripts root")
     python_root_path = resolve_under(root, "python", "Python root")
@@ -305,7 +401,8 @@ def load_content(content_path: str | Path) -> ContentPack:
         query_index_path,
         script_path,
         metric_path,
-        *([python_path] if python_path.exists() else []),
+        python_path,
+        field_reference_path,
         *catalog_files,
         *(sorted(sql_root_path.rglob("*.sql")) if sql_root_path.exists() else []),
         *(sorted(scripts_root_path.rglob("*")) if scripts_root_path.exists() else []),
@@ -314,6 +411,35 @@ def load_content(content_path: str | Path) -> ContentPack:
     ]
     checksum_paths = [path for path in checksum_paths if path.is_file()]
 
+    document = _build_content_document(
+        report=report,
+        query_catalog=query_index,
+        script_catalog=script_catalog,
+        metric_catalog=metric_catalog,
+        python_catalog=python_catalog,
+        field_reference_catalog=field_reference_catalog,
+        queries=queries,
+        scripts=scripts,
+        metrics=metrics,
+        pythons=pythons,
+        instructions=instructions,
+    )
+    provenance = _build_content_provenance(
+        root=root,
+        report_path=report_path,
+        query_index_path=query_index_path,
+        script_path=script_path,
+        metric_path=metric_path,
+        python_path=python_path,
+        field_reference_path=field_reference_path,
+        query_source_files=query_source_files,
+        queries=queries,
+        scripts=scripts,
+        metrics=metrics,
+        pythons=pythons,
+        instructions=instructions,
+    )
+
     return ContentPack(
         path=root,
         report=report,
@@ -321,11 +447,14 @@ def load_content(content_path: str | Path) -> ContentPack:
         script_catalog=script_catalog,
         metric_catalog=metric_catalog,
         python_catalog=python_catalog,
+        field_reference_catalog=field_reference_catalog,
         instructions=instructions,
         queries=queries,
         scripts=scripts,
         metrics=metrics,
         pythons=pythons,
+        document=document,
+        provenance=provenance,
         catalog_files=catalog_files,
         checksum=_content_checksum(checksum_paths, root),
     )

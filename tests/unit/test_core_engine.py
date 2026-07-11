@@ -69,24 +69,53 @@ class _BatchConnection:
 
 def _artifact(*, title: str = "Test", data: str = "ok") -> dict:
     return {
-        "artifact_schema_version": 1,
+        "artifact_schema_version": runtime_config.ARTIFACT_SCHEMA_VERSION,
         "generator": {"name": "pg_diag", "version": "test"},
-        "content": {"schema_version": 2, "checksum": "sha256:test"},
+        "content": {
+            "schema_version": runtime_config.SUPPORTED_CONTENT_SCHEMA_VERSION,
+            "content_path": "/tmp/test-content",
+            "checksum": "sha256:test",
+            "report_id": "test",
+            "document": {
+                "report": {"id": "test", "title": "Test"},
+                "runtime_policy": {},
+                "defaults": {"table": {"page_size": 25}},
+                "sections": {},
+                "catalogs": {},
+                "queries": {},
+                "scripts": {},
+                "metrics": {},
+                "python_sources": {},
+                "instructions": {},
+                "field_reference": {"report": "Report metadata."},
+            },
+            "provenance": {"report": ["report.yaml"]},
+        },
         "report": {"id": "test", "title": title},
         "runtime": {"mode": "snapshot", "collection_mode": "remote-db-only"},
-        "sections": [{"section_id": "s", "title": "S", "items": ["s.i"]}],
+        "display": {"table": {"page_size": 25}},
+        "sections": [
+            {"section_id": "s", "title": "S", "state": "expanded", "items": ["s.i"]}
+        ],
         "items": {
             "s.i": {
                 "item_id": "s.i",
                 "section_id": "s",
+                "item_key": "i",
                 "title": "Item",
                 "source_kind": "query",
+                "collection_scope": "once",
                 "collection_status": "ok",
                 "severity_level": "unknown",
+                "state": "expanded",
                 "result": {"kind": "plain_text", "data": data},
+                "source_metadata": {},
+                "diagnostics": [],
+                "issues": {},
             }
         },
         "query_texts": {},
+        "snapshot_schemas": {},
         "snapshots": [],
         "diagnostics": [],
     }
@@ -147,6 +176,13 @@ def test_snapshot_schedule_is_bounded_and_includes_window_end() -> None:
         float(offset) for offset in range(0, 601, 30)
     ]
     assert runtime_config.snapshots_schedule_offsets(35, 20) == [0.0, 20.0, 35.0]
+
+
+def test_snapshot_schedule_rejects_non_positive_values() -> None:
+    with pytest.raises(ValueError, match="must be positive"):
+        runtime_config.snapshots_schedule_offsets(0, 5)
+    with pytest.raises(ValueError, match="must be positive"):
+        runtime_config.snapshots_schedule_offsets(30, 0)
     assert runtime_config.validate_snapshots_window(30, 600) == (
         "snapshots requires --interval-seconds not greater than --duration-seconds"
     )
@@ -467,9 +503,45 @@ def test_artifact_validator_rejects_non_json_container_types(tmp_path: Path) -> 
         write_json(tmp_path / "invalid.json", artifact)
 
 
-def test_artifact_v2_accepts_compact_snapshot_rows_with_shared_schema(tmp_path: Path) -> None:
+def test_artifact_validator_rejects_invalid_content_provenance(tmp_path: Path) -> None:
     artifact = _artifact()
-    artifact["artifact_schema_version"] = 2
+    artifact["content"]["provenance"] = {"queries/q": "queries.yaml"}
+
+    with pytest.raises(ValidationError, match="content.provenance"):
+        write_json(tmp_path / "invalid.json", artifact)
+
+
+def test_artifact_validator_rejects_prior_schema_versions(tmp_path: Path) -> None:
+    artifact = _artifact()
+    artifact["artifact_schema_version"] = runtime_config.ARTIFACT_SCHEMA_VERSION - 1
+
+    with pytest.raises(ValidationError, match="Unsupported artifact schema version"):
+        write_json(tmp_path / "old.json", artifact)
+
+
+def test_artifact_validator_requires_unified_content_document(tmp_path: Path) -> None:
+    artifact = _artifact()
+    del artifact["content"]["document"]
+
+    with pytest.raises(ValidationError, match="content.document"):
+        write_json(tmp_path / "invalid.json", artifact)
+
+
+def test_artifact_validator_rejects_internal_result_columns(tmp_path: Path) -> None:
+    artifact = _artifact()
+    artifact["items"]["s.i"]["result"] = {
+        "kind": "table",
+        "columns": [{"name": "epoch_ns"}, {"name": "tag_value"}],
+        "rows": [[1783182080458119000, "visible"]],
+        "row_count": 1,
+    }
+
+    with pytest.raises(ValidationError, match="exposes internal columns"):
+        write_json(tmp_path / "invalid.json", artifact)
+
+
+def test_artifact_v3_accepts_compact_snapshot_rows_with_shared_schema(tmp_path: Path) -> None:
+    artifact = _artifact()
     artifact["items"]["s.i"]["result"] = {
         "kind": "table",
         "columns": [{"name": "value"}],
@@ -670,6 +742,18 @@ def test_content_loader_rejects_catalog_path_escape(tmp_path: Path) -> None:
 
     with pytest.raises(ContentLoadError, match="must stay under"):
         load_content(root)
+
+
+def test_content_loader_requires_explicit_catalog_paths(content_path: Path, tmp_path: Path) -> None:
+    copied = tmp_path / "content"
+    shutil.copytree(content_path, copied)
+    report_path = copied / "report.yaml"
+    report = yaml.safe_load(report_path.read_text(encoding="utf-8"))
+    del report["report"]["catalogs"]["scripts"]
+    report_path.write_text(yaml.safe_dump(report, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(ContentLoadError, match="Script catalog path must be a non-empty relative path"):
+        load_content(copied)
 
 
 def test_checksum_tracks_configured_sql_root(content_path: Path, tmp_path: Path) -> None:

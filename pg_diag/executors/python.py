@@ -148,9 +148,9 @@ def _sync_process_entry(send_conn: Any, function: Any, args: tuple[Any, ...]) ->
     try:
         send_conn.send_bytes(pickle.dumps(payload))
     except BaseException as exc:  # pragma: no cover - unpicklable plugin result
-        fallback = ("error", type(exc).__name__, f"Cannot return Python source result: {exc}")
+        error_payload = ("error", type(exc).__name__, f"Cannot return Python source result: {exc}")
         try:
-            send_conn.send_bytes(pickle.dumps(fallback))
+            send_conn.send_bytes(pickle.dumps(error_payload))
         except BaseException:
             pass
     finally:

@@ -386,8 +386,9 @@ permissions, collection mode, and local host permissions.
 Repeated table samples store their column schema once in `snapshot_schemas` and
 keep only status, rows, and an optional failure reason in each snapshot point.
 Raw snapshot points are not duplicated into the self-contained HTML after
-derived metric items have been built. New reports use artifact schema version
-2; the renderer remains compatible with version 1 reports.
+derived metric items have been built. Reports use artifact schema version 3.
+The renderer accepts that version only and requires the complete unified
+content document and source provenance stored by the collector.
 
 ## Content Layout
 
@@ -398,6 +399,7 @@ content/
   scripts.yaml         # local script catalog
   python.yaml          # trusted Python source catalog
   metrics.yaml         # chart/table metric definitions
+  field_reference.yaml # inline help for declarative configuration fields
   catalog/             # query manifests and version ranges
   queries/             # SQL source files
   scripts/             # local shell source files
@@ -407,6 +409,15 @@ content/
 `report.yaml` references items by `query`, `script`, `metric`, or `python`. SQL
 result columns are read from actual cursor metadata; the report layout does not
 hardcode table columns.
+
+The loader assembles these YAML files into one effective content document with
+canonical roots such as `sections/<section>/items/<item>`, `queries/<id>`,
+`scripts/<id>`, `metrics/<id>`, and `python_sources/<id>`. The artifact stores
+that document once together with source-file provenance. `Show meta` uses it for
+the annotated `Raw` YAML view; `Total` remains the default resolved-metadata view.
+All catalog paths and section/item defaults are explicit in `report.yaml`.
+Missing configuration is a validation error; the loader and renderer do not
+infer paths or adapt older content and artifact schemas.
 
 ## Development
 

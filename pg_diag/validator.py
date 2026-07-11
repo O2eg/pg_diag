@@ -78,6 +78,26 @@ ALLOWED_ITEM_TAGS = {
     "WAL",
     "Waits",
 }
+REQUIRED_RESOLVED_FIELD_REFERENCE_PATHS = {
+    "resolved",
+    "resolved/item_id",
+    "resolved/title",
+    "resolved/source_kind",
+    "resolved/source_id",
+    "resolved/state",
+    "resolved/database_scope",
+    "resolved/tags",
+    "resolved/tags[]",
+    "resolved/render",
+    "resolved/render/empty_message",
+    "resolved/display",
+    "resolved/display/default_sort",
+    "resolved/display/default_sort/column",
+    "resolved/display/default_sort/direction",
+    "resolved/variant_id",
+    "resolved/sql_file",
+    "resolved/collection_scope",
+}
 
 
 def validate_content(content: ContentPack) -> list[ValidationIssue]:
@@ -85,6 +105,8 @@ def validate_content(content: ContentPack) -> list[ValidationIssue]:
     if not _validate_content_shapes(content, issues):
         return issues
     _validate_schema_versions(content, issues)
+    _validate_unified_document(content, issues)
+    _validate_field_reference(content, issues)
     _validate_report_contract(content, issues)
     _validate_report_items(content, issues)
     _validate_query_manifests(content, issues)
@@ -114,11 +136,14 @@ def _validate_content_shapes(content: ContentPack, issues: list[ValidationIssue]
         "script_catalog": content.script_catalog,
         "metric_catalog": content.metric_catalog,
         "python_catalog": content.python_catalog,
+        "field_reference_catalog": content.field_reference_catalog,
         "queries": content.queries,
         "scripts": content.scripts,
         "metrics": content.metrics,
         "pythons": content.pythons,
         "instructions": content.instructions,
+        "document": content.document,
+        "provenance": content.provenance,
     }
     for name, value in mapping_fields.items():
         if not isinstance(value, dict):
@@ -137,16 +162,20 @@ def _validate_content_shapes(content: ContentPack, issues: list[ValidationIssue]
         (content.script_catalog.get("script_catalog"), "scripts.yaml:script_catalog"),
         (content.metric_catalog.get("metric_catalog"), "metrics.yaml:metric_catalog"),
         (content.python_catalog.get("python_catalog"), "python.yaml:python_catalog"),
+        (
+            content.field_reference_catalog.get("field_reference"),
+            "field_reference.yaml:field_reference",
+        ),
     ]
     for value, location in nested_mappings:
-        if value is not None and not isinstance(value, dict):
+        if not isinstance(value, dict):
             _issue(issues, "structure", "Value must be a mapping", location)
             valid = False
 
     report_meta = content.report.get("report")
     if isinstance(report_meta, dict):
         catalogs = report_meta.get("catalogs")
-        if catalogs is not None and not isinstance(catalogs, dict):
+        if not isinstance(catalogs, dict):
             _issue(issues, "structure", "Value must be a mapping", "report.yaml:report.catalogs")
             valid = False
     for catalog, root_key, location in (
@@ -158,7 +187,7 @@ def _validate_content_shapes(content: ContentPack, issues: list[ValidationIssue]
         metadata = catalog.get(root_key)
         if isinstance(metadata, dict):
             defaults = metadata.get("defaults")
-            if defaults is not None and not isinstance(defaults, dict):
+            if not isinstance(defaults, dict):
                 _issue(issues, "structure", "Value must be a mapping", location)
                 valid = False
 
@@ -171,7 +200,7 @@ def _validate_content_shapes(content: ContentPack, issues: list[ValidationIssue]
                 valid = False
                 continue
             items = section.get("items")
-            if items is not None and not isinstance(items, dict):
+            if not isinstance(items, dict):
                 _issue(issues, "structure", "Report section items must be a mapping", location)
                 valid = False
                 continue
@@ -198,55 +227,218 @@ def _validate_content_shapes(content: ContentPack, issues: list[ValidationIssue]
             if not isinstance(manifest, dict):
                 _issue(issues, "structure", f"{label} manifest must be a mapping", f"{label}:{source_id}")
                 valid = False
+                continue
+            title = manifest.get("title")
+            if not isinstance(title, str) or not title.strip():
+                _issue(
+                    issues,
+                    "structure",
+                    f"{label} manifest must define a non-empty title",
+                    f"{label}:{source_id}",
+                )
+                valid = False
     return valid
+
+
+def _validate_unified_document(content: ContentPack, issues: list[ValidationIssue]) -> None:
+    expected_roots = {
+        "report": content.report.get("report") or {},
+        "runtime_policy": content.report.get("runtime_policy") or {},
+        "defaults": content.report.get("defaults") or {},
+        "sections": content.report.get("sections") or {},
+        "queries": content.queries,
+        "scripts": content.scripts,
+        "metrics": content.metrics,
+        "python_sources": content.pythons,
+    }
+    for root, expected in expected_roots.items():
+        if content.document.get(root) != expected:
+            _issue(
+                issues,
+                "content_document",
+                f"Unified content root {root!r} is inconsistent with the loaded catalog",
+                f"content.document:{root}",
+            )
+    for path, sources in content.provenance.items():
+        if (
+            not isinstance(path, str)
+            or not path
+            or path.startswith("/")
+            or "//" in path
+            or not isinstance(sources, list)
+            or not sources
+            or any(not isinstance(source, str) or not source for source in sources)
+        ):
+            _issue(
+                issues,
+                "content_provenance",
+                "Provenance must map canonical relative paths to non-empty source-file lists",
+                f"content.provenance:{path}",
+            )
+
+
+def _validate_field_reference(content: ContentPack, issues: list[ValidationIssue]) -> None:
+    reference = content.field_reference_catalog.get("field_reference") or {}
+    if reference.get("schema_version") != 1:
+        _issue(
+            issues,
+            "field_reference",
+            "field_reference.schema_version must be 1",
+            "field_reference.yaml:field_reference",
+        )
+    fields = reference.get("fields")
+    if not isinstance(fields, dict) or not fields:
+        _issue(
+            issues,
+            "field_reference",
+            "field_reference.fields must be a non-empty mapping",
+            "field_reference.yaml:field_reference.fields",
+        )
+        return
+    if "*" in fields:
+        _issue(
+            issues,
+            "field_reference",
+            "field_reference.fields must not contain a catch-all '*' entry",
+            "field_reference.yaml:field_reference.fields",
+        )
+    for path, description in fields.items():
+        if not isinstance(path, str) or not path or not isinstance(description, str) or not description.strip():
+            _issue(
+                issues,
+                "field_reference",
+                "Field-reference paths and descriptions must be non-empty strings",
+                "field_reference.yaml:field_reference.fields",
+            )
+            break
+
+    patterns = [path.split("/") for path in fields if path != "*"]
+    paths_requiring_help = _unified_document_paths(content.document).union(
+        REQUIRED_RESOLVED_FIELD_REFERENCE_PATHS
+    )
+    missing = sorted(
+        path
+        for path in paths_requiring_help
+        if not any(_field_reference_pattern_matches(pattern, path.split("/")) for pattern in patterns)
+    )
+    if missing:
+        preview = ", ".join(missing[:8])
+        suffix = f" and {len(missing) - 8} more" if len(missing) > 8 else ""
+        _issue(
+            issues,
+            "field_reference",
+            f"Missing field-reference entries for: {preview}{suffix}",
+            "field_reference.yaml:field_reference.fields",
+        )
+
+
+def _field_reference_pattern_matches(pattern: list[str], path: list[str]) -> bool:
+    return len(pattern) == len(path) and all(
+        expected == "*" or expected == actual
+        for expected, actual in zip(pattern, path)
+    )
+
+
+def _unified_document_paths(document: dict[str, Any]) -> set[str]:
+    paths: set[str] = set()
+
+    def visit(value: Any, path: list[str]) -> None:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                child_path = [*path, str(key)]
+                paths.add("/".join(child_path))
+                visit(child, child_path)
+        elif isinstance(value, list):
+            item_path = [*path[:-1], path[-1] + "[]"]
+            paths.add("/".join(item_path))
+            for child in value:
+                visit(child, item_path)
+
+    for root, value in document.items():
+        if root == "field_reference":
+            continue
+        paths.add(root)
+        visit(value, [root])
+    return paths
 
 
 def _validate_report_contract(content: ContentPack, issues: list[ValidationIssue]) -> None:
     report = content.report.get("report") or {}
+    allowed_report_keys = {"id", "title", "description", "schema_version", "catalogs"}
+    for key in report:
+        if key not in allowed_report_keys:
+            _issue(
+                issues,
+                "unknown_key",
+                f"Unknown report metadata key {key!r}",
+                "report.yaml:report",
+            )
     for key in ("id", "title"):
         value = report.get(key)
         if not isinstance(value, str) or not value.strip():
             _issue(issues, "report", f"report.{key} must be a non-empty string", "report.yaml:report")
 
-    default_state = report.get("default_state")
-    if default_state is not None and not _is_valid_state(default_state):
-        _issue(issues, "state", "report.default_state has an unsupported value", "report.yaml:report")
+    catalogs = report.get("catalogs")
+    if isinstance(catalogs, dict):
+        for key in ("queries", "scripts", "metrics", "python", "instructions", "field_reference"):
+            value = catalogs.get(key)
+            if not isinstance(value, str) or not value.strip():
+                _issue(
+                    issues,
+                    "report",
+                    f"report.catalogs.{key} must be a non-empty relative path",
+                    "report.yaml:report.catalogs",
+                )
 
     policy = content.report.get("runtime_policy") or {}
     if not isinstance(policy, dict):
         return
     fail_fast = policy.get("fail_fast")
-    if fail_fast is not None and not isinstance(fail_fast, bool):
+    if not isinstance(fail_fast, bool):
         _issue(issues, "runtime_policy", "runtime_policy.fail_fast must be boolean", "report.yaml")
     for key in ("default_sql_timeout_ms", "default_shell_timeout_ms"):
-        if key in policy and not _is_positive_number(policy[key]):
+        if not _is_positive_number(policy.get(key)):
             _issue(issues, "runtime_policy", f"runtime_policy.{key} must be positive", "report.yaml")
     remote_message = policy.get("remote_db_only_shell_message")
-    if remote_message is not None and (not isinstance(remote_message, str) or not remote_message.strip()):
+    if not isinstance(remote_message, str) or not remote_message.strip():
         _issue(
             issues,
             "runtime_policy",
             "runtime_policy.remote_db_only_shell_message must be a non-empty string",
             "report.yaml",
         )
+    if policy.get("table_columns") != "dynamic_from_result":
+        _issue(
+            issues,
+            "runtime_policy",
+            "runtime_policy.table_columns must be 'dynamic_from_result'",
+            "report.yaml",
+        )
 
     defaults = content.report.get("defaults") or {}
     for group in ("table", "item", "section"):
         value = defaults.get(group)
-        if value is not None and not isinstance(value, dict):
+        if not isinstance(value, dict):
             _issue(issues, "defaults", f"defaults.{group} must be a mapping", "report.yaml")
     table_defaults = defaults.get("table") if isinstance(defaults.get("table"), dict) else {}
     page_size = table_defaults.get("page_size")
-    if page_size is not None and (
+    if (
         not isinstance(page_size, int) or isinstance(page_size, bool) or page_size <= 0
     ):
         _issue(issues, "defaults", "defaults.table.page_size must be a positive integer", "report.yaml")
     for group in ("item", "section"):
         group_defaults = defaults.get(group) if isinstance(defaults.get(group), dict) else {}
         state = group_defaults.get("state")
-        if state is not None and not _is_valid_state(state):
+        if not _is_valid_state(state):
             _issue(issues, "state", f"defaults.{group}.state has an unsupported value", "report.yaml")
     item_defaults = defaults.get("item") if isinstance(defaults.get("item"), dict) else {}
+    if item_defaults.get("database_scope") is None:
+        _issue(
+            issues,
+            "database_scope",
+            "defaults.item.database_scope is required",
+            "report.yaml:defaults.item",
+        )
     _validate_database_scope(
         item_defaults.get("database_scope"),
         issues,
@@ -417,7 +609,7 @@ def _validate_report_item_render(
 
 
 def _validate_query_manifests(content: ContentPack, issues: list[ValidationIssue]) -> None:
-    sql_root = (content.query_catalog.get("query_catalog") or {}).get("sql_root", "queries")
+    sql_root = (content.query_catalog.get("query_catalog") or {}).get("sql_root")
     try:
         sql_root_path = resolve_under(content.path, sql_root, "SQL root")
     except ContentLoadError as exc:
@@ -603,8 +795,6 @@ def _validate_evaluation_options(
 
 
 def _validate_scripts(content: ContentPack, issues: list[ValidationIssue]) -> None:
-    script_defaults = (content.script_catalog.get("script_catalog") or {}).get("defaults") or {}
-    default_remote_behavior = script_defaults.get("remote_db_only_behavior")
     try:
         scripts_root = resolve_under(content.path, "scripts", "Scripts root")
     except ContentLoadError as exc:  # pragma: no cover - fixed literal root
@@ -623,24 +813,24 @@ def _validate_scripts(content: ContentPack, issues: list[ValidationIssue]) -> No
             elif not os.access(script_path, os.X_OK):
                 _issue(issues, "script_file", f"Script file is not executable: {script_file}", location)
 
-        output = script.get("output", "plain_text")
+        output = script.get("output")
         if not isinstance(output, str) or output not in VALID_SCRIPT_OUTPUTS:
             _issue(issues, "script_output", f"Unsupported script output mode {output!r}", location)
-        local_only = script.get("local_only", True)
+        local_only = script.get("local_only")
         if not isinstance(local_only, bool):
             _issue(issues, "script", "local_only must be boolean", location)
-        if not _is_positive_number(script.get("timeout_ms", 5000)):
+        if not _is_positive_number(script.get("timeout_ms")):
             _issue(issues, "script", "timeout_ms must be positive", location)
 
-        remote_behavior = script.get("remote_db_only_behavior") or default_remote_behavior
-        if local_only and not remote_behavior:
+        remote_behavior = script.get("remote_db_only_behavior")
+        if local_only and not isinstance(remote_behavior, dict):
             _issue(
                 issues,
                 "remote_shell",
-                "Local-only script must define remote_db_only_behavior",
+                "Local-only script must define remote_db_only_behavior as a mapping",
                 location,
             )
-        elif remote_behavior:
+        elif local_only:
             _validate_remote_behavior(remote_behavior, issues, location)
 
 
@@ -649,31 +839,28 @@ def _validate_remote_behavior(
     issues: list[ValidationIssue],
     location: str,
 ) -> None:
-    if isinstance(behavior, str):
-        if not behavior.strip():
-            _issue(issues, "remote_shell", "remote_db_only_behavior must not be empty", location)
-        return
     if not isinstance(behavior, dict):
-        _issue(issues, "remote_shell", "remote_db_only_behavior must be a string or mapping", location)
+        _issue(issues, "remote_shell", "remote_db_only_behavior must be a mapping", location)
         return
-    status = behavior.get("status", "skipped")
+    status = behavior.get("status")
     if status != "skipped":
         _issue(issues, "remote_shell", "remote_db_only_behavior.status must be skipped", location)
-    message = behavior.get("message")
     message_ref = behavior.get("message_ref")
-    if message is not None and (not isinstance(message, str) or not message.strip()):
-        _issue(issues, "remote_shell", "remote_db_only_behavior.message must be non-empty", location)
-    if message_ref is not None and (
-        not isinstance(message_ref, str) or not message_ref.startswith("runtime_policy.")
-    ):
+    if not isinstance(message_ref, str) or not message_ref.startswith("runtime_policy."):
         _issue(
             issues,
             "remote_shell",
             "remote_db_only_behavior.message_ref must reference runtime_policy",
             location,
         )
-    if message is None and message_ref is None:
-        _issue(issues, "remote_shell", "remote_db_only_behavior must define message or message_ref", location)
+    elif message_ref != "runtime_policy.remote_db_only_shell_message":
+        _issue(
+            issues,
+            "remote_shell",
+            "remote_db_only_behavior.message_ref must reference "
+            "runtime_policy.remote_db_only_shell_message",
+            location,
+        )
 
 
 def _validate_python_sources(content: ContentPack, issues: list[ValidationIssue]) -> None:
@@ -698,10 +885,10 @@ def _validate_python_sources(content: ContentPack, issues: list[ValidationIssue]
         function = python_source.get("function")
         if not isinstance(function, str) or not function or not function.isidentifier():
             _issue(issues, "python_function", "Python source manifest must define function", location)
-        local_only = python_source.get("local_only", False)
+        local_only = python_source.get("local_only")
         if not isinstance(local_only, bool):
             _issue(issues, "python_source", "local_only must be boolean", location)
-        if not _is_positive_number(python_source.get("timeout_ms", 5000)):
+        if not _is_positive_number(python_source.get("timeout_ms")):
             _issue(issues, "python_source", "timeout_ms must be positive", location)
 
 
@@ -948,7 +1135,7 @@ def _validate_metric_result_shape(
 
 def _validate_instructions(content: ContentPack, issues: list[ValidationIssue]) -> None:
     catalogs = (content.report.get("report") or {}).get("catalogs") or {}
-    instructions_root = catalogs.get("instructions", "instructions")
+    instructions_root = catalogs.get("instructions")
     try:
         instructions_dir = resolve_under(content.path, instructions_root, "Instructions root")
     except ContentLoadError as exc:
@@ -1020,7 +1207,7 @@ def _validate_sql_files(content: ContentPack, issues: list[ValidationIssue]) -> 
     try:
         sql_root = resolve_under(
             content.path,
-            (content.query_catalog.get("query_catalog") or {}).get("sql_root", "queries"),
+            (content.query_catalog.get("query_catalog") or {}).get("sql_root"),
             "SQL root",
         )
     except ContentLoadError:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pg_diag import runtime_config
 from pg_diag.render.html import render_html
 
 
@@ -24,9 +25,57 @@ def _without_vendor_bundles(html: str) -> str:
 
 def test_html_embedded_json_is_inert_and_escaped() -> None:
     artifact = {
-        "artifact_schema_version": 1,
+        "artifact_schema_version": runtime_config.ARTIFACT_SCHEMA_VERSION,
         "generator": {"name": "pg_diag", "version": "0.8.0"},
-        "content": {"schema_version": 2, "checksum": "sha256:test"},
+        "content": {
+            "schema_version": runtime_config.SUPPORTED_CONTENT_SCHEMA_VERSION,
+            "content_path": "/tmp/test-content",
+            "checksum": "sha256:test",
+            "report_id": "test",
+            "document": {
+                "report": {"id": "test", "title": "Test"},
+                "runtime_policy": {},
+                "defaults": {"table": {"page_size": 25}},
+                "sections": {
+                    "s": {
+                        "title": "S",
+                        "items": {
+                            "i": {"query": "test.query", "tags": ["SQL", "Tables"]},
+                        },
+                    },
+                },
+                "catalogs": {"queries": {"defaults": {"cost": "low"}}},
+                "queries": {
+                    "test.query": {
+                        "title": "Item",
+                        "display": {"default_sort": {"column": "value", "direction": "asc"}},
+                        "variants": [
+                            {"id": "test_query_all", "min_pg_version": 140000, "sql_file": "test/query.sql"},
+                        ],
+                    },
+                },
+                "instructions": {
+                    "s.i": {"format": "markdown", "path": "instructions/items/s/i.md"},
+                },
+                "scripts": {},
+                "metrics": {},
+                "python_sources": {},
+                "field_reference": {
+                    "report": "Report metadata.",
+                    "sections/*/items/*/query": "Query manifest id used by this item.",
+                    "queries/*/variants[]/sql_file": "SQL file executed for this variant.",
+                },
+            },
+            "provenance": {
+                "report": ["report.yaml"],
+                "defaults": ["report.yaml"],
+                "sections": ["report.yaml"],
+                "catalogs/queries": ["queries.yaml"],
+                "queries/test.query": ["queries.yaml", "catalog/test.yaml"],
+                "instructions/s.i": ["instructions/items/s/i.md"],
+                "field_reference": ["field_reference.yaml"],
+            },
+        },
         "report": {"id": "test", "title": "Test"},
         "runtime": {
             "mode": "snapshot",
@@ -41,15 +90,21 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
             "started_at": "2026-07-04T22:27:45.629777+00:00",
             "finished_at": "2026-07-04T22:28:20.925292+00:00",
         },
-        "sections": [{"section_id": "s", "title": "S", "items": ["s.i"]}],
+        "display": {"table": {"page_size": 25}},
+        "sections": [
+            {"section_id": "s", "title": "S", "state": "expanded", "items": ["s.i"]}
+        ],
         "items": {
             "s.i": {
                 "item_id": "s.i",
                 "section_id": "s",
+                "item_key": "i",
                 "title": "Item",
                 "source_kind": "query",
+                "collection_scope": "once",
                 "collection_status": "ok",
                 "severity_level": "unknown",
+                "state": "expanded",
                 "result": {
                     "kind": "table",
                     "columns": [
@@ -80,9 +135,13 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
                     },
                 },
                 "diagnostics": [],
+                "issues": {},
             }
         },
         "query_texts": {"123": "select * from pg_class where oid = $1"},
+        "snapshot_schemas": {},
+        "snapshots": [],
+        "diagnostics": [],
     }
 
     html = render_html(artifact)
@@ -259,12 +318,29 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert 'showReportModal(modal, "closeMeta")' in html
     assert 'showReportModal(modal, "closeInstruction")' in html
     assert "hideReportModal(modal)" in html
-    assert "const queryTexts = artifact.query_texts || {}" in html
+    assert "const queryTexts = artifact.query_texts;" in html
     assert "query-id-button" in html
     assert "openQueryTextModal(queryId)" in html
     assert "Show query: " in html
     assert '"query_texts":{"123":"select * from pg_class where oid = $1"}' in html
     assert 'id="metaModal"' in html
+    assert 'id="metaTotalTab"' in html
+    assert 'id="metaRawTab"' in html
+    assert 'role="tablist" aria-label="Metadata view"' in html
+    assert '>Total</button>' in html
+    assert '>Raw</button>' in html
+    assert 'selectMetaTab("total")' in html
+    assert 'selectMetaTab("raw")' in html
+    assert "buildRawItemConfiguration(currentMetaItem)" in html
+    assert "renderAnnotatedYaml(raw.document, raw.provenance)" in html
+    assert 'code.className = "language-yaml"' in html
+    assert '" Source" + (sources.length > 1 ? "s" : "")' in html
+    assert "const contentDocument = contentConfig.document;" in html
+    assert "const contentProvenance = contentConfig.provenance;" in html
+    assert "const contentFieldReference = contentDocument.field_reference;" in html
+    assert '"queries/test.query":["queries.yaml","catalog/test.yaml"]' in html
+    assert ".meta-tab[aria-selected=\"true\"]" in html
+    assert ".meta-raw-shell" in html
     assert 'id="instructionModal"' in html
     assert "sourceActionLabel(item)" in html
     assert "Show SQL" in html
@@ -402,39 +478,3 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "itemErrorDetailsText(item)" in html
     assert "traceback" in html
     assert "stderr" in html
-
-
-def test_html_publicizes_legacy_internal_columns_before_embedding() -> None:
-    artifact = {
-        "artifact_schema_version": 1,
-        "generator": {"name": "pg_diag", "version": "0.8.0"},
-        "content": {"schema_version": 2, "checksum": "sha256:test"},
-        "report": {"id": "test", "title": "Test"},
-        "runtime": {"mode": "snapshot", "collection_mode": "remote-db-only"},
-        "sections": [{"section_id": "s", "title": "S", "items": ["s.i"]}],
-        "items": {
-            "s.i": {
-                "item_id": "s.i",
-                "section_id": "s",
-                "title": "Item",
-                "source_kind": "query",
-                "collection_status": "ok",
-                "severity_level": "unknown",
-                "result": {
-                    "kind": "table",
-                    "columns": [{"name": "epoch_ns"}, {"name": "tag_value"}],
-                    "rows": [[1783182080458119000, "visible"]],
-                    "row_count": 1,
-                },
-                "source_metadata": {},
-                "diagnostics": [],
-            }
-        },
-    }
-
-    html = render_html(artifact)
-
-    assert "epoch_ns" not in html
-    assert "tag_value" not in html
-    assert '"name":"value"' in html
-    assert "visible" in html

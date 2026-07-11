@@ -172,19 +172,7 @@ def build_plan(
                 )
             )
         else:
-            items.append(
-                PlannedItem(
-                    item_id=item_id,
-                    section_id=section_id,
-                    item_key=item_key,
-                    title=item_key,
-                    source_kind="unknown",
-                    status="error",
-                    state=_item_state(content, item),
-                    reason="Cannot determine item source kind",
-                    source_metadata=_with_item_metadata(content, item_id, item),
-                )
-            )
+            raise ValueError(f"Unsupported source kind {source_kind!r} for item {item_id}")
 
     if unsupported_reason is None and metric_dependencies:
         for query_id in sorted(metric_dependencies):
@@ -211,10 +199,10 @@ def build_plan(
 
 
 def _source_kind(item: dict[str, Any]) -> str:
-    for key in ("query", "script", "metric", "python"):
-        if key in item:
-            return key
-    return "unknown"
+    source_kinds = [key for key in ("query", "script", "metric", "python") if key in item]
+    if len(source_kinds) != 1:
+        raise ValueError("Report item must declare exactly one source kind")
+    return source_kinds[0]
 
 
 def _plan_sections(content: ContentPack) -> list[dict[str, Any]]:
@@ -247,29 +235,21 @@ def _item_title(content: ContentPack, source_kind: str, item: dict[str, Any], it
         manifest = content.pythons.get(item.get("python"), {})
     else:
         manifest = {}
-    return item.get("title") or manifest.get("title") or item_key
+    return item["title"] if "title" in item else manifest["title"]
 
 
 def _item_state(content: ContentPack, item: dict[str, Any]) -> str:
     state = item.get("state")
     if state in {"expanded", "collapsed", "hidden"}:
         return state
-    defaults = content.report.get("defaults") or {}
-    default_state = (defaults.get("item") or {}).get("state")
-    if default_state not in {"expanded", "collapsed", "hidden"}:
-        default_state = (content.report.get("report") or {}).get("default_state")
-    return default_state if default_state in {"expanded", "collapsed", "hidden"} else "expanded"
+    return content.report["defaults"]["item"]["state"]
 
 
 def _section_state(content: ContentPack, section: dict[str, Any]) -> str:
     state = section.get("state")
     if state in {"expanded", "collapsed", "hidden"}:
         return state
-    defaults = content.report.get("defaults") or {}
-    default_state = (defaults.get("section") or {}).get("state")
-    if default_state not in {"expanded", "collapsed", "hidden"}:
-        default_state = (content.report.get("report") or {}).get("default_state")
-    return default_state if default_state in {"expanded", "collapsed", "hidden"} else "expanded"
+    return content.report["defaults"]["section"]["state"]
 
 
 def _with_item_metadata(
@@ -352,13 +332,13 @@ def _sql_source_query_id(content: ContentPack, item: dict[str, Any]) -> str | No
     if "query" in item:
         return item["query"]
     if "metric" in item:
-        metric = content.metrics.get(item["metric"]) or {}
+        metric = content.metrics[item["metric"]]
         return metric.get("source_query")
     return None
 
 
 def _query_usage_metadata(query_id: str, item_id: str, query_usage_index: dict[str, list[str]]) -> dict[str, Any]:
-    item_ids = list(query_usage_index.get(query_id) or [item_id])
+    item_ids = list(query_usage_index[query_id])
     other_item_ids = [used_item_id for used_item_id in item_ids if used_item_id != item_id]
     return {
         "query_usage": {
@@ -433,13 +413,13 @@ def _plan_metric_source_job(
 ) -> SourceJob:
     manifest = content.queries[query_id]
     selection = select_query_variant(query_id, manifest, server_version_num)
-    collection_scope = metric_dependencies.get(query_id, runtime_config.ONCE_COLLECTION_SCOPE)
-    consumers = query_usage_index.get(query_id) or [query_id]
+    collection_scope = metric_dependencies[query_id]
+    consumers = query_usage_index[query_id]
     usage = _query_usage_metadata(query_id, consumers[0], query_usage_index)
     if selection.status != "ok" or selection.variant is None:
         return SourceJob(
             job_id=query_id,
-            title=manifest.get("title") or query_id,
+            title=manifest["title"],
             source_id=query_id,
             status="unsupported",
             reason=selection.reason,
@@ -450,7 +430,7 @@ def _plan_metric_source_job(
     variant = selection.variant
     return SourceJob(
         job_id=query_id,
-        title=manifest.get("title") or query_id,
+        title=manifest["title"],
         source_id=query_id,
         status="planned",
         variant_id=variant.get("id"),
@@ -491,7 +471,7 @@ def _plan_script_item(
 ) -> PlannedItem:
     script_id = item["script"]
     script = content.scripts[script_id]
-    if collection_mode == runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE and script.get("local_only", True):
+    if collection_mode == runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE and script["local_only"]:
         message = _remote_script_message(content, script)
         return PlannedItem(
             item_id=item_id,
@@ -543,10 +523,8 @@ def _plan_python_item(
 ) -> PlannedItem:
     python_id = item["python"]
     python_source = content.pythons[python_id]
-    if collection_mode == runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE and python_source.get("local_only", False):
-        message = (content.report.get("runtime_policy") or {}).get(
-            "remote_db_only_shell_message", "no data because remote call"
-        )
+    if collection_mode == runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE and python_source["local_only"]:
+        message = content.report["runtime_policy"]["remote_db_only_shell_message"]
         return PlannedItem(
             item_id=item_id,
             section_id=section_id,
@@ -688,22 +666,6 @@ def _metric_dependencies(content: ContentPack) -> dict[str, str]:
 
 
 def _remote_script_message(content: ContentPack, script: dict[str, Any]) -> str:
-    behavior = script.get("remote_db_only_behavior")
-    if isinstance(behavior, str) and behavior:
-        return behavior
-    if isinstance(behavior, dict):
-        message = behavior.get("message")
-        if isinstance(message, str) and message:
-            return message
-        message_ref = behavior.get("message_ref")
-        if isinstance(message_ref, str) and message_ref.startswith("runtime_policy."):
-            policy_key = message_ref.split(".", 1)[1]
-            configured = (content.report.get("runtime_policy") or {}).get(policy_key)
-            if isinstance(configured, str) and configured:
-                return configured
-    return str(
-        (content.report.get("runtime_policy") or {}).get(
-            "remote_db_only_shell_message",
-            "no data because remote call",
-        )
-    )
+    message_ref = script["remote_db_only_behavior"]["message_ref"]
+    policy_key = message_ref.split(".", 1)[1]
+    return content.report["runtime_policy"][policy_key]

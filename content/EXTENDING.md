@@ -259,6 +259,14 @@ The planner promotes the metric source query to repeated collection in
 `snapshots` mode. Prefer one dedicated `metrics.*` query per report item so
 `Show SQL` and `Show meta` stay item-specific and isolated.
 
+When a change introduces a new configuration field, add its canonical path or
+wildcard path to `field_reference.yaml`. This keeps every node in the `Show
+meta` Raw YAML view documented. Dynamic ids use `*`, for example
+`metrics/*/chart/kind`; list entries use `[]`, for example
+`metrics/*/series[]/value_ref`.
+Do not add a catch-all `*` entry. Validation requires a specific exact or
+wildcard-aware description for every effective path.
+
 5. Add `instructions/items/snapshot_charts_db/<item>.md` for the chart item.
 
 ## Add A Top-N Chart

@@ -1062,12 +1062,17 @@ __APEXCHARTS_JS__
       width: min(1100px, 100%);
       max-height: min(760px, calc(100vh - 48px));
       display: grid;
+      grid-template-columns: minmax(0, 1fr);
       grid-template-rows: auto minmax(0, 1fr);
       border: 1px solid var(--line-strong);
       border-radius: 8px;
       background: var(--panel);
       box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
       overflow: hidden;
+    }
+
+    .meta-dialog {
+      grid-template-rows: auto auto minmax(0, 1fr);
     }
 
     .source-dialog-header {
@@ -1079,6 +1084,8 @@ __APEXCHARTS_JS__
       background: var(--section-summary-bg);
       color: var(--section-summary-fg);
       border-bottom: 1px solid var(--line);
+      min-width: 0;
+      max-width: 100%;
     }
 
     .source-dialog-title {
@@ -1119,12 +1126,82 @@ __APEXCHARTS_JS__
     }
 
     .meta-shell {
+      box-sizing: border-box;
+      height: 100%;
       min-width: 0;
       min-height: 0;
       overflow: auto;
       overscroll-behavior: contain;
       background: var(--panel);
       padding: 14px;
+    }
+
+    .meta-tabs {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel-soft);
+      min-width: 0;
+      max-width: 100%;
+    }
+
+    .meta-tab {
+      min-width: 76px;
+      padding: 6px 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 5px;
+      background: var(--button-bg);
+      color: var(--button-fg);
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .meta-tab:hover {
+      border-color: var(--button-hover-border);
+      background: var(--button-hover-bg);
+    }
+
+    .meta-tab[aria-selected="true"] {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent-fg);
+    }
+
+    .meta-tab-content {
+      min-width: 0;
+      min-height: 0;
+      max-width: 100%;
+      overflow: hidden;
+    }
+
+    .meta-tab-panel[hidden] {
+      display: none;
+    }
+
+    .meta-raw-shell {
+      box-sizing: border-box;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      overscroll-behavior: contain;
+      background: #0d1117;
+    }
+
+    .meta-raw-shell pre {
+      margin: 0;
+      min-width: max-content;
+      padding: 16px;
+      background: transparent;
+    }
+
+    .meta-raw-shell code {
+      font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre;
+      tab-size: 2;
     }
 
     .meta-table {
@@ -1774,6 +1851,14 @@ __APEXCHARTS_JS__
     }
 
     @media (max-width: 840px) {
+      .source-modal {
+        padding: 12px;
+      }
+
+      .source-dialog {
+        max-height: calc(100vh - 24px);
+      }
+
       .shell {
         padding-left: 14px;
         padding-right: 14px;
@@ -1961,14 +2046,25 @@ __APEXCHARTS_JS__
     </div>
   </div>
   <div id="metaModal" class="source-modal" role="dialog" aria-modal="true" aria-labelledby="metaModalTitle" hidden>
-    <div class="source-dialog">
+    <div class="source-dialog meta-dialog">
       <div class="source-dialog-header">
         <h2 id="metaModalTitle" class="source-dialog-title">Meta</h2>
         <div class="source-dialog-actions">
           <button id="closeMeta" type="button" class="btn">Close</button>
         </div>
       </div>
-      <div id="metaBody" class="meta-shell"></div>
+      <div class="meta-tabs" role="tablist" aria-label="Metadata view">
+        <button id="metaTotalTab" class="meta-tab" type="button" role="tab" aria-selected="true" aria-controls="metaTotalPanel">Total</button>
+        <button id="metaRawTab" class="meta-tab" type="button" role="tab" aria-selected="false" aria-controls="metaRawPanel" tabindex="-1">Raw</button>
+      </div>
+      <div class="meta-tab-content">
+        <div id="metaTotalPanel" class="meta-shell meta-tab-panel" role="tabpanel" aria-labelledby="metaTotalTab">
+          <div id="metaBody"></div>
+        </div>
+        <div id="metaRawPanel" class="meta-raw-shell meta-tab-panel" role="tabpanel" aria-labelledby="metaRawTab" hidden>
+          <pre><code id="metaRawCode" class="language-yaml"></code></pre>
+        </div>
+      </div>
     </div>
   </div>
   <div id="instructionModal" class="source-modal" role="dialog" aria-modal="true" aria-labelledby="instructionModalTitle" hidden>
@@ -1994,9 +2090,13 @@ __HIGHLIGHT_JS__
     "use strict";
 
     const artifact = JSON.parse(document.getElementById("pg-diag-artifact").textContent);
-    const runtime = artifact.runtime || {};
-    const items = artifact.items || {};
-    const queryTexts = artifact.query_texts || {};
+    const runtime = artifact.runtime;
+    const items = artifact.items;
+    const queryTexts = artifact.query_texts;
+    const contentConfig = artifact.content;
+    const contentDocument = contentConfig.document;
+    const contentProvenance = contentConfig.provenance;
+    const contentFieldReference = contentDocument.field_reference;
     const visibleItems = Object.values(items).filter(isVisibleItem);
     const app = document.getElementById("app");
     const tableViews = [];
@@ -2045,6 +2145,7 @@ __HIGHLIGHT_JS__
     const CHART_QUERY_LABEL_MAX_CHARS = 80;
     const REPORT_MODAL_IDS = ["sourceModal", "metaModal", "instructionModal"];
     let currentSourceText = "";
+    let currentMetaItem = null;
     let scrollControlsRaf = 0;
     let chartResizeRaf = 0;
     const chartResizeScopes = new Set();
@@ -2663,10 +2764,10 @@ __HIGHLIGHT_JS__
       return render && typeof render === "object" ? render : {};
     }
 
-    function itemEmptyMessage(item, fallback) {
+    function itemEmptyMessage(item, defaultMessage) {
       const message = itemRenderOptions(item).empty_message;
       if (message === undefined || message === null || String(message).trim() === "") {
-        return fallback;
+        return defaultMessage;
       }
       return String(message);
     }
@@ -3045,6 +3146,10 @@ __HIGHLIGHT_JS__
       modal.setAttribute("aria-hidden", "false");
       syncReportModalScrollLock();
       document.getElementById(focusTargetId).focus();
+      const dialog = modal.querySelector(".source-dialog");
+      if (dialog) {
+        dialog.scrollLeft = 0;
+      }
     }
 
     function hideReportModal(modal) {
@@ -3075,6 +3180,9 @@ __HIGHLIGHT_JS__
       if (window.hljs && typeof window.hljs.highlightElement === "function") {
         window.hljs.highlightElement(code);
       }
+      const rawPanel = document.getElementById("metaRawPanel");
+      rawPanel.scrollTop = 0;
+      rawPanel.scrollLeft = 0;
       showReportModal(modal, "closeSource");
     }
 
@@ -3103,6 +3211,10 @@ __HIGHLIGHT_JS__
       const body = document.getElementById("metaBody");
       title.textContent = "Show meta: " + (item.title || item.item_id || "");
       body.replaceChildren(renderMetaTable(itemMetaRows(item)));
+      currentMetaItem = item;
+      document.getElementById("metaRawCode").replaceChildren();
+      document.getElementById("metaRawCode").removeAttribute("data-highlighted");
+      selectMetaTab("total");
       showReportModal(modal, "closeMeta");
     }
 
@@ -3125,6 +3237,341 @@ __HIGHLIGHT_JS__
       const modal = document.getElementById("metaModal");
       hideReportModal(modal);
       document.getElementById("metaBody").replaceChildren();
+      const rawCode = document.getElementById("metaRawCode");
+      rawCode.replaceChildren();
+      delete rawCode.dataset.itemId;
+      currentMetaItem = null;
+    }
+
+    function selectMetaTab(tabName, focusTab = false) {
+      if (tabName !== "total" && tabName !== "raw") {
+        throw new Error("Unknown metadata tab: " + tabName);
+      }
+      const selectedName = tabName;
+      const tabs = {
+        total: document.getElementById("metaTotalTab"),
+        raw: document.getElementById("metaRawTab"),
+      };
+      const panels = {
+        total: document.getElementById("metaTotalPanel"),
+        raw: document.getElementById("metaRawPanel"),
+      };
+      for (const name of ["total", "raw"]) {
+        const selected = name === selectedName;
+        tabs[name].setAttribute("aria-selected", selected ? "true" : "false");
+        tabs[name].tabIndex = selected ? 0 : -1;
+        panels[name].hidden = !selected;
+      }
+      if (selectedName === "raw") {
+        renderCurrentMetaRaw();
+      }
+      if (focusTab) {
+        tabs[selectedName].focus();
+      }
+    }
+
+    function renderCurrentMetaRaw() {
+      if (!currentMetaItem) {
+        return;
+      }
+      const code = document.getElementById("metaRawCode");
+      const itemId = String(currentMetaItem.item_id || "");
+      if (code.dataset.itemId === itemId && code.textContent) {
+        return;
+      }
+      const raw = buildRawItemConfiguration(currentMetaItem);
+      code.textContent = renderAnnotatedYaml(raw.document, raw.provenance);
+      code.dataset.itemId = itemId;
+      code.className = "language-yaml";
+      code.removeAttribute("data-highlighted");
+      if (window.hljs && typeof window.hljs.highlightElement === "function") {
+        window.hljs.highlightElement(code);
+      }
+    }
+
+    function buildRawItemConfiguration(item) {
+      const sectionId = item.section_id;
+      const itemId = item.item_id;
+      const itemKey = item.item_key;
+      const section = contentDocument.sections[sectionId];
+      const itemDefinition = section.items[itemKey];
+      const sourceKind = item.source_kind;
+      const sourceId = itemDefinition[sourceKind];
+      const sourceRoot = {
+        query: "queries",
+        script: "scripts",
+        metric: "metrics",
+        python: "python_sources",
+      }[sourceKind];
+      const catalogRoot = {
+        query: "queries",
+        script: "scripts",
+        metric: "metrics",
+        python: "python",
+      }[sourceKind];
+      if (!sourceRoot || !catalogRoot || !sourceId) {
+        throw new Error("Incomplete source contract for item " + itemId);
+      }
+      const document = {};
+      copyRawRoot(document, "report");
+      copyRawRoot(document, "runtime_policy");
+      copyRawRoot(document, "defaults");
+
+      const relatedPaths = ["report", "runtime_policy", "defaults"];
+      const sectionDefinition = {};
+      for (const [key, value] of Object.entries(section)) {
+        if (key !== "items") {
+          sectionDefinition[key] = value;
+        }
+      }
+      sectionDefinition.items = {[itemKey]: itemDefinition};
+      document.sections = {[sectionId]: sectionDefinition};
+      relatedPaths.push("sections/" + sectionId + "/items/" + itemKey);
+
+      const selectedCatalogs = {
+        [catalogRoot]: contentDocument.catalogs[catalogRoot],
+      };
+      document[sourceRoot] = {[sourceId]: contentDocument[sourceRoot][sourceId]};
+      relatedPaths.push(sourceRoot + "/" + sourceId);
+
+      if (sourceKind === "metric") {
+        const metric = contentDocument.metrics[sourceId];
+        const sourceQuery = metric.source_query;
+        if (sourceQuery) {
+          selectedCatalogs.queries = contentDocument.catalogs.queries;
+          document.queries = {[sourceQuery]: contentDocument.queries[sourceQuery]};
+          relatedPaths.push("queries/" + sourceQuery);
+        }
+      }
+      document.catalogs = selectedCatalogs;
+      for (const key of Object.keys(selectedCatalogs)) {
+        relatedPaths.push("catalogs/" + key);
+      }
+
+      document.instructions = {[itemId]: contentDocument.instructions[itemId]};
+      relatedPaths.push("instructions/" + itemId);
+      document.resolved = resolvedRawItemConfiguration(
+        item,
+        itemDefinition,
+        sourceKind,
+        sourceId,
+        sourceRoot,
+      );
+
+      const provenance = {...contentProvenance};
+      for (const root of ["queries", "scripts", "metrics", "python_sources", "instructions", "catalogs"]) {
+        if (!document[root]) {
+          continue;
+        }
+        const sources = uniqueSourcesForPaths(relatedPaths.filter((path) => path === root || path.startsWith(root + "/")));
+        if (sources.length) {
+          provenance[root] = sources;
+        }
+      }
+      const resolvedSources = uniqueSourcesForPaths(relatedPaths);
+      if (!resolvedSources.length) {
+        throw new Error("Missing provenance for item " + itemId);
+      }
+      provenance.resolved = resolvedSources;
+      return {document, provenance};
+    }
+
+    function copyRawRoot(target, root) {
+      target[root] = contentDocument[root];
+    }
+
+    function resolvedRawItemConfiguration(item, itemDefinition, sourceKind, sourceId, sourceRoot) {
+      const metadata = item.source_metadata;
+      const sourceManifest = contentDocument[sourceRoot][sourceId];
+      const resolved = {
+        item_id: item.item_id,
+        title: item.title,
+        source_kind: sourceKind,
+        source_id: sourceId,
+        state: item.state,
+        tags: itemDefinition.tags,
+        collection_scope: item.collection_scope,
+      };
+      for (const key of ["database_scope", "variant_id", "sql_file"]) {
+        if (metadata[key] !== undefined && metadata[key] !== null) {
+          resolved[key] = metadata[key];
+        }
+      }
+      if (itemDefinition.render !== undefined) {
+        resolved.render = itemDefinition.render;
+      }
+      if (sourceManifest.display !== undefined) {
+        resolved.display = sourceManifest.display;
+      }
+      return Object.fromEntries(
+        Object.entries(resolved).filter((entry) => entry[1] !== undefined && entry[1] !== null && entry[1] !== "")
+      );
+    }
+
+    function uniqueSourcesForPaths(paths) {
+      const sources = [];
+      const seen = new Set();
+      for (const path of paths) {
+        for (const source of sourceFilesForPath(path.split("/"), contentProvenance)) {
+          if (!seen.has(source)) {
+            seen.add(source);
+            sources.push(source);
+          }
+        }
+      }
+      return sources;
+    }
+
+    function renderAnnotatedYaml(documentValue, provenance) {
+      const lines = [];
+      appendAnnotatedYamlMapping(lines, documentValue, [], 0, provenance);
+      return lines.join("\n") + "\n";
+    }
+
+    function appendAnnotatedYamlMapping(lines, value, path, indent, provenance) {
+      for (const [key, child] of Object.entries(value)) {
+        const childPath = path.concat(String(key));
+        appendAnnotatedYamlComment(lines, childPath, indent, provenance);
+        const prefix = " ".repeat(indent) + yamlKey(key) + ":";
+        if (Array.isArray(child)) {
+          if (!child.length) {
+            lines.push(prefix + " []");
+          } else {
+            lines.push(prefix);
+            appendAnnotatedYamlList(lines, child, childPath, indent + 2, provenance);
+          }
+        } else if (child && typeof child === "object") {
+          if (!Object.keys(child).length) {
+            lines.push(prefix + " {}");
+          } else {
+            lines.push(prefix);
+            appendAnnotatedYamlMapping(lines, child, childPath, indent + 2, provenance);
+          }
+        } else {
+          lines.push(prefix + " " + yamlScalar(child));
+        }
+      }
+    }
+
+    function appendAnnotatedYamlList(lines, values, path, indent, provenance) {
+      const itemPath = path.slice();
+      itemPath[itemPath.length - 1] += "[]";
+      for (const value of values) {
+        appendAnnotatedYamlComment(lines, itemPath, indent, provenance);
+        const prefix = " ".repeat(indent) + "-";
+        if (Array.isArray(value)) {
+          if (!value.length) {
+            lines.push(prefix + " []");
+          } else {
+            lines.push(prefix);
+            appendAnnotatedYamlList(lines, value, itemPath, indent + 2, provenance);
+          }
+        } else if (value && typeof value === "object") {
+          if (!Object.keys(value).length) {
+            lines.push(prefix + " {}");
+          } else {
+            lines.push(prefix);
+            appendAnnotatedYamlMapping(lines, value, itemPath, indent + 2, provenance);
+          }
+        } else {
+          lines.push(prefix + " " + yamlScalar(value));
+        }
+      }
+    }
+
+    function appendAnnotatedYamlComment(lines, path, indent, provenance) {
+      const description = fieldDescriptionForPath(path);
+      const sources = sourceFilesForPath(path, provenance);
+      const sourceText = sources.length
+        ? " Source" + (sources.length > 1 ? "s" : "") + ": " + sources.join(", ") + "."
+        : "";
+      const comment = description + sourceText;
+      const width = Math.max(56, 112 - indent);
+      for (const line of wrapComment(comment, width)) {
+        lines.push(" ".repeat(indent) + "# " + line);
+      }
+    }
+
+    function fieldDescriptionForPath(path) {
+      const pathText = path.join("/");
+      if (contentFieldReference[pathText]) {
+        return String(contentFieldReference[pathText]);
+      }
+      let bestDescription = "";
+      let bestSpecificity = -1;
+      for (const [pattern, description] of Object.entries(contentFieldReference)) {
+        if (pattern === "*") {
+          continue;
+        }
+        const patternParts = pattern.split("/");
+        if (patternParts.length !== path.length) {
+          continue;
+        }
+        let matches = true;
+        let specificity = 0;
+        for (let index = 0; index < patternParts.length; index += 1) {
+          if (patternParts[index] === "*") {
+            continue;
+          }
+          if (patternParts[index] !== path[index]) {
+            matches = false;
+            break;
+          }
+          specificity += 1;
+        }
+        if (matches && specificity > bestSpecificity) {
+          bestDescription = String(description);
+          bestSpecificity = specificity;
+        }
+      }
+      if (bestDescription) {
+        return bestDescription;
+      }
+      throw new Error("Missing field reference for path " + pathText);
+    }
+
+    function sourceFilesForPath(path, provenance) {
+      for (let length = path.length; length > 0; length -= 1) {
+        const candidate = path.slice(0, length).join("/");
+        const sources = provenance[candidate];
+        if (Array.isArray(sources) && sources.length) {
+          return sources.map((source) => String(source));
+        }
+      }
+      return [];
+    }
+
+    function wrapComment(value, width) {
+      const words = String(value || "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+      const lines = [];
+      let line = "";
+      for (const word of words) {
+        if (line && line.length + word.length + 1 > width) {
+          lines.push(line);
+          line = word;
+        } else {
+          line = line ? line + " " + word : word;
+        }
+      }
+      if (line) {
+        lines.push(line);
+      }
+      return lines.length ? lines : [""];
+    }
+
+    function yamlKey(value) {
+      const text = String(value);
+      return /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(text) ? text : JSON.stringify(text);
+    }
+
+    function yamlScalar(value) {
+      if (value === undefined || value === null) {
+        return "null";
+      }
+      if (typeof value === "boolean" || typeof value === "number") {
+        return String(value);
+      }
+      return JSON.stringify(String(value));
     }
 
     function renderMetaTable(rows) {
@@ -3387,29 +3834,16 @@ __HIGHLIGHT_JS__
       if (!currentSourceText) {
         return;
       }
+      if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+        flashCopyButton("Unavailable");
+        return;
+      }
       try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          await navigator.clipboard.writeText(currentSourceText);
-        } else {
-          copyTextFallback(currentSourceText);
-        }
+        await navigator.clipboard.writeText(currentSourceText);
         flashCopyButton("Copied");
       } catch (error) {
-        copyTextFallback(currentSourceText);
-        flashCopyButton("Copied");
+        flashCopyButton("Copy failed");
       }
-    }
-
-    function copyTextFallback(text) {
-      const textarea = document.createElement("textarea");
-      textarea.value = text;
-      textarea.setAttribute("readonly", "readonly");
-      textarea.style.position = "fixed";
-      textarea.style.left = "-9999px";
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand("copy");
-      textarea.remove();
     }
 
     function flashCopyButton(text) {
@@ -4541,7 +4975,28 @@ __HIGHLIGHT_JS__
 
     function bindMetaModalControls() {
       const modal = document.getElementById("metaModal");
+      const tabs = [document.getElementById("metaTotalTab"), document.getElementById("metaRawTab")];
       document.getElementById("closeMeta").addEventListener("click", closeMetaModal);
+      tabs[0].addEventListener("click", () => selectMetaTab("total"));
+      tabs[1].addEventListener("click", () => selectMetaTab("raw"));
+      document.querySelector(".meta-tabs").addEventListener("keydown", (event) => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+          return;
+        }
+        event.preventDefault();
+        const currentIndex = tabs.indexOf(document.activeElement);
+        let nextIndex = currentIndex < 0 ? 0 : currentIndex;
+        if (event.key === "ArrowLeft") {
+          nextIndex = (nextIndex + tabs.length - 1) % tabs.length;
+        } else if (event.key === "ArrowRight") {
+          nextIndex = (nextIndex + 1) % tabs.length;
+        } else if (event.key === "Home") {
+          nextIndex = 0;
+        } else if (event.key === "End") {
+          nextIndex = tabs.length - 1;
+        }
+        selectMetaTab(nextIndex === 1 ? "raw" : "total", true);
+      });
       modal.addEventListener("click", (event) => {
         if (event.target === modal) {
           closeMetaModal();

@@ -1,5 +1,5 @@
 script_catalog:
-  schema_version: 2
+  schema_version: 3
   defaults:
     output: plain_text
     local_only: true

@@ -1,0 +1,217 @@
+field_reference:
+  schema_version: 1
+  fields:
+    report: Report identity, schema, and catalog locations.
+    report/id: Stable report identifier written into the artifact.
+    report/title: Human-readable report title.
+    report/schema_version: Declarative content schema version required by the loader.
+    report/catalogs: Relative paths to the catalogs assembled into this content document.
+    report/catalogs/*: Relative path to one catalog or instruction root.
+    runtime_policy: Runtime limits and behavior shared by report items.
+    runtime_policy/default_sql_timeout_ms: Default timeout for SQL statements in milliseconds.
+    runtime_policy/default_shell_timeout_ms: Default timeout for shell scripts in milliseconds.
+    runtime_policy/remote_db_only_shell_message: Explanation used when a local source is skipped in remote DB-only mode.
+    runtime_policy/table_columns: Policy declaring that SQL result columns come from the runtime result schema.
+    runtime_policy/fail_fast: Whether collection stops after the first item error.
+    defaults: Report-wide presentation defaults inherited by sections and items.
+    defaults/table: Default behavior for rendered result tables.
+    defaults/table/page_size: Initial number of table rows shown per page.
+    defaults/item: Defaults inherited by every report item unless overridden.
+    defaults/item/state: Default item expansion state.
+    defaults/item/database_scope: Default database scope label for PostgreSQL items.
+    defaults/section: Defaults inherited by report sections unless overridden.
+    defaults/section/state: Default section expansion state.
+    catalogs: Catalog metadata and defaults used to construct effective source manifests.
+    catalogs/*: Metadata for one source catalog.
+    catalogs/*/schema_version: Schema version of this source catalog.
+    catalogs/*/defaults: Values merged into every manifest in this catalog.
+    catalogs/queries/sql_root: Relative directory containing SQL source files.
+    catalogs/queries/files: Query-manifest files loaded in declaration order.
+    catalogs/queries/files[]: One query-manifest file included in the unified query catalog.
+    catalogs/queries/defaults/result_shape: Default shape expected from SQL query results.
+    catalogs/queries/defaults/cost: Default estimated query cost class.
+    catalogs/queries/defaults/collection: Default query collection contract.
+    catalogs/queries/defaults/collection/default: Default frequency used when an item does not override collection.
+    catalogs/queries/defaults/collection/supports: Collection frequencies supported by queries in this catalog.
+    catalogs/queries/defaults/collection/supports[]: One supported query collection frequency.
+    catalogs/scripts/defaults/output: Default parser used for script stdout.
+    catalogs/scripts/defaults/local_only: Whether scripts require access to the database host.
+    catalogs/scripts/defaults/timeout_ms: Default script timeout in milliseconds.
+    catalogs/scripts/defaults/remote_db_only_behavior: Default behavior when a local script cannot run remotely.
+    catalogs/scripts/defaults/remote_db_only_behavior/status: Collection status emitted for a skipped local script.
+    catalogs/scripts/defaults/remote_db_only_behavior/message_ref: Runtime-policy path supplying the skip explanation.
+    catalogs/metrics/defaults/mode: Runtime mode required by metrics in this catalog.
+    catalogs/metrics/defaults/x: Default source column used as chart time coordinate.
+    catalogs/python/defaults/timeout_ms: Default trusted Python source timeout in milliseconds.
+    catalogs/python/defaults/local_only: Whether Python sources require access to the database host.
+    sections: Ordered report sections and their item declarations.
+    sections/*: One report section selected by its stable section id.
+    sections/*/title: Section title shown in the report.
+    sections/*/description: Maintainer-facing description of section contents.
+    sections/*/state: Section expansion state overriding report defaults.
+    sections/*/show_database_scope: Whether item titles in this section show database scope.
+    sections/*/items: Ordered item declarations belonging to this section.
+    sections/*/items/*: One report item declaration selected by its item key.
+    sections/*/items/*/title: Optional title overriding the source-manifest title.
+    sections/*/items/*/query: Query manifest id used by this item.
+    sections/*/items/*/script: Script manifest id used by this item.
+    sections/*/items/*/metric: Metric manifest id used by this item.
+    sections/*/items/*/python: Trusted Python manifest id used by this item.
+    sections/*/items/*/state: Item expansion state overriding inherited defaults.
+    sections/*/items/*/database_scope: Database scope overriding the source manifest and report defaults.
+    sections/*/items/*/tags: Tags used for report filtering and item classification.
+    sections/*/items/*/tags[]: One tag assigned to this report item.
+    sections/*/items/*/render: Item-specific presentation behavior.
+    sections/*/items/*/render/empty_message: Text shown when collection succeeds but returns no rows.
+    sections/*/items/*/instruction: Optional instruction path overriding the conventional item path.
+    queries: Effective query manifests after query-catalog defaults are merged.
+    queries/*: One effective SQL query manifest selected by query id.
+    queries/*/title: Human-readable query title inherited by report items.
+    queries/*/description: Maintainer-facing description of the query purpose.
+    queries/*/group: Logical catalog group used to organize source definitions.
+    queries/*/main_view: Primary PostgreSQL view or subsystem read by the query.
+    queries/*/source: Origin or ownership marker for the query definition.
+    queries/*/cost: Estimated execution-cost class used during review.
+    queries/*/optional: Whether unsupported or unavailable query prerequisites are non-fatal.
+    queries/*/result_shape: Expected public result shape.
+    queries/*/database_scope: Whether the query covers all databases or only the connected database.
+    queries/*/display: Table presentation hints owned by the query manifest.
+    queries/*/display/default_sort: Initial table sort applied by the renderer.
+    queries/*/display/default_sort/column: Result column used for the initial sort.
+    queries/*/display/default_sort/direction: Initial ascending or descending sort direction.
+    queries/*/collection: Frequencies at which this SQL source may be executed.
+    queries/*/collection/default: Normal collection frequency for direct report usage.
+    queries/*/collection/supports: Collection frequencies explicitly supported by this query.
+    queries/*/collection/supports[]: One supported collection frequency.
+    queries/*/requirements: Version or capability constraints for this query.
+    queries/*/requirements/unsupported_versions_reason: Explanation shown when no variant supports the server.
+    queries/*/evaluation: Automatic finding rules and summary text for query results.
+    queries/*/evaluation/summary_title: Finding-summary title displayed above a result table.
+    queries/*/evaluation/recommendation: Recommended operator action for matching findings.
+    queries/*/variants: PostgreSQL-version-specific SQL implementations.
+    queries/*/variants[]: One SQL variant with a bounded PostgreSQL version range.
+    queries/*/variants[]/id: Stable variant identifier recorded in metadata.
+    queries/*/variants[]/min_pg_version: Inclusive minimum PostgreSQL server_version_num.
+    queries/*/variants[]/max_pg_version: Inclusive maximum PostgreSQL server_version_num when present.
+    queries/*/variants[]/sql_file: SQL file executed for this variant.
+    queries/*/variants[]/semantic_columns: Stable semantic references mapped to physical result columns.
+    queries/*/variants[]/semantic_columns/*: One semantic namespace such as dimensions, counters, or gauges.
+    queries/*/variants[]/semantic_columns/*/*: Mapping from a semantic metric name to an SQL result-column name.
+    scripts: Effective shell-source manifests after script-catalog defaults are merged.
+    scripts/*: One effective shell source selected by script id.
+    scripts/*/title: Human-readable script title inherited by report items.
+    scripts/*/description: Maintainer-facing description of collected host data.
+    scripts/*/script_file: Script path relative to the content scripts directory.
+    scripts/*/output: Parser used to convert script stdout into a result.
+    scripts/*/local_only: Whether the script must run on the database host.
+    scripts/*/timeout_ms: Script timeout in milliseconds.
+    scripts/*/remote_db_only_behavior: Behavior when the script is unavailable in remote DB-only mode.
+    scripts/*/remote_db_only_behavior/status: Collection status used for the unavailable script.
+    scripts/*/remote_db_only_behavior/message_ref: Runtime-policy path supplying the explanatory message.
+    python_sources: Effective trusted Python manifests after Python-catalog defaults are merged.
+    python_sources/*: One trusted Python source selected by source id.
+    python_sources/*/title: Human-readable Python-source title inherited by report items.
+    python_sources/*/description: Maintainer-facing description of the Python check.
+    python_sources/*/python_file: Python module path relative to the content Python directory.
+    python_sources/*/function: Trusted callable invoked from the Python module.
+    python_sources/*/local_only: Whether the Python source must run on the database host.
+    python_sources/*/timeout_ms: Python source timeout in milliseconds.
+    metrics: Effective metric manifests after metric-catalog defaults are merged.
+    metrics/*: One chart or derived-table metric selected by metric id.
+    metrics/*/title: Human-readable metric title inherited by report items.
+    metrics/*/mode: Runtime mode required to calculate this metric.
+    metrics/*/x: Source field used as the time coordinate.
+    metrics/*/source_query: Dedicated SQL source supplying metric samples.
+    metrics/*/source_sampler: Local OS sampler supplying metric samples.
+    metrics/*/requires_collection: Required snapshot collection frequency.
+    metrics/*/database_scope: Database scope inherited from the metric source.
+    metrics/*/result: Derived result kind when the metric produces a table.
+    metrics/*/partition_by: Semantic dimensions separating chart series.
+    metrics/*/partition_by[]: One semantic dimension in the chart-series identity.
+    metrics/*/series: Series calculated for an ordinary chart metric.
+    metrics/*/series[]: One configured chart series.
+    metrics/*/series[]/name: Fixed human-readable series name.
+    metrics/*/series[]/name_from_ref: Semantic reference supplying a dynamic series name.
+    metrics/*/series[]/value_ref: Semantic value read for this series.
+    metrics/*/series[]/transform: Gauge, delta, rate, or other calculation applied to source values.
+    metrics/*/series[]/unit: Display and formatting unit for series values.
+    metrics/*/series[]/color: Optional fixed hexadecimal series color.
+    metrics/*/chart: Chart presentation configuration.
+    metrics/*/chart/kind: Chart type such as line, area, or stacked column.
+    metrics/*/chart/unit: Unit shared by chart values and axes.
+    metrics/*/chart/series_order: Optional ordering policy for configured series.
+    metrics/*/display: Presentation hints for a derived metric table.
+    metrics/*/display/default_sort: Initial sort for a derived metric table.
+    metrics/*/display/default_sort/column: Derived column used for the initial sort.
+    metrics/*/display/default_sort/direction: Initial ascending or descending sort direction.
+    metrics/*/top_n: Bounded Top-N calculation performed for each snapshot interval.
+    metrics/*/top_n/mode: Endpoint or adjacent-interval calculation mode.
+    metrics/*/top_n/limit: Maximum number of candidate groups kept per interval.
+    metrics/*/top_n/key_refs: Semantic references forming stable object identity.
+    metrics/*/top_n/key_refs[]: One semantic key used to match rows between snapshots.
+    metrics/*/top_n/label_refs: Semantic references forming the displayed series label.
+    metrics/*/top_n/label_refs[]: One semantic value included in the displayed label.
+    metrics/*/top_n/value_ref: Single semantic value used by the Top-N calculation.
+    metrics/*/top_n/value_refs: Semantic values summed by the Top-N calculation.
+    metrics/*/top_n/value_refs[]: One semantic value included in a Top-N sum.
+    metrics/*/top_n/numerator_refs: Semantic counters summed into a ratio numerator.
+    metrics/*/top_n/numerator_refs[]: One semantic counter included in the numerator.
+    metrics/*/top_n/denominator_ref: Semantic counter used as a ratio denominator.
+    metrics/*/top_n/operation: Arithmetic operation used by a ratio metric.
+    metrics/*/top_n/series_name: Fixed label used for a ratio series.
+    metrics/*/top_n/transform: Delta, rate, average, or gauge transformation.
+    metrics/*/top_n/unit: Display unit for Top-N values.
+    metrics/*/table: Configuration for a table derived from snapshot samples.
+    metrics/*/table/mode: Snapshot aggregation mode used to build the table.
+    metrics/*/table/key_refs: Semantic references forming stable row identity.
+    metrics/*/table/key_refs[]: One semantic key used to match or group sampled rows.
+    metrics/*/table/epoch_refs: Semantic reset markers that must remain equal across endpoints.
+    metrics/*/table/epoch_refs[]: One reset marker checked before a delta is calculated.
+    metrics/*/table/limit: Maximum derived rows retained in the result.
+    metrics/*/table/drop_zero_rows: Whether rows with no non-zero derived metrics are omitted.
+    metrics/*/table/sort: Sort applied before the derived row limit.
+    metrics/*/table/sort/column: Derived column used for sorting.
+    metrics/*/table/sort/direction: Ascending or descending derived-row order.
+    metrics/*/table/columns: Public columns calculated for the derived table.
+    metrics/*/table/columns[]: One derived table-column definition.
+    metrics/*/table/columns[]/name: Public column name written into the artifact.
+    metrics/*/table/columns[]/role: Whether the column is an identity key or calculated value.
+    metrics/*/table/columns[]/key_index: Position of the value in the matched key tuple.
+    metrics/*/table/columns[]/value_ref: Semantic value used by the column calculation.
+    metrics/*/table/columns[]/ref: Direct source field used by a sampler-backed column.
+    metrics/*/table/columns[]/transform: Calculation applied to the source value.
+    metrics/*/table/columns[]/pg_type: PostgreSQL-like type hint used by table formatting.
+    metrics/*/evaluation: Automatic evaluation applied to derived metric rows.
+    metrics/*/evaluation/summary_title: Finding-summary title displayed above matching rows.
+    metrics/*/evaluation/recommendation: Recommended operator action for the finding.
+    metrics/*/evaluation/rules: Ordered severity rules evaluated against derived rows.
+    metrics/*/evaluation/rules[]: One automatic evaluation rule.
+    metrics/*/evaluation/rules[]/severity: Severity assigned when the rule matches.
+    metrics/*/evaluation/rules[]/reason: Human-readable reason recorded for a match.
+    metrics/*/evaluation/rules[]/all: Conditions that must all match one result row.
+    metrics/*/evaluation/rules[]/all[]: One column comparison in an evaluation rule.
+    metrics/*/evaluation/rules[]/all[]/column: Result column read by the condition.
+    metrics/*/evaluation/rules[]/all[]/operator: Comparison operator applied by the condition.
+    metrics/*/evaluation/rules[]/all[]/value: Threshold compared with the result value.
+    instructions: Instruction-file references associated with report items.
+    instructions/*: Instruction metadata for one report item.
+    instructions/*/format: Markup format used to render the instruction.
+    instructions/*/path: Instruction file path relative to the content root.
+    resolved: Runtime-resolved item configuration produced from the unified document.
+    resolved/item_id: Stable section.item identifier of the current report item.
+    resolved/title: Final title after item and source-manifest inheritance.
+    resolved/source_kind: Query, script, metric, or Python source type.
+    resolved/source_id: Referenced source-manifest identifier.
+    resolved/state: Final expansion state after defaults are applied.
+    resolved/database_scope: Final database scope shown in the item title.
+    resolved/tags: Final normalized item tags.
+    resolved/tags[]: One normalized item tag.
+    resolved/render: Final item-specific render configuration.
+    resolved/render/empty_message: Final message shown when collection succeeds without result rows.
+    resolved/display: Final source-owned table display configuration.
+    resolved/display/default_sort: Final initial table sort configuration.
+    resolved/display/default_sort/column: Final result column used for initial table sorting.
+    resolved/display/default_sort/direction: Final initial table sort direction.
+    resolved/variant_id: PostgreSQL-version-specific SQL variant selected at planning time.
+    resolved/sql_file: SQL file selected for the connected PostgreSQL version.
+    resolved/collection_scope: Frequency at which this item or its source is collected.

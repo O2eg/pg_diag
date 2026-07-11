@@ -1137,14 +1137,18 @@ def _sort_table_rows(rows: list[list[Any]], columns: list[dict[str, Any]], sort:
 
 def _rows_from_item(
     item: dict[str, Any] | None,
-    fallback_columns: list[Any] | None = None,
+    shared_columns: list[Any] | None = None,
 ) -> list[dict[str, Any]]:
     if not item:
         return []
     result = item.get("result") or {}
     if result.get("kind") != "table":
         return []
-    raw_columns = result.get("columns") or fallback_columns or []
+    raw_columns = result.get("columns")
+    if raw_columns is None:
+        raw_columns = shared_columns
+    if raw_columns is None:
+        return []
     columns = [
         column.get("name") if isinstance(column, dict) else str(column)
         for column in raw_columns
@@ -1156,27 +1160,31 @@ def _rows_from_item(
 
 
 def _sample_timestamp(sample: dict[str, Any]) -> str:
-    fallback = str(sample.get("timestamp") or "")
+    sample_timestamp = str(sample.get("timestamp") or "")
     for row in sample.get("rows") or []:
         timestamp = _row_timestamp(row, "")
         if timestamp:
             return timestamp
-    return fallback
+    return sample_timestamp
 
 
-def _row_timestamp(row: dict[str, Any], fallback: str) -> str:
+def _row_timestamp(row: dict[str, Any], sample_timestamp: str) -> str:
     value = row.get(SNAPSHOT_TIME_COLUMN)
-    return str(value) if value not in (None, "") else fallback
+    return str(value) if value not in (None, "") else sample_timestamp
 
 
 def _row_interval_seconds(
     first_row: dict[str, Any] | None,
     last_row: dict[str, Any],
-    first_fallback: str,
-    last_fallback: str,
+    first_sample_timestamp: str,
+    last_sample_timestamp: str,
 ) -> float:
-    first_timestamp = _row_timestamp(first_row or {}, first_fallback) if first_row else first_fallback
-    last_timestamp = _row_timestamp(last_row, last_fallback)
+    first_timestamp = (
+        _row_timestamp(first_row or {}, first_sample_timestamp)
+        if first_row
+        else first_sample_timestamp
+    )
+    last_timestamp = _row_timestamp(last_row, last_sample_timestamp)
     return _seconds_between(first_timestamp, last_timestamp)
 
 

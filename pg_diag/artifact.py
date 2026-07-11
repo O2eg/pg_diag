@@ -47,12 +47,14 @@ def create_artifact(
             "schema_version": runtime_config.SUPPORTED_CONTENT_SCHEMA_VERSION,
             "content_path": str(content.path),
             "checksum": content.checksum,
-            "report_id": (content.report.get("report") or {}).get("id"),
+            "report_id": content.report["report"]["id"],
+            "document": json_safe(content.document),
+            "provenance": json_safe(content.provenance),
         },
         "report": {
-            "id": (content.report.get("report") or {}).get("id"),
-            "title": (content.report.get("report") or {}).get("title"),
-            "description": (content.report.get("report") or {}).get("description"),
+            "id": content.report["report"]["id"],
+            "title": content.report["report"]["title"],
+            "description": content.report["report"].get("description"),
         },
         "runtime": {
             "mode": plan.mode,
@@ -65,7 +67,7 @@ def create_artifact(
             "server_version_num": plan.server_version_num,
             **json_safe(runtime_context),
         },
-        "display": json_safe(content.report.get("defaults") or {}),
+        "display": json_safe(content.report["defaults"]),
         "sections": plan.sections,
         "items": {},
         "query_texts": {},
@@ -80,10 +82,7 @@ def _collector_host() -> str:
 
 
 def _collector_user() -> str:
-    try:
-        return getpass.getuser()
-    except Exception:
-        return ""
+    return getpass.getuser()
 
 
 def item_from_plan(
@@ -107,8 +106,10 @@ def item_from_plan(
     return {
         "item_id": planned.item_id,
         "section_id": getattr(planned, "section_id", None),
+        "item_key": getattr(planned, "item_key", None),
         "title": planned.title,
         "source_kind": planned.source_kind,
+        "collection_scope": planned.collection_scope,
         "collection_status": collection_status,
         "severity_level": normalized_severity_level,
         "state": getattr(planned, "state", None),

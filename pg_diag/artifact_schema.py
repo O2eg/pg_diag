@@ -15,17 +15,31 @@ from .contracts import (
 )
 from .errors import ValidationError
 
-
-SUPPORTED_ARTIFACT_SCHEMA_VERSIONS = {1, runtime_config.ARTIFACT_SCHEMA_VERSION}
+INTERNAL_TIME_COLUMN = "epoch_ns"
+INTERNAL_TAG_PREFIX = "tag_"
+INTERNAL_EVALUATION_PREFIX = "pg_diag_internal_"
 
 
 def validate_artifact(artifact: dict[str, Any]) -> None:
-    required = ["artifact_schema_version", "generator", "content", "report", "runtime", "sections", "items"]
+    required = [
+        "artifact_schema_version",
+        "generator",
+        "content",
+        "report",
+        "runtime",
+        "display",
+        "sections",
+        "items",
+        "query_texts",
+        "snapshot_schemas",
+        "snapshots",
+        "diagnostics",
+    ]
     for key in required:
         if key not in artifact:
             raise ValidationError(f"Artifact missing required field {key!r}")
     schema_version = artifact["artifact_schema_version"]
-    if not isinstance(schema_version, int) or schema_version not in SUPPORTED_ARTIFACT_SCHEMA_VERSIONS:
+    if schema_version != runtime_config.ARTIFACT_SCHEMA_VERSION:
         raise ValidationError(
             "Unsupported artifact schema version: "
             f"{schema_version}"
@@ -33,10 +47,51 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
     for key in ("generator", "content", "report", "runtime"):
         if not isinstance(artifact[key], dict):
             raise ValidationError(f"Artifact field {key!r} must be a mapping")
-    display = artifact.get("display", {})
+    content = artifact["content"]
+    if content.get("schema_version") != runtime_config.SUPPORTED_CONTENT_SCHEMA_VERSION:
+        raise ValidationError("Artifact content schema version does not match the runtime contract")
+    for key in ("content_path", "checksum", "report_id"):
+        if not isinstance(content.get(key), str) or not content[key]:
+            raise ValidationError(f"Artifact field 'content.{key}' must be a non-empty string")
+    content_document = content.get("document")
+    if not isinstance(content_document, dict) or not content_document:
+        raise ValidationError("Artifact field 'content.document' must be a non-empty mapping")
+    field_reference = content_document.get("field_reference")
+    if not isinstance(field_reference, dict) or not field_reference:
+        raise ValidationError("Artifact field 'content.document.field_reference' must be a non-empty mapping")
+    required_document_roots = {
+        "report",
+        "runtime_policy",
+        "defaults",
+        "sections",
+        "catalogs",
+        "queries",
+        "scripts",
+        "metrics",
+        "python_sources",
+        "instructions",
+        "field_reference",
+    }
+    if set(content_document) != required_document_roots:
+        raise ValidationError("Artifact field 'content.document' has an invalid root set")
+    content_provenance = content.get("provenance")
+    if (
+        not isinstance(content_provenance, dict)
+        or not content_provenance
+        or any(
+            not isinstance(path, str)
+            or not isinstance(sources, list)
+            or any(not isinstance(source, str) or not source for source in sources)
+            for path, sources in content_provenance.items()
+        )
+    ):
+        raise ValidationError(
+            "Artifact field 'content.provenance' must map paths to source-file lists"
+        )
+    display = artifact["display"]
     if not isinstance(display, dict):
         raise ValidationError("Artifact field 'display' must be a mapping")
-    table_display = display.get("table", {})
+    table_display = display.get("table")
     if not isinstance(table_display, dict):
         raise ValidationError("Artifact field 'display.table' must be a mapping")
     page_size = table_display.get("page_size")
@@ -64,19 +119,16 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
     if missing_items:
         raise ValidationError(f"Artifact sections reference missing items: {sorted(missing_items)!r}")
 
-    snapshot_schemas = artifact.get("snapshot_schemas", {})
+    snapshot_schemas = artifact["snapshot_schemas"]
     _validate_snapshot_schemas(snapshot_schemas)
-    if "snapshots" in artifact:
-        _validate_snapshots(artifact["snapshots"], artifact["items"], snapshot_schemas)
-    if "diagnostics" in artifact:
-        _validate_diagnostics(artifact["diagnostics"], "Artifact diagnostics")
-    if "query_texts" in artifact:
-        query_texts = artifact["query_texts"]
-        if not isinstance(query_texts, dict) or any(
-            not isinstance(key, str) or not isinstance(value, str)
-            for key, value in query_texts.items()
-        ):
-            raise ValidationError("Artifact field 'query_texts' must map strings to strings")
+    _validate_snapshots(artifact["snapshots"], artifact["items"], snapshot_schemas)
+    _validate_diagnostics(artifact["diagnostics"], "Artifact diagnostics")
+    query_texts = artifact["query_texts"]
+    if not isinstance(query_texts, dict) or any(
+        not isinstance(key, str) or not isinstance(value, str)
+        for key, value in query_texts.items()
+    ):
+        raise ValidationError("Artifact field 'query_texts' must map strings to strings")
 
     _validate_json_data(artifact, "$", set())
 
@@ -97,7 +149,7 @@ def _validate_sections(sections: list[Any]) -> set[str]:
             raise ValidationError(
                 f"Artifact section {section_id!r} has unsupported state {section.get('state')!r}"
             )
-        item_ids = section.get("items", [])
+        item_ids = section.get("items")
         if not isinstance(item_ids, list) or any(
             not isinstance(item_id, str) or not item_id for item_id in item_ids
         ):
@@ -112,6 +164,9 @@ def _validate_sections(sections: list[Any]) -> set[str]:
 
 
 def _validate_item_payload(item_id: str, item: dict[str, Any]) -> None:
+    for key in ("section_id", "item_key", "title", "source_kind"):
+        if not isinstance(item.get(key), str) or not item[key]:
+            raise ValidationError(f"Artifact item {item_id!r} field {key!r} must be a non-empty string")
     if not _value_in(item.get("collection_status"), COLLECTION_STATUSES):
         raise ValidationError(
             f"Artifact item {item_id!r} has unsupported collection_status "
@@ -125,11 +180,11 @@ def _validate_item_payload(item_id: str, item: dict[str, Any]) -> None:
     if not isinstance(result, dict):
         raise ValidationError(f"Artifact item {item_id!r} result must be a mapping")
     _validate_result(item_id, result)
-    if not isinstance(item.get("source_metadata", {}), dict):
+    if not isinstance(item.get("source_metadata"), dict):
         raise ValidationError(f"Artifact item {item_id!r} source_metadata must be a mapping")
-    if not isinstance(item.get("issues", {}), dict):
+    if not isinstance(item.get("issues"), dict):
         raise ValidationError(f"Artifact item {item_id!r} issues must be a mapping")
-    _validate_diagnostics(item.get("diagnostics", []), f"Artifact item {item_id!r} diagnostics")
+    _validate_diagnostics(item.get("diagnostics"), f"Artifact item {item_id!r} diagnostics")
     reason = item.get("reason")
     if reason is not None and not isinstance(reason, str):
         raise ValidationError(f"Artifact item {item_id!r} reason must be a string or null")
@@ -141,14 +196,14 @@ def _validate_item_payload(item_id: str, item: dict[str, Any]) -> None:
 
 
 def _validate_result(item_id: str, result: dict[str, Any]) -> None:
-    kind = result.get("kind", "none")
+    kind = result.get("kind")
     if not _value_in(kind, RESULT_KINDS):
         raise ValidationError(f"Artifact item {item_id!r} has unsupported result kind {kind!r}")
-    if kind == "plain_text" and not isinstance(result.get("data", ""), str):
+    if kind == "plain_text" and not isinstance(result.get("data"), str):
         raise ValidationError(f"Artifact plain-text item {item_id!r} data must be a string")
     if kind == "table":
-        columns = result.get("columns", [])
-        rows = result.get("rows", [])
+        columns = result.get("columns")
+        rows = result.get("rows")
         if not isinstance(columns, list) or not isinstance(rows, list):
             raise ValidationError(f"Artifact table item {item_id!r} must define list columns and rows")
         column_names = []
@@ -158,16 +213,27 @@ def _validate_result(item_id: str, result: dict[str, Any]) -> None:
             column_names.append(column["name"])
         if len(column_names) != len(set(column_names)):
             raise ValidationError(f"Artifact table item {item_id!r} has duplicate column names")
+        internal_columns = {
+            name
+            for name in column_names
+            if name == INTERNAL_TIME_COLUMN
+            or name.startswith(INTERNAL_TAG_PREFIX)
+            or name.startswith(INTERNAL_EVALUATION_PREFIX)
+        }
+        if internal_columns:
+            raise ValidationError(
+                f"Artifact table item {item_id!r} exposes internal columns: {sorted(internal_columns)!r}"
+            )
         for row in rows:
             if not isinstance(row, list) or len(row) != len(columns):
                 raise ValidationError(
                     f"Artifact table item {item_id!r} rows must match the column count"
                 )
-        row_count = result.get("row_count", len(rows))
+        row_count = result.get("row_count")
         if not isinstance(row_count, int) or isinstance(row_count, bool) or row_count != len(rows):
             raise ValidationError(f"Artifact table item {item_id!r} has an invalid row_count")
     if kind == "chart":
-        series = result.get("series", [])
+        series = result.get("series")
         if not isinstance(series, list) or any(not isinstance(entry, dict) for entry in series):
             raise ValidationError(f"Artifact chart item {item_id!r} must define a mapping series list")
     _validate_interval_coverage(item_id, result.get("interval_coverage"))
@@ -252,7 +318,7 @@ def _validate_snapshots(
             result = item.get("result")
             if not isinstance(result, dict):
                 raise ValidationError(f"Artifact snapshot item {item_id!r} result must be a mapping")
-            if result.get("kind", "none") == "table" and "columns" not in result:
+            if result.get("kind") == "table" and "columns" not in result:
                 rows = result.get("rows", [])
                 if not isinstance(rows, list) or any(not isinstance(row, list) for row in rows):
                     raise ValidationError(
@@ -324,4 +390,4 @@ def _value_in(value: Any, allowed: set[str] | frozenset[str]) -> bool:
 
 
 def _valid_item_state(value: Any) -> bool:
-    return value is None or _value_in(value, {"expanded", "collapsed", "hidden"})
+    return _value_in(value, {"expanded", "collapsed", "hidden"})

@@ -6,6 +6,8 @@ import sys
 import json
 from pathlib import Path
 
+from pg_diag import runtime_config
+
 
 def run_cli(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
@@ -81,9 +83,28 @@ def test_run_query_is_always_an_inspection_command(repo_root: Path) -> None:
 
 def test_render_from_json_cli(repo_root: Path, tmp_path: Path) -> None:
     artifact = {
-        "artifact_schema_version": 1,
+        "artifact_schema_version": runtime_config.ARTIFACT_SCHEMA_VERSION,
         "generator": {"name": "pg_diag", "version": "0.8.0"},
-        "content": {"schema_version": 2, "checksum": "sha256:test"},
+        "content": {
+            "schema_version": runtime_config.SUPPORTED_CONTENT_SCHEMA_VERSION,
+            "content_path": "/tmp/test-content",
+            "checksum": "sha256:test",
+            "report_id": "test",
+            "document": {
+                "report": {"id": "test", "title": "Test Report"},
+                "runtime_policy": {},
+                "defaults": {"table": {"page_size": 25}},
+                "sections": {},
+                "catalogs": {},
+                "queries": {},
+                "scripts": {},
+                "metrics": {},
+                "python_sources": {},
+                "instructions": {},
+                "field_reference": {"report": "Report metadata."},
+            },
+            "provenance": {"report": ["report.yaml"]},
+        },
         "report": {"id": "test", "title": "Test Report"},
         "runtime": {
             "mode": "snapshot",
@@ -91,15 +112,26 @@ def test_render_from_json_cli(repo_root: Path, tmp_path: Path) -> None:
             "server_version_num": 180000,
             "started_at": "2026-07-04T00:00:00Z",
         },
-        "sections": [{"section_id": "overview", "title": "Overview", "items": ["overview.x"]}],
+        "display": {"table": {"page_size": 25}},
+        "sections": [
+            {
+                "section_id": "overview",
+                "title": "Overview",
+                "state": "expanded",
+                "items": ["overview.x"],
+            }
+        ],
         "items": {
             "overview.x": {
                 "item_id": "overview.x",
                 "section_id": "overview",
+                "item_key": "x",
                 "title": "X",
                 "source_kind": "query",
+                "collection_scope": "once",
                 "collection_status": "ok",
                 "severity_level": "unknown",
+                "state": "expanded",
                 "reason": None,
                 "result": {
                     "kind": "table",
@@ -110,8 +142,13 @@ def test_render_from_json_cli(repo_root: Path, tmp_path: Path) -> None:
                 "timing_ms": 1,
                 "source_metadata": {},
                 "diagnostics": [],
+                "issues": {},
             }
         },
+        "query_texts": {},
+        "snapshot_schemas": {},
+        "snapshots": [],
+        "diagnostics": [],
     }
     json_path = tmp_path / "report.json"
     html_path = tmp_path / "report.html"

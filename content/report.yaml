@@ -1,14 +1,14 @@
 report:
   id: pg_diag_minimal
   title: PostgreSQL Diagnostic Report
-  schema_version: 2
-  default_state: expanded
+  schema_version: 3
   catalogs:
     queries: queries.yaml
     scripts: scripts.yaml
     metrics: metrics.yaml
     python: python.yaml
     instructions: instructions
+    field_reference: field_reference.yaml
 
 runtime_policy:
   default_sql_timeout_ms: 3000
@@ -23,6 +23,8 @@ defaults:
   item:
     state: expanded
     database_scope: all_databases
+  section:
+    state: expanded
 
 sections:
   overview:
