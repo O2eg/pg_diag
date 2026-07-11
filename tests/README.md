@@ -51,8 +51,11 @@ The main unit-test groups are:
   set small.
 - `test_metric_engine.py` - rate, delta, top-N, ratio, chart, and table metric
   calculations from snapshots.
-- `test_os_metrics.py` - local OS sampler parsing, derived values, and backend
+- `test_os_metrics.py` - Linux provider parsing, derived values, and backend
   process window-endpoint rates.
+- `test_sampler_runtime.py` - declarative provider dispatch, output/error
+  contracts, and enforcement that core modules contain no bundled sampler or
+  item implementation names.
 - `test_python_executor.py` - trusted content Python source execution and
   source-specific behavior.
 - `test_public_output.py` - public artifact shape, column-name cleanup,
@@ -61,6 +64,11 @@ The main unit-test groups are:
 - `test_report_output_paths.py` - snapshot and snapshots JSON/HTML output path,
   including once/endpoints/chart-window execution order
   selection.
+- `test_ssh_transport.py` - strict AsyncSSH key authentication, known-host
+  verification, dynamic PostgreSQL forwarding, stdin shell execution, SFTP
+  host access, remote OS sampling, local evaluation of every host-dependent
+  Python item, passfile matching, and cleanup. It includes an in-process
+  loopback SSH server and needs no external sshd or network access.
 
 ## Integration Tests
 

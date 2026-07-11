@@ -57,6 +57,7 @@ class ContentPack:
     scripts: dict[str, dict[str, Any]]
     metrics: dict[str, dict[str, Any]]
     pythons: dict[str, dict[str, Any]]
+    sampler_providers: dict[str, dict[str, Any]]
     document: dict[str, Any]
     provenance: dict[str, list[str]]
     catalog_files: list[Path]
@@ -164,6 +165,7 @@ def _build_content_document(
     scripts: dict[str, dict[str, Any]],
     metrics: dict[str, dict[str, Any]],
     pythons: dict[str, dict[str, Any]],
+    sampler_providers: dict[str, dict[str, Any]],
     instructions: dict[str, dict[str, str]],
 ) -> dict[str, Any]:
     reference_meta = _mapping(
@@ -199,6 +201,7 @@ def _build_content_document(
         "scripts": deepcopy(scripts),
         "metrics": deepcopy(metrics),
         "python_sources": deepcopy(pythons),
+        "sampler_providers": deepcopy(sampler_providers),
         "instructions": instruction_refs,
         "field_reference": deepcopy(
             _mapping(reference_meta.get("fields"), "field_reference.yaml:field_reference.fields")
@@ -220,6 +223,7 @@ def _build_content_provenance(
     scripts: dict[str, dict[str, Any]],
     metrics: dict[str, dict[str, Any]],
     pythons: dict[str, dict[str, Any]],
+    sampler_providers: dict[str, dict[str, Any]],
     instructions: dict[str, dict[str, str]],
 ) -> dict[str, list[str]]:
     report_source = [_relative_content_path(root, report_path)]
@@ -250,6 +254,8 @@ def _build_content_provenance(
         provenance["metrics"] = metric_source
     if pythons:
         provenance["python_sources"] = python_source
+    if sampler_providers:
+        provenance["sampler_providers"] = metric_source
     for item_id, instruction in instructions.items():
         path = instruction.get("path")
         if path:
@@ -357,6 +363,11 @@ def load_content(content_path: str | Path) -> ContentPack:
         f"{metric_path}:metric_catalog.defaults",
     )
     metrics = _manifest_mapping(metric_catalog.get("metrics"), metric_defaults, "metrics")
+    sampler_providers = _manifest_mapping(
+        metric_catalog.get("sampler_providers"),
+        {},
+        "sampler_providers",
+    )
 
     python_catalog_meta = _mapping(
         python_catalog.get("python_catalog"),
@@ -422,6 +433,7 @@ def load_content(content_path: str | Path) -> ContentPack:
         scripts=scripts,
         metrics=metrics,
         pythons=pythons,
+        sampler_providers=sampler_providers,
         instructions=instructions,
     )
     provenance = _build_content_provenance(
@@ -437,6 +449,7 @@ def load_content(content_path: str | Path) -> ContentPack:
         scripts=scripts,
         metrics=metrics,
         pythons=pythons,
+        sampler_providers=sampler_providers,
         instructions=instructions,
     )
 
@@ -453,6 +466,7 @@ def load_content(content_path: str | Path) -> ContentPack:
         scripts=scripts,
         metrics=metrics,
         pythons=pythons,
+        sampler_providers=sampler_providers,
         document=document,
         provenance=provenance,
         catalog_files=catalog_files,

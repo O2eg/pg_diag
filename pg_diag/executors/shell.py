@@ -1,14 +1,15 @@
-"""Local shell source executor."""
+"""Local and SSH-host shell source executor."""
 
 from __future__ import annotations
 
 import json
 import subprocess
 import time
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
-from pg_diag.artifact import item_error_from_exception, item_from_plan
+from pg_diag.artifact import item_from_plan
 from pg_diag.content_loader import ContentPack
+from pg_diag.errors import CommandTimeoutError
 from pg_diag.executors.common import (
     elapsed_ms,
     exception_diagnostic,
@@ -16,7 +17,11 @@ from pg_diag.executors.common import (
     table_result_from_records,
 )
 from pg_diag.planner import PlannedItem
+from pg_diag.local_process import run_local_process
 from pg_diag.security import redact_error, redact_text
+
+if TYPE_CHECKING:
+    from pg_diag.ssh_transport import SshTransport
 
 
 UNSUPPORTED_EXIT_CODE = 3
@@ -35,23 +40,114 @@ def execute_shell_item(content: ContentPack, planned: PlannedItem) -> dict[str, 
 
     script_path = content.path / "scripts" / script_file
     source_text = read_source_text(script_path)
+    timeout_seconds = _timeout_seconds(content, planned)
     try:
-        proc = subprocess.run(
-            [str(script_path)],
+        proc = run_local_process(
+            (str(script_path),),
             cwd=str(script_path.parent),
-            capture_output=True,
-            text=True,
-            timeout=_timeout_seconds(content, planned),
-            check=False,
+            timeout=timeout_seconds,
         )
+    except (CommandTimeoutError, TimeoutError, subprocess.TimeoutExpired):
+        return _timeout_item(planned, timeout_seconds, started, source_text)
     except Exception as exc:
-        return item_error_from_exception(
+        return _shell_error_item(
             planned,
             exc,
-            timing_ms=elapsed_ms(started),
-            source_text=source_text,
-            source_language="bash",
+            started,
+            source_text,
         )
+
+    return _item_from_process(content, planned, proc, source_text, started)
+
+
+async def execute_remote_shell_item(
+    content: ContentPack,
+    planned: PlannedItem,
+    transport: SshTransport,
+) -> dict[str, Any]:
+    started = time.perf_counter()
+    script_file = planned.script_file
+    if not script_file:
+        return item_from_plan(
+            planned,
+            collection_status="error",
+            reason="script_file is missing",
+            result={"kind": "plain_text", "data": ""},
+        )
+
+    script_path = content.path / "scripts" / script_file
+    source_text = read_source_text(script_path)
+    timeout_seconds = _timeout_seconds(content, planned)
+    try:
+        remote = await transport.run_script(
+            source_text,
+            timeout=timeout_seconds,
+        )
+        proc = subprocess.CompletedProcess(
+            args=[script_file],
+            returncode=remote.returncode,
+            stdout=remote.stdout,
+            stderr=remote.stderr,
+        )
+    except (CommandTimeoutError, TimeoutError, subprocess.TimeoutExpired):
+        return _timeout_item(planned, timeout_seconds, started, source_text)
+    except Exception as exc:
+        return _shell_error_item(
+            planned,
+            exc,
+            started,
+            source_text,
+        )
+
+    return _item_from_process(content, planned, proc, source_text, started)
+
+
+def _timeout_item(
+    planned: PlannedItem,
+    timeout_seconds: float,
+    started: float,
+    source_text: str | None,
+) -> dict[str, Any]:
+    timeout_ms = int(round(timeout_seconds * 1000))
+    message = f"Shell source timed out after {timeout_ms} ms"
+    return item_from_plan(
+        planned,
+        collection_status="error",
+        reason=message,
+        timing_ms=elapsed_ms(started),
+        result={"kind": "plain_text", "data": message},
+        diagnostics=[{"level": "error", "code": "shell_timeout", "message": message}],
+        source_text=source_text,
+        source_language="bash",
+    )
+
+
+def _shell_error_item(
+    planned: PlannedItem,
+    exc: BaseException,
+    started: float,
+    source_text: str | None,
+) -> dict[str, Any]:
+    message = redact_error(exc)
+    return item_from_plan(
+        planned,
+        collection_status="error",
+        reason=message,
+        timing_ms=elapsed_ms(started),
+        result={"kind": "plain_text", "data": message},
+        diagnostics=[{"level": "error", "code": "shell_exception", "message": message}],
+        source_text=source_text,
+        source_language="bash",
+    )
+
+
+def _item_from_process(
+    content: ContentPack,
+    planned: PlannedItem,
+    proc: subprocess.CompletedProcess[str],
+    source_text: str | None,
+    started: float,
+) -> dict[str, Any]:
 
     output = proc.stdout if proc.returncode == 0 or proc.stdout else proc.stderr
     if proc.returncode == UNSUPPORTED_EXIT_CODE:
@@ -116,20 +212,16 @@ def table_json_result(output: str) -> dict[str, Any]:
         records = parsed
     else:
         records = [{"value": parsed}]
-
     return table_result_from_records(records)
 
 
 def _script_output_mode(content: ContentPack, planned: PlannedItem) -> str:
-    script_id = planned.source_id
-    if script_id and script_id in content.scripts:
-        return str(content.scripts[script_id].get("output") or "plain_text")
-    return "plain_text"
+    return str(content.scripts[planned.source_id]["output"])
 
 
 def _timeout_seconds(content: ContentPack, planned: PlannedItem) -> float:
     script_id = planned.source_id
-    timeout_ms = (content.report.get("runtime_policy") or {}).get("default_shell_timeout_ms", 5000)
+    timeout_ms = content.report["runtime_policy"]["default_shell_timeout_ms"]
     if script_id and script_id in content.scripts:
         timeout_ms = content.scripts[script_id].get("timeout_ms", timeout_ms)
     return float(timeout_ms) / 1000.0
@@ -150,7 +242,7 @@ def _process_reason(proc: subprocess.CompletedProcess[str], status: str) -> str 
     if proc.returncode == 0:
         return None
     if status == "unsupported":
-        message = (proc.stderr or proc.stdout or "required local command is unavailable").strip()
+        message = (proc.stderr or proc.stdout or "required host command is unavailable").strip()
         return redact_text(message[:500])
     return f"exit_code={proc.returncode}"
 

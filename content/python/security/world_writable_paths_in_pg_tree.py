@@ -13,8 +13,8 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
     rows = []
     coverage = []
     for root in roots:
-        root_rows, root_coverage = await run_blocking(
-            _world_writable_tree_findings,
+        root_rows, root_coverage = await _host_world_writable_tree_findings(
+            ctx,
             root,
             max_depth=4,
             max_rows=100,

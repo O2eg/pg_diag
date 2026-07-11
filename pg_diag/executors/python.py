@@ -15,13 +15,18 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from pg_diag.artifact import item_error_from_exception, item_from_plan
 from pg_diag.content_loader import ContentPack
 from pg_diag.contracts import COLLECTION_STATUSES, RESULT_KINDS, SEVERITY_LEVELS
+from pg_diag.errors import CommandTimeoutError
 from pg_diag.executors.common import elapsed_ms, read_source_text, table_result_from_records
+from pg_diag.host_access import HostAccess, LocalHostAccess
 from pg_diag.planner import PlannedItem
+
+if TYPE_CHECKING:
+    from pg_diag.ssh_transport import SshTransport
 
 
 _MODULE_LOAD_LOCK = threading.RLock()
@@ -35,6 +40,7 @@ class PythonSourceContext:
     planned: PlannedItem
     source: dict[str, Any]
     source_path: Path
+    host: HostAccess
 
 
 @dataclass
@@ -47,7 +53,12 @@ class PythonSourceResult:
     severity_level: str | None = None
 
 
-async def execute_python_item(content: ContentPack, conn: Any, planned: PlannedItem) -> dict[str, Any]:
+async def execute_python_item(
+    content: ContentPack,
+    conn: Any,
+    planned: PlannedItem,
+    ssh_transport: SshTransport | None = None,
+) -> dict[str, Any]:
     started = time.perf_counter()
     source_id = planned.source_id or ""
     source = content.pythons.get(source_id) or {}
@@ -64,12 +75,16 @@ async def execute_python_item(content: ContentPack, conn: Any, planned: PlannedI
     source_text = read_source_text(source_path)
     timeout_seconds = _timeout_seconds(content, source)
     try:
+        host: HostAccess = (
+            ssh_transport.host_access if ssh_transport is not None else LocalHostAccess()
+        )
         context = PythonSourceContext(
             content=content,
             conn=conn,
             planned=planned,
             source=source,
             source_path=source_path,
+            host=host,
         )
         raw_result = await asyncio.wait_for(
             _load_and_call_source(
@@ -93,7 +108,7 @@ async def execute_python_item(content: ContentPack, conn: Any, planned: PlannedI
             source_text=source_text,
             source_language="python",
         )
-    except TimeoutError:
+    except (TimeoutError, CommandTimeoutError):
         timeout_ms = int(round(timeout_seconds * 1000))
         message = f"Python source timed out after {timeout_ms} ms"
         return item_from_plan(
@@ -331,6 +346,4 @@ def table_result(records: list[dict[str, Any]] | tuple[dict[str, Any], ...]) -> 
 
 
 def _timeout_seconds(content: ContentPack, source: dict[str, Any]) -> float:
-    defaults = (content.python_catalog.get("python_catalog") or {}).get("defaults") or {}
-    timeout_ms = source.get("timeout_ms", defaults.get("timeout_ms", 5000))
-    return float(timeout_ms) / 1000.0
+    return float(source["timeout_ms"]) / 1000.0

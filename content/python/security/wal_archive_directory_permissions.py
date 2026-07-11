@@ -32,9 +32,10 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
 
     rows = []
     for path in archive_paths:
-        target = path if path.exists() and path.is_dir() else path.parent
+        target = path if await ctx.host.is_dir(path) else path.parent
         rows.extend(
-            _permission_findings(
+            await _host_permission_findings(
+                ctx.host,
                 target,
                 component="wal_archive_path",
                 expected_mode="not group/world writable and not world accessible",

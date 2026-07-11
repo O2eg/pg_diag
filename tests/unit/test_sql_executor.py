@@ -116,7 +116,9 @@ class AsyncpgConnectStub:
         return self.conn
 
 
-def test_connect_dsn_enforces_read_only_startup_setting(monkeypatch) -> None:
+def test_connect_dsn_enforces_read_only_startup_setting_and_allows_endpoint_override(
+    monkeypatch,
+) -> None:
     conn = ConnectTestConn()
     asyncpg = AsyncpgConnectStub(conn)
     monkeypatch.setattr("pg_diag.executors.sql._load_asyncpg", lambda: asyncpg)
@@ -134,9 +136,10 @@ def test_connect_dsn_enforces_read_only_startup_setting(monkeypatch) -> None:
 
     assert result is conn
     assert asyncpg.calls == [
-        {
-            "dsn": "postgresql://app@example/appdb",
-            "server_settings": {
+            {
+                "dsn": "postgresql://app@example/appdb",
+                "host": "ignored-with-dsn",
+                "server_settings": {
                 "application_name": "pg_diag",
                 "default_transaction_read_only": "on",
             },

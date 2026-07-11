@@ -12,6 +12,7 @@ from pg_diag.artifact import item_from_plan
 from pg_diag.artifact import report_output_paths
 from pg_diag.errors import PgDiagError, UnsupportedServerVersion
 from pg_diag.planner import PlannedItem, SourceJob
+from pg_diag.sampler_runtime import SamplerCollection
 from pg_diag.snapshot import collect_snapshot
 from pg_diag.snapshots import collect_snapshots
 
@@ -24,11 +25,27 @@ class FakeConn:
 def fake_content(tmp_path):
     report = {
         "report": {"id": "test", "title": "Test"},
-        "runtime_policy": {"fail_fast": False},
+        "runtime_policy": {
+            "fail_fast": False,
+            "query_text_catalog": {
+                "id_column_suffix": "query_id",
+                "value_column_remove_suffix": "_id",
+            },
+        },
         "defaults": {
             "table": {"page_size": 25},
             "item": {"state": "expanded", "database_scope": "all_databases"},
             "section": {"state": "expanded"},
+            "database_scope_presentation": {
+                "metadata_field": "database_scope",
+                "values": {
+                    "all_databases": {"title_suffix": " (All databases)", "hidden_columns": []},
+                    "current_database": {
+                        "title_suffix": " (Only {current_database})",
+                        "hidden_columns": ["datname", "database_name"],
+                    },
+                },
+            },
         },
         "sections": {},
     }
@@ -45,10 +62,16 @@ def fake_content(tmp_path):
             "scripts": {},
             "metrics": {},
             "python_sources": {},
+            "sampler_providers": {},
             "instructions": {},
             "field_reference": {"report": "Report metadata."},
         },
         provenance={"report": ["report.yaml"]},
+        queries={},
+        scripts={},
+        metrics={},
+        pythons={},
+        sampler_providers={},
         checksum="sha256:test",
     )
 
@@ -375,7 +398,13 @@ def test_collect_snapshots_runs_static_items_before_chart_window(tmp_path, monke
         )
 
     content = fake_content(tmp_path)
-    content.report["runtime_policy"] = {"fail_fast": False}
+    content.report["runtime_policy"] = {
+        "fail_fast": False,
+        "query_text_catalog": {
+            "id_column_suffix": "query_id",
+            "value_column_remove_suffix": "_id",
+        },
+    }
     content.metrics = {}
     monkeypatch.setattr(collection_module, "connect", connect_stub)
     monkeypatch.setattr(collection_module, "detect_runtime_context", detect_runtime_context_stub)
@@ -432,12 +461,6 @@ def test_collect_snapshots_uses_backend_proc_window_endpoints(tmp_path, monkeypa
         [metric_item],
     )
     call_order = []
-    endpoint_states = iter(
-        [
-            {"timestamp": "start", "monotonic": 1.0, "processes": {}},
-            {"timestamp": "end", "monotonic": 2.0, "processes": {}},
-        ]
-    )
     endpoint_samples = [{"timestamp": "end", "rows": [{"pid": 101, "cpu_pct": 2.5}]}]
 
     async def connect_stub(*args, **kwargs):
@@ -457,18 +480,12 @@ def test_collect_snapshots_uses_backend_proc_window_endpoints(tmp_path, monkeypa
         call_order.append("chart-window")
         return [], [], {}
 
-    def capture_backend_proc_state_stub():
-        state = next(endpoint_states)
-        call_order.append(f"proc:{state['timestamp']}")
-        return state
-
-    def build_backend_proc_window_samples_stub(start, end):
-        assert start["timestamp"] == "start"
-        assert end["timestamp"] == "end"
-        return endpoint_samples
-
-    def collect_os_metrics_stub(*args, **kwargs):
-        return {}, []
+    async def collect_sampler_providers_stub(*args, **kwargs):
+        call_order.append("provider")
+        return SamplerCollection(
+            samples={"os.backend_proc": endpoint_samples},
+            errors=[],
+        )
 
     def build_metric_item_stub(planned, metric, db_snapshots, os_samples, *args):
         assert os_samples["os.backend_proc"] == endpoint_samples
@@ -476,7 +493,13 @@ def test_collect_snapshots_uses_backend_proc_window_endpoints(tmp_path, monkeypa
         return item_from_plan(planned, collection_status="ok", result={"kind": "table", "rows": []})
 
     content = fake_content(tmp_path)
-    content.report["runtime_policy"] = {"fail_fast": False}
+    content.report["runtime_policy"] = {
+        "fail_fast": False,
+        "query_text_catalog": {
+            "id_column_suffix": "query_id",
+            "value_column_remove_suffix": "_id",
+        },
+    }
     content.metrics = {
         "backend.proc_cpu_top": {
             "source_sampler": "os.backend_proc",
@@ -484,17 +507,33 @@ def test_collect_snapshots_uses_backend_proc_window_endpoints(tmp_path, monkeypa
             "result": "table",
         }
     }
+    source_file = tmp_path / "scripts" / "sampler.sh"
+    source_file.parent.mkdir()
+    source_file.write_text("#!/bin/sh\n", encoding="utf-8")
+    content.sampler_providers = {
+        "test_provider": {
+            "module": "tests.fake_provider",
+            "function": "collect",
+            "grace_timeout_ms": 1000,
+            "config": {},
+            "outputs": {
+                "os.backend_proc": {
+                    "collection_scope": "window_endpoints",
+                    "source_file": "sampler.sh",
+                    "source_language": "bash",
+                }
+            },
+        }
+    }
     monkeypatch.setattr(collection_module, "connect", connect_stub)
     monkeypatch.setattr(collection_module, "detect_runtime_context", detect_runtime_context_stub)
     monkeypatch.setattr(collection_module, "build_plan", lambda *args, **kwargs: plan)
     monkeypatch.setattr(snapshots_module, "_collect_db_samples", collect_db_samples_stub)
-    monkeypatch.setattr(snapshots_module, "capture_backend_proc_state", capture_backend_proc_state_stub)
     monkeypatch.setattr(
         snapshots_module,
-        "build_backend_proc_window_samples",
-        build_backend_proc_window_samples_stub,
+        "collect_sampler_providers",
+        collect_sampler_providers_stub,
     )
-    monkeypatch.setattr(snapshots_module, "collect_os_metrics", collect_os_metrics_stub)
     monkeypatch.setattr(snapshots_module, "build_metric_item", build_metric_item_stub)
     monkeypatch.setattr(collection_module, "render_html", lambda artifact, **kwargs: "<html></html>")
 
@@ -511,7 +550,7 @@ def test_collect_snapshots_uses_backend_proc_window_endpoints(tmp_path, monkeypa
         )
     )
 
-    assert call_order == ["proc:start", "chart-window", "proc:end", "metric"]
+    assert call_order == ["chart-window", "provider", "metric"]
     assert artifact["runtime"]["window_endpoint_sampler_count"] == 1
 
 
@@ -557,7 +596,13 @@ def test_collect_snapshot_honors_fail_fast_policy(tmp_path, monkeypatch) -> None
         state="expanded",
     )
     content = fake_content(tmp_path)
-    content.report["runtime_policy"] = {"fail_fast": True}
+    content.report["runtime_policy"] = {
+        "fail_fast": True,
+        "query_text_catalog": {
+            "id_column_suffix": "query_id",
+            "value_column_remove_suffix": "_id",
+        },
+    }
 
     async def connect_stub(*args, **kwargs):
         return FakeConn()

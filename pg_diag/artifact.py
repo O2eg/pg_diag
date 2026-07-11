@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__, runtime_config
-from .contracts import DATABASE_SCOPE_ALL, DATABASE_SCOPE_CURRENT, SEVERITY_LEVELS
+from .contracts import SEVERITY_LEVELS
 from .content_loader import ContentPack
 from .planner import ExecutionPlan, PlannedEntry
 from .security import (
@@ -245,24 +245,23 @@ def artifact_has_errors(artifact: dict[str, Any]) -> bool:
 
 
 def apply_database_scope_presentation(artifact: dict[str, Any]) -> None:
-    """Label database scope and remove redundant current-database columns."""
-    current_database = str(
-        (artifact.get("runtime") or {}).get("current_database") or "current database"
-    )
+    """Apply the declarative database-scope presentation contract."""
+    config = artifact["display"]["database_scope_presentation"]
+    metadata_field = str(config["metadata_field"])
+    presentations = config["values"]
+    runtime = artifact["runtime"]
     for item in (artifact.get("items") or {}).values():
         if not isinstance(item, dict):
             continue
         metadata = item.get("source_metadata") or {}
-        scope = metadata.get("database_scope") if isinstance(metadata, dict) else None
-        if scope == DATABASE_SCOPE_ALL:
-            suffix = " (All databases)"
-        elif scope == DATABASE_SCOPE_CURRENT:
-            suffix = f" (Only {current_database})"
-            for column_name in ("datname", "database_name"):
-                _remove_table_column(item.get("result"), column_name)
-                _remove_redundant_default_sort(metadata, column_name)
-        else:
+        scope = metadata.get(metadata_field) if isinstance(metadata, dict) else None
+        presentation = presentations.get(scope)
+        if not isinstance(presentation, dict):
             continue
+        suffix = str(presentation["title_suffix"]).format_map(runtime)
+        for column_name in presentation["hidden_columns"]:
+            _remove_table_column(item.get("result"), column_name)
+            _remove_redundant_default_sort(metadata, column_name)
         title = str(item.get("title") or "")
         if not title.endswith(suffix):
             item["title"] = title + suffix
@@ -302,8 +301,12 @@ def _remove_redundant_default_sort(metadata: dict[str, Any], column_name: str) -
         display.pop("default_sort", None)
 
 
-def extract_item_query_texts(item: dict[str, Any], query_texts: dict[str, str]) -> None:
-    """Move SQL text columns paired with query_id columns into the artifact catalog."""
+def extract_item_query_texts(
+    item: dict[str, Any],
+    query_texts: dict[str, str],
+    contract: dict[str, Any],
+) -> None:
+    """Apply the declared query-text catalog extraction contract."""
     result = item.get("result") or {}
     if result.get("kind") != "table":
         return
@@ -315,12 +318,14 @@ def extract_item_query_texts(item: dict[str, Any], query_texts: dict[str, str]) 
 
     column_names = [_column_name(column, index) for index, column in enumerate(columns)]
     name_to_index = {name: index for index, name in enumerate(column_names) if name}
+    id_column_suffix = str(contract["id_column_suffix"])
+    value_column_remove_suffix = str(contract["value_column_remove_suffix"])
     query_pairs: list[tuple[int, int]] = []
     remove_indexes: set[int] = set()
     for query_id_index, column_name in enumerate(column_names):
-        if not column_name.endswith("query_id"):
+        if not column_name.endswith(id_column_suffix):
             continue
-        query_column_name = column_name.removesuffix("_id")
+        query_column_name = column_name.removesuffix(value_column_remove_suffix)
         query_index = name_to_index.get(query_column_name)
         if query_index is None:
             continue

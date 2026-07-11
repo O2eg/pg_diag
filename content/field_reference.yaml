@@ -5,13 +5,18 @@ field_reference:
     report/id: Stable report identifier written into the artifact.
     report/title: Human-readable report title.
     report/schema_version: Declarative content schema version required by the loader.
+    report/allowed_item_tags: Content-owned taxonomy accepted on report items.
+    report/allowed_item_tags[]: One allowed item tag; core validates membership without embedding tag names.
     report/catalogs: Relative paths to the catalogs assembled into this content document.
     report/catalogs/*: Relative path to one catalog or instruction root.
     runtime_policy: Runtime limits and behavior shared by report items.
     runtime_policy/default_sql_timeout_ms: Default timeout for SQL statements in milliseconds.
-    runtime_policy/default_shell_timeout_ms: Default timeout for shell scripts in milliseconds.
+    runtime_policy/default_shell_timeout_ms: Default shell-item timeout in milliseconds; the maximum is 1000.
     runtime_policy/remote_db_only_shell_message: Explanation used when a local source is skipped in remote DB-only mode.
     runtime_policy/table_columns: Policy declaring that SQL result columns come from the runtime result schema.
+    runtime_policy/query_text_catalog: Declarative rule for extracting repeated query text into the artifact catalog.
+    runtime_policy/query_text_catalog/id_column_suffix: Column-name suffix identifying query-id columns.
+    runtime_policy/query_text_catalog/value_column_remove_suffix: Suffix removed from an id column to find its paired text column.
     runtime_policy/fail_fast: Whether collection stops after the first item error.
     defaults: Report-wide presentation defaults inherited by sections and items.
     defaults/table: Default behavior for rendered result tables.
@@ -21,6 +26,13 @@ field_reference:
     defaults/item/database_scope: Default database scope label for PostgreSQL items.
     defaults/section: Defaults inherited by report sections unless overridden.
     defaults/section/state: Default section expansion state.
+    defaults/database_scope_presentation: Declarative title and hidden-column behavior for database scopes.
+    defaults/database_scope_presentation/metadata_field: Source-metadata field containing the scope value.
+    defaults/database_scope_presentation/values: Presentation rules keyed by database-scope contract value.
+    defaults/database_scope_presentation/values/*: One database-scope presentation rule.
+    defaults/database_scope_presentation/values/*/title_suffix: Runtime-formatted suffix appended to item titles.
+    defaults/database_scope_presentation/values/*/hidden_columns: Result columns hidden for this scope.
+    defaults/database_scope_presentation/values/*/hidden_columns[]: One content-owned result column hidden by the presentation rule.
     catalogs: Catalog metadata and defaults used to construct effective source manifests.
     catalogs/*: Metadata for one source catalog.
     catalogs/*/schema_version: Schema version of this source catalog.
@@ -36,13 +48,12 @@ field_reference:
     catalogs/queries/defaults/collection/supports[]: One supported query collection frequency.
     catalogs/scripts/defaults/output: Default parser used for script stdout.
     catalogs/scripts/defaults/local_only: Whether scripts require access to the database host.
-    catalogs/scripts/defaults/timeout_ms: Default script timeout in milliseconds.
     catalogs/scripts/defaults/remote_db_only_behavior: Default behavior when a local script cannot run remotely.
     catalogs/scripts/defaults/remote_db_only_behavior/status: Collection status emitted for a skipped local script.
     catalogs/scripts/defaults/remote_db_only_behavior/message_ref: Runtime-policy path supplying the skip explanation.
     catalogs/metrics/defaults/mode: Runtime mode required by metrics in this catalog.
     catalogs/metrics/defaults/x: Default source column used as chart time coordinate.
-    catalogs/python/defaults/timeout_ms: Default trusted Python source timeout in milliseconds.
+    catalogs/python/defaults/timeout_ms: Default trusted Python source timeout in milliseconds; local-only sources are capped at 1000.
     catalogs/python/defaults/local_only: Whether Python sources require access to the database host.
     sections: Ordered report sections and their item declarations.
     sections/*: One report section selected by its stable section id.
@@ -102,9 +113,9 @@ field_reference:
     scripts/*/title: Human-readable script title inherited by report items.
     scripts/*/description: Maintainer-facing description of collected host data.
     scripts/*/script_file: Script path relative to the content scripts directory.
-    scripts/*/output: Parser used to convert script stdout into a result.
+    scripts/*/output: Declared parser used to convert script stdout into plain text or a generic JSON table.
     scripts/*/local_only: Whether the script must run on the database host.
-    scripts/*/timeout_ms: Script timeout in milliseconds.
+    scripts/*/timeout_ms: Optional per-source override of the report shell timeout in milliseconds; the maximum is 1000.
     scripts/*/remote_db_only_behavior: Behavior when the script is unavailable in remote DB-only mode.
     scripts/*/remote_db_only_behavior/status: Collection status used for the unavailable script.
     scripts/*/remote_db_only_behavior/message_ref: Runtime-policy path supplying the explanatory message.
@@ -115,7 +126,19 @@ field_reference:
     python_sources/*/python_file: Python module path relative to the content Python directory.
     python_sources/*/function: Trusted callable invoked from the Python module.
     python_sources/*/local_only: Whether the Python source must run on the database host.
-    python_sources/*/timeout_ms: Python source timeout in milliseconds.
+    python_sources/*/timeout_ms: Python source timeout in milliseconds; local-only sources are capped at 1000.
+    sampler_providers: Effective sampler-provider manifests loaded from the metric catalog.
+    sampler_providers/*: One effective provider manifest selected by provider id.
+    sampler_providers/*/module: Importable implementation-layer module called by the generic sampler runtime.
+    sampler_providers/*/function: Async provider function name.
+    sampler_providers/*/grace_timeout_ms: Maximum provider shutdown time after the sampling window.
+    sampler_providers/*/config: Opaque provider-owned configuration.
+    sampler_providers/*/config/*: One provider-specific configuration value.
+    sampler_providers/*/outputs: Outputs exported by this provider.
+    sampler_providers/*/outputs/*: One sampler output contract.
+    sampler_providers/*/outputs/*/collection_scope: Sampling frequency required by the output.
+    sampler_providers/*/outputs/*/source_file: Script source displayed for this output.
+    sampler_providers/*/outputs/*/source_language: Display language for the sampler source.
     metrics: Effective metric manifests after metric-catalog defaults are merged.
     metrics/*: One chart or derived-table metric selected by metric id.
     metrics/*/title: Human-readable metric title inherited by report items.

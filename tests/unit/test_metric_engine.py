@@ -163,7 +163,7 @@ def test_window_endpoint_metric_source_header_names_endpoint_collection() -> Non
     )
 
     assert "-- requires_collection: window_endpoints" in source
-    assert "-- window endpoint SQL source follows" in source
+    assert "-- window endpoint source follows" in source
     assert "sampled SQL source follows" not in source
 
 
@@ -401,7 +401,7 @@ def test_metric_item_warns_for_invalid_delta_but_not_limited_row_churn() -> None
     common_args = {
         "planned": planned,
         "metric": metric,
-        "os_samples": {},
+        "sampler_samples": {},
         "source_item_by_query": {metric["source_query"]: source_item_id},
         "source_metadata_by_item": {
             source_item_id: {"source_text": "select limited counters", "source_language": "sql"}
@@ -686,7 +686,7 @@ def test_metric_item_inherits_sql_source_text_from_source_query() -> None:
         planned,
         metric,
         db_snapshots=[],
-        os_samples={},
+        sampler_samples={},
         source_item_by_query={"metrics.database_transaction_rate": "__metric_sources.metrics_database_transaction_rate"},
         source_metadata_by_item={
             "__metric_sources.metrics_database_transaction_rate": {
@@ -792,9 +792,13 @@ def test_sampler_metric_item_embeds_bash_source_text() -> None:
         planned,
         metric,
         db_snapshots=[],
-        os_samples={"os.cpu": []},
+        sampler_samples={"os.cpu": []},
         source_item_by_query={},
         source_metadata_by_item={},
+        sampler_metadata={
+            "source_language": "bash",
+            "source_text": "#!/bin/sh\ncat /proc/stat\n",
+        },
     )
 
     assert item["source_metadata"]["source_language"] == "bash"

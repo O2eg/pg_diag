@@ -15,8 +15,9 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
     if not log_directory:
         return _unavailable_result("PostgreSQL log_directory setting is empty or unavailable", "security_log_directory_empty")
 
-    def inspect() -> tuple[list[dict[str, Any]], bool, str]:
-        rows = _permission_findings(
+    async def inspect() -> tuple[list[dict[str, Any]], bool, str]:
+        rows = await _host_permission_findings(
+            ctx.host,
             log_directory,
             component="postgresql_log_directory",
             expected_mode="not world accessible or writable",
@@ -26,15 +27,20 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
         )
         try:
             files = sorted(
-                (path for path in log_directory.iterdir() if path.is_file()),
-                key=lambda path: path.stat().st_mtime,
+                (
+                    entry for entry in await ctx.host.list_dir(log_directory)
+                    if entry.stat.is_file
+                ),
+                key=lambda entry: entry.stat.mtime,
                 reverse=True,
             )
         except OSError as exc:
             return rows, False, f"cannot enumerate {log_directory}: {exc}"
-        for path in files[:100]:
+        for entry in files[:100]:
+            path = Path(entry.path)
             rows.extend(
-                _permission_findings(
+                await _host_permission_findings(
+                    ctx.host,
                     path,
                     component="postgresql_log_file",
                     expected_mode="0640 or stricter",
@@ -47,7 +53,7 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
             return rows, False, f"only the 100 newest of {len(files)} log files were inspected"
         return rows, True, ""
 
-    rows, coverage_complete, coverage_note = await run_blocking(inspect)
+    rows, coverage_complete, coverage_note = await inspect()
     return _result(
         rows,
         ok_title="PostgreSQL log file permissions are restrictive",

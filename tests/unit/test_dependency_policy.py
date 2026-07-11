@@ -10,6 +10,7 @@ def test_runtime_dependency_policy(repo_root: Path) -> None:
     normalized = "\n".join(dependencies).lower()
 
     assert "asyncpg" in normalized
+    assert "asyncssh" in normalized
     assert "pyyaml" in normalized
     assert "pydantic" not in normalized
     assert "psycopg" not in normalized

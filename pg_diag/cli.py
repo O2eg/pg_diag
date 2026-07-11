@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,7 @@ from .render.html import render_from_json
 from .security import redact_error
 from .snapshot import collect_snapshot
 from .snapshots import collect_snapshots
+from .ssh_transport import SshConfig
 from .validator import has_errors, validate_content
 from .versioning import select_query_variant
 
@@ -68,18 +70,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     snapshot_parser = subparsers.add_parser("snapshot", help="Collect one snapshot report")
     _add_content_arg(snapshot_parser)
-    snapshot_parser.add_argument("--dsn", help="PostgreSQL DSN")
-    snapshot_parser.add_argument("--host")
-    snapshot_parser.add_argument("--port", type=int)
-    snapshot_parser.add_argument("--database")
-    snapshot_parser.add_argument("--user")
-    snapshot_parser.add_argument("--password")
-    snapshot_parser.add_argument("--passfile", help="PostgreSQL password file path")
+    _add_database_connection_args(snapshot_parser)
+    _add_ssh_args(snapshot_parser)
     snapshot_parser.add_argument("--out", default="report", help="Output directory")
     _add_report_output_file_args(snapshot_parser)
     snapshot_parser.add_argument(
         "--collection-mode",
-        choices=[runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE, runtime_config.LOCAL_COLLECTION_MODE],
+        choices=runtime_config.COLLECTION_MODES,
         default=runtime_config.DEFAULT_COLLECTION_MODE,
     )
     snapshot_parser.set_defaults(func=cmd_snapshot)
@@ -91,13 +88,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     snapshots_parser = subparsers.add_parser("snapshots", help="Collect repeated snapshots report")
     _add_content_arg(snapshots_parser)
-    snapshots_parser.add_argument("--dsn", help="PostgreSQL DSN")
-    snapshots_parser.add_argument("--host")
-    snapshots_parser.add_argument("--port", type=int)
-    snapshots_parser.add_argument("--database")
-    snapshots_parser.add_argument("--user")
-    snapshots_parser.add_argument("--password")
-    snapshots_parser.add_argument("--passfile", help="PostgreSQL password file path")
+    _add_database_connection_args(snapshots_parser)
+    _add_ssh_args(snapshots_parser)
     snapshots_parser.add_argument("--out", default="report", help="Output directory")
     _add_report_output_file_args(snapshots_parser)
     snapshots_parser.add_argument(
@@ -112,7 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     snapshots_parser.add_argument(
         "--collection-mode",
-        choices=[runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE, runtime_config.LOCAL_COLLECTION_MODE],
+        choices=runtime_config.COLLECTION_MODES,
         default=runtime_config.LOCAL_COLLECTION_MODE,
     )
     snapshots_parser.set_defaults(func=cmd_snapshots)
@@ -143,6 +135,36 @@ def _add_report_output_file_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--html-out", help="Exact report HTML output file")
 
 
+def _add_database_connection_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--dsn", help="PostgreSQL DSN")
+    parser.add_argument("--host", help="PostgreSQL host; in remote mode, as seen from the SSH host")
+    parser.add_argument("--port", type=int)
+    parser.add_argument("--database")
+    parser.add_argument("--user")
+    parser.add_argument("--password")
+    parser.add_argument("--passfile", help="PostgreSQL password file path on the collector host")
+
+
+def _add_ssh_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--ssh-host", help="SSH host for full remote collection")
+    parser.add_argument("--ssh-port", type=int, help="SSH port (default: 22)")
+    parser.add_argument("--ssh-user")
+    parser.add_argument("--ssh-key", help="SSH private key path")
+    parser.add_argument(
+        "--ssh-known-hosts",
+        help="known_hosts file used for strict SSH host verification (default: ~/.ssh/known_hosts)",
+    )
+    parser.add_argument(
+        "--ssh-connect-timeout",
+        type=float,
+        help="SSH connection timeout in seconds (default: 10)",
+    )
+    parser.add_argument(
+        "--ssh-key-passphrase-env",
+        help="Environment variable containing the private key passphrase",
+    )
+
+
 def _add_pg_version_arg(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--pg-version", type=int, required=True, help="PostgreSQL server_version_num")
 
@@ -155,7 +177,7 @@ def _add_mode_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--collection-mode",
-        choices=[runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE, runtime_config.LOCAL_COLLECTION_MODE],
+        choices=runtime_config.COLLECTION_MODES,
         default=runtime_config.DEFAULT_COLLECTION_MODE,
     )
 
@@ -248,8 +270,9 @@ def cmd_run_query(args: argparse.Namespace) -> int:
 
 
 def cmd_snapshot(args: argparse.Namespace) -> int:
-    if not args.dsn and not (args.host and args.database and args.user):
-        print("ERROR: snapshot requires --dsn or --host/--database/--user", file=sys.stderr)
+    connection_error = _connection_args_error(args, "snapshot")
+    if connection_error:
+        print(f"ERROR: {connection_error}", file=sys.stderr)
         return 2
     content, issues = _load_and_validate(args.content)
     if has_errors(issues):
@@ -263,6 +286,7 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
         "password": args.password,
         "passfile": args.passfile,
     }
+    ssh_config = _ssh_config(args)
     try:
         artifact = asyncio.run(
             collect_snapshot(
@@ -274,6 +298,7 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
                 json_out=args.json_out,
                 html_out=args.html_out,
                 content_validated=True,
+                ssh_config=ssh_config,
             )
         )
     except Exception as exc:
@@ -289,8 +314,9 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
 
 
 def cmd_snapshots(args: argparse.Namespace) -> int:
-    if not args.dsn and not (args.host and args.database and args.user):
-        print("ERROR: snapshots requires --dsn or --host/--database/--user", file=sys.stderr)
+    connection_error = _connection_args_error(args, "snapshots")
+    if connection_error:
+        print(f"ERROR: {connection_error}", file=sys.stderr)
         return 2
     window_error = runtime_config.validate_snapshots_window(args.duration_seconds, args.interval_seconds)
     if window_error:
@@ -308,6 +334,7 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
         "password": args.password,
         "passfile": args.passfile,
     }
+    ssh_config = _ssh_config(args)
     try:
         artifact = asyncio.run(
             collect_snapshots(
@@ -321,6 +348,7 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
                 json_out=args.json_out,
                 html_out=args.html_out,
                 content_validated=True,
+                ssh_config=ssh_config,
             )
         )
     except Exception as exc:
@@ -333,6 +361,73 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
         print("ERROR: report was written with item collection errors", file=sys.stderr)
         return 1
     return 0
+
+
+def _connection_args_error(args: argparse.Namespace, command: str) -> str | None:
+    if not args.dsn and not (args.host and args.database and args.user):
+        return f"{command} requires --dsn or --host/--database/--user"
+    if args.collection_mode != runtime_config.REMOTE_COLLECTION_MODE:
+        supplied = any(
+            getattr(args, name, None)
+            for name in (
+                "ssh_host",
+                "ssh_port",
+                "ssh_user",
+                "ssh_key",
+                "ssh_known_hosts",
+                "ssh_connect_timeout",
+                "ssh_key_passphrase_env",
+            )
+        )
+        if supplied:
+            return "SSH options require --collection-mode remote"
+        return None
+
+    missing = [
+        option
+        for option, value in (
+            ("--ssh-host", args.ssh_host),
+            ("--ssh-user", args.ssh_user),
+            ("--ssh-key", args.ssh_key),
+        )
+        if not value
+    ]
+    if missing:
+        return "remote collection requires " + ", ".join(missing)
+    if args.ssh_key_passphrase_env and args.ssh_key_passphrase_env not in os.environ:
+        return f"environment variable {args.ssh_key_passphrase_env!r} is not set"
+    try:
+        config = _ssh_config(args)
+        assert config is not None
+        config.validate()
+    except PgDiagError as exc:
+        return str(exc)
+    return None
+
+
+def _ssh_config(args: argparse.Namespace) -> SshConfig | None:
+    if args.collection_mode != runtime_config.REMOTE_COLLECTION_MODE:
+        return None
+    passphrase = (
+        os.environ.get(args.ssh_key_passphrase_env)
+        if args.ssh_key_passphrase_env
+        else None
+    )
+    return SshConfig(
+        host=str(args.ssh_host or ""),
+        port=22 if args.ssh_port is None else int(args.ssh_port),
+        username=str(args.ssh_user or ""),
+        client_key=Path(str(args.ssh_key or "")).expanduser(),
+        known_hosts=Path(
+            str("~/.ssh/known_hosts" if args.ssh_known_hosts is None else args.ssh_known_hosts)
+        ).expanduser(),
+        connect_timeout=(
+            10.0
+            if args.ssh_connect_timeout is None
+            else float(args.ssh_connect_timeout)
+        ),
+        passphrase=passphrase,
+    )
 
 
 def cmd_render(args: argparse.Namespace) -> int:

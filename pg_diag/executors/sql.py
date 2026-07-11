@@ -40,14 +40,18 @@ def _load_asyncpg():
 async def connect(dsn: str | None = None, **kwargs: Any):
     asyncpg = _load_asyncpg()
     server_settings = _read_only_server_settings(kwargs.get("server_settings"))
+    connect_kwargs = {
+        key: value
+        for key, value in kwargs.items()
+        if value is not None and key != "server_settings"
+    }
     if dsn:
-        conn = await asyncpg.connect(dsn=dsn, server_settings=server_settings)
+        conn = await asyncpg.connect(
+            dsn=dsn,
+            **connect_kwargs,
+            server_settings=server_settings,
+        )
     else:
-        connect_kwargs = {
-            key: value
-            for key, value in kwargs.items()
-            if value is not None and key != "server_settings"
-        }
         conn = await asyncpg.connect(
             **connect_kwargs,
             server_settings=server_settings,

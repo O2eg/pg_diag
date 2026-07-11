@@ -4,14 +4,10 @@ from _local_security_common import *
 
 
 async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
-    del ctx
-    def inspect() -> list[dict[str, Any]]:
-        rows = []
-        for path in _candidate_history_files():
-            rows.extend(_inspect_history_file(path))
-        return _dedupe_rows(rows, ("file_path", "finding_type", "line_number", "risk_reason"))
-
-    rows = await run_blocking(inspect)
+    rows = []
+    for path in await _host_candidate_history_files(ctx):
+        rows.extend(await _host_inspect_history_file(ctx.host, path))
+    rows = _dedupe_rows(rows, ("file_path", "finding_type", "line_number", "risk_reason"))
     return _result(
         rows,
         ok_title="No PostgreSQL history file security findings found",

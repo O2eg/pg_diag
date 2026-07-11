@@ -21,7 +21,7 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
             continue
         socket_path = Path(socket_dir) / f".s.PGSQL.{port}"
         try:
-            socket_stat = socket_path.stat()
+            socket_stat = await ctx.host.stat(socket_path)
         except FileNotFoundError:
             continue
         except PermissionError:
@@ -35,7 +35,7 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
                 }
             )
             continue
-        actual_mode = stat.S_IMODE(socket_stat.st_mode)
+        actual_mode = stat.S_IMODE(socket_stat.mode)
         if actual_mode & 0o007:
             rows.append(
                 {

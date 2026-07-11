@@ -18,28 +18,25 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
     if config_file:
         confd = config_file.parent / "conf.d"
         try:
-            paths.extend(sorted(confd.glob("*.conf")))
+            paths.extend(Path(path) for path in await ctx.host.glob(str(confd / "*.conf")))
         except OSError:
             pass
 
     config_paths = _dedupe_paths(paths)
 
-    def inspect() -> list[dict[str, Any]]:
-        rows = []
-        for path in config_paths:
-            rows.extend(
-                _permission_findings(
-                    path,
-                    component="postgresql_config_file",
-                    expected_mode="0600 or 0640",
-                    disallowed_bits=0o037,
-                    missing_ok=path != config_file,
-                    risk_reason="PostgreSQL configuration file permissions are broader than expected",
-                )
+    rows = []
+    for path in config_paths:
+        rows.extend(
+            await _host_permission_findings(
+                ctx.host,
+                path,
+                component="postgresql_config_file",
+                expected_mode="0600 or 0640",
+                disallowed_bits=0o037,
+                missing_ok=path != config_file,
+                risk_reason="PostgreSQL configuration file permissions are broader than expected",
             )
-        return rows
-
-    rows = await run_blocking(inspect)
+        )
     return _result(
         rows,
         ok_title="PostgreSQL configuration file permissions are restrictive",

@@ -15,18 +15,15 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
             diagnostic_code="security_firewall_postgres_exposure",
         )
 
-    def collect_firewall_text() -> str:
-        return "\n".join(
-            output
-            for output in (
-                _run_command(("nft", "list", "ruleset")),
-                _run_command(("iptables", "-S")),
-                _run_command(("ufw", "status", "verbose")),
-            )
-            if output
+    firewall_text = "\n".join(
+        output
+        for output in (
+            await _host_run_command(ctx, ("nft", "list", "ruleset")),
+            await _host_run_command(ctx, ("iptables", "-S")),
+            await _host_run_command(ctx, ("ufw", "status", "verbose")),
         )
-
-    firewall_text = await run_blocking(collect_firewall_text)
+        if output
+    )
     rows = []
     if not firewall_text:
         rows.append(

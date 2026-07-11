@@ -11,9 +11,8 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
             "security_sensitive_roots_unavailable",
         )
     rows = []
-    mounts, encrypted_sources = await run_blocking(
-        lambda: (_mount_table(), _encrypted_block_sources())
-    )
+    mounts = await _host_mount_table(ctx)
+    encrypted_sources = await _host_encrypted_block_sources(ctx)
     if not mounts:
         return _unavailable_result(
             "The local mount table could not be read",
@@ -25,7 +24,7 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
             "security_block_encryption_evidence_unavailable",
         )
     for root in roots:
-        mount = _mount_for_path(root, mounts)
+        mount = await _host_mount_for_path(ctx, root, mounts)
         if not mount:
             rows.append(
                 {

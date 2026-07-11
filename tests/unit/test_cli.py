@@ -43,6 +43,30 @@ def test_explain_plan_cli(repo_root: Path) -> None:
     assert "no data because remote call" in proc.stdout
 
 
+def test_explain_plan_remote_mode_plans_host_sources(repo_root: Path) -> None:
+    proc = run_cli(
+        repo_root,
+        "explain-plan",
+        "--content",
+        "content",
+        "--pg-version",
+        "180000",
+        "--run-mode",
+        "snapshots",
+        "--collection-mode",
+        "remote",
+    )
+
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    kernel_line = next(line for line in proc.stdout.splitlines() if line.startswith("os.kernel_version\t"))
+    os_chart_line = next(
+        line for line in proc.stdout.splitlines()
+        if line.startswith("snapshot_charts_os.os_cpu_utilization\t")
+    )
+    assert "\tplanned\t" in kernel_line
+    assert "\tplanned\t" in os_chart_line
+
+
 def test_explain_plan_rejects_unsupported_pg_version(repo_root: Path) -> None:
     proc = run_cli(repo_root, "explain-plan", "--content", "content", "--pg-version", "130000")
     assert proc.returncode == 1
@@ -100,6 +124,7 @@ def test_render_from_json_cli(repo_root: Path, tmp_path: Path) -> None:
                 "scripts": {},
                 "metrics": {},
                 "python_sources": {},
+                "sampler_providers": {},
                 "instructions": {},
                 "field_reference": {"report": "Report metadata."},
             },
@@ -209,3 +234,33 @@ def test_snapshots_cli_rejects_interval_longer_than_duration(repo_root: Path) ->
 
     assert proc.returncode == 2
     assert "not greater than --duration-seconds" in proc.stderr
+
+
+def test_snapshot_remote_mode_requires_explicit_ssh_identity(repo_root: Path) -> None:
+    proc = run_cli(
+        repo_root,
+        "snapshot",
+        "--dsn",
+        "postgresql://app@127.0.0.1/appdb",
+        "--collection-mode",
+        "remote",
+    )
+
+    assert proc.returncode == 2
+    assert "remote collection requires --ssh-host, --ssh-user, --ssh-key" in proc.stderr
+
+
+def test_snapshot_rejects_ssh_options_outside_remote_mode(repo_root: Path) -> None:
+    proc = run_cli(
+        repo_root,
+        "snapshot",
+        "--dsn",
+        "postgresql://app@127.0.0.1/appdb",
+        "--collection-mode",
+        "local",
+        "--ssh-host",
+        "db.example",
+    )
+
+    assert proc.returncode == 2
+    assert "SSH options require --collection-mode remote" in proc.stderr

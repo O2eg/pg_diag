@@ -4,21 +4,19 @@ from _local_security_common import *
 
 
 async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
-    del ctx
-    def inspect() -> tuple[list[dict[str, Any]], bool, int]:
-        rows = []
-        read_any = False
-        unreadable_count = 0
-        for path in _sudoers_files():
-            try:
-                text = path.read_text(encoding="utf-8", errors="replace")
-            except PermissionError:
-                unreadable_count += 1
-                continue
-            except OSError:
-                continue
-            read_any = True
-            for line_number, line in enumerate(text.splitlines(), start=1):
+    rows = []
+    read_any = False
+    unreadable_count = 0
+    for path in await _host_sudoers_files(ctx):
+        try:
+            text = await ctx.host.read_text(path)
+        except PermissionError:
+            unreadable_count += 1
+            continue
+        except OSError:
+            continue
+        read_any = True
+        for line_number, line in enumerate(text.splitlines(), start=1):
                 stripped = line.strip()
                 if not stripped or stripped.startswith("#"):
                     continue
@@ -37,9 +35,6 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
                             "risk_reason": "sudoers rule may allow broad escalation to or from the postgres OS account",
                         }
                     )
-        return rows, read_any, unreadable_count
-
-    rows, read_any, unreadable_count = await run_blocking(inspect)
     if not read_any:
         return _unavailable_result(
             "The collector cannot read any sudoers evidence to verify postgres escalation rules",

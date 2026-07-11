@@ -93,7 +93,11 @@ def test_item_query_texts_are_moved_to_artifact_catalog() -> None:
     }
     query_texts: dict[str, str] = {}
 
-    extract_item_query_texts(item, query_texts)
+    extract_item_query_texts(
+        item,
+        query_texts,
+        {"id_column_suffix": "query_id", "value_column_remove_suffix": "_id"},
+    )
 
     assert [column["name"] for column in item["result"]["columns"]] == ["pid", "query_id", "blocked_query_id"]
     assert item["result"]["rows"] == [[101, "11", "22"], [102, "11", ""]]

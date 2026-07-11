@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
-import threading
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +16,7 @@ from .artifact import (
     utc_now,
 )
 from .collection import (
-    close_connection,
+    close_collection,
     execute_and_record_report_item,
     finish_collection,
     raise_if_fail_fast,
@@ -29,13 +28,17 @@ from .executors.sql import (
     set_local_runtime_guards,
 )
 from .errors import PgDiagError
+from .host_access import HostAccess, LocalHostAccess
 from .metric_engine import build_metric_item
-from .os_metrics import (
-    build_backend_proc_window_samples,
-    capture_backend_proc_state,
-    collect_os_metrics,
-)
 from .planner import SourceJob
+from .sampler_runtime import (
+    SamplerCollection,
+    collect_sampler_providers,
+    sampler_output_registry,
+    sampler_source_metadata,
+)
+from .security import redact_error
+from .ssh_transport import SshConfig
 
 
 async def collect_snapshots(
@@ -49,6 +52,7 @@ async def collect_snapshots(
     json_out: str | Path | None = None,
     html_out: str | Path | None = None,
     content_validated: bool = False,
+    ssh_config: SshConfig | None = None,
 ) -> dict[str, Any]:
     window_error = runtime_config.validate_snapshots_window(duration_seconds, interval_seconds)
     if window_error:
@@ -64,16 +68,13 @@ async def collect_snapshots(
         json_out=json_out,
         html_out=html_out,
         content_validated=content_validated,
+        ssh_config=ssh_config,
     )
     conn = run.conn
     plan = run.plan
     artifact = run.artifact
     fail_fast = run.fail_fast
-    os_task: asyncio.Task[tuple[dict[str, list[dict[str, Any]]], list[dict[str, str]]]] | None = None
-    os_stop_event = threading.Event()
-    backend_proc_start: dict[str, Any] | None = None
-    backend_proc_samples: list[dict[str, Any]] = []
-    backend_proc_errors: list[dict[str, str]] = []
+    sampler_task: asyncio.Task[SamplerCollection] | None = None
     try:
         artifact["runtime"]["duration_seconds"] = duration_seconds
         artifact["runtime"]["interval_seconds"] = interval_seconds
@@ -107,11 +108,28 @@ async def collect_snapshots(
             for item in plan.items
             if item.source_kind == "metric" and item.status == "planned"
         ]
+        required_sampler_ids = {
+            str((content.metrics.get(item.source_id or "") or {}).get("source_sampler"))
+            for item in metric_items
+            if (content.metrics.get(item.source_id or "") or {}).get("source_sampler")
+        }
+        sampler_registry = sampler_output_registry(content)
+        sampler_metadata = sampler_source_metadata(
+            content,
+            {
+                sampler_id: sampler_registry[sampler_id]
+                for sampler_id in required_sampler_ids
+                if sampler_id in sampler_registry
+            },
+        )
         artifact["runtime"]["once_item_count"] = len(once_items)
         artifact["runtime"]["chart_queries_per_sample"] = len(chart_queries)
         artifact["runtime"]["window_endpoint_query_count"] = len(endpoint_queries)
-        artifact["runtime"]["window_endpoint_sampler_count"] = (
-            1 if collection_mode == runtime_config.LOCAL_COLLECTION_MODE else 0
+        artifact["runtime"]["window_endpoint_sampler_count"] = sum(
+            1
+            for sampler_id in required_sampler_ids
+            if (sampler_registry.get(sampler_id) or {}).get("collection_scope")
+            == runtime_config.WINDOW_ENDPOINTS_COLLECTION_SCOPE
         )
 
         # Point-in-time tables describe the start of the diagnostic run, not an
@@ -136,19 +154,19 @@ async def collect_snapshots(
             artifact["diagnostics"].extend(endpoint_diagnostics)
             source_latest_items.update(endpoint_items)
 
+        sampler_host: HostAccess | None = None
         if collection_mode == runtime_config.LOCAL_COLLECTION_MODE:
-            try:
-                backend_proc_start = await asyncio.to_thread(capture_backend_proc_state)
-            except Exception as exc:  # pragma: no cover - host-specific /proc failure
-                backend_proc_errors.append(
-                    {"sampler": "os.backend_proc", "message": str(exc)}
-                )
-            os_task = asyncio.create_task(
-                asyncio.to_thread(
-                    collect_os_metrics,
+            sampler_host = LocalHostAccess()
+        elif collection_mode == runtime_config.REMOTE_COLLECTION_MODE and run.ssh is not None:
+            sampler_host = run.ssh.host_access
+        if sampler_host is not None and required_sampler_ids:
+            sampler_task = asyncio.create_task(
+                collect_sampler_providers(
+                    content,
+                    sampler_host,
                     duration_seconds,
                     interval_seconds,
-                    os_stop_event,
+                    required_sampler_ids,
                 )
             )
 
@@ -168,18 +186,6 @@ async def collect_snapshots(
         artifact["snapshots"] = snapshots
         source_latest_items.update(latest_sample_items)
 
-        if backend_proc_start is not None:
-            try:
-                backend_proc_end = await asyncio.to_thread(capture_backend_proc_state)
-                backend_proc_samples = build_backend_proc_window_samples(
-                    backend_proc_start,
-                    backend_proc_end,
-                )
-            except Exception as exc:  # pragma: no cover - host-specific /proc failure
-                backend_proc_errors.append(
-                    {"sampler": "os.backend_proc", "message": str(exc)}
-                )
-
         if endpoint_queries:
             end_endpoint, endpoint_diagnostics, endpoint_items = await _collect_window_endpoint(
                 content,
@@ -194,21 +200,28 @@ async def collect_snapshots(
             artifact["diagnostics"].extend(endpoint_diagnostics)
             source_latest_items.update(endpoint_items)
 
-        os_samples: dict[str, list[dict[str, Any]]] = {}
-        os_diagnostics_by_sampler: dict[str, list[dict[str, Any]]] = {}
-        os_errors: list[dict[str, str]] = []
-        if os_task is not None:
-            os_samples, os_errors = await os_task
-        if backend_proc_samples:
-            os_samples["os.backend_proc"] = backend_proc_samples
-        for error in [*os_errors, *backend_proc_errors]:
+        sampler_samples: dict[str, list[dict[str, Any]]] = {}
+        diagnostics_by_sampler: dict[str, list[dict[str, Any]]] = {}
+        sampler_errors: list[dict[str, str]] = []
+        if sampler_task is not None:
+            try:
+                sampler_collection = await sampler_task
+                sampler_samples = sampler_collection.samples
+                sampler_errors = sampler_collection.errors
+            except Exception as exc:
+                sampler_errors.extend(
+                    {"sampler": sampler, "message": str(exc)}
+                    for sampler in sorted(required_sampler_ids)
+                )
+        for error in sampler_errors:
+            message = redact_error(error["message"])
             diagnostic = {
                 "level": "warning",
-                "code": "os_sampler",
-                "message": f"{error['sampler']}: {error['message']}",
+                "code": "sampler_provider",
+                "message": f"{error['sampler']}: {message}",
             }
             artifact["diagnostics"].append(diagnostic)
-            os_diagnostics_by_sampler.setdefault(error["sampler"], []).append(diagnostic)
+            diagnostics_by_sampler.setdefault(error["sampler"], []).append(diagnostic)
 
         source_item_by_query: dict[str, str] = {}
         for item in plan.source_jobs:
@@ -241,10 +254,11 @@ async def collect_snapshots(
                     planned,
                     metric,
                     metric_snapshots,
-                    os_samples,
+                    sampler_samples,
                     source_item_by_query,
                     source_metadata_by_item,
-                    os_diagnostics_by_sampler.get(str(metric.get("source_sampler") or ""), []),
+                    diagnostics_by_sampler.get(str(metric.get("source_sampler") or ""), []),
+                    sampler_metadata.get(str(metric.get("source_sampler") or ""), {}),
                 )
                 raise_if_fail_fast(fail_fast, artifact["items"][planned.item_id])
             except Exception as exc:
@@ -267,13 +281,24 @@ async def collect_snapshots(
             runtime_updates={"snapshot_count": len(snapshots)},
         )
     finally:
-        os_stop_event.set()
-        if os_task is not None and not os_task.done():
+        if sampler_task is not None and not sampler_task.done():
             try:
-                await asyncio.wait_for(asyncio.shield(os_task), timeout=5.0)
+                await asyncio.wait_for(
+                    asyncio.shield(sampler_task),
+                    timeout=runtime_config.HOST_COMMAND_TIMEOUT_SECONDS,
+                )
             except (TimeoutError, asyncio.CancelledError):
-                os_task.cancel()
-        await close_connection(conn)
+                sampler_task.cancel()
+                try:
+                    await sampler_task
+                except (Exception, asyncio.CancelledError):
+                    pass
+        if sampler_task is not None and sampler_task.done() and not sampler_task.cancelled():
+            try:
+                sampler_task.exception()
+            except (Exception, asyncio.CancelledError):
+                pass
+        await close_collection(run)
 
 
 async def _collect_db_samples(
@@ -407,7 +432,11 @@ async def _execute_query_batch(
             except Exception as exc:
                 item = item_error_from_exception(planned, exc)
             if query_texts is not None:
-                extract_item_query_texts(item, query_texts)
+                extract_item_query_texts(
+                    item,
+                    query_texts,
+                    content.report["runtime_policy"]["query_text_catalog"],
+                )
             result = item.get("result") or {}
             if (
                 snapshot_schemas is not None

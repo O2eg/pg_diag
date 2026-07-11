@@ -5,8 +5,8 @@ from _local_security_common import *
 
 async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
     rows = []
-    for path in _candidate_client_secret_files():
-        rows.extend(_inspect_client_secret_file(path))
+    for path in await _host_candidate_client_secret_files(ctx):
+        rows.extend(await _host_inspect_client_secret_file(ctx.host, path))
 
     rows = _dedupe_rows(rows, ("file_path", "finding_type", "risk_reason"))
     return _result(

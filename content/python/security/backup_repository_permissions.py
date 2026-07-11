@@ -4,7 +4,6 @@ from _local_security_common import *
 
 
 async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
-    del ctx
     candidates = [
         Path("/var/lib/pgbackrest"),
         Path("/var/log/pgbackrest"),
@@ -13,23 +12,21 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
         Path("/backup"),
         Path("/backups"),
     ]
-    def inspect() -> tuple[int, list[dict[str, Any]]]:
-        existing = [path for path in candidates if path.exists()]
-        rows = []
-        for path in existing:
-            rows.extend(
-                _permission_findings(
-                    path,
-                    component="backup_repository",
-                    expected_mode="not group/world writable and not world accessible",
-                    disallowed_bits=0o027,
-                    missing_ok=True,
-                    risk_reason="PostgreSQL backup repository path permissions are broader than expected",
-                )
+    existing = [path for path in candidates if await ctx.host.exists(path)]
+    rows = []
+    for path in existing:
+        rows.extend(
+            await _host_permission_findings(
+                ctx.host,
+                path,
+                component="backup_repository",
+                expected_mode="not group/world writable and not world accessible",
+                disallowed_bits=0o027,
+                missing_ok=True,
+                risk_reason="PostgreSQL backup repository path permissions are broader than expected",
             )
-        return len(existing), rows
-
-    path_count, rows = await run_blocking(inspect)
+        )
+    path_count = len(existing)
     if not path_count:
         return _unavailable_result(
             "No known local PostgreSQL backup repository path was discovered; custom and remote repositories are not covered",

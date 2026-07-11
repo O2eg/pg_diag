@@ -15,8 +15,8 @@ JSON/HTML report.
 - `queries.yaml` - query catalog index, query defaults, SQL root, and the exact
   list of query catalog files to load.
 - `catalog/` - grouped query manifest files referenced by `queries.yaml`.
-- `metrics.yaml` - snapshot chart metrics, top-N metrics, table metrics, and
-  metrics sourced from local samplers.
+- `metrics.yaml` - snapshot metrics plus declarative sampler-provider and output
+  contracts.
 - `scripts.yaml` - local script declarations, script defaults, output types, and
   remote DB-only behavior.
 - `python.yaml` - trusted Python source declarations, defaults, function names,
@@ -204,15 +204,25 @@ Important keys:
 - `script_file`
 - `output`
 - `local_only`
-- `timeout_ms`
+- optional `timeout_ms` override
 - `remote_db_only_behavior`
 
 Supported output modes are plain text and JSON-table output used by hardware or
 host inventory scripts.
 
-Local-only scripts are skipped in `remote-db-only` collection mode. The skip
-reason comes from `remote_db_only_behavior` or the runtime policy in
-`report.yaml`.
+Local-only scripts run on the collector host in `local` mode and on the SSH
+target in `remote` mode. Remote execution sends the local script body to
+`/bin/sh -s` through SSH stdin, so every declared item script must be
+self-contained and must not depend on its local filename or sibling files.
+Scripts are skipped in `remote-db-only` mode. The skip reason comes from
+`remote_db_only_behavior` or the runtime policy in `report.yaml`.
+
+The report-level `runtime_policy.default_shell_timeout_ms` is the single default
+for host shell items. A source may only override it with a lower positive
+`timeout_ms`; all host shell timeouts are capped at `1000 ms`. When a local or
+SSH shell command exceeds the limit, its process group is stopped and the
+timeout is stored as that item's compact error where the result would otherwise
+appear.
 
 ## Python Source Manifests
 
@@ -240,15 +250,22 @@ finding columns use `risk_level`/`risk_reason`; reserved
 ordinary table without exposing helper columns. Automatic severity is intended
 only for obvious, explicitly documented conditions.
 
-Local-only Python sources are skipped in `remote-db-only` collection mode. The
-skip reason comes from the runtime policy in `report.yaml`.
+Local-only Python sources are always evaluated by the collector's Python
+runtime. They read database-host facts through `PythonSourceContext.host`: its
+local implementation reads the collector host in `local` mode, while its SSH
+implementation uses the existing AsyncSSH connection in `remote` mode.
+Database calls through `PythonSourceContext.conn` use the collector's explicit
+read-only asyncpg connection; in `remote` mode that connection targets a
+dynamic local SSH forward. No Python code, dependencies, credentials, or
+temporary agent directory are copied to the target. These sources are skipped
+in `remote-db-only` mode.
 
-`timeout_ms` bounds how long the collector waits for module loading and source
-execution. Synchronous sources run in a daemon thread so they cannot block the
-async collector; timed-out work is reported as an item error. CPython cannot
-forcibly terminate a running thread, so trusted synchronous sources must avoid
-unbounded work and external side effects. Async sources must remain cooperative
-and yield to the event loop for cancellation.
+`timeout_ms` bounds module loading, local evaluation, database calls, and host
+operations. Synchronous local sources run in a killable child process. SSH
+commands are terminated on timeout. Trusted sources must still avoid external
+side effects. A `local_only` source cannot configure more than `1000 ms`; the
+timeout becomes an error of that source's report item rather than a
+collection-wide exception.
 
 ## Metrics
 
@@ -257,7 +274,7 @@ and yield to the event loop for cancellation.
 Metrics can produce:
 
 - charts from repeated SQL samples;
-- charts from local OS samplers;
+- charts from declared sampler outputs;
 - top-N charts;
 - delta/rate tables from two in-memory window endpoints;
 - per-backend local process tables from two window endpoints.
@@ -265,7 +282,7 @@ Metrics can produce:
 Important keys:
 
 - `source_query` - use a dedicated SQL source for a chart or endpoint metric.
-- `source_sampler` - use local sampler data.
+- `source_sampler` - use an output declared by a sampler provider.
 - `requires_collection: every_snapshot`
 - `requires_collection: window_endpoints`
 - `partition_by`
@@ -283,11 +300,19 @@ metric source queries item-specific under the `metrics.*` namespace; this keeps
 SQL editing isolated and avoids showing unrelated source columns in `Show SQL`
 or `Show meta`.
 
-For sampler-backed metrics, `source_sampler` identifies local sampler data such
-as CPU, memory, disk, network, or backend process metrics. CPU, memory, disk,
-and network samplers run through the chart window. `os.backend_proc` reads
-process counters only at the two window endpoints and feeds table metrics with
-window-average rates.
+Top-level `sampler_providers` in `metrics.yaml` is the implementation boundary. Each provider
+declares an importable implementation-layer module, async function, opaque
+provider configuration, and named outputs. Every output declares its collection
+scope and display source file. Metrics may reference only those declared output
+ids. Core validates and transports the generic `samples`/`errors` contract; it
+does not contain provider ids, command names, result fields, or branches for the
+bundled report. The provider chooses how to interpret its opaque configuration.
+
+Host-backed providers receive the collector host in `local` mode and the SSH
+host abstraction in `remote` mode. Their shell source files remain in
+`content/scripts/`, are sent through stdin when remote, and are shown in metric
+source dialogs. A `window_endpoints` output can feed a table without adding work
+to each chart iteration.
 
 High-cardinality SQL metric sources must remain sorted and limited in SQL before
 rows enter collector memory. Consequently, adjacent samples can contain
@@ -305,15 +330,22 @@ because they require repeated samples.
 
 `snapshots` mode first collects ordinary report items once. During the timed
 window it repeats only chart sources. Delta/rate tables use two endpoint samples
-outside the public snapshot array. Local backend-process tables likewise use
-two `/proc` endpoint reads and are not sampled at every chart point.
+outside the public snapshot array. Sampler-provider outputs follow their
+declared `collection_scope`; endpoint outputs are not sampled at every chart
+point.
 
 `remote-db-only` collection mode executes PostgreSQL SQL sources and non-local
 Python sources, but skips local host scripts, local-only Python sources, and
 local samplers.
 
-`local` collection mode executes PostgreSQL SQL sources, local host scripts, and
-Python sources on the collector machine.
+`local` collection mode executes PostgreSQL SQL sources, local host scripts,
+Python sources, and declared sampler providers on the collector machine.
+
+`remote` collection mode executes PostgreSQL SQL through an AsyncSSH local port
+forward. Host scripts are passed to the target POSIX shell through SSH stdin;
+host sampler providers use the same SSH host API; local-only Python evaluators obtain filesystem
+facts through SSH/SFTP and run locally. One SSH connection is shared for the
+collection run, and no collector files are installed or staged on the target.
 
 ## Validation
 
@@ -326,8 +358,9 @@ pg-diag validate --content content
 The validator checks schema versions, duplicate YAML keys, report references,
 SQL/script/Python source file existence, Python function declarations, version
 ranges, collection support, display sort hint shape, semantic metric references,
-remote DB-only shell behavior, executable script files, positive timeouts, report
-states/defaults, metric source exclusivity, and read-only SQL shape. Catalog and
+remote DB-only shell behavior, executable script files, timeout bounds, sampler
+provider/output contracts, report states/defaults, metric source exclusivity,
+and read-only SQL shape. Catalog and
 source paths must be relative and remain inside their declared content
 directories, including after symlink resolution.
 

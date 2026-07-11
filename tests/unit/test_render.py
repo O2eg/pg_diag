@@ -60,6 +60,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
                 "scripts": {},
                 "metrics": {},
                 "python_sources": {},
+                "sampler_providers": {},
                 "field_reference": {
                     "report": "Report metadata.",
                     "sections/*/items/*/query": "Query manifest id used by this item.",

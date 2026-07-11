@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 import math
 import os
+from pathlib import Path
 import re
 from typing import Any
 
@@ -38,46 +40,7 @@ VALID_COLLECTION_SCOPES = {
     runtime_config.WINDOW_ENDPOINTS_COLLECTION_SCOPE,
 }
 VALID_SCRIPT_OUTPUTS = {"plain_text", "table_json"}
-SAMPLER_COLLECTION_SCOPES = {
-    "os.cpu": runtime_config.EVERY_SNAPSHOT_COLLECTION_SCOPE,
-    "os.memory": runtime_config.EVERY_SNAPSHOT_COLLECTION_SCOPE,
-    "os.disk": runtime_config.EVERY_SNAPSHOT_COLLECTION_SCOPE,
-    "os.network": runtime_config.EVERY_SNAPSHOT_COLLECTION_SCOPE,
-    "os.backend_proc": runtime_config.WINDOW_ENDPOINTS_COLLECTION_SCOPE,
-}
-VALID_SAMPLERS = set(SAMPLER_COLLECTION_SCOPES)
 IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9_]*$")
-ALLOWED_ITEM_TAGS = {
-    "CPU",
-    "Checkpoints",
-    "Configuration",
-    "Databases",
-    "Disk",
-    "Filesystem",
-    "Functions",
-    "Hardware",
-    "I/O",
-    "Indexes",
-    "Kernel",
-    "Locks",
-    "Maintenance",
-    "Memory",
-    "Network",
-    "Other",
-    "Processes",
-    "Replication",
-    "SQL",
-    "Security",
-    "Sequences",
-    "Sessions",
-    "Storage",
-    "Tables",
-    "Tablespaces",
-    "Transactions",
-    "Vacuum",
-    "WAL",
-    "Waits",
-}
 REQUIRED_RESOLVED_FIELD_REFERENCE_PATHS = {
     "resolved",
     "resolved/item_id",
@@ -112,6 +75,7 @@ def validate_content(content: ContentPack) -> list[ValidationIssue]:
     _validate_query_manifests(content, issues)
     _validate_scripts(content, issues)
     _validate_python_sources(content, issues)
+    _validate_sampler_providers(content, issues)
     _validate_metrics(content, issues)
     _validate_instructions(content, issues)
     _validate_sql_files(content, issues)
@@ -141,6 +105,7 @@ def _validate_content_shapes(content: ContentPack, issues: list[ValidationIssue]
         "scripts": content.scripts,
         "metrics": content.metrics,
         "pythons": content.pythons,
+        "sampler_providers": content.sampler_providers,
         "instructions": content.instructions,
         "document": content.document,
         "provenance": content.provenance,
@@ -364,7 +329,14 @@ def _unified_document_paths(document: dict[str, Any]) -> set[str]:
 
 def _validate_report_contract(content: ContentPack, issues: list[ValidationIssue]) -> None:
     report = content.report.get("report") or {}
-    allowed_report_keys = {"id", "title", "description", "schema_version", "catalogs"}
+    allowed_report_keys = {
+        "id",
+        "title",
+        "description",
+        "schema_version",
+        "catalogs",
+        "allowed_item_tags",
+    }
     for key in report:
         if key not in allowed_report_keys:
             _issue(
@@ -377,6 +349,19 @@ def _validate_report_contract(content: ContentPack, issues: list[ValidationIssue
         value = report.get(key)
         if not isinstance(value, str) or not value.strip():
             _issue(issues, "report", f"report.{key} must be a non-empty string", "report.yaml:report")
+    allowed_item_tags = report.get("allowed_item_tags")
+    if (
+        not isinstance(allowed_item_tags, list)
+        or not allowed_item_tags
+        or any(not isinstance(tag, str) or not tag for tag in allowed_item_tags)
+        or len(set(allowed_item_tags)) != len(allowed_item_tags)
+    ):
+        _issue(
+            issues,
+            "report",
+            "report.allowed_item_tags must be a non-empty list of unique strings",
+            "report.yaml:report",
+        )
 
     catalogs = report.get("catalogs")
     if isinstance(catalogs, dict):
@@ -399,6 +384,15 @@ def _validate_report_contract(content: ContentPack, issues: list[ValidationIssue
     for key in ("default_sql_timeout_ms", "default_shell_timeout_ms"):
         if not _is_positive_number(policy.get(key)):
             _issue(issues, "runtime_policy", f"runtime_policy.{key} must be positive", "report.yaml")
+    shell_timeout_ms = policy.get("default_shell_timeout_ms")
+    max_host_timeout_ms = runtime_config.HOST_COMMAND_TIMEOUT_SECONDS * 1000
+    if _is_positive_number(shell_timeout_ms) and float(shell_timeout_ms) > max_host_timeout_ms:
+        _issue(
+            issues,
+            "runtime_policy",
+            f"runtime_policy.default_shell_timeout_ms must not exceed {max_host_timeout_ms:g}",
+            "report.yaml",
+        )
     remote_message = policy.get("remote_db_only_shell_message")
     if not isinstance(remote_message, str) or not remote_message.strip():
         _issue(
@@ -414,9 +408,41 @@ def _validate_report_contract(content: ContentPack, issues: list[ValidationIssue
             "runtime_policy.table_columns must be 'dynamic_from_result'",
             "report.yaml",
         )
+    query_text_catalog = policy.get("query_text_catalog")
+    if not isinstance(query_text_catalog, dict):
+        _issue(
+            issues,
+            "runtime_policy",
+            "runtime_policy.query_text_catalog must be a mapping",
+            "report.yaml",
+        )
+    else:
+        id_suffix = query_text_catalog.get("id_column_suffix")
+        remove_suffix = query_text_catalog.get("value_column_remove_suffix")
+        if not isinstance(id_suffix, str) or not id_suffix:
+            _issue(
+                issues,
+                "runtime_policy",
+                "query_text_catalog.id_column_suffix must be a non-empty string",
+                "report.yaml",
+            )
+        if not isinstance(remove_suffix, str) or not remove_suffix:
+            _issue(
+                issues,
+                "runtime_policy",
+                "query_text_catalog.value_column_remove_suffix must be a non-empty string",
+                "report.yaml",
+            )
+        elif isinstance(id_suffix, str) and not id_suffix.endswith(remove_suffix):
+            _issue(
+                issues,
+                "runtime_policy",
+                "query_text_catalog.id_column_suffix must end with value_column_remove_suffix",
+                "report.yaml",
+            )
 
     defaults = content.report.get("defaults") or {}
-    for group in ("table", "item", "section"):
+    for group in ("table", "item", "section", "database_scope_presentation"):
         value = defaults.get(group)
         if not isinstance(value, dict):
             _issue(issues, "defaults", f"defaults.{group} must be a mapping", "report.yaml")
@@ -444,6 +470,7 @@ def _validate_report_contract(content: ContentPack, issues: list[ValidationIssue
         issues,
         "report.yaml:defaults.item",
     )
+    _validate_database_scope_presentation(defaults, issues)
 
     sections = content.report.get("sections") or {}
     if not sections:
@@ -486,6 +513,44 @@ def _is_positive_number(value: Any) -> bool:
     )
 
 
+def _validate_database_scope_presentation(
+    defaults: dict[str, Any],
+    issues: list[ValidationIssue],
+) -> None:
+    config = defaults.get("database_scope_presentation")
+    location = "report.yaml:defaults.database_scope_presentation"
+    if not isinstance(config, dict):
+        return
+    metadata_field = config.get("metadata_field")
+    if not isinstance(metadata_field, str) or not metadata_field:
+        _issue(issues, "defaults", "metadata_field must be a non-empty string", location)
+    values = config.get("values")
+    if not isinstance(values, dict):
+        _issue(issues, "defaults", "values must be a mapping", location)
+        return
+    missing = DATABASE_SCOPES.difference(values)
+    if missing:
+        _issue(
+            issues,
+            "defaults",
+            f"values must define database scopes: {', '.join(sorted(missing))}",
+            location,
+        )
+    for scope, presentation in values.items():
+        value_location = f"{location}.values.{scope}"
+        if not isinstance(presentation, dict):
+            _issue(issues, "defaults", "scope presentation must be a mapping", value_location)
+            continue
+        suffix = presentation.get("title_suffix")
+        if not isinstance(suffix, str) or not suffix:
+            _issue(issues, "defaults", "title_suffix must be a non-empty string", value_location)
+        hidden_columns = presentation.get("hidden_columns")
+        if not isinstance(hidden_columns, list) or any(
+            not isinstance(column, str) or not column for column in hidden_columns
+        ):
+            _issue(issues, "defaults", "hidden_columns must be a string list", value_location)
+
+
 def _is_valid_state(value: Any) -> bool:
     return isinstance(value, str) and value in VALID_STATES
 
@@ -517,6 +582,7 @@ def _validate_schema_versions(content: ContentPack, issues: list[ValidationIssue
 
 
 def _validate_report_items(content: ContentPack, issues: list[ValidationIssue]) -> None:
+    allowed_tags = set((content.report.get("report") or {}).get("allowed_item_tags") or [])
     for section_id, item_key, item_id, item in iter_report_items(content):
         source_keys = SOURCE_KEYS.intersection(item)
         location = f"report.yaml:sections.{section_id}.items.{item_key}"
@@ -546,7 +612,7 @@ def _validate_report_items(content: ContentPack, issues: list[ValidationIssue]) 
                 f"Report item must not define table columns: {sorted(forbidden)}",
                 location,
             )
-        _validate_report_item_tags(item, issues, location)
+        _validate_report_item_tags(item, allowed_tags, issues, location)
         _validate_report_item_render(item, issues, location)
         state = item.get("state")
         if state is not None and not _is_valid_state(state):
@@ -568,6 +634,7 @@ def _validate_report_items(content: ContentPack, issues: list[ValidationIssue]) 
 
 def _validate_report_item_tags(
     item: dict[str, Any],
+    allowed_tags: set[str],
     issues: list[ValidationIssue],
     location: str,
 ) -> None:
@@ -584,7 +651,7 @@ def _validate_report_item_tags(
         if tag in seen:
             _issue(issues, "item_tags", f"Duplicate report item tag {tag!r}", location)
         seen.add(tag)
-        if tag not in ALLOWED_ITEM_TAGS:
+        if tag not in allowed_tags:
             _issue(issues, "item_tags", f"Unknown report item tag {tag!r}", location)
 
 
@@ -800,6 +867,7 @@ def _validate_scripts(content: ContentPack, issues: list[ValidationIssue]) -> No
     except ContentLoadError as exc:  # pragma: no cover - fixed literal root
         _issue(issues, "script_file", str(exc), "scripts.yaml")
         return
+    max_host_timeout_ms = runtime_config.HOST_COMMAND_TIMEOUT_SECONDS * 1000
     for script_id, script in content.scripts.items():
         location = f"script:{script_id}"
         script_file = script.get("script_file")
@@ -819,9 +887,16 @@ def _validate_scripts(content: ContentPack, issues: list[ValidationIssue]) -> No
         local_only = script.get("local_only")
         if not isinstance(local_only, bool):
             _issue(issues, "script", "local_only must be boolean", location)
-        if not _is_positive_number(script.get("timeout_ms")):
+        timeout_ms = script.get("timeout_ms")
+        if timeout_ms is not None and not _is_positive_number(timeout_ms):
             _issue(issues, "script", "timeout_ms must be positive", location)
-
+        elif timeout_ms is not None and float(timeout_ms) > max_host_timeout_ms:
+            _issue(
+                issues,
+                "script",
+                f"timeout_ms must not exceed {max_host_timeout_ms:g} for host shell scripts",
+                location,
+            )
         remote_behavior = script.get("remote_db_only_behavior")
         if local_only and not isinstance(remote_behavior, dict):
             _issue(
@@ -869,9 +944,11 @@ def _validate_python_sources(content: ContentPack, issues: list[ValidationIssue]
     except ContentLoadError as exc:  # pragma: no cover - fixed literal root
         _issue(issues, "python_file", str(exc), "python.yaml")
         return
+    max_host_timeout_ms = runtime_config.HOST_COMMAND_TIMEOUT_SECONDS * 1000
     for python_id, python_source in content.pythons.items():
         location = f"python:{python_id}"
         python_file = python_source.get("python_file")
+        path: Path | None = None
         try:
             path = resolve_under(python_root, python_file, "Python source file")
         except ContentLoadError as exc:
@@ -888,11 +965,162 @@ def _validate_python_sources(content: ContentPack, issues: list[ValidationIssue]
         local_only = python_source.get("local_only")
         if not isinstance(local_only, bool):
             _issue(issues, "python_source", "local_only must be boolean", location)
-        if not _is_positive_number(python_source.get("timeout_ms")):
+        if (
+            path is not None
+            and path.is_file()
+            and path.suffix == ".py"
+            and isinstance(function, str)
+            and function.isidentifier()
+        ):
+            try:
+                module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            except (OSError, UnicodeError, SyntaxError) as exc:
+                _issue(
+                    issues,
+                    "python_function",
+                    f"Cannot parse Python source: {exc}",
+                    location,
+                )
+            else:
+                definition = next(
+                    (
+                        node
+                        for node in module.body
+                        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                        and node.name == function
+                    ),
+                    None,
+                )
+                if definition is None:
+                    _issue(
+                        issues,
+                        "python_function",
+                        f"Python source does not define function {function!r}",
+                        location,
+                    )
+                elif local_only is True and not isinstance(definition, ast.AsyncFunctionDef):
+                    _issue(
+                        issues,
+                        "python_function",
+                        "local_only Python source function must be async to use ctx.host",
+                        location,
+                    )
+        timeout_ms = python_source.get("timeout_ms")
+        if not _is_positive_number(timeout_ms):
             _issue(issues, "python_source", "timeout_ms must be positive", location)
+        elif (
+            local_only is True
+            and float(timeout_ms) > max_host_timeout_ms
+        ):
+            _issue(
+                issues,
+                "python_source",
+                f"local_only timeout_ms must not exceed {max_host_timeout_ms:g}",
+                location,
+            )
+
+
+def _validate_sampler_providers(
+    content: ContentPack,
+    issues: list[ValidationIssue],
+) -> None:
+    scripts_root = content.path / "scripts"
+    seen_outputs: dict[str, str] = {}
+    max_grace_ms = runtime_config.HOST_COMMAND_TIMEOUT_SECONDS * 1000
+    for provider_id, provider in content.sampler_providers.items():
+        location = f"sampler_provider:{provider_id}"
+        module = provider.get("module")
+        if not isinstance(module, str) or not module or any(
+            not part.isidentifier() for part in module.split(".")
+        ):
+            _issue(issues, "sampler_provider", "module must be a dotted Python name", location)
+        function = provider.get("function")
+        if not isinstance(function, str) or not function.isidentifier():
+            _issue(issues, "sampler_provider", "function must be a Python identifier", location)
+        grace_timeout_ms = provider.get("grace_timeout_ms")
+        if not _is_positive_number(grace_timeout_ms):
+            _issue(issues, "sampler_provider", "grace_timeout_ms must be positive", location)
+        elif float(grace_timeout_ms) > max_grace_ms:
+            _issue(
+                issues,
+                "sampler_provider",
+                f"grace_timeout_ms must not exceed {max_grace_ms:g}",
+                location,
+            )
+        if not isinstance(provider.get("config"), dict):
+            _issue(issues, "sampler_provider", "config must be a mapping", location)
+
+        outputs = provider.get("outputs")
+        if not isinstance(outputs, dict) or not outputs:
+            _issue(issues, "sampler_provider", "outputs must be a non-empty mapping", location)
+            continue
+        for output_id, output in outputs.items():
+            output_location = f"{location}.outputs.{output_id}"
+            if not isinstance(output_id, str) or not output_id:
+                _issue(issues, "sampler_provider", "output id must be non-empty", output_location)
+                continue
+            previous = seen_outputs.get(output_id)
+            if previous is not None:
+                _issue(
+                    issues,
+                    "sampler_provider",
+                    f"output {output_id!r} is already declared by provider {previous!r}",
+                    output_location,
+                )
+            else:
+                seen_outputs[output_id] = provider_id
+            if not isinstance(output, dict):
+                _issue(issues, "sampler_provider", "output must be a mapping", output_location)
+                continue
+            scope = output.get("collection_scope")
+            if scope not in {
+                runtime_config.EVERY_SNAPSHOT_COLLECTION_SCOPE,
+                runtime_config.WINDOW_ENDPOINTS_COLLECTION_SCOPE,
+            }:
+                _issue(
+                    issues,
+                    "sampler_provider",
+                    "collection_scope must be every_snapshot or window_endpoints",
+                    output_location,
+                )
+            source_file = output.get("source_file")
+            try:
+                source_path = resolve_under(
+                    scripts_root,
+                    source_file,
+                    "Sampler source file",
+                )
+            except ContentLoadError as exc:
+                _issue(issues, "sampler_provider", str(exc), output_location)
+            else:
+                if not source_path.is_file():
+                    _issue(
+                        issues,
+                        "sampler_provider",
+                        f"Sampler source file does not exist: {source_file}",
+                        output_location,
+                    )
+            source_language = output.get("source_language")
+            if not isinstance(source_language, str) or not source_language:
+                _issue(
+                    issues,
+                    "sampler_provider",
+                    "source_language must be a non-empty string",
+                    output_location,
+                )
+
+
+def _sampler_output_registry(content: ContentPack) -> dict[str, dict[str, Any]]:
+    registry: dict[str, dict[str, Any]] = {}
+    for provider in content.sampler_providers.values():
+        for output_id, output in (provider.get("outputs") or {}).items():
+            if isinstance(output_id, str) and isinstance(output, dict):
+                registry[output_id] = output
+    return registry
 
 
 def _validate_metrics(content: ContentPack, issues: list[ValidationIssue]) -> None:
+    sampler_registry = _sampler_output_registry(content)
     for metric_id, metric in content.metrics.items():
         location = f"metric:{metric_id}"
         _validate_database_scope(metric.get("database_scope"), issues, location)
@@ -946,10 +1174,10 @@ def _validate_metrics(content: ContentPack, issues: list[ValidationIssue]) -> No
             )
 
         if source_sampler:
-            if source_sampler not in VALID_SAMPLERS:
+            if source_sampler not in sampler_registry:
                 _issue(issues, "metric_source", f"Unknown source_sampler {source_sampler!r}", location)
             else:
-                expected_scope = SAMPLER_COLLECTION_SCOPES[source_sampler]
+                expected_scope = sampler_registry[source_sampler].get("collection_scope")
                 if requires_collection is not None and requires_collection != expected_scope:
                     _issue(
                         issues,

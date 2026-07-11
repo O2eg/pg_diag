@@ -371,7 +371,6 @@ PostgreSQL SQL.
        description: Local kernel boot command line.
        script_file: os/kernel_cmdline.sh
        output: plain_text
-       timeout_ms: 5000
    ```
 
    JSON table example:
@@ -383,7 +382,6 @@ PostgreSQL SQL.
        description: Local device inventory rendered as a table.
        script_file: os/device_inventory.sh
        output: table_json
-       timeout_ms: 15000
    ```
 
 3. Add the script item to `report.yaml`.
@@ -401,6 +399,13 @@ PostgreSQL SQL.
 
 Scripts are local-only by default. In `remote-db-only` collection mode they are
 kept in the report with skipped status and a skip message.
+
+Host shell scripts inherit `runtime_policy.default_shell_timeout_ms`; an optional
+per-source `timeout_ms` can only reduce that bound. Local-only Python sources
+inherit their catalog timeout. Neither host source type may exceed `1000 ms`.
+A timeout is attached to that item as its collection error and rendered in place
+of the expected result; it does not abort unrelated items when `fail_fast` is
+disabled.
 
 4. Add `instructions/items/<section>/<item>.md` so the skipped or collected
    script still has DBA guidance in the HTML report.
@@ -454,7 +459,11 @@ multiple SQL calls, local file parsing, or structured issue output.
 
 Local-only Python sources are skipped in `remote-db-only` collection mode. Use
 `local_only: true` when the function reads collector-host files such as
-PostgreSQL configuration files.
+PostgreSQL configuration files. Read host state only through async
+`ctx.host` operations (`stat`, `read_text`, `read_bytes`, `list_dir`, `glob`,
+`run`, or `run_script`). This keeps one evaluator valid in both `local` and
+full SSH `remote` modes; direct `Path.read_*`, `Path.stat`, `subprocess`, and
+collector-local environment access are incorrect for a local-only source.
 
 4. Add `instructions/items/<section>/<item>.md` for the item.
 
@@ -486,15 +495,40 @@ defensible threshold, reset scope, and applicability contract. The instruction
 must explain the trigger, false positives, evidence boundary, and safe next
 step.
 
-## Add An OS Sampler Chart
+## Add A Sampler-Backed Chart
 
-OS chart metrics use threaded local samplers. They are available only in local
-collection modes and only in `snapshots` mode. Sampler-backed tables must use a
-dedicated `window_endpoints` sampler; they must not add table collection work to
-each chart iteration. The bundled `os.backend_proc` sampler is the reference:
-it reads process counters once at each window boundary.
+Sampler implementations are registered in the top-level `sampler_providers`
+mapping in `metrics.yaml`; core never maps a provider or output id to
+implementation code. A provider manifest declares its module, async function,
+post-window grace timeout, opaque configuration, and output contracts. Put any
+host command in an implementation-owned file under `scripts/` and reference it
+from the output so the collected source remains visible in the report.
 
-Example:
+Provider example:
+
+```yaml
+sampler_providers:
+  host_example:
+    module: my_product.providers.host_example
+    function: collect
+    grace_timeout_ms: 1000
+    config:
+      source_script: samplers/host_example.sh
+      output: host.example
+    outputs:
+      host.example:
+        collection_scope: every_snapshot
+        source_file: samplers/host_example.sh
+        source_language: bash
+```
+
+The async function receives `SamplerProviderContext` and returns
+`SamplerCollection` or an equivalent mapping. It may emit only declared output
+ids. Each sample has `timestamp` and `rows`; each error names the affected output
+in `sampler`. Use `ctx.required_outputs` to avoid unrequested work and
+`ctx.host` for the same bounded local/SSH command contract.
+
+Metric example:
 
 ```yaml
 os.disk_read_throughput:
@@ -522,6 +556,10 @@ snapshot_charts_os:
         tags: [Disk, "I/O"]
         state: collapsed
 ```
+
+Sampler-backed tables must reference an output declared with
+`collection_scope: window_endpoints`; they must not add table collection work to
+each chart iteration.
 
 ## Validation Checklist
 

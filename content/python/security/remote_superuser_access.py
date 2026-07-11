@@ -8,7 +8,7 @@ from _pg_hba_common import (
     HOST_TYPES,
     HbaEntry,
     _host_address_and_auth_method,
-    _read_hba_entries,
+    _host_read_hba_entries,
     _resolve_hba_path,
     _split_hba_line,
 )
@@ -70,7 +70,7 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
 
     hba_path = Path(str(hba_file))
     try:
-        hba_entries = _read_hba_entries(hba_path)
+        hba_entries = await _host_read_hba_entries(ctx.host, hba_path)
     except FileNotFoundError:
         return _unavailable_result(
             f"PostgreSQL reports hba_file as {hba_path}, but the file is not visible locally",
@@ -87,7 +87,7 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
     for entry in hba_entries:
         if not entry.fields or entry.fields[0] not in HOST_TYPES:
             continue
-        row = _host_row(entry, superusers, superuser_roles)
+        row = await _host_row(ctx, entry, superusers, superuser_roles)
         row = _classify_host_row(
             row,
             listen_addresses=str(listen_addresses or ""),
@@ -150,7 +150,8 @@ def _unavailable_result(reason: str, code: str) -> PythonSourceResult:
     )
 
 
-def _host_row(
+async def _host_row(
+    ctx: PythonSourceContext,
     entry: HbaEntry,
     superusers: set[str],
     superuser_roles: dict[str, set[str]],
@@ -160,12 +161,15 @@ def _host_row(
     database = fields[1] if len(fields) > 1 else ""
     user = fields[2] if len(fields) > 2 else ""
     address, method = _host_address_and_auth_method(fields)
-    matched = [] if method == "reject" else _allowed_superusers(
-        user,
-        Path(entry.file_path).parent,
-        superusers,
-        superuser_roles,
-    )
+    matched = []
+    if method != "reject":
+        matched = await _allowed_superusers(
+            ctx,
+            user,
+            Path(entry.file_path).parent,
+            superusers,
+            superuser_roles,
+        )
     return {
         "file_path": entry.file_path,
         "line_number": entry.line_number,
@@ -318,13 +322,14 @@ def _issue_summary(issues: list[dict[str, Any]], listen_addresses: str, current_
     }
 
 
-def _allowed_superusers(
+async def _allowed_superusers(
+    ctx: PythonSourceContext,
     user_field: str,
     base_dir: Path,
     superusers: set[str],
     superuser_roles: dict[str, set[str]],
 ) -> list[str]:
-    tokens = _expand_hba_list(user_field, base_dir)
+    tokens = await _expand_hba_list(ctx, user_field, base_dir)
     if "all" in tokens:
         return sorted(superusers)
 
@@ -479,7 +484,12 @@ def _as_bool(value: Any) -> bool:
     return str(value).strip().lower() in {"1", "t", "true", "yes", "on"}
 
 
-def _expand_hba_list(value: str, base_dir: Path, seen_files: set[Path] | None = None) -> list[str]:
+async def _expand_hba_list(
+    ctx: PythonSourceContext,
+    value: str,
+    base_dir: Path,
+    seen_files: set[str] | None = None,
+) -> list[str]:
     if seen_files is None:
         seen_files = set()
     tokens: list[str] = []
@@ -488,26 +498,27 @@ def _expand_hba_list(value: str, base_dir: Path, seen_files: set[Path] | None = 
             continue
         if token.startswith("@"):
             file_path = _resolve_hba_path(base_dir, token[1:])
-            real_path = file_path.resolve()
-            if real_path in seen_files:
-                continue
-            seen_files.add(real_path)
             try:
-                for raw_line in real_path.read_text(encoding="utf-8").splitlines():
+                real_path = Path(await ctx.host.realpath(file_path))
+            except OSError:
+                tokens.append(token)
+                continue
+            marker = str(real_path)
+            if marker in seen_files:
+                continue
+            seen_files.add(marker)
+            try:
+                text = await ctx.host.read_text(real_path)
+                for raw_line in text.splitlines():
                     for child in _split_hba_line(raw_line):
-                        tokens.extend(_expand_hba_list(child, real_path.parent, seen_files))
+                        tokens.extend(
+                            await _expand_hba_list(ctx, child, real_path.parent, seen_files)
+                        )
             except OSError:
                 tokens.append(token)
             continue
         tokens.append(token)
     return tokens
-
-
-def _resolve_hba_path(base_dir: Path, value: str) -> Path:
-    path = Path(value)
-    if path.is_absolute():
-        return path
-    return base_dir / path
 
 
 def _value(row: Any, key: str) -> Any:

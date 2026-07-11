@@ -4,16 +4,17 @@
 
 Based on [pg_perfbench](https://github.com/TantorLabs/pg_perfbench).
 
-It collects PostgreSQL catalog/statistics data, optional local host data, repeated
-snapshots for rate/delta charts, and writes two outputs:
+It collects PostgreSQL catalog/statistics data, optional host data locally or over
+SSH, repeated snapshots for rate/delta charts, and writes two outputs:
 
 - `report.json` - machine-readable diagnostic artifact for other systems or renderers.
 - `report.html` - browser report rendered from the JSON artifact.
 
-The report layout, SQL queries, local scripts, trusted Python sources, and
-metrics are declarative files under `content/`. The Python runtime loads this
-content pack, validates it, selects SQL variants by PostgreSQL version, executes
-sources, and renders the result.
+The report layout, taxonomy, presentation rules, SQL queries, local scripts,
+trusted Python sources, metrics, and sampler-provider registrations are
+declarative files under `content/`. The engine validates and executes only their
+generic contracts; bundled item and host-probe implementations are not embedded
+in core dispatch, validation, or metric rendering.
 
 ## Documentation
 
@@ -30,9 +31,9 @@ sources, and renders the result.
 
 - PostgreSQL version-aware SQL variants for PostgreSQL 14-18.
 - Single snapshot and repeated snapshots modes.
-- Local and remote DB-only collection modes.
+- Local, SSH remote, and remote DB-only collection modes.
 - Read-only SQL execution.
-- Local OS sections and OS charts in local mode.
+- OS sections and OS charts from the collector host or an SSH target.
 - Table, plain text, and chart report items.
 - Table filtering, sorting, pagination, and compact value formatting.
 - Chart zoom, pan, reset, export menu, and fixed color palettes.
@@ -88,7 +89,7 @@ python -m pg_diag.cli --help
 Python runtime:
 
 - Python 3.11 or newer.
-- Python packages from `pyproject.toml`: `asyncpg` and `PyYAML`.
+- Python packages from `pyproject.toml`: `asyncpg`, `AsyncSSH`, and `PyYAML`.
 
 PostgreSQL target:
 
@@ -103,6 +104,12 @@ Recommended users:
 
 - For `remote-db-only` collection, run the CLI as any OS user that can start
   `pg-diag`. Only PostgreSQL connection privileges matter in this mode.
+- For full `remote` collection, use a dedicated SSH account with public-key
+  authentication and the same narrow host read permissions described for local
+  collection. The private key and PostgreSQL credentials remain on the
+  collector; they are not copied to the target host. The SSH service must allow
+  command execution, the SFTP subsystem, and local TCP forwarding to the
+  PostgreSQL endpoint.
 - For full `local` collection, run the CLI on the PostgreSQL host as an OS user
   that can read local PostgreSQL configuration files and `/proc` process data.
   In packaged Linux installs this is usually the `postgres` OS user, or a
@@ -112,7 +119,7 @@ Recommended users:
   grant narrow read access where possible. `pg_diag` only tries passwordless
   `sudo -n` for `lshw` hardware inventory if it is already available.
 - If the OS user cannot read `pg_hba.conf`, the local security item
-  `cluster_inventory.remote_superuser_access` will report an execution error,
+  `cluster_inventory.remote_superuser_access` will report unsupported evidence,
   while the rest of the report continues.
 
 Optional PostgreSQL extensions:
@@ -126,23 +133,24 @@ Optional PostgreSQL extensions:
   the diagnosed database. Without it, `pg_diag` still reports wait data sampled
   from `pg_stat_activity` in snapshots mode.
 
-Local collection mode OS requirements:
+Full host collection requirements (`local` collector or `remote` SSH target):
 
-- Linux collector host with `/proc` mounted.
-- POSIX shell plus common base tools: `cat`, `grep`, `awk`, `df`, `mount`,
+- Linux host with `/proc` mounted.
+- POSIX shell plus common Linux base tools: `cat`, `grep`, `head` (including
+  `-z`), `find`, `getent`, `getconf`, `sed`, `tr`, `awk`, `df`, `mount`, and
   `uname`.
-- `procps` tools: `ps` and `/sbin/sysctl`.
+- `procps` tools: `ps` and `sysctl`.
 - `util-linux`: `lscpu` and `lsblk`.
 - `iproute2`: `ip`.
 - `lshw` for hardware inventory sections. Some `lshw` data requires root; if
   passwordless `sudo -n` is available, `pg_diag` uses it automatically.
-- `sysstat` / `iostat` for local disk throughput, IOPS, utilization, and
+- `sysstat` / `iostat` for disk throughput, IOPS, utilization, and
   latency charts in snapshots mode.
 
-Missing local tools do not stop the report. Affected OS items become empty,
+Missing host tools do not stop the report. Affected OS items become empty,
 skipped, unavailable, or add a diagnostic warning; PostgreSQL SQL collection
-continues. In `remote-db-only` mode, local host scripts, local-only Python
-sources, and local OS samplers are intentionally skipped.
+continues. In `remote-db-only` mode, host scripts, local-only Python
+sources, and host sampler providers are intentionally skipped.
 
 ## Validate Content
 
@@ -271,6 +279,68 @@ pg-diag snapshot \
 Use local mode only when the collector runs on the PostgreSQL host or when local
 OS data from the collector host is intentionally required.
 
+## Run Full Remote Collection Over SSH
+
+Remote mode opens one authenticated SSH connection, forwards a dynamically
+allocated loopback port to PostgreSQL, and collects SQL and host data from the
+same target. `--host` and `--port` identify PostgreSQL as seen from the SSH host,
+not from the collector:
+
+```bash
+export PGDIAG_PASSWORD='change-me'
+
+pg-diag snapshot \
+  --content content \
+  --collection-mode remote \
+  --ssh-host db.example.com \
+  --ssh-port 22 \
+  --ssh-user pgdiag \
+  --ssh-key ~/.ssh/id_ed25519 \
+  --ssh-known-hosts ~/.ssh/known_hosts \
+  --host 127.0.0.1 \
+  --port 5432 \
+  --database appdb \
+  --user app \
+  --password "$PGDIAG_PASSWORD" \
+  --out reports/appdb_remote_snapshot
+```
+
+For an encrypted SSH key, put its passphrase in an environment variable and
+name that variable with `--ssh-key-passphrase-env`; do not place the passphrase
+on the command line:
+
+```bash
+export PGDIAG_SSH_KEY_PASSPHRASE='change-me'
+
+pg-diag snapshot \
+  --dsn "postgresql://app:${PGDIAG_PASSWORD}@127.0.0.1:5432/appdb" \
+  --collection-mode remote \
+  --ssh-host db.example.com \
+  --ssh-user pgdiag \
+  --ssh-key ~/.ssh/id_ed25519 \
+  --ssh-key-passphrase-env PGDIAG_SSH_KEY_PASSPHRASE \
+  --out reports/appdb_remote_snapshot
+```
+
+Remote mode requires explicit key authentication and strict `known_hosts`
+verification. It does not fall back to password authentication, ssh-agent, or
+the user's OpenSSH configuration. It does not upload an agent, create a remote
+working directory, or require Python on the SSH target. Shell source text is
+sent to `/bin/sh` through SSH stdin, file metadata/content is read over the
+same SSH connection, and evaluation stays in the collector process. The
+private key and any PostgreSQL passfile used by the collector must not grant
+group or other access. Password lookup honors `--passfile`, a URI `passfile`,
+`PGPASSFILE`, and the default `~/.pgpass`, and matches entries against the
+original remote database host and port before `asyncpg` connects through the
+dynamic local tunnel. A URI DSN can provide the remote endpoint; a keyword-style
+DSN must be accompanied by `--host` and optionally `--port`.
+
+Remote mode rejects `sslmode=verify-full` and an `SSLContext` with hostname
+verification enabled. The dynamic forward changes the endpoint seen by
+`asyncpg` to `127.0.0.1`, so preserving the original PostgreSQL TLS hostname is
+not possible with this transport. Use direct database connectivity when
+hostname verification is required.
+
 ## Run Repeated Snapshots
 
 Repeated snapshots mode collects samples over time and computes rates, deltas,
@@ -295,9 +365,10 @@ are collected exactly once before the repeated window starts. Each scheduled
 point then executes only SQL sources for chart metrics. Start/end delta tables
 use a separate `window_endpoints` source scope and execute exactly twice: once
 before and once after the chart window. Endpoint source rows are used in memory
-and are not added to the public snapshot array. In local mode, per-backend
-`/proc` tables follow the same endpoint model: process counters are read at the
-two window boundaries and converted to window-average rates.
+and are not added to the public snapshot array. In full local or SSH remote
+mode, per-backend `/proc` tables follow the same endpoint model: process
+counters are read at the two window boundaries and converted to window-average
+rates.
 
 Slow chart queries do not create a backlog: stale scheduled points are skipped
 and recorded in report diagnostics. One-time collection and the final endpoint
@@ -336,6 +407,27 @@ pg-diag snapshots \
   --duration-seconds 60 \
   --interval-seconds 5 \
   --out reports/appdb_60s_remote
+```
+
+For a full SSH remote repeated report, use the same SSH and database arguments
+as the single remote example:
+
+```bash
+pg-diag snapshots \
+  --content content \
+  --collection-mode remote \
+  --ssh-host db.example.com \
+  --ssh-user pgdiag \
+  --ssh-key ~/.ssh/id_ed25519 \
+  --ssh-known-hosts ~/.ssh/known_hosts \
+  --host 127.0.0.1 \
+  --port 5432 \
+  --database appdb \
+  --user app \
+  --password "$PGDIAG_PASSWORD" \
+  --duration-seconds 60 \
+  --interval-seconds 5 \
+  --out reports/appdb_60s_ssh
 ```
 
 Repeated snapshot reports also support fixed output file names:
@@ -447,8 +539,8 @@ PYTHONDONTWRITEBYTECODE=1 python -m py_compile \
 
 ## Notes
 
-- Runtime dependencies are intentionally small: YAML parsing and PostgreSQL
-  access.
+- Runtime dependencies are intentionally focused: YAML parsing, PostgreSQL
+  access, and SSH transport.
 - Every PostgreSQL connection requests `default_transaction_read_only=on` in
   the startup settings and verifies both the session default and current
   transaction before collection starts. SQL source transactions additionally
@@ -465,7 +557,16 @@ PYTHONDONTWRITEBYTECODE=1 python -m py_compile \
   stops collection at the first item error and does not write a partial report.
 - Local host data and local-only Python sources are skipped in
   `remote-db-only` mode.
+- Host shell items and host-dependent Python checks have a strict one-second
+  timeout. A timeout is recorded and rendered inside the affected item; other
+  items continue when `fail_fast` is disabled.
+- Full `remote` mode authenticates only with the configured key, verifies the
+  configured `known_hosts` file, and keeps PostgreSQL sessions read-only through
+  the forwarded connection.
 - Blocking work requested by trusted Python sources runs in a killable child
   process, so a source timeout does not leave its filesystem or command probe
   running in the collector background.
+- A declared sampler provider may own a window-length command. Its command and
+  provider grace bounds are explicit in the content/provider contract; ordinary
+  host commands remain limited to one second.
 - Generated reports are ignored by Git by default.

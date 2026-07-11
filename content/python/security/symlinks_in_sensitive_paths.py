@@ -13,8 +13,8 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
     rows = []
     coverage = []
     for root in roots:
-        root_rows, root_coverage = await run_blocking(
-            _symlink_findings,
+        root_rows, root_coverage = await _host_symlink_findings(
+            ctx,
             root,
             max_depth=2,
             max_rows=100,

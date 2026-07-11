@@ -4,19 +4,15 @@ from _local_security_common import *
 
 
 async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
-    del ctx
-    def inspect() -> tuple[int, list[dict[str, Any]]]:
-        cron_files = _cron_files()
-        systemd_files = _postgres_systemd_files(include_timers=True)
-        rows = []
-        for path in cron_files:
-            rows.extend(_inspect_cron_file(path))
-        for path in systemd_files:
-            rows.extend(_inspect_systemd_exec_paths(path))
-        rows = _dedupe_rows(rows, ("file_path", "line_number", "script_path", "risk_reason"))
-        return len(cron_files) + len(systemd_files), rows
-
-    evidence_count, rows = await run_blocking(inspect)
+    cron_files = await _host_cron_files(ctx)
+    systemd_files = await _host_postgres_systemd_files(ctx, include_timers=True)
+    rows = []
+    for path in cron_files:
+        rows.extend(await _host_inspect_cron_file(ctx, path))
+    for path in systemd_files:
+        rows.extend(await _host_inspect_systemd_exec_paths(ctx, path))
+    rows = _dedupe_rows(rows, ("file_path", "line_number", "script_path", "risk_reason"))
+    evidence_count = len(cron_files) + len(systemd_files)
     if not evidence_count:
         return _unavailable_result(
             "No readable cron or systemd scheduling evidence was discovered",

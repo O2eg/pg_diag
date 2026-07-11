@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from . import runtime_config
 from .artifact import (
     apply_database_scope_presentation,
     create_artifact,
@@ -23,10 +24,16 @@ from .errors import PgDiagError, UnsupportedServerVersion
 from .executors.common import read_source_text
 from .executors.python import execute_python_item
 from .executors.remote_disabled_shell import skipped_python_item, skipped_shell_item
-from .executors.shell import execute_shell_item
+from .executors.shell import execute_remote_shell_item, execute_shell_item
 from .executors.sql import connect, detect_runtime_context, execute_query_item
 from .planner import ExecutionPlan, PlannedItem, build_plan
 from .render.html import render_html
+from .ssh_transport import (
+    SshConfig,
+    SshTransport,
+    remote_database_endpoint,
+    tunneled_connection_kwargs,
+)
 from .validator import has_errors, validate_content
 
 
@@ -39,6 +46,7 @@ class CollectionRun:
     fail_fast: bool
     json_path: Path
     html_path: Path
+    ssh: SshTransport | None = None
 
 
 async def start_collection(
@@ -52,7 +60,10 @@ async def start_collection(
     json_out: str | Path | None,
     html_out: str | Path | None,
     content_validated: bool,
+    ssh_config: SshConfig | None = None,
 ) -> CollectionRun:
+    if collection_mode not in runtime_config.COLLECTION_MODES:
+        raise ValueError(f"unsupported collection mode {collection_mode!r}")
     if not content_validated:
         issues = validate_content(content)
         if has_errors(issues):
@@ -64,9 +75,38 @@ async def start_collection(
             raise ValueError(f"Content validation failed: {details}")
 
     json_path, html_path = report_output_paths(out_dir, json_out, html_out)
-    conn = await connect(dsn=dsn, **connection_kwargs)
+    conn: Any | None = None
+    ssh: SshTransport | None = None
+    remote_endpoint: tuple[str, int] | None = None
     try:
+        effective_connection_kwargs = dict(connection_kwargs)
+        if collection_mode == runtime_config.REMOTE_COLLECTION_MODE:
+            if ssh_config is None:
+                raise ValueError("remote collection requires SSH configuration")
+            remote_endpoint = remote_database_endpoint(dsn, effective_connection_kwargs)
+            ssh = await SshTransport.connect(ssh_config)
+            local_host, local_port = await ssh.open_database_tunnel(*remote_endpoint)
+            effective_connection_kwargs = tunneled_connection_kwargs(
+                dsn,
+                effective_connection_kwargs,
+                remote_endpoint,
+                (local_host, local_port),
+            )
+        elif ssh_config is not None:
+            raise ValueError("SSH configuration is only valid in remote collection mode")
+
+        conn = await connect(dsn=dsn, **effective_connection_kwargs)
         runtime_context = await detect_runtime_context(conn)
+        if ssh is not None and remote_endpoint is not None:
+            runtime_context.update(
+                {
+                    "remote_host": ssh.config.host,
+                    "remote_ssh_port": ssh.config.port,
+                    "remote_ssh_user": ssh.config.username,
+                    "remote_database_host": remote_endpoint[0],
+                    "remote_database_port": remote_endpoint[1],
+                }
+            )
         server_version_num = int(runtime_context["server_version_num"])
         plan = build_plan(
             content,
@@ -86,9 +126,13 @@ async def start_collection(
             fail_fast=fail_fast,
             json_path=json_path,
             html_path=html_path,
+            ssh=ssh,
         )
     except BaseException:
-        await close_connection(conn)
+        if conn is not None:
+            await close_connection(conn)
+        if ssh is not None:
+            await ssh.close()
         raise
 
 
@@ -96,6 +140,7 @@ async def execute_report_item(
     content: ContentPack,
     conn: Any,
     planned: PlannedItem,
+    ssh: SshTransport | None = None,
 ) -> dict[str, Any]:
     if planned.status == "unsupported":
         return item_from_plan(
@@ -133,9 +178,11 @@ async def execute_report_item(
     if planned.source_kind == "query":
         return await execute_query_item(content, conn, planned)
     if planned.source_kind == "script":
+        if ssh is not None:
+            return await execute_remote_shell_item(content, planned, ssh)
         return execute_shell_item(content, planned)
     if planned.source_kind == "python":
-        return await execute_python_item(content, conn, planned)
+        return await execute_python_item(content, conn, planned, ssh)
     if planned.source_kind == "metric":
         return item_from_plan(
             planned,
@@ -156,8 +203,15 @@ async def execute_and_record_report_item(
     planned: PlannedItem,
 ) -> dict[str, Any]:
     try:
-        item = await execute_report_item(run.content, run.conn, planned)
-        extract_item_query_texts(item, run.artifact["query_texts"])
+        if run.ssh is None:
+            item = await execute_report_item(run.content, run.conn, planned)
+        else:
+            item = await execute_report_item(run.content, run.conn, planned, run.ssh)
+        extract_item_query_texts(
+            item,
+            run.artifact["query_texts"],
+            run.content.report["runtime_policy"]["query_text_catalog"],
+        )
         run.artifact["items"][planned.item_id] = item
         raise_if_fail_fast(run.fail_fast, item)
         return item
@@ -208,3 +262,9 @@ async def close_connection(conn: Any) -> None:
         await conn.close()
     except Exception:
         pass
+
+
+async def close_collection(run: CollectionRun) -> None:
+    await close_connection(run.conn)
+    if run.ssh is not None:
+        await run.ssh.close()

@@ -12,6 +12,7 @@ license = "MIT"
 dependencies = [
   "PyYAML>=6.0",
   "asyncpg>=0.29",
+  "asyncssh>=2.21,<3",
 ]
 
 [project.optional-dependencies]

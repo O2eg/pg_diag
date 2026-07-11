@@ -4,6 +4,48 @@ metric_catalog:
     mode: snapshots
     x: snapshot_time
 
+sampler_providers:
+  linux_os:
+    module: pg_diag.providers.linux
+    function: collect_linux_os
+    grace_timeout_ms: 1000
+    config:
+      proc_script: samplers/linux_proc.sh
+      iostat_script: samplers/linux_iostat.sh
+      cpu_output: os.cpu
+      memory_output: os.memory
+      disk_output: os.disk
+      network_output: os.network
+    outputs:
+      os.cpu:
+        collection_scope: every_snapshot
+        source_file: samplers/linux_proc.sh
+        source_language: bash
+      os.memory:
+        collection_scope: every_snapshot
+        source_file: samplers/linux_proc.sh
+        source_language: bash
+      os.disk:
+        collection_scope: every_snapshot
+        source_file: samplers/linux_iostat.sh
+        source_language: bash
+      os.network:
+        collection_scope: every_snapshot
+        source_file: samplers/linux_proc.sh
+        source_language: bash
+  postgresql_backend_proc:
+    module: pg_diag.providers.linux
+    function: collect_postgresql_backend_proc
+    grace_timeout_ms: 1000
+    config:
+      proc_script: samplers/postgresql_backend_proc.sh
+      output: os.backend_proc
+    outputs:
+      os.backend_proc:
+        collection_scope: window_endpoints
+        source_file: samplers/postgresql_backend_proc.sh
+        source_language: bash
+
 metrics:
   os.cpu_utilization:
     title: CPU Utilization

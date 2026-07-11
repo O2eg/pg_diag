@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pg_diag.os_metrics import (
+from pg_diag.providers.linux_helpers import (
     _cpu_row,
     _counter_rate,
     _memory_row_from_values,
@@ -119,7 +119,7 @@ def test_memory_row_from_values_calculates_stack_components() -> None:
 def test_backend_proc_window_sample_uses_only_same_process_at_both_endpoints(
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr("pg_diag.os_metrics.os.sysconf", lambda _name: 100)
+    monkeypatch.setattr("pg_diag.providers.linux_helpers.os.sysconf", lambda _name: 100)
 
     def process(starttime: int, *, utime: int, read_bytes: int) -> dict:
         return {

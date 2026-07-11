@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from _local_security_common import *
-from _pg_hba_common import _read_hba_paths
+from _pg_hba_common import _host_read_hba_paths
 
 
 async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
@@ -10,7 +10,7 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
         return _unavailable_result("PostgreSQL hba_file setting is empty or unavailable", "security_hba_file_empty")
     hba_path = Path(str(hba_file))
     try:
-        files, directories = _read_hba_paths(hba_path)
+        files, directories = await _host_read_hba_paths(ctx.host, hba_path)
     except FileNotFoundError:
         return _unavailable_result(
             f"An HBA file included from {hba_path} is not visible locally",
@@ -24,9 +24,9 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
 
     rows = []
     for path in sorted(files):
-        rows.extend(_permission_rows(path, object_type="file"))
+        rows.extend(await _permission_rows(ctx, path, object_type="file"))
     for path in sorted(directories):
-        rows.extend(_permission_rows(path, object_type="include_directory"))
+        rows.extend(await _permission_rows(ctx, path, object_type="include_directory"))
 
     return _result(
         rows,
@@ -40,9 +40,14 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
     )
 
 
-def _permission_rows(path: Path, *, object_type: str) -> list[dict[str, Any]]:
+async def _permission_rows(
+    ctx: PythonSourceContext,
+    path: Path,
+    *,
+    object_type: str,
+) -> list[dict[str, Any]]:
     try:
-        mode = stat.S_IMODE(path.stat().st_mode)
+        mode = stat.S_IMODE((await ctx.host.stat(path)).mode)
     except (FileNotFoundError, PermissionError, OSError) as exc:
         return [
             {

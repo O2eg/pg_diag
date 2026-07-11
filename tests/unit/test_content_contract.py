@@ -1,17 +1,24 @@
 from __future__ import annotations
 
+import ast
 from copy import deepcopy
 from dataclasses import replace
-import re
 from pathlib import Path
+import re
+import subprocess
 
 import pytest
 
 from pg_diag.artifact import create_artifact
 from pg_diag.content_loader import ContentLoadError, iter_report_items, load_content, load_yaml_file
 from pg_diag.planner import build_plan
-from pg_diag.runtime_config import REMOTE_DB_ONLY_COLLECTION_MODE, SNAPSHOT_MODE, SNAPSHOTS_MODE
-from pg_diag.validator import ALLOWED_ITEM_TAGS, has_errors, validate_content
+from pg_diag.runtime_config import (
+    HOST_COMMAND_TIMEOUT_SECONDS,
+    REMOTE_DB_ONLY_COLLECTION_MODE,
+    SNAPSHOT_MODE,
+    SNAPSHOTS_MODE,
+)
+from pg_diag.validator import has_errors, validate_content
 from pg_diag.versioning import select_query_variant
 
 
@@ -19,6 +26,44 @@ def test_content_manifests_are_valid(content_path: Path) -> None:
     content = load_content(content_path)
     issues = validate_content(content)
     assert not issues
+
+
+def test_host_source_timeouts_do_not_exceed_one_second(content_path: Path) -> None:
+    content = load_content(content_path)
+    max_timeout_ms = int(HOST_COMMAND_TIMEOUT_SECONDS * 1000)
+
+    assert content.report["runtime_policy"]["default_shell_timeout_ms"] == max_timeout_ms
+    for script_id, source in content.scripts.items():
+        timeout_ms = source.get(
+            "timeout_ms",
+            content.report["runtime_policy"]["default_shell_timeout_ms"],
+        )
+        assert 0 < timeout_ms <= max_timeout_ms, script_id
+    for source_id, source in content.pythons.items():
+        if source["local_only"]:
+            assert 0 < source["timeout_ms"] <= max_timeout_ms, source_id
+
+    assert content.pythons["security.role_password_hashes"]["timeout_ms"] == 5000
+
+
+def test_validator_rejects_host_source_timeouts_over_one_second(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    report = deepcopy(content.report)
+    scripts = deepcopy(content.scripts)
+    pythons = deepcopy(content.pythons)
+    report["runtime_policy"]["default_shell_timeout_ms"] = 1001
+    scripts["os.kernel_version"]["timeout_ms"] = 1001
+    pythons["security.pgdata_permissions"]["timeout_ms"] = 1001
+    invalid = replace(content, report=report, scripts=scripts, pythons=pythons)
+
+    issues = validate_content(invalid)
+
+    messages = {(issue.location, issue.message) for issue in issues}
+    assert ("report.yaml", "runtime_policy.default_shell_timeout_ms must not exceed 1000") in messages
+    assert ("script:os.kernel_version", "timeout_ms must not exceed 1000 for host shell scripts") in messages
+    assert ("python:security.pgdata_permissions", "local_only timeout_ms must not exceed 1000") in messages
 
 
 def test_content_pack_exposes_one_effective_document_with_file_provenance(
@@ -33,6 +78,7 @@ def test_content_pack_exposes_one_effective_document_with_file_provenance(
     assert document["scripts"] == content.scripts
     assert document["metrics"] == content.metrics
     assert document["python_sources"] == content.pythons
+    assert document["sampler_providers"] == content.sampler_providers
     assert document["field_reference"]["sections/*/items/*/render"]
     assert content.provenance["sections"] == ["report.yaml"]
     assert content.provenance["queries/indexes.redundant_indexes"] == [
@@ -151,7 +197,8 @@ def test_report_items_have_allowed_tags(content_path: Path) -> None:
         tags = item.get("tags") or []
         assert tags, item_id
         assert len(tags) == len(set(tags)), item_id
-        assert set(tags).issubset(ALLOWED_ITEM_TAGS), item_id
+        allowed_tags = set(content.report["report"]["allowed_item_tags"])
+        assert set(tags).issubset(allowed_tags), item_id
 
 
 def test_report_items_have_markdown_instructions(content_path: Path) -> None:
@@ -1019,6 +1066,118 @@ def test_os_shell_scripts_do_not_require_fixed_sbin_paths(content_path: Path) ->
             continue
         script = (content.path / "scripts" / manifest["script_file"]).read_text(encoding="utf-8")
         assert "/sbin/sysctl" not in script, script_id
+
+
+def test_host_items_have_unique_self_contained_posix_scripts(content_path: Path) -> None:
+    content = load_content(content_path)
+    script_files = [manifest["script_file"] for manifest in content.scripts.values()]
+    assert len(script_files) == len(set(script_files))
+
+    for script_id, manifest in content.scripts.items():
+        script = (content.path / "scripts" / manifest["script_file"]).read_text(
+            encoding="utf-8"
+        )
+        assert script.startswith("#!/bin/sh\n"), script_id
+        assert 'dirname "$0"' not in script, script_id
+        assert "python" not in script.lower(), script_id
+        syntax = subprocess.run(
+            ("/bin/sh", "-n", str(content.path / "scripts" / manifest["script_file"])),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert syntax.returncode == 0, f"{script_id}: {syntax.stderr}"
+
+
+def test_local_only_python_items_do_not_bypass_host_access(content_path: Path) -> None:
+    content = load_content(content_path)
+    filesystem_calls = {
+        "exists",
+        "glob",
+        "is_dir",
+        "is_file",
+        "iterdir",
+        "lstat",
+        "read_bytes",
+        "read_text",
+        "readlink",
+        "resolve",
+        "stat",
+    }
+    forbidden_modules = {"grp", "pwd", "shutil", "subprocess"}
+    collector_local_helpers = {
+        "_candidate_client_secret_files",
+        "_cron_files",
+        "_encrypted_block_sources",
+        "_inspect_client_secret_file",
+        "_inspect_cron_file",
+        "_inspect_history_file",
+        "_mount_table",
+        "_permission_findings",
+        "_postgres_systemd_files",
+        "_postgres_systemd_unit_names",
+        "_run_command",
+        "_sudoers_files",
+        "_symlink_findings",
+        "_tls_private_key_findings",
+        "_world_writable_tree_findings",
+    }
+
+    for source_id, manifest in content.pythons.items():
+        if not manifest.get("local_only"):
+            continue
+        source_path = content.path / "python" / manifest["python_file"]
+        tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                owner = ast.unparse(node.func.value)
+                if node.func.attr in filesystem_calls and not owner.startswith("ctx.host"):
+                    raise AssertionError(
+                        f"{source_id} bypasses ctx.host with {owner}.{node.func.attr}"
+                    )
+            if isinstance(node, ast.Name) and node.id in forbidden_modules:
+                raise AssertionError(f"{source_id} uses collector-local module {node.id}")
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id in collector_local_helpers
+            ):
+                raise AssertionError(
+                    f"{source_id} uses collector-local helper {node.func.id}"
+                )
+
+
+def test_validator_requires_async_local_only_python_function(
+    content_path: Path,
+    tmp_path: Path,
+) -> None:
+    content = load_content(content_path)
+    python_root = tmp_path / "python"
+    python_root.mkdir()
+    (python_root / "sync_source.py").write_text(
+        "def collect(ctx):\n    return None\n",
+        encoding="utf-8",
+    )
+    invalid = replace(
+        content,
+        path=tmp_path,
+        pythons={
+            "test.sync": {
+                "title": "Synchronous host source",
+                "python_file": "sync_source.py",
+                "function": "collect",
+                "local_only": True,
+                "timeout_ms": 1000,
+            }
+        },
+    )
+
+    issues = validate_content(invalid)
+
+    assert any(
+        issue.code == "python_function" and "must be async" in issue.message
+        for issue in issues
+    )
 
 
 def test_query_manifests_define_default_sort(content_path: Path) -> None:

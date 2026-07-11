@@ -1,4 +1,4 @@
-"""Build chart payloads from repeated SQL and OS metric samples."""
+"""Build chart payloads from repeated declarative source samples."""
 
 from __future__ import annotations
 
@@ -37,10 +37,11 @@ def build_metric_item(
     planned: PlannedItem,
     metric: dict[str, Any],
     db_snapshots: list[dict[str, Any]],
-    os_samples: dict[str, list[dict[str, Any]]],
+    sampler_samples: dict[str, list[dict[str, Any]]],
     source_item_by_query: dict[str, str],
     source_metadata_by_item: dict[str, dict[str, Any]],
     source_diagnostics: list[dict[str, Any]] | None = None,
+    sampler_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     source_query = metric.get("source_query")
     source_sampler = metric.get("source_sampler")
@@ -132,10 +133,24 @@ def build_metric_item(
             if snapshot.get("items", {}).get(source_item_id) is not None
         ]
     elif source_sampler:
-        samples = os_samples.get(source_sampler, [])
+        samples = sampler_samples.get(source_sampler, [])
         semantic_columns = {}
-        source_text = _sampler_source_text(source_sampler)
-        source_language = "bash"
+        if sampler_metadata is None:
+            return item_from_plan(
+                planned,
+                collection_status="error",
+                reason=f"source sampler {source_sampler} has no declared metadata",
+                result=_empty_metric_result(metric),
+                diagnostics=[
+                    {
+                        "level": "error",
+                        "code": "metric_source_missing",
+                        "message": f"Source sampler {source_sampler} metadata is absent",
+                    }
+                ],
+            )
+        source_text = str(sampler_metadata["source_text"])
+        source_language = str(sampler_metadata["source_language"])
         metric_diagnostics = list(source_diagnostics or [])
         if not samples and metric_diagnostics:
             return item_from_plan(
@@ -144,7 +159,10 @@ def build_metric_item(
                 reason=str(metric_diagnostics[0].get("message") or "sampler unavailable"),
                 result=_empty_metric_result(metric),
                 diagnostics=metric_diagnostics,
-                source_text=_metric_source_text(metric, source_text, source_language),
+                source_text=(
+                    _metric_source_text(metric, source_text, source_language)
+                    if source_text else None
+                ),
                 source_language=source_language,
             )
     else:
@@ -249,52 +267,13 @@ def _metric_source_header(metric: dict[str, Any], comment_prefix: str, source_la
     if metric.get("table"):
         table = metric.get("table") or {}
         lines.append(f"{comment_prefix} table_metric: mode={table.get('mode', 'first_last_delta')} limit={table.get('limit', '')}")
-    if source_language == "bash":
+    if metric.get("source_sampler"):
         lines.append(f"{comment_prefix} sampler source follows")
     elif metric.get("requires_collection") == "window_endpoints":
-        lines.append(f"{comment_prefix} window endpoint SQL source follows")
+        lines.append(f"{comment_prefix} window endpoint source follows")
     else:
-        lines.append(f"{comment_prefix} sampled SQL source follows")
+        lines.append(f"{comment_prefix} sampled source follows")
     return "\n".join(lines)
-
-
-def _sampler_source_text(source_sampler: str) -> str:
-    scripts = {
-        "os.cpu": """#!/usr/bin/env bash
-# pg_diag threaded sampler: CPU utilization and load average.
-cat /proc/stat
-cat /proc/loadavg
-""",
-        "os.memory": """#!/usr/bin/env bash
-# pg_diag threaded sampler: memory and swap usage.
-cat /proc/meminfo
-""",
-        "os.disk": """#!/usr/bin/env bash
-# pg_diag threaded sampler: disk throughput, IOPS, utilization and latency.
-# The real interval/count are supplied by pg_diag snapshots settings.
-iostat -dxk "$INTERVAL_SECONDS" "$SAMPLE_COUNT"
-""",
-        "os.network": """#!/usr/bin/env bash
-# pg_diag threaded sampler: network receive/transmit bytes and packets.
-cat /proc/net/dev
-""",
-        "os.backend_proc": """#!/usr/bin/env bash
-# pg_diag window-endpoint sampler: per-PostgreSQL-process CPU, RSS and I/O counters.
-# Process state is read once at window start and once at window end.
-# /proc/<pid>/io may be unreadable for another OS user; pg_diag then reports io_access=false.
-for pid_dir in /proc/[0-9]*; do
-  cat "$pid_dir/comm" "$pid_dir/cmdline" "$pid_dir/stat" "$pid_dir/status" 2>/dev/null
-  cat "$pid_dir/io" 2>/dev/null || true
-done
-""",
-    }
-    return scripts.get(
-        source_sampler,
-        f"""#!/usr/bin/env bash
-# pg_diag threaded sampler source: {source_sampler}
-# Implemented by pg_diag.os_metrics.
-""",
-    )
 
 
 def _has_successful_source_item(items: list[dict[str, Any]]) -> bool:

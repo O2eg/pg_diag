@@ -29,7 +29,7 @@ async def _read_hba_from_context(ctx: PythonSourceContext) -> tuple[list[HbaEntr
         raise RuntimeError("PostgreSQL hba_file setting is empty or unavailable")
     hba_path = Path(str(hba_file))
     try:
-        return _read_hba_entries(hba_path), hba_path
+        return await _host_read_hba_entries(ctx.host, hba_path), hba_path
     except FileNotFoundError:
         return _unsupported_read_result(
             f"PostgreSQL reports hba_file as {hba_path}, but the file is not visible locally",
@@ -146,83 +146,99 @@ def _result(
     )
 
 
-def _read_hba_entries(path: Path, seen: set[Path] | None = None) -> list[HbaEntry]:
-    real_path = path.resolve()
+async def _host_read_hba_entries(
+    host: Any,
+    path: Path,
+    seen: set[str] | None = None,
+) -> list[HbaEntry]:
+    real_path = Path(await host.realpath(path))
     if seen is None:
         seen = set()
-    if real_path in seen:
+    marker = str(real_path)
+    if marker in seen:
         return []
-    seen.add(real_path)
+    seen.add(marker)
 
     entries: list[HbaEntry] = []
-    for line_number, raw_line in enumerate(real_path.read_text(encoding="utf-8").splitlines(), start=1):
+    text = await host.read_text(real_path)
+    for line_number, raw_line in enumerate(text.splitlines(), start=1):
         fields = _split_hba_line(raw_line)
         if not fields:
             continue
         directive = fields[0]
         if directive in INCLUDE_DIRECTIVES:
-            entries.extend(_read_include_entries(real_path, fields, seen))
+            entries.extend(await _host_read_include_entries(host, real_path, fields, seen))
             continue
         entries.append(HbaEntry(str(real_path), line_number, raw_line.strip(), fields))
     return entries
 
 
-def _read_hba_paths(
+async def _host_read_hba_paths(
+    host: Any,
     path: Path,
-    seen: set[Path] | None = None,
+    seen: set[str] | None = None,
 ) -> tuple[set[Path], set[Path]]:
-    real_path = path.resolve()
+    real_path = Path(await host.realpath(path))
     if seen is None:
         seen = set()
-    if real_path in seen:
+    marker = str(real_path)
+    if marker in seen:
         return set(), set()
-    seen.add(real_path)
+    seen.add(marker)
 
     files = {real_path}
     directories: set[Path] = set()
-    for raw_line in real_path.read_text(encoding="utf-8").splitlines():
+    text = await host.read_text(real_path)
+    for raw_line in text.splitlines():
         fields = _split_hba_line(raw_line)
         if len(fields) < 2 or fields[0] not in INCLUDE_DIRECTIVES:
             continue
         directive, include_ref = fields[0], fields[1]
         include_path = _resolve_hba_path(real_path.parent, include_ref)
-        if directive == "include_if_exists" and not include_path.exists():
+        if directive == "include_if_exists" and not await host.exists(include_path):
             continue
         if directive == "include_dir":
-            if not include_path.is_dir():
+            if not await host.is_dir(include_path):
                 continue
-            resolved_dir = include_path.resolve()
+            resolved_dir = Path(await host.realpath(include_path))
             directories.add(resolved_dir)
-            for child in sorted(resolved_dir.iterdir()):
-                if child.name.startswith(".") or child.suffix != ".conf" or not child.is_file():
+            for child in await host.list_dir(resolved_dir):
+                child_path = Path(child.path)
+                if child.name.startswith(".") or child_path.suffix != ".conf" or not child.stat.is_file:
                     continue
-                child_files, child_dirs = _read_hba_paths(child, seen)
+                child_files, child_dirs = await _host_read_hba_paths(host, child_path, seen)
                 files.update(child_files)
                 directories.update(child_dirs)
             continue
-        child_files, child_dirs = _read_hba_paths(include_path, seen)
+        child_files, child_dirs = await _host_read_hba_paths(host, include_path, seen)
         files.update(child_files)
         directories.update(child_dirs)
     return files, directories
 
 
-def _read_include_entries(current_file: Path, fields: list[str], seen: set[Path]) -> list[HbaEntry]:
+async def _host_read_include_entries(
+    host: Any,
+    current_file: Path,
+    fields: list[str],
+    seen: set[str],
+) -> list[HbaEntry]:
     if len(fields) < 2:
         return []
     directive, include_ref = fields[0], fields[1]
     include_path = _resolve_hba_path(current_file.parent, include_ref)
-    if directive == "include_if_exists" and not include_path.exists():
+    if directive == "include_if_exists" and not await host.exists(include_path):
         return []
     if directive == "include_dir":
-        if not include_path.is_dir():
+        if not await host.is_dir(include_path):
             return []
         entries: list[HbaEntry] = []
-        for child in sorted(include_path.iterdir()):
-            if child.name.startswith(".") or child.suffix != ".conf" or not child.is_file():
+        for child in await host.list_dir(include_path):
+            child_path = Path(child.path)
+            if child.name.startswith(".") or child_path.suffix != ".conf" or not child.stat.is_file:
                 continue
-            entries.extend(_read_hba_entries(child, seen))
+            entries.extend(await _host_read_hba_entries(host, child_path, seen))
         return entries
-    return _read_hba_entries(include_path, seen)
+    return await _host_read_hba_entries(host, include_path, seen)
 
 
 def _split_hba_line(line: str) -> list[str]:
@@ -339,11 +355,6 @@ __all__ = [
             "Path",
             "PythonSourceContext",
             "PythonSourceResult",
-            "os",
-            "re",
-            "shutil",
-            "stat",
-            "subprocess",
         )
         if name in globals()
     ],

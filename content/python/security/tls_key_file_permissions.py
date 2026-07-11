@@ -14,7 +14,7 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
     rows = []
     key_path = await _setting_path(ctx, "ssl_key_file")
     if key_path:
-        rows.extend(await run_blocking(_tls_private_key_findings, key_path))
+        rows.extend(await _host_tls_private_key_findings(ctx.host, key_path))
     for setting_name, component in (
         ("ssl_cert_file", "tls_certificate"),
         ("ssl_ca_file", "tls_ca_file"),
@@ -24,7 +24,8 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
         if not path:
             continue
         rows.extend(
-            _permission_findings(
+            await _host_permission_findings(
+                ctx.host,
                 path,
                 component=component,
                 expected_mode="not group/world writable",

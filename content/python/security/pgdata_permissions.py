@@ -12,7 +12,7 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
         )
     data_path = Path(str(data_directory))
     try:
-        data_stat = data_path.stat()
+        data_stat = await ctx.host.stat(data_path)
     except FileNotFoundError:
         return _unavailable_result(
             f"PostgreSQL reports data_directory as {data_path}, but the directory is not visible locally",
@@ -24,7 +24,7 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
             "security_pgdata_directory_permission",
         )
 
-    mode = stat.S_IMODE(data_stat.st_mode)
+    mode = stat.S_IMODE(data_stat.mode)
     rows = []
     if mode & 0o027:
         rows.append(

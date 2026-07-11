@@ -4,10 +4,8 @@ from _local_security_common import *
 
 
 async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
-    del ctx
-    def inspect() -> tuple[int, list[dict[str, Any]]]:
-        paths: list[Path] = []
-        for pattern in (
+    paths: list[Path] = []
+    for pattern in (
             "/usr/share/postgresql/*/extension",
             "/usr/lib/postgresql/*/lib",
             "/usr/lib/*/postgresql/*/lib",
@@ -17,23 +15,22 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
             "/usr/local/pgsql/share/extension",
             "/usr/local/pgsql/lib",
         ):
-            paths.extend(Path("/").glob(pattern.lstrip("/")))
-        resolved_paths = _dedupe_paths(paths)
-        rows = []
-        for path in resolved_paths:
-            rows.extend(
-                _permission_findings(
-                    path,
-                    component="postgresql_extension_directory",
-                    expected_mode="not group/world writable",
-                    disallowed_bits=0o022,
-                    missing_ok=True,
-                    risk_reason="PostgreSQL extension directory is writable by group or other OS users",
-                )
+        paths.extend(Path(value) for value in await ctx.host.glob(pattern))
+    resolved_paths = _dedupe_paths(paths)
+    rows = []
+    for path in resolved_paths:
+        rows.extend(
+            await _host_permission_findings(
+                ctx.host,
+                path,
+                component="postgresql_extension_directory",
+                expected_mode="not group/world writable",
+                disallowed_bits=0o022,
+                missing_ok=True,
+                risk_reason="PostgreSQL extension directory is writable by group or other OS users",
             )
-        return len(resolved_paths), rows
-
-    path_count, rows = await run_blocking(inspect)
+        )
+    path_count = len(resolved_paths)
     if not path_count:
         return _unavailable_result(
             "No PostgreSQL extension directory could be discovered on the local host",

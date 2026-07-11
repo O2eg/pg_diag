@@ -4,10 +4,12 @@ from _local_security_common import *
 
 
 async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
-    del ctx
-    def inspect() -> tuple[list[dict[str, Any]], bool]:
+    async def inspect() -> tuple[list[dict[str, Any]], bool]:
         rows = []
-        suid_dumpable = _read_text(Path("/proc/sys/fs/suid_dumpable")).strip()
+        try:
+            suid_dumpable = (await ctx.host.read_text("/proc/sys/fs/suid_dumpable")).strip()
+        except OSError:
+            suid_dumpable = ""
         if suid_dumpable and suid_dumpable != "0":
             rows.append(
                 {
@@ -18,7 +20,10 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
                     "risk_reason": "setuid-style core dumps are enabled",
                 }
             )
-        core_pattern = _read_text(Path("/proc/sys/kernel/core_pattern")).strip()
+        try:
+            core_pattern = (await ctx.host.read_text("/proc/sys/kernel/core_pattern")).strip()
+        except OSError:
+            core_pattern = ""
         if core_pattern and core_pattern not in {"|/bin/false", "none"}:
             rows.append(
                 {
@@ -31,7 +36,7 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
             )
         return rows, bool(suid_dumpable or core_pattern)
 
-    rows, evidence_available = await run_blocking(inspect)
+    rows, evidence_available = await inspect()
     if not evidence_available:
         return _unavailable_result(
             "Core dump sysctl evidence could not be read from /proc",

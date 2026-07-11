@@ -86,6 +86,7 @@ def _artifact(*, title: str = "Test", data: str = "ok") -> dict:
                 "scripts": {},
                 "metrics": {},
                 "python_sources": {},
+                "sampler_providers": {},
                 "instructions": {},
                 "field_reference": {"report": "Report metadata."},
             },
@@ -93,7 +94,19 @@ def _artifact(*, title: str = "Test", data: str = "ok") -> dict:
         },
         "report": {"id": "test", "title": title},
         "runtime": {"mode": "snapshot", "collection_mode": "remote-db-only"},
-        "display": {"table": {"page_size": 25}},
+        "display": {
+            "table": {"page_size": 25},
+            "database_scope_presentation": {
+                "metadata_field": "database_scope",
+                "values": {
+                    "all_databases": {"title_suffix": " (All databases)", "hidden_columns": []},
+                    "current_database": {
+                        "title_suffix": " (Only {current_database})",
+                        "hidden_columns": ["datname", "database_name"],
+                    },
+                },
+            },
+        },
         "sections": [
             {"section_id": "s", "title": "S", "state": "expanded", "items": ["s.i"]}
         ],
@@ -238,7 +251,16 @@ def test_db_snapshots_store_only_varying_table_data(monkeypatch: pytest.MonkeyPa
     conn = _BatchConnection()
     snapshots, diagnostics, latest = asyncio.run(
         _collect_db_samples(
-            SimpleNamespace(report={}),
+            SimpleNamespace(
+                report={
+                    "runtime_policy": {
+                        "query_text_catalog": {
+                            "id_column_suffix": "query_id",
+                            "value_column_remove_suffix": "_id",
+                        }
+                    }
+                }
+            ),
             conn,
             [planned],
             30,

@@ -7,7 +7,8 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
     rows = []
     for tablespace in await _tablespaces(ctx):
         path = Path(str(tablespace["path"]))
-        for row in _permission_findings(
+        for row in await _host_permission_findings(
+            ctx.host,
             path,
             component="tablespace_directory",
             expected_mode="not group/world writable and not world accessible",

@@ -7,12 +7,13 @@ from typing import Any
 
 from . import runtime_config
 from .collection import (
-    close_connection,
+    close_collection,
     execute_and_record_report_item,
     finish_collection,
     start_collection,
 )
 from .content_loader import ContentPack
+from .ssh_transport import SshConfig
 
 
 async def collect_snapshot(
@@ -24,6 +25,7 @@ async def collect_snapshot(
     json_out: str | Path | None = None,
     html_out: str | Path | None = None,
     content_validated: bool = False,
+    ssh_config: SshConfig | None = None,
 ) -> dict[str, Any]:
     run = await start_collection(
         content=content,
@@ -35,10 +37,11 @@ async def collect_snapshot(
         json_out=json_out,
         html_out=html_out,
         content_validated=content_validated,
+        ssh_config=ssh_config,
     )
     try:
         for planned in run.plan.items:
             await execute_and_record_report_item(run, planned)
         return finish_collection(run)
     finally:
-        await close_connection(run.conn)
+        await close_collection(run)

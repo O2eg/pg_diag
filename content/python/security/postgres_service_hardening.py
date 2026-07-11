@@ -4,8 +4,8 @@ from _local_security_common import *
 
 
 async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
-    unit_names = await _postgres_systemd_unit_names(ctx)
-    rows = await run_blocking(_systemctl_service_hardening_findings, unit_names)
+    unit_names = await _host_postgres_systemd_unit_names(ctx)
+    rows = await _host_systemctl_service_hardening_findings(ctx, unit_names)
     if rows is None:
         return _unavailable_result(
             "Effective PostgreSQL systemd unit properties could not be read; raw unit files are not sufficient to evaluate merged drop-ins",

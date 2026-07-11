@@ -69,6 +69,7 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
         "scripts",
         "metrics",
         "python_sources",
+        "sampler_providers",
         "instructions",
         "field_reference",
     }

@@ -2,6 +2,36 @@ report:
   id: pg_diag_minimal
   title: PostgreSQL Diagnostic Report
   schema_version: 3
+  allowed_item_tags:
+    - CPU
+    - Checkpoints
+    - Configuration
+    - Databases
+    - Disk
+    - Filesystem
+    - Functions
+    - Hardware
+    - I/O
+    - Indexes
+    - Kernel
+    - Locks
+    - Maintenance
+    - Memory
+    - Network
+    - Other
+    - Processes
+    - Replication
+    - SQL
+    - Security
+    - Sequences
+    - Sessions
+    - Storage
+    - Tables
+    - Tablespaces
+    - Transactions
+    - Vacuum
+    - WAL
+    - Waits
   catalogs:
     queries: queries.yaml
     scripts: scripts.yaml
@@ -12,9 +42,12 @@ report:
 
 runtime_policy:
   default_sql_timeout_ms: 3000
-  default_shell_timeout_ms: 5000
+  default_shell_timeout_ms: 1000
   remote_db_only_shell_message: "no data because remote call"
   table_columns: dynamic_from_result
+  query_text_catalog:
+    id_column_suffix: query_id
+    value_column_remove_suffix: _id
   fail_fast: false
 
 defaults:
@@ -25,6 +58,15 @@ defaults:
     database_scope: all_databases
   section:
     state: expanded
+  database_scope_presentation:
+    metadata_field: database_scope
+    values:
+      all_databases:
+        title_suffix: " (All databases)"
+        hidden_columns: []
+      current_database:
+        title_suffix: " (Only {current_database})"
+        hidden_columns: [datname, database_name]
 
 sections:
   overview:
@@ -91,7 +133,7 @@ sections:
 
   os:
     title: Operating System
-    description: Local host data. Remote DB-only mode keeps these items with skipped status.
+    description: Collector-host data in local mode or SSH-target data in remote mode. Remote DB-only mode keeps these items with skipped status.
     show_database_scope: false
     state: collapsed
     items:
@@ -688,8 +730,8 @@ sections:
           empty_message: No powerful grants on inactive tables found.
 
   backend_os:
-    title: Per-Backend Local OS
-    description: PostgreSQL backend activity correlated with local /proc CPU and I/O samples in local snapshots mode.
+    title: Per-Backend OS
+    description: PostgreSQL backend activity correlated with /proc CPU and I/O endpoints from the local collector or SSH target.
     state: collapsed
     items:
       backend_activity:
@@ -883,7 +925,7 @@ sections:
 
   snapshot_charts_os:
     title: Snapshot charts OS
-    description: Operating system charts from local threaded samplers in snapshots mode.
+    description: Operating system charts from samplers on the local collector or SSH target in snapshots mode.
     show_database_scope: false
     state: collapsed
     items:
