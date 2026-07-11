@@ -394,6 +394,376 @@ def test_snapshot_delta_version_epochs_and_database_output_are_complete(
     ] == "medium"
 
 
+@pytest.mark.parametrize("section_id, expected_count", [("replication", 8), ("wal_io_checkpoints", 7)])
+def test_replication_and_wal_instructions_define_complete_interpretation_contract(
+    content_path: Path,
+    section_id: str,
+    expected_count: int,
+) -> None:
+    content = load_content(content_path)
+    item_ids = [
+        item_id
+        for current_section, _item_key, item_id, _item in iter_report_items(content)
+        if current_section == section_id
+    ]
+
+    assert len(item_ids) == expected_count
+    for item_id in item_ids:
+        text = content.instructions[item_id]["text"]
+        assert "This instruction belongs to" in text, item_id
+        assert "## What to watch" in text, item_id
+        assert "## Automatic evaluation" in text, item_id
+        assert "## Common fault causes" in text, item_id
+
+
+def test_replication_queries_preserve_lsn_and_lag_semantics(content_path: Path) -> None:
+    content = load_content(content_path)
+    query_root = content.path / "queries"
+    physical_sql = (query_root / "replication/physical_replication.sql").read_text(
+        encoding="utf-8"
+    ).lower()
+    receiver_sql = (query_root / "replication/wal_receiver.sql").read_text(
+        encoding="utf-8"
+    ).lower()
+
+    assert "extract(epoch from" in physical_sql
+    assert "extract(seconds from" not in physical_sql
+    assert " % " not in physical_sql
+    assert "sent_lsn::text" in physical_sql
+    assert "current_to_replay_lag_bytes" in physical_sql
+    assert "state" in physical_sql and "sync_state" in physical_sql
+
+    assert " % " not in receiver_sql
+    assert "flushed_lsn::text" in receiver_sql
+    assert "sender_host" in receiver_sql
+    assert "pg_wal_lsn_diff(latest_end_lsn, flushed_lsn)" in receiver_sql
+
+    roles_sql = (query_root / "security/replication_roles.sql").read_text(
+        encoding="utf-8"
+    ).lower()
+    assert "oid as role_oid" in roles_sql
+    assert "when oid = 10 then 'ok'" in roles_sql
+
+
+def test_subscription_workers_cover_pg14_through_pg18_without_fake_apply_lag(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    query = content.queries["replication.subscription_workers"]
+    pg14 = select_query_variant("replication.subscription_workers", query, 140000)
+    pg15 = select_query_variant("replication.subscription_workers", query, 150000)
+    pg18 = select_query_variant("replication.subscription_workers", query, 180000)
+
+    assert pg14.variant["sql_file"].endswith("subscription_workers_pg14.sql")
+    assert pg15.variant["sql_file"].endswith("subscription_workers_pg15_plus.sql")
+    assert pg18.variant["sql_file"] == pg15.variant["sql_file"]
+
+    pg14_sql = (content.path / "queries" / pg14.variant["sql_file"]).read_text(
+        encoding="utf-8"
+    ).lower()
+    pg15_sql = (content.path / "queries" / pg15.variant["sql_file"]).read_text(
+        encoding="utf-8"
+    ).lower()
+    for sql in (pg14_sql, pg15_sql):
+        assert "pg_wal_lsn_diff(latest_end_lsn, received_lsn)" in sql
+        assert "publisher_receive_lag_bytes" in sql
+        assert "receive_apply_lag_bytes" not in sql
+    assert "pg_stat_subscription_stats" not in pg14_sql
+    assert "pg_stat_subscription_stats" in pg15_sql
+    assert "worker_type" in pg15_sql
+
+
+def test_wal_archiver_uses_real_segment_size_and_timeline_guard(content_path: Path) -> None:
+    content = load_content(content_path)
+    sql = (content.path / "queries/wal/archiver.sql").read_text(encoding="utf-8").lower()
+
+    assert "pg_size_bytes(current_setting('wal_segment_size'))" in sql
+    assert "4294967296::bigint / wal_segment_size_bytes" in sql
+    assert "segments_ahead_of_last_archived_same_timeline" in sql
+    assert "substr(current_wal_file, 1, 8) = substr(last_archived_wal, 1, 8)" in sql
+    assert "* 256" not in sql
+    assert "pending_wal_count" not in sql
+    assert "when not pg_catalog.pg_is_in_recovery()" in sql
+
+
+def test_wal_position_and_checkpointer_are_role_and_version_aware(content_path: Path) -> None:
+    content = load_content(content_path)
+    wal_position = (content.path / "queries/wal/wal_position_pg14.sql").read_text(
+        encoding="utf-8"
+    ).lower()
+    assert "pg_current_wal_insert_lsn" in wal_position
+    assert "pg_current_wal_flush_lsn" in wal_position
+    assert "pg_last_wal_receive_lsn" in wal_position
+    assert "pg_last_wal_replay_lsn" in wal_position
+    assert "pg_control_checkpoint" in wal_position
+
+    query = content.queries["checkpoints.checkpointer"]
+    pg17 = select_query_variant("checkpoints.checkpointer", query, 170000)
+    pg18 = select_query_variant("checkpoints.checkpointer", query, 180000)
+    pg17_sql = (content.path / "queries" / pg17.variant["sql_file"]).read_text(
+        encoding="utf-8"
+    ).lower()
+    pg18_sql = (content.path / "queries" / pg18.variant["sql_file"]).read_text(
+        encoding="utf-8"
+    ).lower()
+    assert "num_done" not in pg17_sql
+    assert "slru_written" not in pg17_sql
+    assert "num_done" in pg18_sql
+    assert "slru_written" in pg18_sql
+
+
+def test_pg_stat_io_keeps_dimensions_and_unknown_pg18_writeback_bytes(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    query = content.queries["io.pg_stat_io"]
+    for variant in query["variants"]:
+        sql = (content.path / "queries" / variant["sql_file"]).read_text(
+            encoding="utf-8"
+        ).lower()
+        assert "group by backend_type, object, context" in sql
+        assert "rollup" not in sql
+        assert "backend_type = 'client backend' and object = 'relation'" in sql
+    pg18 = select_query_variant("io.pg_stat_io", query, 180000)
+    pg18_sql = (content.path / "queries" / pg18.variant["sql_file"]).read_text(
+        encoding="utf-8"
+    ).lower()
+    assert "null::numeric as writeback_bytes_mb" in pg18_sql
+    assert "0::int8 as writeback_bytes_mb" not in pg18_sql
+
+
+def test_replication_and_wal_sources_never_reset_statistics(content_path: Path) -> None:
+    content = load_content(content_path)
+    item_ids = {
+        item_id
+        for section_id, _item_key, item_id, _item in iter_report_items(content)
+        if section_id in {"replication", "wal_io_checkpoints"}
+    }
+    source_ids = {
+        item["query"]
+        for section_id, _item_key, item_id, item in iter_report_items(content)
+        if item_id in item_ids
+    }
+    for source_id in source_ids:
+        for variant in content.queries[source_id]["variants"]:
+            sql = (content.path / "queries" / variant["sql_file"]).read_text(
+                encoding="utf-8"
+            ).lower()
+            assert not re.search(r"\bpg_(?:stat_)?reset\w*\s*\(", sql), source_id
+
+
+def test_maintenance_progress_defines_point_in_time_interpretation_contract(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    items = [
+        (item_id, item)
+        for section_id, _item_key, item_id, item in iter_report_items(content)
+        if section_id == "maintenance_progress"
+    ]
+
+    assert len(items) == 4
+    for item_id, item in items:
+        text = content.instructions[item_id]["text"]
+        assert "This instruction belongs to" in text, item_id
+        assert "## What to watch" in text, item_id
+        assert "## Automatic evaluation" in text, item_id
+        assert "## Common fault causes" in text, item_id
+        assert "one-time" in text.lower(), item_id
+
+        query = content.queries[item["query"]]
+        assert query["collection"] == {"default": "once", "supports": ["once"]}
+
+    plan = build_plan(content, 180000, mode=SNAPSHOTS_MODE)
+    by_id = {planned.item_id: planned for planned in plan.items}
+    for item_id, _item in items:
+        assert by_id[item_id].collection_scope == "once"
+
+
+def test_maintenance_progress_queries_use_current_database_oid_scope_and_command_age(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    source_ids = {
+        "progress.vacuum",
+        "progress.create_index",
+        "progress.cluster",
+        "progress.copy",
+    }
+    for source_id in source_ids:
+        query = content.queries[source_id]
+        for variant in query["variants"]:
+            sql = (content.path / "queries" / variant["sql_file"]).read_text(
+                encoding="utf-8"
+            ).lower()
+            assert "p.datid" in sql, source_id
+            assert "where p.datid =" in sql, source_id
+            assert "pg_database" in sql, source_id
+            assert "a.query_start" in sql, source_id
+            assert "query_age_seconds" in sql, source_id
+            assert "xact_age_seconds" not in sql, source_id
+
+
+def test_vacuum_progress_uses_query_evidence_and_version_specific_units(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    query = content.queries["progress.vacuum"]
+    pg16 = select_query_variant("progress.vacuum", query, 160000)
+    pg17 = select_query_variant("progress.vacuum", query, 170000)
+    pg16_sql = (content.path / "queries" / pg16.variant["sql_file"]).read_text(
+        encoding="utf-8"
+    ).lower()
+    pg17_sql = (content.path / "queries" / pg17.variant["sql_file"]).read_text(
+        encoding="utf-8"
+    ).lower()
+
+    for sql in (pg16_sql, pg17_sql):
+        assert "backend_xid" not in sql
+        assert "to prevent wraparound" in sql
+        assert "anti_wraparound" in sql
+        assert "a.backend_type" in sql
+    assert "max_dead_tuples" in pg16_sql
+    assert "num_dead_tuples" in pg16_sql
+    assert "max_dead_tuple_bytes" not in pg16_sql
+    assert "max_dead_tuple_bytes" in pg17_sql
+    assert "dead_tuple_bytes" in pg17_sql
+    assert "num_dead_item_ids" in pg17_sql
+    assert "indexes_total" in pg17_sql
+    assert "indexes_processed" in pg17_sql
+
+
+def test_copy_progress_never_hides_locked_rows_or_takes_relation_size_lock(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    variant = content.queries["progress.copy"]["variants"][0]
+    sql = (content.path / "queries" / variant["sql_file"]).read_text(
+        encoding="utf-8"
+    ).lower()
+
+    assert "pg_relation_size" not in sql
+    assert "pg_locks" not in sql
+    assert "accessexclusivelock" not in sql
+    assert "tuples_skipped" in sql
+    assert "to_jsonb(p)" in sql
+    assert "case when p.relid <> 0" in sql
+
+
+def test_index_and_cluster_progress_expose_command_and_stable_oids(content_path: Path) -> None:
+    content = load_content(content_path)
+    for source_id in ("progress.create_index", "progress.cluster"):
+        variant = content.queries[source_id]["variants"][0]
+        sql = (content.path / "queries" / variant["sql_file"]).read_text(
+            encoding="utf-8"
+        ).lower()
+        assert "p.command" in sql
+        assert "p.relid" in sql
+        assert "::regclass::text" in sql
+    cluster_sql = (content.path / "queries/progress/cluster_progress.sql").read_text(
+        encoding="utf-8"
+    ).lower()
+    assert "p.index_rebuild_count" in cluster_sql
+
+
+def test_storage_vacuum_defines_complete_once_contract(content_path: Path) -> None:
+    content = load_content(content_path)
+    items = [
+        (item_id, item)
+        for section_id, _key, item_id, item in iter_report_items(content)
+        if section_id == "storage_vacuum"
+    ]
+    assert len(items) == 8
+    for item_id, item in items:
+        text = content.instructions[item_id]["text"]
+        assert "This instruction belongs to" in text, item_id
+        assert "## What to watch" in text, item_id
+        assert "## Automatic evaluation" in text, item_id
+        assert "## Common fault causes" in text, item_id
+        assert content.queries[item["query"]]["collection"] == {
+            "default": "once",
+            "supports": ["once"],
+        }
+
+
+def test_autovacuum_queue_covers_all_vacuum_triggers_and_remains_bounded(
+    content_path: Path,
+) -> None:
+    sql = (content_path / "queries/vacuum/autovacuum_queue.sql").read_text(
+        encoding="utf-8"
+    ).lower()
+    for token in (
+        "autovacuum_vacuum_max_threshold",
+        "autovacuum_vacuum_insert_threshold",
+        "autovacuum_vacuum_insert_scale_factor",
+        "n_ins_since_vacuum",
+        "relfrozenxid",
+        "relminmxid",
+        "autovacuum_enabled",
+        "vacuum_in_progress",
+    ):
+        assert token in sql
+    assert "limit 200" in sql
+    assert "pg_diag_internal_severity" in sql
+
+
+def test_sequence_exhaustion_handles_direction_cycle_and_visibility(content_path: Path) -> None:
+    sql = (content_path / "queries/storage/sequence_status.sql").read_text(
+        encoding="utf-8"
+    ).lower()
+    assert "when sc.increment_by > 0" in sql
+    assert "sc.max_value - sc.last_value" in sql
+    assert "when cycle or values_consumed is null then null" in sql
+    assert "cache_size" in sql
+    assert "data_type" in sql
+    assert "last_value is not null as value_visible" in sql
+    assert "limit 200" in sql
+
+
+def test_table_size_detail_bounds_expensive_size_calls_before_collection(
+    content_path: Path,
+) -> None:
+    sql = (content_path / "queries/storage/table_size_detailed.sql").read_text(
+        encoding="utf-8"
+    ).lower()
+    candidate_end = sql.index("),\nsizes as")
+    assert "relpages" in sql[:candidate_end]
+    assert "limit 200" in sql[:candidate_end]
+    assert "pg_total_relation_size" not in sql[:candidate_end]
+    assert "pg_total_relation_size" in sql[candidate_end:]
+    assert "limit 100" in sql[candidate_end:]
+    assert "$other$" not in sql
+
+
+def test_xmin_horizon_includes_non_client_backends_and_concrete_pid(
+    content_path: Path,
+) -> None:
+    summary_sql = (content_path / "queries/vacuum/xmin_horizon.sql").read_text(
+        encoding="utf-8"
+    ).lower()
+    blocker_sql = (content_path / "queries/vacuum/xmin_horizon_blockers.sql").read_text(
+        encoding="utf-8"
+    ).lower()
+    assert "backend_type = 'client backend'" not in summary_sql
+    assert "backend_type <> 'walsender'" in summary_sql
+    assert "backend_type = 'client backend'" not in blocker_sql
+    assert "blocker_pid" in blocker_sql
+    assert "blocker_backend_type" in blocker_sql
+
+
+def test_storage_wraparound_and_checksum_outputs_support_findings(content_path: Path) -> None:
+    wrap_sql = (content_path / "queries/vacuum/database_wraparound.sql").read_text(
+        encoding="utf-8"
+    ).lower()
+    checksum_sql = (content_path / "queries/security/data_checksums.sql").read_text(
+        encoding="utf-8"
+    ).lower()
+    assert "vacuum_failsafe_age" in wrap_sql
+    assert "vacuum_multixact_failsafe_age" in wrap_sql
+    assert "pg_diag_internal_severity" in wrap_sql
+    assert "checksum_last_failure as last_failure" in checksum_sql
+
+
 def test_pg_stat_statements_capability_preserves_hidden_setting_state(
     content_path: Path,
 ) -> None:
@@ -592,7 +962,7 @@ def test_plan_exposes_query_default_sort(content_path: Path) -> None:
         ),
     }
     assert by_id["storage_vacuum.autovacuum_queue"].source_metadata["display"]["default_sort"] == {
-        "column": "autovacuum_overdue_factor",
+        "column": "priority_factor",
         "direction": "desc",
     }
     assert by_id["overview.server_version"].source_metadata["instructions"]["format"] == "markdown"
@@ -613,18 +983,21 @@ def test_snapshots_promotes_metric_sources(content_path: Path) -> None:
     content = load_content(content_path)
     plan = build_plan(content, 180000, mode=SNAPSHOTS_MODE)
     by_source = {item.source_id: item for item in plan.items if item.source_kind == "query"}
+    jobs_by_source = {job.source_id: job for job in plan.source_jobs}
     by_id = {item.item_id: item for item in plan.items}
     assert by_source["database.database_stats"].collection_scope == "once"
     assert by_source["io.pg_stat_io"].collection_scope == "once"
-    assert by_source["metrics.database_transaction_rate"].collection_scope == "every_snapshot"
-    assert by_source["metrics.wal_growth_rate"].collection_scope == "every_snapshot"
-    assert by_source["metrics.io_read_write_rate"].collection_scope == "every_snapshot"
-    assert by_source["metrics.database_workload_delta"].collection_scope == "window_endpoints"
-    assert by_source["metrics.statements_total_time_delta"].collection_scope == "window_endpoints"
+    assert jobs_by_source["metrics.database_transaction_rate"].collection_scope == "every_snapshot"
+    assert jobs_by_source["metrics.wal_growth_rate"].collection_scope == "every_snapshot"
+    assert jobs_by_source["metrics.io_read_write_rate"].collection_scope == "every_snapshot"
+    assert jobs_by_source["metrics.database_workload_delta"].collection_scope == "window_endpoints"
+    assert jobs_by_source["metrics.statements_total_time_delta"].collection_scope == "window_endpoints"
     assert by_source["objects.table_workload"].collection_scope == "once"
     assert by_source["objects.table_io"].collection_scope == "once"
     assert by_source["objects.index_workload"].collection_scope == "once"
-    assert by_source["metrics.database_transaction_rate"].source_metadata["internal"] is True
+    assert jobs_by_source["metrics.database_transaction_rate"].job_id == (
+        "metrics.database_transaction_rate"
+    )
     database_usage = by_id["overview.database_stats"].source_metadata["query_usage"]
     assert database_usage["query_id"] == "database.database_stats"
     assert database_usage["isolation"] == "isolated"
@@ -662,8 +1035,6 @@ def test_sql_backed_report_items_have_isolated_query_usage(content_path: Path) -
     assert len(source_queries) == len(set(source_queries))
 
     for item in plan.items:
-        if item.source_metadata.get("internal"):
-            continue
         usage = item.source_metadata.get("query_usage")
         if not usage:
             continue
@@ -671,6 +1042,14 @@ def test_sql_backed_report_items_have_isolated_query_usage(content_path: Path) -
         assert usage["item_count"] == 1, item.item_id
         assert usage["item_ids"] == [item.item_id], item.item_id
         assert usage["other_item_ids"] == [], item.item_id
+
+    assert {job.source_id for job in plan.source_jobs} == set(source_queries)
+    for job in plan.source_jobs:
+        usage = job.source_metadata["query_usage"]
+        assert usage["isolation"] == "isolated", job.job_id
+        assert usage["item_count"] == 1, job.job_id
+        assert len(usage["item_ids"]) == 1, job.job_id
+        assert usage["other_item_ids"] == [], job.job_id
 
 
 def test_snapshot_chart_sections_are_split(content_path: Path) -> None:
@@ -721,14 +1100,14 @@ def test_snapshots_repeat_only_chart_query_sources(content_path: Path) -> None:
     visible_queries = [
         item
         for item in plan.items
-        if item.source_kind == "query" and not item.source_metadata.get("internal")
+        if item.source_kind == "query"
     ]
     assert visible_queries
     assert {item.collection_scope for item in visible_queries} == {"once"}
 
     repeated_queries = [
         item
-        for item in plan.items
+        for item in plan.source_jobs
         if item.source_kind == "query" and item.collection_scope == "every_snapshot"
     ]
     assert repeated_queries
@@ -739,7 +1118,7 @@ def test_snapshots_repeat_only_chart_query_sources(content_path: Path) -> None:
 
     endpoint_queries = [
         item
-        for item in plan.items
+        for item in plan.source_jobs
         if item.source_kind == "query" and item.collection_scope == "window_endpoints"
     ]
     assert endpoint_queries
@@ -789,3 +1168,65 @@ def test_validator_rejects_unknown_query_evaluation_keys(content_path: Path) -> 
         and "threshold_magic" in issue.message
         for issue in issues
     )
+
+
+def test_remaining_chart_sections_have_complete_and_consistent_contracts(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    chart_items = [
+        item_id
+        for section_id, _item_key, item_id, _item in iter_report_items(content)
+        if section_id in {"snapshot_charts_os", "snapshot_charts_db"}
+    ]
+    assert len(chart_items) == 40
+    for item_id in chart_items:
+        assert "## Automatic evaluation" in content.instructions[item_id]["text"], item_id
+
+    assert content.metrics["os.memory_pressure"]["chart"]["kind"] == "line"
+    assert content.metrics["database.tuple_access_rate"]["chart"]["kind"] == "line"
+    assert content.metrics["database.transaction_rate"]["series"][0]["delta_adjustment"] == 1
+    assert content.metrics["wal.growth_rate"]["partition_by"] == ["dimensions.scope"]
+
+    for metric_id, metric in content.metrics.items():
+        if metric_id.startswith("objects.tables_top_"):
+            assert metric["top_n"]["key_refs"] == [
+                "dimensions.database",
+                "dimensions.relation_id",
+            ]
+        if metric_id.startswith("objects.indexes_top_"):
+            assert metric["top_n"]["key_refs"] == [
+                "dimensions.database",
+                "dimensions.index_id",
+            ]
+
+    for source_id in ("metrics.io_read_write_rate", "metrics.wal_growth_rate"):
+        for variant in content.queries[source_id]["variants"]:
+            sql = (content.path / "queries" / variant["sql_file"]).read_text(
+                encoding="utf-8"
+            ).lower()
+            assert "'cluster'::text as scope" in sql
+            assert "group by rollup" not in sql
+            assert "backend_type, 'total'" not in sql
+
+
+def test_object_and_index_queries_bound_expensive_size_calls(content_path: Path) -> None:
+    content = load_content(content_path)
+    for source_id in (
+        "objects.table_workload",
+        "indexes.invalid_indexes",
+        "indexes.unused_indexes",
+        "indexes.duplicate_indexes",
+        "indexes.tables_without_pk_or_unique",
+        "indexes.large_indexes",
+    ):
+        variant = content.queries[source_id]["variants"][-1]
+        sql = (content.path / "queries" / variant["sql_file"]).read_text(
+            encoding="utf-8"
+        ).lower()
+        assert "limit" in sql, source_id
+        if "pg_relation_size" in sql or "pg_total_relation_size" in sql:
+            assert sql.find("limit") < max(
+                sql.find("pg_relation_size"),
+                sql.find("pg_total_relation_size"),
+            ), source_id

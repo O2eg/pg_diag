@@ -9,9 +9,12 @@ queries:
       default_sort:
         column: total_dml
         direction: desc
+    evaluation:
+      summary_title: Tables have high cumulative sequential-scan volume
+      recommendation: Compare with delta rates and query plans; cumulative counters alone do not justify creating an index.
     collection:
       default: once
-      supports: [once, every_snapshot]
+      supports: [once]
     variants:
       - id: objects_table_workload_pg14_plus
         min_pg_version: 140000
@@ -19,6 +22,7 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            relation_oid: relid
             schema: schemaname
             table: relname
           counters:
@@ -51,7 +55,7 @@ queries:
         direction: desc
     collection:
       default: once
-      supports: [once, every_snapshot]
+      supports: [once]
     variants:
       - id: objects_table_io_pg14_plus
         min_pg_version: 140000
@@ -59,6 +63,7 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            relation_oid: relid
             schema: schemaname
             table: relname
           counters:
@@ -85,7 +90,7 @@ queries:
         direction: desc
     collection:
       default: once
-      supports: [once, every_snapshot]
+      supports: [once]
     variants:
       - id: objects_index_workload_pg14_plus
         min_pg_version: 140000
@@ -93,6 +98,8 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            relation_oid: relid
+            index_oid: indexrelid
             schema: schemaname
             table: relname
             index: indexrelname
@@ -118,7 +125,7 @@ queries:
         direction: desc
     collection:
       default: once
-      supports: [once, every_snapshot]
+      supports: [once]
     variants:
       - id: objects_function_workload_pg14_plus
         min_pg_version: 140000
@@ -126,8 +133,10 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            function_oid: funcid
             schema: schemaname
             function: funcname
+            signature: function_signature
           counters:
             calls: calls
             total_time_ms: total_time_ms

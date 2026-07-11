@@ -1,29 +1,24 @@
-# Top Indexes By Reads Per Fetch
+# Top Indexes By Tuples Read Per Heap Fetch
 
 This instruction belongs to report item `snapshot_charts_db.indexes_top_reads_per_fetch`. The item is backed by `objects.indexes_top_reads_per_fetch` (snapshot metric).
 
 ## What this item shows
-- Indexes with high block reads relative to fetched tuples.
-- Potentially inefficient physical access per useful row.
+- Index-entry delta (`idx_tup_read`) divided by per-index heap-fetch delta (`idx_tup_fetch`).
+- A logical executor ratio, not block reads per row and not a direct bloat metric.
 
 ## What to watch
-- High reads per fetched tuple.
-- Index read cost high while returned rows are low.
-- Storage reads concentrated in one index.
+- Many index entries returned for few simple index-scan heap fetches.
+- A sudden ratio change together with a plan change.
 
 ## Bounded samples
-- Each SQL sample is ordered and limited before rows enter collector memory.
-- Each column ranks deltas only for keys present in both adjacent bounded samples.
-- Different index series between columns are expected; unmatched keys are not zero or errors.
-- Counter decreases and invalid values are omitted and reported separately.
+- Samples are bounded before memory and matched by stable index OID at adjacent endpoints.
+- Zero heap-fetch delta, changing membership, and counter decreases yield missing evidence rather than infinity or zero.
 
 ## Common fault causes
-- Index bloat.
-- Poor cache locality.
-- Low-selectivity or stale stats.
-- Cold cache.
+- Bitmap scans, index-only scans, dead entries, broad predicates, or low selectivity.
+
+## Automatic evaluation
+- This chart is informational because several efficient plan types naturally raise the ratio.
 
 ## Checklist
-- Review plans and index size.
-- Run ANALYZE if estimates are stale.
-- Consider REINDEX only with bloat evidence.
+- Inspect actual plans and tuple/block I/O evidence; do not infer REINDEX or index removal from this ratio.

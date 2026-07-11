@@ -185,6 +185,10 @@ pg-diag explain-plan \
   --json
 ```
 
+The JSON plan separates user-visible `items` from internal `source_jobs` used
+to collect snapshot metric inputs. Every source job executes exactly one query;
+sources are not combined across report items.
+
 Inspect a selected SQL query variant:
 
 ```bash
@@ -450,4 +454,7 @@ PYTHONDONTWRITEBYTECODE=1 python -m py_compile \
   stops collection at the first item error and does not write a partial report.
 - Local host data and local-only Python sources are skipped in
   `remote-db-only` mode.
+- Blocking work requested by trusted Python sources runs in a killable child
+  process, so a source timeout does not leave its filesystem or command probe
+  running in the collector background.
 - Generated reports are ignored by Git by default.

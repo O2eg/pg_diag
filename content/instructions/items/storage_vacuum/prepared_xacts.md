@@ -3,21 +3,18 @@
 This instruction belongs to report item `storage_vacuum.prepared_xacts`. The item is backed by `vacuum.prepared_xacts` (SQL query).
 
 ## What this item shows
-- Current two-phase commit prepared transactions.
-- gid, owner, database, prepared timestamp, and age.
-- Transactions that can retain locks and xmin until committed or rolled back.
+- Cluster-wide prepared two-phase transactions with database, GID, owner, timestamp, elapsed seconds, transaction ID, and XID age.
 
 ## What to watch
-- Any prepared transaction older than normal XA workflow.
-- Prepared xacts from inactive applications.
-- Prepared xacts blocking vacuum or DDL.
+- Entries older than the owning transaction manager's normal completion window or retaining locks/xmin.
+
+## Automatic evaluation
+- No automatic severity: valid XA workflows can retain prepared transactions for deployment-specific periods.
 
 ## Common fault causes
-- Transaction manager failure.
-- Application crash after PREPARE TRANSACTION.
-- Manual testing left prepared xact open.
+- Coordinator/application failure, lost commit decision, network partition, or manual testing.
 
 ## Checklist
-- Confirm transaction owner and business outcome.
-- Commit or rollback through the transaction manager when possible.
-- Resolve stale prepared xacts before wraparound/bloat work.
+- Recover the authoritative commit/rollback decision from the coordinator.
+- Do not guess the outcome or resolve another database's GID without owner confirmation.
+- Empty means no prepared transactions exist cluster-wide.

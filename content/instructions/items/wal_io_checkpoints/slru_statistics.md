@@ -3,22 +3,21 @@
 This instruction belongs to report item `wal_io_checkpoints.slru_statistics`. The item is backed by `slru.stat_slru` (SQL query).
 
 ## What this item shows
-- SLRU cache counters by SLRU area.
-- Reads, writes, flushes, truncates, and hit rates for transaction-related storage.
-- Whether subtransaction, multixact, notify, or commit-status areas are active.
+- Cluster-wide cumulative SLRU block hits/reads/accesses, hit percentage, writes, flushes, truncations, and reset age by SLRU area.
+- Activity for transaction status, subtransactions, multixacts, notifications, commit timestamps, and other extension-defined areas.
 
 ## What to watch
-- High SLRU reads or writes for one area.
-- Multixact activity during FK-heavy workload.
-- Subtrans activity from nested transactions.
+- Read/write deltas concentrated in one SLRU, low hit percentage with meaningful access volume, or stalled truncation combined with old horizons.
+- Multixact activity around foreign-key locking and subtransaction activity from nested savepoints.
+
+## Automatic evaluation
+- No automatic severity: raw cumulative counts and cache ratios require rates, workload type, and reset age.
 
 ## Common fault causes
-- Deep subtransactions.
-- High foreign-key lock/check activity.
-- LISTEN/NOTIFY churn.
-- Old transaction horizons delaying truncation.
+- Deep subtransactions, heavy row locking/foreign keys, LISTEN/NOTIFY churn, old xmin/multixact horizons, or a working set larger than the SLRU cache.
 
 ## Checklist
-- Identify which SLRU area is hot.
-- Correlate multixact activity with locks and FK workload.
-- Check xmin and long transactions when truncation is delayed.
+- Compare deltas using the same `stats_reset` value.
+- Interpret `hit_pct` only when `block_accesses` is material; it is an SLRU cache ratio, not an OS disk-cache ratio.
+- Correlate with locks, long transactions, wraparound horizons, and OS I/O.
+- Do not reset SLRU statistics during diagnosis.

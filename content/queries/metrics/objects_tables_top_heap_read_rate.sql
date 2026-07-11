@@ -1,6 +1,7 @@
 select
   statement_timestamp() as snapshot_time,
   current_database() as datname,
+  relid,
   schemaname,
   relname,
   heap_blks_read::int8 as heap_blks_read

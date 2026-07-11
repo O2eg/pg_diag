@@ -6,8 +6,8 @@ select
     tbl.relname as table_name,
     att.attname as column_name,
     pg_catalog.pg_get_userbyid(tbl.relowner) as table_owner,
-    'medium' as risk_level,
-    'Sequence owner differs from the dependent table owner' as risk_reason
+    'unknown' as risk_level,
+    'Sequence and dependent table owners differ; compare with the intended ownership and migration baseline' as risk_reason
 from pg_class seq
 join pg_namespace seq_ns on seq_ns.oid = seq.relnamespace
 join pg_depend dep
@@ -29,3 +29,4 @@ where seq.relkind = 'S'
   and tbl_ns.nspname not in ('pg_catalog', 'information_schema')
   and tbl_ns.nspname not like 'pg_toast%'
 order by sequence_schema, sequence_name
+limit 1000

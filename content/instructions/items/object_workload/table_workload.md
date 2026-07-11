@@ -18,6 +18,11 @@ This instruction belongs to report item `object_workload.table_workload`. The it
 - Hot OLTP table.
 - Batch/report scan.
 
+## Automatic evaluation
+- `medium` is raised only when both cumulative sequential scans and tuples read are high.
+- The threshold is a review signal, not proof that an index is missing; use the delta item and query plans.
+- The query takes a bounded top 200 by cumulative DML before calculating exact relation sizes.
+
 ## Checklist
 - Check stats_reset before interpreting totals.
 - Compare with table delta metrics for current activity.

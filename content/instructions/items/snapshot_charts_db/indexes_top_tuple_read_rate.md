@@ -22,6 +22,10 @@ This instruction belongs to report item `snapshot_charts_db.indexes_top_tuple_re
 - Range scans too broad.
 - Missing better composite index.
 
+## Automatic evaluation
+- `idx_tup_read` counts index entries returned, not heap or disk blocks.
+- Stable index OIDs prevent name reuse from merging counters; changing Top-N membership remains expected.
+
 ## Checklist
 - Compare with tuple fetch rate.
 - Review predicates and column order.

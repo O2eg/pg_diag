@@ -42,8 +42,8 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
                     "socket_file": str(socket_path),
                     "configured_permissions": str(socket_permissions or ""),
                     "actual_mode": _octal(actual_mode),
-                    "risk_level": "high" if actual_mode == 0o777 else "medium",
-                    "risk_reason": "PostgreSQL Unix socket is accessible to other OS users",
+                    "risk_level": "medium",
+                    "risk_reason": "PostgreSQL Unix socket accepts connection attempts from other OS users; pg_hba authentication still applies",
                 }
             )
 
@@ -53,8 +53,8 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
                 "socket_file": "",
                 "configured_permissions": _octal(configured_mode),
                 "actual_mode": "",
-                "risk_level": "high" if configured_mode == 0o777 else "medium",
-                "risk_reason": "unix_socket_permissions grants access to other OS users",
+                "risk_level": "medium",
+                "risk_reason": "unix_socket_permissions permits connection attempts by other OS users; pg_hba authentication still applies",
             }
         )
 

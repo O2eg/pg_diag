@@ -219,6 +219,36 @@ def test_sql_timeout_exception_is_recorded_in_item(tmp_path) -> None:
     assert "QueryCanceledError" in item["diagnostics"][0]["traceback"]
 
 
+def test_sql_batch_query_reuses_outer_runtime_guards(tmp_path) -> None:
+    queries = tmp_path / "queries"
+    queries.mkdir()
+    (queries / "sample.sql").write_text("select 1", encoding="utf-8")
+    content = SimpleNamespace(
+        path=tmp_path,
+        query_catalog={"query_catalog": {"sql_root": "queries"}},
+        report={"runtime_policy": {"default_sql_timeout_ms": 3000}},
+    )
+    planned = PlannedItem(
+        item_id="test.sample",
+        section_id="test",
+        item_key="sample",
+        title="Sample SQL",
+        source_kind="query",
+        status="planned",
+        source_id="test.sample",
+        sql_file="sample.sql",
+        source_metadata={"query_id": "test.sample"},
+    )
+    conn = TimeoutConn(RowsPrepared(["value"], [[1]]))
+
+    item = asyncio.run(
+        execute_query_item(content, conn, planned, runtime_guards_set=True)
+    )
+
+    assert item["collection_status"] == "ok"
+    assert conn.executed == []
+
+
 def test_optional_missing_relation_is_recorded_as_unsupported(tmp_path) -> None:
     queries = tmp_path / "queries"
     queries.mkdir()

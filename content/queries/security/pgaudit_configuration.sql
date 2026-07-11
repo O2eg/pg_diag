@@ -18,7 +18,9 @@ evaluated as (
     s.shared_preload_libraries,
     s.pgaudit_log,
     s.pgaudit_log_source,
-    lower(coalesce(s.shared_preload_libraries, '')) like '%pgaudit%' as pgaudit_preloaded,
+    'pgaudit' = any(
+      regexp_split_to_array(lower(coalesce(s.shared_preload_libraries, '')), '\\s*,\\s*')
+    ) as pgaudit_preloaded,
     e.pgaudit_extension_created
   from settings s
   cross join extension_state e
@@ -30,13 +32,13 @@ select
   pgaudit_log,
   pgaudit_log_source,
   case
-    when not pgaudit_preloaded then 'medium'
-    when coalesce(nullif(pgaudit_log, ''), 'none') = 'none' then 'medium'
+    when not pgaudit_preloaded then 'unknown'
+    when coalesce(nullif(pgaudit_log, ''), 'none') = 'none' then 'unknown'
     else 'ok'
   end as risk_level,
   case
-    when not pgaudit_preloaded then 'pgAudit is not loaded through shared_preload_libraries'
-    when coalesce(nullif(pgaudit_log, ''), 'none') = 'none' then 'pgAudit is loaded but pgaudit.log is not configured'
+    when not pgaudit_preloaded then 'pgAudit is not loaded; whether it is required depends on the audit baseline'
+    when coalesce(nullif(pgaudit_log, ''), 'none') = 'none' then 'pgAudit is loaded but no audit classes are configured; compare with the audit baseline'
     else 'pgAudit configuration is informational'
   end as risk_reason
 from evaluated

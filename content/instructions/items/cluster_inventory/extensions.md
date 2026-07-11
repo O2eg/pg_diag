@@ -17,6 +17,10 @@ This instruction belongs to report item `cluster_inventory.extensions`. The item
 - Manual CREATE EXTENSION outside standard process.
 - Managed-service extension availability differs by version.
 
+## Automatic evaluation
+- This is an availability and installation inventory; no extension is automatically required or unsafe here.
+- `installed_version` is scoped to the connected database, while `default_version` describes server availability.
+
 ## Checklist
 - Compare with approved extension inventory.
 - Review extension release notes before update.

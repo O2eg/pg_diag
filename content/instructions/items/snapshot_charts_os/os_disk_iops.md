@@ -17,6 +17,10 @@ This instruction belongs to report item `snapshot_charts_os.os_disk_iops`. The i
 - WAL fsyncs.
 - Checkpoint bursts.
 
+## Automatic evaluation
+- Read and write IOPS share a denominator and are stacked per device.
+- No universal severity is assigned because acceptable IOPS depends on request size, latency, queueing, and storage tier.
+
 ## Checklist
 - Compare IOPS with throughput and latency.
 - Check storage tier limits.

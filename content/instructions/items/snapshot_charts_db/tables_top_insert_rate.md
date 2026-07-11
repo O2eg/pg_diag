@@ -23,6 +23,10 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_insert_ra
 - Retry creating duplicates.
 - New feature rollout.
 
+## Automatic evaluation
+- This chart ranks insert counter deltas for stable relation OIDs present in both adjacent bounded samples.
+- No universal insert-rate severity is assigned.
+
 ## Checklist
 - Check table growth and sequence capacity.
 - Compare with WAL growth.

@@ -19,7 +19,13 @@ This instruction belongs to report item `backend_os.backend_activity`. The item 
 - Blocked backend.
 - Client backend running batch job.
 
+## Automatic evaluation
+- This is a bounded point-in-time inventory and does not assign severity.
+- `CPU` is reported only for an active backend with no wait event; idle sessions are not classified as CPU work.
+- Query age is populated only for active rows, while transaction age can also expose idle-in-transaction sessions.
+
 ## Checklist
 - Map PID to backend_proc_cpu and backend_proc_io items.
+- Compare `backend_start` as well as PID when correlating evidence collected at different times.
 - Use query_id to connect backend activity to Top SQL.
 - Act on owning query/application, not only the PID.

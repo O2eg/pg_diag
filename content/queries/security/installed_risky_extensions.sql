@@ -1,12 +1,12 @@
 with risky_extensions(extension_name, risk_level, risk_reason) as (
   values
-    ('dblink', 'high', 'extension can open database connections from SQL and may bridge trust boundaries'),
-    ('file_fdw', 'high', 'extension can expose server-side files through foreign tables'),
-    ('adminpack', 'high', 'extension exposes server administration helper functions'),
-    ('postgres_fdw', 'medium', 'extension can access remote PostgreSQL servers and should be reviewed'),
-    ('plpython3u', 'high', 'untrusted procedural language can execute operating system actions'),
-    ('plperlu', 'high', 'untrusted procedural language can execute operating system actions'),
-    ('pltclu', 'high', 'untrusted procedural language can execute operating system actions')
+    ('dblink', 'unknown', 'extension can open database connections from SQL; review function grants and stored credentials'),
+    ('file_fdw', 'medium', 'extension can expose server-side files; review server definitions and privileges'),
+    ('adminpack', 'medium', 'extension exposes server administration helpers; review function grants'),
+    ('postgres_fdw', 'unknown', 'extension can access remote PostgreSQL servers; review user mappings and privileges'),
+    ('plpython3u', 'medium', 'untrusted procedural language can execute operating system actions when used by a superuser'),
+    ('plperlu', 'medium', 'untrusted procedural language can execute operating system actions when used by a superuser'),
+    ('pltclu', 'medium', 'untrusted procedural language can execute operating system actions when used by a superuser')
 ),
 extension_findings as (
   select
@@ -26,8 +26,8 @@ language_findings as (
     l.lanname as object_name,
     '' as schema_name,
     '' as version,
-    'high' as risk_level,
-    'untrusted procedural language is installed' as risk_reason
+    'medium' as risk_level,
+    'untrusted procedural language is installed; only trusted function ownership and CREATE privileges make its use acceptable' as risk_reason
   from pg_catalog.pg_language l
   where not l.lanpltrusted
     and l.lanname not in ('internal', 'c')

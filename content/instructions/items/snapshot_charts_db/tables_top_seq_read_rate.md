@@ -22,6 +22,10 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_seq_read_
 - Planner chose seq scan due to estimates.
 - Report or batch scan.
 
+## Automatic evaluation
+- This chart is informational and ranks `seq_tup_read` interval deltas by stable relation OID.
+- A high rate is not proof of a missing index; validate scan count, workload intent, and plans.
+
 ## Checklist
 - Check table size and row counts.
 - Review plans for queries touching the table.

@@ -10,32 +10,32 @@ from typing import Any
 
 from . import runtime_config
 from .artifact import (
-    create_artifact,
     compact_snapshot_item,
     extract_item_query_texts,
     item_error_from_exception,
     item_from_plan,
-    report_output_paths,
     utc_now,
-    write_json,
-    write_text_secure,
+)
+from .collection import (
+    close_connection,
+    execute_and_record_report_item,
+    finish_collection,
+    raise_if_fail_fast,
+    start_collection,
 )
 from .content_loader import ContentPack
-from .executors.common import read_source_text
-from .executors.remote_disabled_shell import skipped_python_item, skipped_shell_item
-from .executors.python import execute_python_item
-from .executors.shell import execute_shell_item
-from .executors.sql import connect, detect_runtime_context, execute_query_item
-from .errors import PgDiagError, UnsupportedServerVersion
+from .executors.sql import (
+    execute_query_item,
+    set_local_runtime_guards,
+)
+from .errors import PgDiagError
 from .metric_engine import build_metric_item
 from .os_metrics import (
     build_backend_proc_window_samples,
     capture_backend_proc_state,
     collect_os_metrics,
 )
-from .planner import PlannedItem, build_plan
-from .render.html import render_html
-from .validator import has_errors, validate_content
+from .planner import SourceJob
 
 
 async def collect_snapshots(
@@ -48,50 +48,46 @@ async def collect_snapshots(
     interval_seconds: float = runtime_config.SNAPSHOTS_DEFAULT_INTERVAL_SECONDS,
     json_out: str | Path | None = None,
     html_out: str | Path | None = None,
+    content_validated: bool = False,
 ) -> dict[str, Any]:
     window_error = runtime_config.validate_snapshots_window(duration_seconds, interval_seconds)
     if window_error:
         raise ValueError(window_error)
 
-    issues = validate_content(content)
-    if has_errors(issues):
-        details = "; ".join(f"{issue.location}: {issue.message}" for issue in issues if issue.level == "error")
-        raise ValueError(f"Content validation failed: {details}")
-
-    json_path, html_path = report_output_paths(out_dir, json_out, html_out)
-    conn = await connect(dsn=dsn, **connection_kwargs)
+    run = await start_collection(
+        content=content,
+        out_dir=out_dir,
+        dsn=dsn,
+        connection_kwargs=connection_kwargs,
+        mode=runtime_config.SNAPSHOTS_MODE,
+        collection_mode=collection_mode,
+        json_out=json_out,
+        html_out=html_out,
+        content_validated=content_validated,
+    )
+    conn = run.conn
+    plan = run.plan
+    artifact = run.artifact
+    fail_fast = run.fail_fast
     os_task: asyncio.Task[tuple[dict[str, list[dict[str, Any]]], list[dict[str, str]]]] | None = None
     os_stop_event = threading.Event()
     backend_proc_start: dict[str, Any] | None = None
     backend_proc_samples: list[dict[str, Any]] = []
     backend_proc_errors: list[dict[str, str]] = []
     try:
-        runtime_context = await detect_runtime_context(conn)
-        server_version_num = int(runtime_context["server_version_num"])
-        plan = build_plan(
-            content,
-            server_version_num,
-            mode=runtime_config.SNAPSHOTS_MODE,
-            collection_mode=collection_mode,
-        )
-        if not plan.supported_server_version:
-            raise UnsupportedServerVersion(plan.reason or "Unsupported PostgreSQL server version")
-        fail_fast = bool((content.report.get("runtime_policy") or {}).get("fail_fast", False))
-        started_at = utc_now()
-        artifact = create_artifact(content, plan, runtime_context, started_at)
         artifact["runtime"]["duration_seconds"] = duration_seconds
         artifact["runtime"]["interval_seconds"] = interval_seconds
 
         chart_queries = [
             item
-            for item in plan.items
+            for item in plan.source_jobs
             if item.source_kind == "query"
             and item.status == "planned"
             and item.collection_scope == runtime_config.EVERY_SNAPSHOT_COLLECTION_SCOPE
         ]
         endpoint_queries = [
             item
-            for item in plan.items
+            for item in plan.source_jobs
             if item.source_kind == "query"
             and item.status == "planned"
             and item.collection_scope == runtime_config.WINDOW_ENDPOINTS_COLLECTION_SCOPE
@@ -121,20 +117,7 @@ async def collect_snapshots(
         # Point-in-time tables describe the start of the diagnostic run, not an
         # arbitrary state after the sampling window has already elapsed.
         for planned in once_items:
-            try:
-                item = await _execute_once_item(
-                    content,
-                    conn,
-                    planned,
-                )
-                extract_item_query_texts(item, artifact["query_texts"])
-                artifact["items"][planned.item_id] = item
-                _raise_if_fail_fast(fail_fast, item)
-            except Exception as exc:
-                if isinstance(exc, PgDiagError):
-                    raise
-                artifact["items"][planned.item_id] = item_error_from_exception(planned, exc)
-                _raise_if_fail_fast(fail_fast, artifact["items"][planned.item_id])
+            await execute_and_record_report_item(run, planned)
 
         endpoint_snapshots: list[dict[str, Any]] = []
         endpoint_schemas: dict[str, dict[str, Any]] = {}
@@ -231,15 +214,11 @@ async def collect_snapshots(
             os_diagnostics_by_sampler.setdefault(error["sampler"], []).append(diagnostic)
 
         source_item_by_query: dict[str, str] = {}
-        for item in plan.items:
-            if item.source_kind == "query" and item.source_id:
-                if item.source_metadata.get("internal"):
-                    source_item_by_query[item.source_id] = item.item_id
-                else:
-                    source_item_by_query.setdefault(item.source_id, item.item_id)
+        for item in plan.source_jobs:
+            source_item_by_query[item.source_id] = item.item_id
         source_metadata_by_item = {}
-        for source_plan in plan.items:
-            item = source_latest_items.get(source_plan.item_id) or artifact["items"].get(source_plan.item_id)
+        for source_plan in plan.source_jobs:
+            item = source_latest_items.get(source_plan.item_id)
             metadata = dict(
                 (item or {}).get("source_metadata")
                 or source_plan.source_metadata
@@ -276,16 +255,14 @@ async def collect_snapshots(
                         )
                     },
                 )
-                _raise_if_fail_fast(fail_fast, artifact["items"][planned.item_id])
+                raise_if_fail_fast(fail_fast, artifact["items"][planned.item_id])
             except Exception as exc:
                 if isinstance(exc, PgDiagError):
                     raise
                 artifact["items"][planned.item_id] = item_error_from_exception(planned, exc)
-                _raise_if_fail_fast(fail_fast, artifact["items"][planned.item_id])
+                raise_if_fail_fast(fail_fast, artifact["items"][planned.item_id])
 
         for planned in plan.items:
-            if planned.source_metadata.get("internal"):
-                continue
             if planned.item_id not in artifact["items"]:
                 artifact["items"][planned.item_id] = item_from_plan(
                     planned,
@@ -294,12 +271,10 @@ async def collect_snapshots(
                     result={"kind": "none"},
                 )
 
-        artifact["runtime"]["finished_at"] = utc_now()
-        artifact["runtime"]["snapshot_count"] = len(snapshots)
-        html_text = render_html(artifact)
-        write_text_secure(html_path, html_text)
-        write_json(json_path, artifact)
-        return artifact
+        return finish_collection(
+            run,
+            runtime_updates={"snapshot_count": len(snapshots)},
+        )
     finally:
         os_stop_event.set()
         if os_task is not None and not os_task.done():
@@ -307,16 +282,13 @@ async def collect_snapshots(
                 await asyncio.wait_for(asyncio.shield(os_task), timeout=5.0)
             except (TimeoutError, asyncio.CancelledError):
                 os_task.cancel()
-        try:
-            await conn.close()
-        except Exception:
-            pass
+        await close_connection(conn)
 
 
 async def _collect_db_samples(
     content: ContentPack,
     conn: Any,
-    sampled_queries: list[PlannedItem],
+    sampled_queries: list[SourceJob],
     duration_seconds: float,
     interval_seconds: float,
     *,
@@ -349,30 +321,16 @@ async def _collect_db_samples(
             max_lag_seconds = max(max_lag_seconds, lag_seconds)
             skipped_samples += 1
             continue
-        snapshot = {"timestamp": utc_now(), "items": {}}
-        async with conn.transaction(readonly=True):
-            for planned in sampled_queries:
-                try:
-                    item = await execute_query_item(content, conn, planned)
-                except Exception as exc:
-                    item = item_error_from_exception(planned, exc)
-                if query_texts is not None:
-                    extract_item_query_texts(item, query_texts)
-                result = item.get("result") or {}
-                if (
-                    snapshot_schemas is not None
-                    and result.get("kind") == "table"
-                    and result.get("columns")
-                ):
-                    snapshot_schemas.setdefault(
-                        planned.item_id,
-                        {"columns": result["columns"]},
-                    )
-                latest_items[planned.item_id] = item
-                snapshot["items"][planned.item_id] = compact_snapshot_item(item)
-                if item.get("collection_status") == "error":
-                    sample_error_counts[planned.item_id] += 1
-                _raise_if_fail_fast(fail_fast, item)
+        snapshot, items, error_counts = await _execute_query_batch(
+            content,
+            conn,
+            sampled_queries,
+            fail_fast=fail_fast,
+            query_texts=query_texts,
+            snapshot_schemas=snapshot_schemas,
+        )
+        latest_items.update(items)
+        sample_error_counts.update(error_counts)
         snapshots.append(snapshot)
     diagnostics = []
     if lagged_samples or skipped_samples:
@@ -403,7 +361,7 @@ async def _collect_db_samples(
 async def _collect_window_endpoint(
     content: ContentPack,
     conn: Any,
-    endpoint_queries: list[PlannedItem],
+    endpoint_queries: list[SourceJob],
     *,
     phase: str,
     fail_fast: bool = False,
@@ -436,7 +394,7 @@ async def _collect_window_endpoint(
 async def _execute_query_batch(
     content: ContentPack,
     conn: Any,
-    queries: list[PlannedItem],
+    queries: list[SourceJob],
     *,
     fail_fast: bool = False,
     query_texts: dict[str, str] | None = None,
@@ -446,9 +404,15 @@ async def _execute_query_batch(
     items: dict[str, dict[str, Any]] = {}
     error_counts: Counter[str] = Counter()
     async with conn.transaction(readonly=True):
+        await set_local_runtime_guards(content, conn)
         for planned in queries:
             try:
-                item = await execute_query_item(content, conn, planned)
+                item = await execute_query_item(
+                    content,
+                    conn,
+                    planned,
+                    runtime_guards_set=True,
+                )
             except Exception as exc:
                 item = item_error_from_exception(planned, exc)
             if query_texts is not None:
@@ -467,47 +431,5 @@ async def _execute_query_batch(
             snapshot["items"][planned.item_id] = compact_snapshot_item(item)
             if item.get("collection_status") == "error":
                 error_counts[planned.item_id] += 1
-            _raise_if_fail_fast(fail_fast, item)
+            raise_if_fail_fast(fail_fast, item)
     return snapshot, items, error_counts
-
-
-async def _execute_once_item(
-    content: ContentPack,
-    conn: Any,
-    planned: PlannedItem,
-) -> dict[str, Any]:
-    if planned.status == "skipped":
-        message = planned.source_metadata.get("remote_message") or planned.reason or "Collection skipped"
-        if planned.source_kind == "script":
-            source_text = (
-                read_source_text(content.path / "scripts" / planned.script_file)
-                if planned.script_file else None
-            )
-            return skipped_shell_item(planned, message, source_text=source_text)
-        if planned.source_kind == "python":
-            source_text = (
-                read_source_text(content.path / "python" / planned.python_file)
-                if planned.python_file else None
-            )
-            return skipped_python_item(planned, message, source_text=source_text)
-        return item_from_plan(
-            planned,
-            collection_status="skipped",
-            reason=planned.reason,
-            result={"kind": "none"},
-        )
-    if planned.source_kind == "query":
-        return await execute_query_item(content, conn, planned)
-    if planned.source_kind == "script":
-        return execute_shell_item(content, planned)
-    if planned.source_kind == "python":
-        return await execute_python_item(content, conn, planned)
-    return item_from_plan(planned, collection_status="skipped", result={"kind": "none"})
-
-
-def _raise_if_fail_fast(enabled: bool, item: dict[str, Any]) -> None:
-    if enabled and item.get("collection_status") == "error":
-        raise PgDiagError(
-            f"fail_fast stopped collection at {item.get('item_id') or '<sample item>'}: "
-            f"{item.get('reason') or 'collection error'}"
-        )

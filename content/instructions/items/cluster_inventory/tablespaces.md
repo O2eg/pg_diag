@@ -17,6 +17,10 @@ This instruction belongs to report item `cluster_inventory.tablespaces`. The ite
 - Storage migration incomplete.
 - Old tablespace left after decommission.
 
+## Automatic evaluation
+- This item is informational because size and placement policy are deployment-specific.
+- `pg_tablespace_size` reads exact size for each tablespace and may require privileges; tablespace counts are normally small.
+
 ## Checklist
 - Map tablespace paths to mounted filesystems.
 - Confirm backups cover all tablespace locations.

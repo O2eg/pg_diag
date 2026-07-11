@@ -66,7 +66,8 @@ select
     grantee_name,
     grantee_can_login,
     privilege_type,
-    'high' as risk_level,
+    'medium' as risk_level,
     'Non-owner role can re-grant privileges WITH GRANT OPTION' as risk_reason
 from grants
 order by schema_name, object_kind, object_name, grantee_name, privilege_type
+limit 1000

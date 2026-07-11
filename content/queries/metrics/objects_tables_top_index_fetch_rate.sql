@@ -1,6 +1,7 @@
 select
   statement_timestamp() as snapshot_time,
   current_database() as datname,
+  st.relid,
   st.schemaname,
   st.relname,
   st.idx_tup_fetch::int8 as idx_tup_fetch

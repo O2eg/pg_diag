@@ -30,11 +30,12 @@ select
     schema_name,
     object_name,
     acl_text,
-    'medium' as risk_level,
-    'Extension-owned object has an explicit ACL entry; verify that extension upgrades still preserve the intended privileges' as risk_reason
+    'unknown' as risk_level,
+    'Extension-owned object has an explicit ACL entry; compare it with the extension and privilege baselines' as risk_reason
 from (
     select * from extension_relations
     union all
     select * from extension_functions
 ) objects
 order by extension_name, schema_name, object_kind, object_name
+limit 1000

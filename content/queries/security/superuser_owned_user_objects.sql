@@ -53,8 +53,8 @@ select
     object_name,
     owner_name,
     owner_is_superuser,
-    'high' as risk_level,
-    'User object is owned by a PostgreSQL superuser' as risk_reason
+    'medium' as risk_level,
+    'User object is owned by a PostgreSQL superuser; review whether a dedicated no-login owner role is required' as risk_reason
 from (
     select * from relation_objects
     union all
@@ -62,3 +62,4 @@ from (
 ) objects
 where owner_is_superuser
 order by schema_name, object_kind, object_name
+limit 1000

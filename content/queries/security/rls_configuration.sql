@@ -42,14 +42,14 @@ select
   coalesce(ps.policies, '') as policies,
   case
     when coalesce(ps.policy_count, 0) > 0 and not t.rls_enabled then 'high'
-    when t.rls_enabled and coalesce(ps.policy_count, 0) = 0 then 'high'
-    when t.rls_enabled and not t.rls_forced_for_owner then 'medium'
+    when t.rls_enabled and coalesce(ps.policy_count, 0) = 0 then 'ok'
+    when t.rls_enabled and not t.rls_forced_for_owner then 'unknown'
     else 'ok'
   end as risk_level,
   case
     when coalesce(ps.policy_count, 0) > 0 and not t.rls_enabled then 'RLS policies exist but row level security is disabled'
-    when t.rls_enabled and coalesce(ps.policy_count, 0) = 0 then 'RLS is enabled without policies'
-    when t.rls_enabled and not t.rls_forced_for_owner then 'RLS is not forced for table owner'
+    when t.rls_enabled and coalesce(ps.policy_count, 0) = 0 then 'RLS is enabled without policies, so the default-deny policy applies to non-bypass roles'
+    when t.rls_enabled and not t.rls_forced_for_owner then 'RLS is not forced for the table owner; compare this expected PostgreSQL behavior with the security baseline'
     else 'RLS configuration is informational'
   end as risk_reason
 from user_tables t
@@ -61,3 +61,4 @@ order by
   risk_level desc,
   t.schema_name asc,
   t.table_name asc
+limit 1000

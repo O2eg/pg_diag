@@ -17,6 +17,10 @@ This instruction belongs to report item `snapshot_charts_os.os_network_packets`.
 - Monitoring bursts.
 - Network retries.
 
+## Automatic evaluation
+- Receive and transmit packet rates are stacked per interface and use the same packets/second unit.
+- Loopback is excluded and counter rollback becomes missing data rather than zero.
+
 ## Checklist
 - Compare with connection pressure.
 - Check pooler behavior.

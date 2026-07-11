@@ -17,6 +17,10 @@ This instruction belongs to report item `snapshot_charts_os.os_disk_latency`. Th
 - Checkpoint or WAL sync pressure.
 - Shared storage contention.
 
+## Automatic evaluation
+- `await` is the combined average and read/write await are separate line series; they are not added.
+- No fixed severity is assigned because latency targets depend on device and workload.
+
 ## Checklist
 - Map device to WAL/data/archive paths.
 - Compare with checkpointer, WAL, and pg_stat_io.

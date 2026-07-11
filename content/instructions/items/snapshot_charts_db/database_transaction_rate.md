@@ -16,6 +16,10 @@ This instruction belongs to report item `snapshot_charts_db.database_transaction
 - Application retry/errors.
 - Lock waits or I/O bottleneck reducing throughput.
 
+## Automatic evaluation
+- Commit rate subtracts exactly one known pg_diag sample-transaction commit per interval; rollback rate is unadjusted.
+- Counter decreases produce missing points rather than zero; no universal throughput severity is assigned.
+
 ## Checklist
 - Compare with database_workload_delta.
 - Check application error logs for rollback spikes.

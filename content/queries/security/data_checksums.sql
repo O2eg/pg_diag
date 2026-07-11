@@ -14,6 +14,7 @@ select
   'data_checksums' as check_name,
   coalesce(cs.setting, '<missing>') as current_value,
   'on' as expected_value,
+  null::timestamptz as last_failure,
   'high' as risk_level,
   'data page checksums are disabled for this cluster' as risk_reason
 from checksum_setting cs
@@ -25,6 +26,7 @@ select
   'checksum_failures' as check_name,
   cf.checksum_failures_total::text as current_value,
   '0' as expected_value,
+  cf.checksum_last_failure as last_failure,
   'high' as risk_level,
   'checksum failures have been reported in pg_stat_database' as risk_reason
 from checksum_failures cf

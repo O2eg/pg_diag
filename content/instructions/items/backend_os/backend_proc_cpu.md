@@ -18,6 +18,11 @@ This instruction belongs to report item `backend_os.backend_proc_cpu`. The item 
 - Autovacuum or maintenance job.
 - Collector permission limits.
 
+## Automatic evaluation
+- This item is informational; expected CPU depends on core count, parallelism, and workload.
+- PID reuse is rejected by matching the Linux process start time at both endpoints.
+- A single process can exceed 100% on reporting conventions only if the underlying counter represents more than one execution context; PostgreSQL server processes normally represent one process.
+
 ## Checklist
 - Use the PID and command to correlate with Backend Activity; this item does not contain a query ID.
 - Group leader and parallel worker PIDs together.

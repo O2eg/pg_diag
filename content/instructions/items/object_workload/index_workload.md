@@ -18,6 +18,11 @@ This instruction belongs to report item `object_workload.index_workload`. The it
 - Bloated or oversized index.
 - Plan change.
 
+## Automatic evaluation
+- This item is informational; scan counts cannot prove that an index is useful or safe to remove.
+- Counters are cumulative from `stats_reset`, and the bounded result contains the top 100 indexes by scan count.
+- Exact index size is calculated only after the candidate limit.
+
 ## Checklist
 - Use with index health findings.
 - Review plans for indexes with high reads per useful fetch.

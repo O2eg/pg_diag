@@ -23,6 +23,10 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_tuple_acc
 - Missing predicate.
 - Hot OLTP table.
 
+## Automatic evaluation
+- This chart is informational and ranks interval deltas for stable relation OIDs present in both bounded samples.
+- Sequential reads plus index fetches are logical tuple counters, not physical I/O.
+
 ## Checklist
 - Inspect top table queries.
 - Compare with table_scan_delta.

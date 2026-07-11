@@ -246,6 +246,9 @@ queries:
       default_sort:
         column: risk_level
         direction: desc
+    evaluation:
+      summary_title: Data checksum protection requires immediate review
+      recommendation: Investigate reported failures immediately; plan checksum enablement using the procedure supported by the installed PostgreSQL version.
     collection:
       default: once
       supports: [once]
@@ -399,6 +402,9 @@ queries:
       default_sort:
         column: risk_level
         direction: desc
+    evaluation:
+      summary_title: Replication roles have additional administrative privileges
+      recommendation: Validate role membership and operational requirements before separating privileges or changing login access.
     collection:
       default: once
       supports: [once]
@@ -416,6 +422,9 @@ queries:
       default_sort:
         column: risk_level
         direction: desc
+    evaluation:
+      summary_title: Replication command logging requires a policy review
+      recommendation: Confirm audit requirements and log retention before enabling the setting and validating the resulting event stream.
     collection:
       default: once
       supports: [once]

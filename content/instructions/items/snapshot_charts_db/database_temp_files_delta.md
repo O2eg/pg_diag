@@ -16,6 +16,10 @@ This instruction belongs to report item `snapshot_charts_db.database_temp_files_
 - Large materialization.
 - work_mem too low for query shape.
 
+## Automatic evaluation
+- Columns show newly created temp files per adjacent interval, not a rate.
+- Counter reset produces a missing interval; a file count alone does not reveal spill size.
+
 ## Checklist
 - Compare with Top SQL by Temp I/O.
 - Inspect EXPLAIN ANALYZE spill details.

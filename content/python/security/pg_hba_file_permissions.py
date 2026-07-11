@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from _local_security_common import *
+from _pg_hba_common import _read_hba_paths
 
 
 async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
@@ -9,42 +10,70 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
         return _unavailable_result("PostgreSQL hba_file setting is empty or unavailable", "security_hba_file_empty")
     hba_path = Path(str(hba_file))
     try:
-        file_stat = hba_path.stat()
+        files, directories = _read_hba_paths(hba_path)
     except FileNotFoundError:
         return _unavailable_result(
-            f"PostgreSQL reports hba_file as {hba_path}, but the file is not visible locally",
+            f"An HBA file included from {hba_path} is not visible locally",
             "security_hba_file_missing",
         )
     except PermissionError:
         return _unavailable_result(
-            f"The collector cannot stat PostgreSQL hba_file {hba_path}",
+            f"The collector cannot read an HBA file or include directory from {hba_path}",
             "security_hba_file_permission",
         )
 
-    file_mode = stat.S_IMODE(file_stat.st_mode)
-    parent_mode = None
-    try:
-        parent_mode = stat.S_IMODE(hba_path.parent.stat().st_mode)
-    except OSError:
-        parent_mode = None
-
     rows = []
-    if file_mode not in {0o600, 0o640}:
-        rows.append(
-            {
-                "file_path": str(hba_path),
-                "file_mode": _octal(file_mode),
-                "expected_file_mode": "0600 or 0640",
-                "parent_directory": str(hba_path.parent),
-                "parent_mode": _octal(parent_mode),
-                "risk_level": "high" if file_mode & 0o007 else "medium",
-                "risk_reason": "pg_hba.conf file permissions are broader than expected",
-            }
-        )
+    for path in sorted(files):
+        rows.extend(_permission_rows(path, object_type="file"))
+    for path in sorted(directories):
+        rows.extend(_permission_rows(path, object_type="include_directory"))
+
     return _result(
         rows,
-        ok_title="pg_hba.conf file permissions are restrictive",
-        fail_title="pg_hba.conf file permissions are too broad",
-        recommendation="Set pg_hba.conf permissions to 0600 or 0640 and keep write access limited to PostgreSQL administrators.",
+        ok_title="HBA file and include permissions are restrictive",
+        fail_title="HBA file or include permissions are too broad",
+        recommendation=(
+            "Prevent group/other writes to every HBA file and include directory, disallow other-user file access, "
+            "and keep administration ownership explicit."
+        ),
         diagnostic_code="security_pg_hba_file_permissions",
     )
+
+
+def _permission_rows(path: Path, *, object_type: str) -> list[dict[str, Any]]:
+    try:
+        mode = stat.S_IMODE(path.stat().st_mode)
+    except (FileNotFoundError, PermissionError, OSError) as exc:
+        return [
+            {
+                "file_path": str(path),
+                "object_type": object_type,
+                "file_mode": "",
+                "expected_file_mode": "locally visible and stat-able",
+                "risk_level": "unknown",
+                "risk_reason": f"cannot verify HBA path permissions: {exc}",
+            }
+        ]
+
+    unsafe_write = bool(mode & 0o022)
+    unexpected_access = bool(mode & (0o007 if object_type == "file" else 0o002))
+    group_execute_on_file = object_type == "file" and bool(mode & 0o010)
+    if not (unsafe_write or unexpected_access or group_execute_on_file):
+        return []
+    return [
+        {
+            "file_path": str(path),
+            "object_type": object_type,
+            "file_mode": _octal(mode),
+            "expected_file_mode": (
+                "no group/other write and no other file access; 0600/0640 are typical"
+                if object_type == "file"
+                else "include directory not writable by group/other"
+            ),
+            "risk_level": "high" if unsafe_write else "medium",
+            "risk_reason": (
+                "HBA path is writable outside its owner"
+                if unsafe_write else "HBA file grants unexpected group execute or other access"
+            ),
+        }
+    ]

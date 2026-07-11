@@ -54,8 +54,8 @@ select
     count(*) filter (where object_kind = 'function') as function_privilege_count,
     count(*) filter (where is_grantable) as grant_option_count,
     string_agg(distinct privilege_type, ', ' order by privilege_type) as privilege_types,
-    case when grantee_name = 'PUBLIC' or count(*) filter (where is_grantable) > 0 then 'high' else 'medium' end as risk_level,
-    'Role has explicit object privileges; review the footprint against least privilege' as risk_reason
+    case when grantee_name = 'PUBLIC' or count(*) filter (where is_grantable) > 0 then 'medium' else 'unknown' end as risk_level,
+    'Explicit privilege counts require comparison with the approved role and object baseline' as risk_reason
 from explicit_grants
 group by grantee_name, grantee_can_login
 order by explicit_privilege_count desc, grantee_name

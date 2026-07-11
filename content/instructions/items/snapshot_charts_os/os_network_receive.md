@@ -17,6 +17,10 @@ This instruction belongs to report item `snapshot_charts_os.os_network_receive`.
 - Backup restore.
 - Wrong interface monitored.
 
+## Automatic evaluation
+- Rates are counter deltas over monotonic elapsed time; counter rollback becomes missing data rather than zero.
+- The loopback interface is intentionally excluded, so local TCP traffic may not appear.
+
 ## Checklist
 - Map interface to client/replication network.
 - Compare with replication lag and client waits.

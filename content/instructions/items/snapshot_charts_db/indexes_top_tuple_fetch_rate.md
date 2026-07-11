@@ -22,6 +22,10 @@ This instruction belongs to report item `snapshot_charts_db.indexes_top_tuple_fe
 - Batch process.
 - N+1 pattern.
 
+## Automatic evaluation
+- `idx_tup_fetch` is the per-index heap fetch counter for simple index scans and excludes some bitmap behavior.
+- The chart is informational and matches adjacent bounded samples by stable index OID.
+
 ## Checklist
 - Compare with Top SQL by calls and table fetch charts.
 - Check whether workload should be cached or batched.

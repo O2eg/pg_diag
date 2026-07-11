@@ -26,14 +26,14 @@ select
   is_grantable,
   case
     when grantee = 0 and privilege_type = 'CREATE' then 'high'
-    when grantee = 0 then 'medium'
+    when grantee = 0 then 'unknown'
     when privilege_type = 'CREATE' then 'medium'
     when is_grantable then 'medium'
     else 'ok'
   end as risk_level,
   case
     when grantee = 0 and privilege_type = 'CREATE' then 'PUBLIC can create objects in a non-public schema'
-    when grantee = 0 then 'PUBLIC has privileges on a non-public schema'
+    when grantee = 0 then 'PUBLIC has schema privileges; USAGE alone may be intentional and requires a baseline comparison'
     when privilege_type = 'CREATE' then 'non-owner role can create objects in schema'
     when is_grantable then 'schema privilege can be granted onward'
     else 'informational schema privilege'

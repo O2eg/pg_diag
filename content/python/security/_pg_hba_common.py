@@ -12,8 +12,8 @@ from pg_diag.executors.python import PythonSourceContext, PythonSourceResult, ta
 HOST_TYPES = {"host", "hostssl", "hostnossl", "hostgssenc", "hostnogssenc"}
 CONNECTION_TYPES = {"local", *HOST_TYPES}
 INCLUDE_DIRECTIVES = {"include", "include_if_exists", "include_dir"}
-INSECURE_AUTH_METHODS = {"trust": "high", "password": "high", "ident": "high", "md5": "medium"}
-RISK_RANK = {"ok": 0, "medium": 1, "high": 2}
+INSECURE_AUTH_METHODS = {"trust": "high", "password": "medium", "ident": "medium", "md5": "medium"}
+RISK_RANK = {"ok": 0, "unknown": 1, "medium": 2, "high": 3}
 
 
 @dataclass(frozen=True)
@@ -165,6 +165,45 @@ def _read_hba_entries(path: Path, seen: set[Path] | None = None) -> list[HbaEntr
             continue
         entries.append(HbaEntry(str(real_path), line_number, raw_line.strip(), fields))
     return entries
+
+
+def _read_hba_paths(
+    path: Path,
+    seen: set[Path] | None = None,
+) -> tuple[set[Path], set[Path]]:
+    real_path = path.resolve()
+    if seen is None:
+        seen = set()
+    if real_path in seen:
+        return set(), set()
+    seen.add(real_path)
+
+    files = {real_path}
+    directories: set[Path] = set()
+    for raw_line in real_path.read_text(encoding="utf-8").splitlines():
+        fields = _split_hba_line(raw_line)
+        if len(fields) < 2 or fields[0] not in INCLUDE_DIRECTIVES:
+            continue
+        directive, include_ref = fields[0], fields[1]
+        include_path = _resolve_hba_path(real_path.parent, include_ref)
+        if directive == "include_if_exists" and not include_path.exists():
+            continue
+        if directive == "include_dir":
+            if not include_path.is_dir():
+                continue
+            resolved_dir = include_path.resolve()
+            directories.add(resolved_dir)
+            for child in sorted(resolved_dir.iterdir()):
+                if child.name.startswith(".") or child.suffix != ".conf" or not child.is_file():
+                    continue
+                child_files, child_dirs = _read_hba_paths(child, seen)
+                files.update(child_files)
+                directories.update(child_dirs)
+            continue
+        child_files, child_dirs = _read_hba_paths(include_path, seen)
+        files.update(child_files)
+        directories.update(child_dirs)
+    return files, directories
 
 
 def _read_include_entries(current_file: Path, fields: list[str], seen: set[Path]) -> list[HbaEntry]:

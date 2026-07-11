@@ -7,6 +7,10 @@ This item reports pgAudit preload and audit logging configuration gaps.
 - Whether the extension is created in the connected database.
 - Whether `pgaudit.log` is configured.
 
+## Automatic evaluation
+- Severity is `unknown` when pgAudit is absent or has no log classes because audit requirements are deployment-specific.
+- Preload detection tokenizes the comma-separated library list; extension creation is separate from preload state.
+
 ## Checklist
 - Add `pgaudit` to `shared_preload_libraries` where audit logging is required.
 - Configure `pgaudit.log` according to the audit policy.

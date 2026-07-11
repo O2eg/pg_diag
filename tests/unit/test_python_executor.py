@@ -95,7 +95,7 @@ def test_remote_superuser_access_python_source_detects_hba_rule(content_path: Pa
     hba_file = tmp_path / "pg_hba.conf"
     hba_file.write_text(
         "local all all peer\n"
-        "host all postgres 0.0.0.0/0 scram-sha-256\n",
+        "host all postgres 0.0.0.0 0.0.0.0 scram-sha-256\n",
         encoding="utf-8",
     )
     content = load_content(content_path)
@@ -122,6 +122,8 @@ def test_remote_superuser_access_python_source_detects_hba_rule(content_path: Pa
     assert row[column_names.index("matched_superuser_roles")] == "postgres"
     assert row[column_names.index("database_scope")] == "all"
     assert row[column_names.index("network_scope")] == "external"
+    assert row[column_names.index("address")] == "0.0.0.0/0"
+    assert row[column_names.index("auth_method")] == "scram-sha-256"
     assert row[column_names.index("listen_addresses")] == "*"
     assert row[column_names.index("listen_reachable")] == "yes"
     assert row[column_names.index("auth_risk")] == "password"
@@ -268,7 +270,7 @@ def test_pg_hba_security_python_sources_detect_atomic_findings(
     assert broad["result"]["row_count"] == 1
 
     assert generic["collection_status"] == "ok"
-    assert generic["severity_level"] == "high"
+    assert generic["severity_level"] == "unknown"
     assert generic["result"]["row_count"] == 2
 
     assert tls["collection_status"] == "ok"
@@ -304,19 +306,50 @@ def test_local_security_python_sources_detect_permission_findings(
     )
 
     assert hba_permissions["collection_status"] == "ok"
-    assert hba_permissions["severity_level"] == "high"
+    assert hba_permissions["severity_level"] == "medium"
     assert hba_permissions["result"]["row_count"] == 1
     hba_columns = [column["name"] for column in hba_permissions["result"]["columns"]]
     hba_row = hba_permissions["result"]["rows"][0]
     assert hba_row[hba_columns.index("file_mode")] == "0644"
-    assert hba_row[hba_columns.index("expected_file_mode")] == "0600 or 0640"
+    assert "0600/0640 are typical" in hba_row[hba_columns.index("expected_file_mode")]
 
     assert socket_permissions["collection_status"] == "ok"
-    assert socket_permissions["severity_level"] == "high"
+    assert socket_permissions["severity_level"] == "medium"
     assert socket_permissions["result"]["row_count"] == 1
     socket_columns = [column["name"] for column in socket_permissions["result"]["columns"]]
     socket_row = socket_permissions["result"]["rows"][0]
     assert socket_row[socket_columns.index("configured_permissions")] == "0777"
+
+
+def test_pg_hba_permissions_include_recursively_included_files(
+    content_path: Path,
+    tmp_path: Path,
+) -> None:
+    include_dir = tmp_path / "hba.d"
+    include_dir.mkdir(mode=0o755)
+    included = include_dir / "20_app.conf"
+    included.write_text("host app app 127.0.0.1/32 scram-sha-256\n", encoding="utf-8")
+    included.chmod(0o660)
+    hba_file = tmp_path / "pg_hba.conf"
+    hba_file.write_text("include_dir 'hba.d'\n", encoding="utf-8")
+    hba_file.chmod(0o600)
+
+    content = load_content(content_path)
+    plan = build_plan(content, 180000, collection_mode=LOCAL_COLLECTION_MODE)
+    planned = {
+        item.item_id: item for item in plan.items
+    }["cluster_inventory.pg_hba_file_permissions"]
+
+    item = asyncio.run(execute_python_item(content, FakeConn(hba_file), planned))
+
+    assert item["severity_level"] == "high"
+    columns = [column["name"] for column in item["result"]["columns"]]
+    rows = item["result"]["rows"]
+    assert any(
+        row[columns.index("file_path")] == str(included.resolve())
+        and row[columns.index("file_mode")] == "0660"
+        for row in rows
+    )
 
 
 def test_p2_python_security_sources_detect_local_and_role_findings(

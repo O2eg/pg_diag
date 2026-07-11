@@ -1,4 +1,5 @@
 select
+  p.oid as function_oid,
   n.nspname as schema_name,
   p.proname as function_name,
   pg_catalog.pg_get_function_identity_arguments(p.oid) as function_signature,
@@ -26,7 +27,7 @@ select
         where lower(setting) like 'search_path=%'
       )
       then 'medium'
-    else 'medium'
+    else 'ok'
   end as risk_level,
   concat_ws(
     ', ',
@@ -58,3 +59,4 @@ order by
   n.nspname asc,
   p.proname asc,
   function_signature asc
+limit 1000

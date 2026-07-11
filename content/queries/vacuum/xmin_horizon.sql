@@ -8,7 +8,7 @@ activity as (
   from pg_stat_activity
   where
     pid <> pg_backend_pid()
-    and backend_type = 'client backend'
+    and backend_type <> 'walsender'
     and backend_xmin is not null
 ),
 slots as (

@@ -17,6 +17,11 @@ This instruction belongs to report item `indexes.duplicate_indexes`. The item is
 - Manual CREATE INDEX duplicated existing index.
 - Constraint/index naming confusion.
 
+## Automatic evaluation
+- `medium` is assigned only when access method, uniqueness/exclusion, key count, key/include attributes, opclasses, collations, options, predicate, and expressions match.
+- Constraint and extension dependencies still decide which index, if any, can be removed.
+- Candidate groups are limited before exact size calculation.
+
 ## Checklist
 - Confirm dependencies before drop.
 - Keep one valid index.

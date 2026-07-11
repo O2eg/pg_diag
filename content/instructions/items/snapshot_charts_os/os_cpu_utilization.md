@@ -17,6 +17,10 @@ This instruction belongs to report item `snapshot_charts_os.os_cpu_utilization`.
 - Kernel overhead.
 - Storage waits showing as iowait.
 
+## Automatic evaluation
+- The stacked modes use one CPU-tick denominator and should sum to approximately 100% after rounding.
+- Guest time is excluded from the denominator because Linux already includes it in user/nice counters.
+
 ## Checklist
 - Align peaks with Top SQL and backend_proc_cpu.
 - Separate CPU saturation from I/O wait.

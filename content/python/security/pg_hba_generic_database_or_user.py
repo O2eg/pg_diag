@@ -22,18 +22,16 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
             continue
         row["generic_fields"] = ", ".join(generic_fields)
         row["network_scope"] = _network_scope(str(row["address"]))
-        row["risk_level"] = "high" if (
-            row["connection_type"] in HOST_TYPES
-            and row["network_scope"] not in {"loopback", "samehost", "unknown"}
-            and len(generic_fields) == 2
-        ) else "medium"
-        row["risk_reason"] = "pg_hba.conf rule uses broad database/user matching"
+        row["risk_level"] = "unknown"
+        row["risk_reason"] = (
+            "generic database/user matching requires review together with rule order, address, and authentication"
+        )
         rows.append(row)
     return _result(
         rows,
         hba_path,
         ok_title="No generic pg_hba.conf database/user fields found",
-        fail_title="Generic pg_hba.conf database/user fields found",
+        fail_title="Generic pg_hba.conf database/user fields require baseline review",
         recommendation=(
             "Prefer explicit database and user fields in pg_hba.conf rules. Use all/all only when the access policy "
             "is intentionally broad and compensated by a narrow address range and strong authentication."

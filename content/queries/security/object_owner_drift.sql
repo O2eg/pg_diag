@@ -47,8 +47,8 @@ select
     count(distinct owner_name) as owner_count,
     string_agg(distinct owner_name, ', ' order by owner_name) as owners,
     count(*) filter (where owner_is_superuser) as superuser_owned_count,
-    case when bool_or(owner_is_superuser) then 'high' else 'medium' end as risk_level,
-    'Objects of the same kind in one schema have mixed owners' as risk_reason
+    'unknown' as risk_level,
+    'Objects of the same kind in one schema have mixed owners; compare with the intended ownership baseline' as risk_reason
 from objects
 group by schema_name, object_kind
 having count(distinct owner_name) > 1

@@ -4,7 +4,7 @@ This instruction belongs to report item `snapshot_charts_db.io_read_write_rate`.
 
 ## What this item shows
 - PostgreSQL read and write byte rates by backend type from pg_stat_io.
-- Database-side I/O rate over the capture window.
+- Cluster-wide PostgreSQL I/O rate over the capture window.
 
 ## What to watch
 - Client backend reads or writes dominating.
@@ -17,6 +17,11 @@ This instruction belongs to report item `snapshot_charts_db.io_read_write_rate`.
 - Vacuum.
 - Checkpoint activity.
 - Temp spill.
+
+## Automatic evaluation
+- Backend-type rows are stacked without a separate total rollup, preventing double counting.
+- PostgreSQL 16-17 derives bytes from operation counts and `op_bytes`; PostgreSQL 18+ uses byte counters directly.
+- Counter resets become missing points; the chart is unavailable before PostgreSQL 16.
 
 ## Checklist
 - Group by backend type before tuning.

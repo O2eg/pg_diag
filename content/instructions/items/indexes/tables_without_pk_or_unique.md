@@ -17,6 +17,11 @@ This instruction belongs to report item `indexes.tables_without_pk_or_unique`. T
 - Staging table promoted to production.
 - Legacy table never normalized.
 
+## Automatic evaluation
+- `medium`: a non-partition child with at least 100,000 estimated rows lacks a valid non-partial primary or unique index.
+- `unknown`: smaller or empty tables require lifecycle context.
+- A nullable unique key may still be unsuitable as logical-replication identity; validate the actual constraint semantics.
+
 ## Checklist
 - Confirm whether table is transient/staging.
 - Add a primary key or appropriate unique constraint for durable tables.

@@ -5,7 +5,7 @@ from typing import Any
 from pg_diag.executors.python import PythonSourceContext, PythonSourceResult, table_result
 
 
-RISK_RANK = {"ok": 0, "medium": 1, "high": 2}
+RISK_RANK = {"ok": 0, "unknown": 1, "medium": 2, "high": 3}
 
 
 async def collect(ctx: PythonSourceContext) -> PythonSourceResult:

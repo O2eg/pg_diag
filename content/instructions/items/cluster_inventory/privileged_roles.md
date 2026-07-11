@@ -17,6 +17,10 @@ This instruction belongs to report item `cluster_inventory.privileged_roles`. Th
 - Migration or support role left behind.
 - Privilege granted broadly for troubleshooting.
 
+## Automatic evaluation
+- This item is informational because cluster-level attributes require an organization-specific role baseline.
+- Login exposure and predefined-role inheritance are evaluated in dedicated items.
+
 ## Checklist
 - Validate each privileged role owner and purpose.
 - Remove or restrict unused privileged roles.

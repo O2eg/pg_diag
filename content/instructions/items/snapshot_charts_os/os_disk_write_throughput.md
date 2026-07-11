@@ -17,6 +17,10 @@ This instruction belongs to report item `snapshot_charts_os.os_disk_write_throug
 - Bulk DML.
 - Vacuum or index build.
 
+## Automatic evaluation
+- Values come from interval iostat reports and are informational; throughput alone does not indicate saturation.
+- The first since-boot iostat report is discarded.
+
 ## Checklist
 - Map device to WAL/data/archive path.
 - Compare with WAL growth and checkpointer items.

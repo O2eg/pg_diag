@@ -38,8 +38,8 @@ select
     roles.rolcanlogin as owner_can_login,
     roles.rolsuper as owner_is_superuser,
     owners.object_count,
-    'medium' as risk_level,
-    'Object owner is a no-login role; verify that it is an intentional ownership role and still managed' as risk_reason
+    'unknown' as risk_level,
+    'No-login ownership is a recommended privilege-separation pattern; verify the role against the ownership baseline' as risk_reason
 from owners
 join pg_roles roles on roles.oid = owners.owner_oid
 where not roles.rolcanlogin

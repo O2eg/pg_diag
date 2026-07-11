@@ -35,6 +35,9 @@ queries:
       default_sort:
         column: buffers_alloc
         direction: desc
+    evaluation:
+      summary_title: Backend fsync activity requires review
+      recommendation: Correlate backend fsyncs with checkpointer behavior and storage latency before changing buffer or checkpoint settings.
     collection:
       default: once
       supports: [once, every_snapshot]
@@ -63,9 +66,13 @@ queries:
     requirements:
       unsupported_versions_reason: On PostgreSQL versions before 17 checkpointer counters are covered by pg_stat_bgwriter.
     variants:
-      - id: checkpoints_checkpointer_pg17_plus
+      - id: checkpoints_checkpointer_pg17
         min_pg_version: 170000
+        max_pg_version: 179999
         sql_file: checkpoints/checkpointer_pg17.sql
+      - id: checkpoints_checkpointer_pg18_plus
+        min_pg_version: 180000
+        sql_file: checkpoints/checkpointer_pg18.sql
 
   io.pg_stat_io:
     title: PostgreSQL I/O Statistics
@@ -77,6 +84,9 @@ queries:
       default_sort:
         column: read_bytes_mb
         direction: desc
+    evaluation:
+      summary_title: Client backend fsync activity requires review
+      recommendation: Correlate the affected I/O context with checkpointer statistics and storage latency before tuning.
     collection:
       default: once
       supports: [once, every_snapshot]
@@ -90,6 +100,8 @@ queries:
         semantic_columns: &pg_stat_io_semantics
           dimensions:
             backend_type: backend_type
+            object: object
+            context: context
           counters:
             read_mb: read_bytes_mb
             write_mb: write_bytes_mb

@@ -18,6 +18,11 @@ This instruction belongs to report item `indexes.large_indexes`. The item is bac
 - Low-selectivity multi-column index.
 - Retention growth.
 
+## Automatic evaluation
+- This ratio is informational: a legitimate narrow table can have an index larger than its heap.
+- Catalog page estimates select at most 100 candidates before exact size functions run.
+- Usage counters are cumulative from the reported `stats_reset`; size ratio alone is not bloat evidence.
+
 ## Checklist
 - Check usage before dropping or rebuilding.
 - Consider REINDEX only when bloat is confirmed.

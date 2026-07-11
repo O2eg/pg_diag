@@ -7,6 +7,11 @@ This item reports installed extensions and untrusted procedural languages with e
 - Extension schema and version where available.
 - Risk reason for each installed object.
 
+## Automatic evaluation
+- `medium`: server-file/admin helpers or untrusted languages expand privileged-code impact.
+- `unknown`: dblink/FDW installation requires grants, mappings, and stored-credential review.
+- Installation alone is not proof that untrusted users can execute the capability.
+
 ## Checklist
 - Keep high-impact extensions installed only where there is a clear operational need.
 - Restrict EXECUTE and CREATE privileges around risky extension functions.

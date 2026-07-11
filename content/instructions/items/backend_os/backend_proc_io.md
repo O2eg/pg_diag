@@ -18,6 +18,11 @@ This instruction belongs to report item `backend_os.backend_proc_io`. The item i
 - Autovacuum.
 - Collector lacks permission to read /proc/<pid>/io.
 
+## Automatic evaluation
+- This item is informational; expected throughput depends on workload and storage.
+- Rates remain null unless `/proc/<pid>/io` was readable at both endpoints; `io_access=false` is not converted into zero activity.
+- PID reuse is rejected by matching process start time.
+
 ## Checklist
 - Check io_access before trusting zeros.
 - Use the PID and command to correlate with Backend Activity and SQL text.

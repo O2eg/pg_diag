@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from hashlib import sha256
 import importlib.util
 import inspect
+import multiprocessing
+import os
+import pickle
+import signal
 import sys
 import threading
 import time
@@ -14,13 +19,13 @@ from typing import Any
 
 from pg_diag.artifact import item_error_from_exception, item_from_plan
 from pg_diag.content_loader import ContentPack
+from pg_diag.contracts import COLLECTION_STATUSES, RESULT_KINDS, SEVERITY_LEVELS
 from pg_diag.executors.common import elapsed_ms, read_source_text, table_result_from_records
 from pg_diag.planner import PlannedItem
 
 
-COLLECTION_STATUSES = {"ok", "empty", "error", "unsupported", "skipped"}
-RESULT_KINDS = {"none", "plain_text", "table", "chart"}
-SEVERITY_LEVELS = {"high", "medium", "ok", "unknown"}
+_MODULE_LOAD_LOCK = threading.RLock()
+_MISSING_MODULE = object()
 
 
 @dataclass(frozen=True)
@@ -117,7 +122,7 @@ async def _load_and_call_source(
     function_name: str,
     context: PythonSourceContext,
 ) -> Any:
-    module = await _run_sync_daemon(_load_module, source_id, source_path)
+    module = _load_module(source_id, source_path)
     function = getattr(module, function_name)
     return await _call_source(function, context)
 
@@ -125,79 +130,139 @@ async def _load_and_call_source(
 async def _call_source(function: Any, context: PythonSourceContext) -> Any:
     if inspect.iscoroutinefunction(function):
         return await function(context)
-    value = await _run_sync_daemon(function, context)
-    if inspect.isawaitable(value):
-        return await value
-    return value
+    return await _run_sync_process(function, context)
 
 
-async def _run_sync_daemon(function: Any, *args: Any) -> Any:
-    """Run blocking trusted-source code without pinning the asyncio event loop."""
-    loop = asyncio.get_running_loop()
-    future: asyncio.Future[Any] = loop.create_future()
-
-    def settle_result(value: Any) -> None:
-        if not future.done():
-            future.set_result(value)
-
-    def settle_exception(exc: BaseException) -> None:
-        if future.done():
-            return
-        if isinstance(exc, Exception):
-            future.set_exception(exc)
-        else:
-            future.set_exception(RuntimeError(f"Python source terminated: {exc}"))
-
-    def runner() -> None:
+def _sync_process_entry(send_conn: Any, function: Any, args: tuple[Any, ...]) -> None:
+    try:
+        os.setsid()
+    except OSError:
+        pass
+    try:
+        value = function(*args)
+        if inspect.isawaitable(value):
+            value = asyncio.run(value)
+        payload = ("ok", value)
+    except BaseException as exc:  # pragma: no cover - defensive plugin boundary
+        payload = ("error", type(exc).__name__, str(exc))
+    try:
+        send_conn.send_bytes(pickle.dumps(payload))
+    except BaseException as exc:  # pragma: no cover - unpicklable plugin result
+        fallback = ("error", type(exc).__name__, f"Cannot return Python source result: {exc}")
         try:
-            value = function(*args)
-        except BaseException as exc:  # pragma: no cover - defensive plugin boundary
-            try:
-                loop.call_soon_threadsafe(settle_exception, exc)
-            except RuntimeError:
-                pass
-        else:
-            try:
-                loop.call_soon_threadsafe(settle_result, value)
-            except RuntimeError:
-                pass
+            send_conn.send_bytes(pickle.dumps(fallback))
+        except BaseException:
+            pass
+    finally:
+        send_conn.close()
 
-    threading.Thread(target=runner, name="pg_diag_python_source", daemon=True).start()
-    return await future
+
+async def _run_sync_process(function: Any, *args: Any) -> Any:
+    """Run blocking trusted-source code in a process that can be terminated."""
+    try:
+        context = multiprocessing.get_context("fork")
+    except ValueError as exc:  # pragma: no cover - pg_diag local mode targets Linux
+        raise RuntimeError("Killable Python source execution requires multiprocessing fork") from exc
+
+    recv_conn, send_conn = context.Pipe(duplex=False)
+    process = context.Process(
+        target=_sync_process_entry,
+        args=(send_conn, function, args),
+        name="pg_diag_python_source",
+    )
+    process.start()
+    send_conn.close()
+    loop = asyncio.get_running_loop()
+    readable = loop.create_future()
+
+    def mark_readable() -> None:
+        if not readable.done():
+            readable.set_result(None)
+
+    loop.add_reader(recv_conn.fileno(), mark_readable)
+    try:
+        await readable
+        raw_payload = recv_conn.recv_bytes()
+    except BaseException:
+        _terminate_process_group(process)
+        raise
+    finally:
+        loop.remove_reader(recv_conn.fileno())
+        recv_conn.close()
+        process.join(0.2)
+        if process.is_alive():
+            _terminate_process_group(process, force=True)
+            process.join(0.2)
+
+    status, *payload = pickle.loads(raw_payload)
+    if status == "ok":
+        return payload[0]
+    error_type, message = payload
+    raise RuntimeError(f"Python source process failed ({error_type}): {message}")
+
+
+def _terminate_process_group(process: Any, *, force: bool = False) -> None:
+    if not process.is_alive():
+        return
+    terminate_signal = signal.SIGKILL if force else signal.SIGTERM
+    try:
+        os.killpg(process.pid, terminate_signal)
+    except OSError:
+        if force:
+            process.kill()
+        else:
+            process.terminate()
 
 
 async def run_blocking(function: Any, *args: Any, **kwargs: Any) -> Any:
-    """Run bounded blocking work for an async trusted content source."""
+    """Run blocking work outside the collector process so cancellation can stop it."""
     if kwargs:
         from functools import partial
 
         function = partial(function, **kwargs)
-    return await _run_sync_daemon(function, *args)
+    return await _run_sync_process(function, *args)
 
 
 def _load_module(source_id: str, source_path: Path) -> Any:
-    module_name = "pg_diag_content_python_" + "".join(
+    path_digest = sha256(str(source_path.resolve()).encode("utf-8")).hexdigest()[:16]
+    module_name = "pg_diag_content_python_" + path_digest + "_" + "".join(
         char if char.isalnum() else "_" for char in source_id
     )
-    spec = importlib.util.spec_from_file_location(module_name, source_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Cannot load Python source file: {source_path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
     source_dir = str(source_path.parent)
-    inserted_path = False
-    if source_dir not in sys.path:
+    local_module_names = {
+        path.stem
+        for path in source_path.parent.glob("*.py")
+        if path.name != "__init__.py"
+    }
+
+    with _MODULE_LOAD_LOCK:
+        previous_modules = {
+            name: sys.modules.get(name, _MISSING_MODULE)
+            for name in local_module_names
+        }
+        for name in local_module_names:
+            sys.modules.pop(name, None)
         sys.path.insert(0, source_dir)
-        inserted_path = True
-    try:
-        spec.loader.exec_module(module)
-    finally:
-        if inserted_path:
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, source_path)
+            if spec is None or spec.loader is None:
+                raise RuntimeError(f"Cannot load Python source file: {source_path}")
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+        except BaseException:
+            sys.modules.pop(module_name, None)
+            raise
+        finally:
             try:
                 sys.path.remove(source_dir)
             except ValueError:
                 pass
-    return module
+            for name, previous in previous_modules.items():
+                sys.modules.pop(name, None)
+                if previous is not _MISSING_MODULE:
+                    sys.modules[name] = previous
+        return module
 
 
 def _normalize_result(value: Any) -> PythonSourceResult:

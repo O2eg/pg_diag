@@ -1,5 +1,6 @@
 with candidate_indexes as (
   select
+    si.relid,
     si.indexrelid,
     si.schemaname,
     si.relname,
@@ -14,15 +15,18 @@ with candidate_indexes as (
   where n.nspname not in ('pg_catalog', 'information_schema')
     and n.nspname !~ '^pg_toast'
     and si.idx_scan <> 0
-  order by c.relpages desc nulls last, si.idx_scan desc nulls last, si.schemaname, si.relname, si.indexrelname
+  order by si.idx_scan desc nulls last, si.schemaname, si.relname, si.indexrelname, si.indexrelid
   limit 100
 )
 select
   statement_timestamp() as snapshot_time,
   current_database() as datname,
+  si.relid,
+  si.indexrelid,
   si.schemaname,
   si.relname,
   si.indexrelname,
+  db.stats_reset,
   si.idx_scan::int8 as idx_scan,
   si.idx_tup_read::int8 as idx_tup_read,
   si.idx_tup_fetch::int8 as idx_tup_fetch,
@@ -32,4 +36,5 @@ select
   si.relpages::int8 as index_relpages
 from candidate_indexes si
 left join pg_statio_all_indexes io on io.indexrelid = si.indexrelid
-order by si.relpages desc nulls last, si.idx_scan desc nulls last, si.schemaname, si.relname, si.indexrelname
+left join pg_stat_database db on db.datname = current_database()
+order by si.idx_scan desc nulls last, si.schemaname, si.relname, si.indexrelname, si.indexrelid

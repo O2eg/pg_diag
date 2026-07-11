@@ -16,6 +16,10 @@ This instruction belongs to report item `snapshot_charts_db.database_deadlocks`.
 - Concurrent updates of same rows.
 - FK checks or trigger behavior.
 
+## Automatic evaluation
+- Each nonzero column is a deadlock counter increase in the adjacent interval and warrants application/log review.
+- Counter reset produces a missing interval rather than zero.
+
 ## Checklist
 - Review PostgreSQL logs for deadlock details.
 - Fix transaction ordering in application code.

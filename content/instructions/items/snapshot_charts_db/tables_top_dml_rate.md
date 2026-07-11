@@ -23,6 +23,10 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_dml_rate`
 - Application release change.
 - Hot queue table.
 
+## Automatic evaluation
+- Insert/update/delete interval deltas share rows/second and are stacked per stable relation OID.
+- Changing bounded membership and counter decreases become missing evidence, not zero.
+
 ## Checklist
 - Compare with table_dml_delta and WAL growth.
 - Check autovacuum pressure on top tables.

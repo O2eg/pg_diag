@@ -3,22 +3,22 @@
 This instruction belongs to report item `maintenance_progress.cluster_progress`. The item is backed by `progress.cluster` (SQL query).
 
 ## What this item shows
-- Live progress for CLUSTER and VACUUM FULL operations.
-- Rewrite or scan phase and relation progress.
-- Whether a table rewrite operation is currently active.
+- A one-time, current-database snapshot of CLUSTER and VACUUM FULL operations visible when the report starts.
+- Command, table/index OIDs and names, state/wait, rewrite phase, scanned blocks/bytes, tuples, rebuilt indexes, and full command age.
+- The index is null/zero when VACUUM FULL or a non-index scan does not use a clustering index.
 
 ## What to watch
-- Long-running rewrite.
-- Exclusive lock impact on application table.
-- Disk usage growing during rewrite.
+- Lock impact, repeated phase/counter stagnation, high rewrite I/O, and temporary disk-space consumption.
+- Scan percentage only during the sequential-scan phase; other phases use tuple or index-rebuild counters and do not share one overall percentage.
+
+## Automatic evaluation
+- No automatic severity: CLUSTER/VACUUM FULL is intentionally invasive, but whether its timing and lock impact are acceptable is deployment-specific.
 
 ## Common fault causes
-- Manual CLUSTER/VACUUM FULL on large relation.
-- Slow storage.
-- Insufficient free disk space.
-- Maintenance started during traffic.
+- Large relation, insufficient free space, slow storage, index rebuild cost, lock contention, or maintenance scheduled during traffic.
 
 ## Checklist
-- Verify lock impact before allowing it to continue.
-- Check free disk space.
-- Coordinate with application owners for blocking rewrites.
+- Verify command owner, expected maintenance window, blocking sessions, and free disk space before intervention.
+- Compare later captures by PID/relation and phase; do not extrapolate completion time from one phase percentage.
+- Remember VACUUM FULL is reported here, not in Vacuum Progress.
+- Empty means no visible current-database CLUSTER or VACUUM FULL was active at capture time.

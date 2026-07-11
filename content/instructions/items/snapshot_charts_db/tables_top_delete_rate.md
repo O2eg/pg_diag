@@ -23,6 +23,10 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_delete_ra
 - Application cleanup burst.
 - Manual maintenance.
 
+## Automatic evaluation
+- This chart ranks delete counter deltas for stable relation OIDs present in both adjacent bounded samples.
+- Delete rate becomes actionable only with retention, dead-tuple, WAL, or vacuum context.
+
 ## Checklist
 - Check FK support indexes for cascades.
 - Compare with dead tuples/autovacuum queue.

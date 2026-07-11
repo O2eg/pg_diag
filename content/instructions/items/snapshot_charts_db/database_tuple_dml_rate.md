@@ -17,6 +17,10 @@ This instruction belongs to report item `snapshot_charts_db.database_tuple_dml_r
 - Application release change.
 - Index set preventing HOT updates.
 
+## Automatic evaluation
+- Insert, update, and delete counter deltas are stacked for the connected database.
+- Counter decreases after reset become missing points; no workload-independent rate threshold is assigned.
+
 ## Checklist
 - Compare with table_dml_delta.
 - Check WAL growth for write amplification.

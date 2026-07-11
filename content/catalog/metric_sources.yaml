@@ -27,11 +27,11 @@ queries:
     title: WAL Growth Rate Chart Source
     group: Metric Sources
     main_view: pg_stat_wal
-    description: Minimal cumulative WAL byte counter used by the WAL growth-rate chart.
+    description: Minimal cluster-wide cumulative WAL byte counter used by the WAL growth-rate chart.
     source: pg_diag
     display:
       default_sort:
-        column: datname
+        column: scope
         direction: asc
     collection:
       default: every_snapshot
@@ -42,7 +42,7 @@ queries:
         sql_file: metrics/wal_growth_rate.sql
         semantic_columns:
           dimensions:
-            database: datname
+            scope: scope
           counters:
             wal_bytes: wal_bytes
 
@@ -50,7 +50,7 @@ queries:
     title: I/O Read And Write Rate Chart Source
     group: Metric Sources
     main_view: pg_stat_io
-    description: Minimal cumulative PostgreSQL read/write byte counters used by the I/O rate chart.
+    description: Minimal cluster-wide PostgreSQL read/write byte counters by backend type, excluding a duplicate total rollup.
     source: pg_diag
     display:
       default_sort:
@@ -68,6 +68,7 @@ queries:
         sql_file: metrics/io_read_write_rate_pg16_pg17.sql
         semantic_columns: &metrics_io_read_write_rate_semantics
           dimensions:
+            scope: scope
             backend_type: backend_type
           counters:
             read_bytes: read_bytes
@@ -440,6 +441,7 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            relation_id: relid
             schema: schemaname
             table: relname
           counters:
@@ -466,6 +468,7 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            relation_id: relid
             schema: schemaname
             table: relname
           counters:
@@ -491,6 +494,7 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            relation_id: relid
             schema: schemaname
             table: relname
           counters:
@@ -516,6 +520,7 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            relation_id: relid
             schema: schemaname
             table: relname
           counters:
@@ -543,6 +548,7 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            relation_id: relid
             schema: schemaname
             table: relname
           counters:
@@ -568,6 +574,7 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            relation_id: relid
             schema: schemaname
             table: relname
           counters:
@@ -593,6 +600,7 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            relation_id: relid
             schema: schemaname
             table: relname
           counters:
@@ -618,6 +626,7 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            relation_id: relid
             schema: schemaname
             table: relname
           counters:
@@ -674,6 +683,7 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            relation_id: relid
             schema: schemaname
             table: relname
           counters:
@@ -699,6 +709,7 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            relation_id: relid
             schema: schemaname
             table: relname
           counters:
@@ -758,9 +769,11 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            relation_id: relid
             schema: schemaname
             table: relname
             index: indexrelname
+            index_id: indexrelid
           counters:
             idx_scan: idx_scan
 
@@ -784,9 +797,11 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            relation_id: relid
             schema: schemaname
             table: relname
             index: indexrelname
+            index_id: indexrelid
           counters:
             idx_tup_read: idx_tup_read
 
@@ -810,17 +825,19 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            relation_id: relid
             schema: schemaname
             table: relname
             index: indexrelname
+            index_id: indexrelid
           counters:
             idx_tup_fetch: idx_tup_fetch
 
   metrics.objects_indexes_top_reads_per_scan:
-    title: Top Indexes By Reads Per Scan Source
+    title: Top Indexes By Tuples Read Per Scan Source
     group: Metric Sources
     main_view: pg_stat_all_indexes
-    description: Narrow sampled SQL source used only by the Top Indexes By Reads Per Scan item.
+    description: Narrow sampled SQL source used only by the Top Indexes By Tuples Read Per Scan item.
     source: pg_diag
     display:
       default_sort:
@@ -836,18 +853,20 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            relation_id: relid
             schema: schemaname
             table: relname
             index: indexrelname
+            index_id: indexrelid
           counters:
             idx_tup_read: idx_tup_read
             idx_scan: idx_scan
 
   metrics.objects_indexes_top_fetches_per_scan:
-    title: Top Indexes By Fetches Per Scan Source
+    title: Top Indexes By Heap Fetches Per Scan Source
     group: Metric Sources
     main_view: pg_stat_all_indexes
-    description: Narrow sampled SQL source used only by the Top Indexes By Fetches Per Scan item.
+    description: Narrow sampled SQL source used only by the Top Indexes By Heap Fetches Per Scan item.
     source: pg_diag
     display:
       default_sort:
@@ -863,18 +882,20 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            relation_id: relid
             schema: schemaname
             table: relname
             index: indexrelname
+            index_id: indexrelid
           counters:
             idx_tup_fetch: idx_tup_fetch
             idx_scan: idx_scan
 
   metrics.objects_indexes_top_reads_per_fetch:
-    title: Top Indexes By Reads Per Fetch Source
+    title: Top Indexes By Tuples Read Per Heap Fetch Source
     group: Metric Sources
     main_view: pg_stat_all_indexes
-    description: Narrow sampled SQL source used only by the Top Indexes By Reads Per Fetch item.
+    description: Narrow sampled SQL source used only by the Top Indexes By Tuples Read Per Heap Fetch item.
     source: pg_diag
     display:
       default_sort:
@@ -890,9 +911,11 @@ queries:
         semantic_columns:
           dimensions:
             database: datname
+            relation_id: relid
             schema: schemaname
             table: relname
             index: indexrelname
+            index_id: indexrelid
           counters:
             idx_tup_read: idx_tup_read
             idx_tup_fetch: idx_tup_fetch

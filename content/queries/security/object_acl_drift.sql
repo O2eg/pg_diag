@@ -62,8 +62,8 @@ select
     count(*) as object_count,
     count(distinct acl_signature) as acl_signature_count,
     array_to_string((array_agg(object_name order by object_name))[1:10], ', ') as sample_objects,
-    'medium' as risk_level,
-    'Objects of the same kind in one schema have inconsistent ACL signatures' as risk_reason
+    'unknown' as risk_level,
+    'Objects of the same kind in one schema have different ACL signatures; compare with the intended privilege baseline' as risk_reason
 from objects
 group by schema_name, object_kind
 having count(distinct acl_signature) > 1

@@ -11,7 +11,7 @@ from pg_diag.artifact import item_from_plan
 from pg_diag.content_loader import ContentPack
 from pg_diag.errors import PgDiagError
 from pg_diag.executors.common import elapsed_ms, exception_diagnostic
-from pg_diag.planner import PlannedItem
+from pg_diag.planner import PlannedEntry
 from pg_diag.security import json_safe, redact_error, redact_row
 
 
@@ -105,7 +105,13 @@ async def detect_runtime_context(conn: Any) -> dict[str, Any]:
     }
 
 
-async def execute_query_item(content: ContentPack, conn: Any, planned: PlannedItem) -> dict[str, Any]:
+async def execute_query_item(
+    content: ContentPack,
+    conn: Any,
+    planned: PlannedEntry,
+    *,
+    runtime_guards_set: bool = False,
+) -> dict[str, Any]:
     started = time.perf_counter()
     sql_file = planned.sql_file
     if not sql_file:
@@ -123,7 +129,8 @@ async def execute_query_item(content: ContentPack, conn: Any, planned: PlannedIt
     try:
         sql_text = Path(sql_path).read_text(encoding="utf-8")
         async with conn.transaction(readonly=True):
-            await _set_local_runtime_guards(content, conn)
+            if not runtime_guards_set:
+                await set_local_runtime_guards(content, conn)
             prepared = await conn.prepare(sql_text)
             raw_columns = _columns_from_prepared(prepared)
             records = await prepared.fetch()
@@ -170,7 +177,7 @@ async def execute_query_item(content: ContentPack, conn: Any, planned: PlannedIt
     )
 
 
-async def _set_local_runtime_guards(content: ContentPack, conn: Any) -> None:
+async def set_local_runtime_guards(content: ContentPack, conn: Any) -> None:
     policy = content.report.get("runtime_policy") or {}
     statement_timeout = str(policy.get("default_sql_timeout_ms", 10000))
     await conn.execute("select set_config('statement_timeout', $1, true)", statement_timeout)
@@ -279,7 +286,7 @@ def infer_table_severity_level(
 def evaluate_table_findings(
     columns: list[dict[str, Any]],
     rows: list[list[Any]],
-    planned: PlannedItem,
+    planned: PlannedEntry,
 ) -> tuple[str | None, dict[str, Any]]:
     column_names = [str(column.get("name") or "").strip().lower() for column in columns]
     severity_index = next(
@@ -358,7 +365,7 @@ def evaluate_table_findings(
     }
 
 
-def _classify_sql_error(exc: Exception, planned: PlannedItem) -> str:
+def _classify_sql_error(exc: Exception, planned: PlannedEntry) -> str:
     name = exc.__class__.__name__
     if "FeatureNotSupported" in name:
         return "unsupported"
@@ -367,7 +374,7 @@ def _classify_sql_error(exc: Exception, planned: PlannedItem) -> str:
     return "error"
 
 
-def _is_missing_optional_source_shape(exc: Exception, planned: PlannedItem) -> bool:
+def _is_missing_optional_source_shape(exc: Exception, planned: PlannedEntry) -> bool:
     name = exc.__class__.__name__
     sqlstate = getattr(exc, "sqlstate", None)
     return bool(planned.source_metadata.get("optional")) and (

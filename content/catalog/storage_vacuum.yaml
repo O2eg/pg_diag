@@ -8,11 +8,14 @@ queries:
     cost: medium
     display:
       default_sort:
-        column: autovacuum_overdue_factor
+        column: priority_factor
         direction: desc
+    evaluation:
+      summary_title: Tables have crossed an autovacuum eligibility threshold
+      recommendation: Confirm worker availability and horizon blockers before considering a manual VACUUM or table-level tuning.
     collection:
       default: once
-      supports: [once, every_snapshot]
+      supports: [once]
     variants:
       - id: vacuum_autovacuum_queue_all
         min_pg_version: 110000

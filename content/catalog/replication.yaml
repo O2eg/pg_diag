@@ -7,8 +7,11 @@ queries:
     source: postgresai
     display:
       default_sort:
-        column: reply_time_lag
+        column: current_to_replay_lag_bytes
         direction: desc
+    evaluation:
+      summary_title: Replication sender state requires review
+      recommendation: Confirm the expected topology and inspect sender, receiver, network, and standby logs before changing replication settings.
     collection:
       default: once
       supports: [once, every_snapshot]
@@ -20,12 +23,8 @@ queries:
           dimensions:
             application_name: application_name
           gauges:
-            current_wal_lsn: current_wal_lsn
-            sent_lsn: sent_lsn
-            write_lsn: write_lsn
-            flush_lsn: flush_lsn
-            replay_lsn: replay_lsn
-            reply_time_lag_seconds: reply_time_lag
+            current_to_replay_lag_bytes: current_to_replay_lag_bytes
+            replay_lag_seconds: replay_lag_seconds
 
   replication.wal_receiver:
     title: WAL Receiver
@@ -35,8 +34,11 @@ queries:
     source: postgresai
     display:
       default_sort:
-        column: status
-        direction: asc
+        column: seconds_since_last_message
+        direction: desc
+    evaluation:
+      summary_title: WAL receiver state requires review
+      recommendation: Confirm whether streaming or archive-only recovery is expected, then inspect upstream reachability and standby logs.
     collection:
       default: once
       supports: [once, every_snapshot]
@@ -55,6 +57,9 @@ queries:
       default_sort:
         column: conflicts_total
         direction: desc
+    evaluation:
+      summary_title: Standby recovery conflicts have occurred
+      recommendation: Compare counter deltas with canceled-query logs before changing hot_standby_feedback or delay settings.
     collection:
       default: once
       supports: [once, every_snapshot]
@@ -80,12 +85,14 @@ queries:
     collection:
       default: once
       supports: [once, every_snapshot]
-    requirements:
-      unsupported_versions_reason: Initial catalog contains only the PostgreSQL 18 shape of pg_stat_subscription.
     variants:
-      - id: replication_subscription_workers_pg18_plus
-        min_pg_version: 180000
-        sql_file: replication/subscription_workers_pg18.sql
+      - id: replication_subscription_workers_pg14
+        min_pg_version: 140000
+        max_pg_version: 149999
+        sql_file: replication/subscription_workers_pg14.sql
+      - id: replication_subscription_workers_pg15_plus
+        min_pg_version: 150000
+        sql_file: replication/subscription_workers_pg15_plus.sql
 
   replication.recovery_prefetch:
     title: Recovery Prefetch

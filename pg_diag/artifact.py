@@ -14,8 +14,9 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__, runtime_config
+from .contracts import SEVERITY_LEVELS
 from .content_loader import ContentPack
-from .planner import ExecutionPlan, PlannedItem
+from .planner import ExecutionPlan, PlannedEntry
 from .security import (
     json_safe,
     redact_error,
@@ -27,7 +28,6 @@ from .security import (
 
 INTERNAL_TAG_PREFIX = "tag_"
 COLLECTION_ERROR_STATUSES = {"error"}
-SEVERITY_LEVELS = {"high", "medium", "ok", "unknown"}
 
 
 def utc_now() -> str:
@@ -87,7 +87,7 @@ def _collector_user() -> str:
 
 
 def item_from_plan(
-    planned: PlannedItem,
+    planned: PlannedEntry,
     collection_status: str,
     result: dict[str, Any] | None = None,
     timing_ms: float | None = None,
@@ -106,12 +106,12 @@ def item_from_plan(
         source_metadata["source_language"] = source_language or planned.source_kind
     return {
         "item_id": planned.item_id,
-        "section_id": planned.section_id,
+        "section_id": getattr(planned, "section_id", None),
         "title": planned.title,
         "source_kind": planned.source_kind,
         "collection_status": collection_status,
         "severity_level": normalized_severity_level,
-        "state": planned.state,
+        "state": getattr(planned, "state", None),
         "reason": redact_error(reason) if isinstance(reason, str) else json_safe(reason),
         "result": sanitize_result(result),
         "timing_ms": json_safe(timing_ms),
@@ -122,7 +122,7 @@ def item_from_plan(
 
 
 def item_error_from_exception(
-    planned: PlannedItem,
+    planned: PlannedEntry,
     exc: BaseException,
     *,
     timing_ms: float | None = None,
@@ -161,10 +161,16 @@ def _item_severity_level(collection_status: str, severity_level: str | None) -> 
     return level
 
 
-def write_json(path: str | Path, artifact: dict[str, Any]) -> None:
-    from .artifact_schema import validate_artifact
+def write_json(
+    path: str | Path,
+    artifact: dict[str, Any],
+    *,
+    validate: bool = True,
+) -> None:
+    if validate:
+        from .artifact_schema import validate_artifact
 
-    validate_artifact(artifact)
+        validate_artifact(artifact)
     payload = json.dumps(
         artifact,
         ensure_ascii=False,

@@ -19,8 +19,9 @@ _SCRIPT_END_RE = re.compile(r"</script", re.IGNORECASE)
 _STYLE_END_RE = re.compile(r"</style", re.IGNORECASE)
 
 
-def render_html(artifact: dict[str, Any]) -> str:
-    validate_artifact(artifact)
+def render_html(artifact: dict[str, Any], *, validate: bool = True) -> str:
+    if validate:
+        validate_artifact(artifact)
     artifact = _publicize_artifact_for_render(artifact)
     payload = _safe_json_payload(artifact)
     title = html.escape(str((artifact.get("report") or {}).get("title") or "pg_diag report"))
@@ -76,20 +77,28 @@ def _inline_style(value: str) -> str:
 
 
 def _publicize_artifact_for_render(artifact: dict[str, Any]) -> dict[str, Any]:
-    public_artifact = deepcopy(artifact)
-    snapshots = public_artifact.get("snapshots") or []
+    snapshots = artifact.get("snapshots") or []
+    public_artifact = deepcopy(
+        {
+            key: value
+            for key, value in artifact.items()
+            if key not in {"sections", "items", "snapshots", "snapshot_schemas"}
+        }
+    )
     runtime = public_artifact.setdefault("runtime", {})
     if isinstance(runtime, dict):
         runtime.setdefault("snapshot_count", len(snapshots))
     public_artifact["snapshots"] = []
     public_artifact["snapshot_schemas"] = {}
 
-    public_sections = [
-        section
-        for section in public_artifact.get("sections") or []
-        if isinstance(section, dict) and section.get("state") != "hidden"
-    ]
-    all_items = public_artifact.get("items") or {}
+    public_sections = deepcopy(
+        [
+            section
+            for section in artifact.get("sections") or []
+            if isinstance(section, dict) and section.get("state") != "hidden"
+        ]
+    )
+    all_items = artifact.get("items") or {}
     for section in public_sections:
         section["items"] = [
             item_id
@@ -103,11 +112,13 @@ def _publicize_artifact_for_render(artifact: dict[str, Any]) -> dict[str, Any]:
         for section in public_sections
         for item_id in section.get("items") or []
     }
-    public_artifact["items"] = {
-        item_id: item
-        for item_id, item in all_items.items()
-        if item_id in visible_item_ids
-    }
+    public_artifact["items"] = deepcopy(
+        {
+            item_id: item
+            for item_id, item in all_items.items()
+            if item_id in visible_item_ids
+        }
+    )
 
     for item in (public_artifact.get("items") or {}).values():
         result = item.get("result") or {}

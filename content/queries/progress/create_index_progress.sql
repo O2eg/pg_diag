@@ -1,8 +1,12 @@
 select
+  p.datid,
   p.datname,
+  p.relid,
+  case when p.relid <> 0 then p.relid::regclass::text end as relation,
+  p.index_relid,
+  case when p.index_relid <> 0 then p.index_relid::regclass::text end as index_name,
   p.pid,
-  p.relid::regclass::text as relation,
-  p.index_relid::regclass::text as index_name,
+  p.command,
   a.state,
   coalesce(a.wait_event_type || '.' || a.wait_event, '') as waiting,
   p.phase,
@@ -19,9 +23,10 @@ select
   p.partitions_total,
   p.partitions_done,
   round(p.partitions_done::numeric * 100 / nullif(p.partitions_total, 0), 3) as partitions_done_pct,
-  extract(epoch from clock_timestamp() - a.xact_start)::numeric(20, 3) as xact_age_seconds,
+  extract(epoch from clock_timestamp() - a.query_start)::numeric(20, 3) as query_age_seconds,
   left(regexp_replace(coalesce(a.query, ''), '\s+', ' ', 'g'), 500) as query
-from pg_stat_progress_create_index p
-join pg_stat_activity a on p.pid = a.pid
-where a.pid <> pg_backend_pid()
-order by xact_age_seconds desc
+from pg_catalog.pg_stat_progress_create_index p
+join pg_catalog.pg_stat_activity a on p.pid = a.pid
+where p.datid = (select oid from pg_catalog.pg_database where datname = current_database())
+  and a.pid <> pg_catalog.pg_backend_pid()
+order by query_age_seconds desc

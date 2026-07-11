@@ -23,6 +23,10 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_hot_updat
 - Fillfactor leaves room for HOT.
 - Index changes alter HOT eligibility.
 
+## Automatic evaluation
+- This chart ranks HOT update deltas for stable relation OIDs; HOT activity is usually beneficial relative to non-HOT updates.
+- Interpret the rate against total updates rather than treating high HOT activity as a fault.
+
 ## Checklist
 - Use with update-rate and table_workload items.
 - Do not treat high HOT as bad by itself.

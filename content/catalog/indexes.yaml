@@ -10,6 +10,9 @@ queries:
       default_sort:
         column: index_size_bytes
         direction: desc
+    evaluation:
+      summary_title: Invalid indexes require review
+      recommendation: Check failed DDL and constraint dependencies, then rebuild or remove the index with production-safe DDL.
     collection:
       default: once
       supports: [once]
@@ -29,6 +32,9 @@ queries:
       default_sort:
         column: index_size_bytes
         direction: desc
+    evaluation:
+      summary_title: Unused index candidates have sustained write overhead
+      recommendation: Confirm the statistics window, rare workloads, foreign-key support, constraints, and plans before removing an index.
     collection:
       default: once
       supports: [once]

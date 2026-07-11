@@ -1,29 +1,27 @@
-# Top Indexes By Reads Per Scan
+# Top Indexes By Tuples Read Per Scan
 
 This instruction belongs to report item `snapshot_charts_db.indexes_top_reads_per_scan`. The item is backed by `objects.indexes_top_reads_per_scan` (snapshot metric).
 
 ## What this item shows
-- Indexes with highest block reads per index scan.
-- Index scans that are physically expensive per execution.
+- The interval delta of index entries returned (`idx_tup_read`) divided by the interval delta of index scans.
+- Logical index selectivity/work-per-scan evidence, not block reads or physical I/O.
 
 ## What to watch
-- High reads per scan for frequently used index.
-- Large index read amplification.
-- Reads per scan increased after data growth.
+- Many index entries returned per scan on a latency-sensitive lookup path.
+- A ratio rising after data distribution or predicate changes.
 
 ## Bounded samples
 - Each SQL sample is ordered and limited before rows enter collector memory.
-- Each column ranks deltas only for keys present in both adjacent bounded samples.
-- Different index series between columns are expected; unmatched keys are not zero or errors.
-- Counter decreases and invalid values are omitted and reported separately.
+- Ratios use only matching index OIDs present in both adjacent bounded samples.
+- Changing Top-N membership is expected; unmatched keys and counter decreases become missing evidence, not zero.
 
 ## Common fault causes
-- Index bloat.
-- Poor clustering/locality.
-- Cold cache.
-- Broad range scans.
+- Broad range scans, low selectivity, bitmap scans, or an intentionally large result set.
+
+## Automatic evaluation
+- This chart is informational; the ratio does not measure cache misses, bloat, or physical read amplification.
+- Very small scan deltas can create unstable ratios, so confirm scan volume and representative plans.
 
 ## Checklist
-- Inspect index size and bloat indicators.
-- Review query predicates and LIMIT/order usage.
-- Compare with storage latency before rebuilding.
+- Review predicates, index column order, scan count, and expected result cardinality.
+- Use block-read and latency items for physical I/O conclusions.

@@ -1,28 +1,24 @@
-# Top Indexes By Fetches Per Scan
+# Top Indexes By Heap Fetches Per Scan
 
 This instruction belongs to report item `snapshot_charts_db.indexes_top_fetches_per_scan`. The item is backed by `objects.indexes_top_fetches_per_scan` (snapshot metric).
 
 ## What this item shows
-- Indexes returning many heap tuples per scan.
-- Indexes used for broad result sets rather than selective lookups.
+- Per-index heap tuple fetch delta divided by index scan delta for adjacent samples.
+- Heap rows fetched by simple index scans; bitmap and index-only behavior affects interpretation.
 
 ## What to watch
-- High fetches per scan on OLTP lookup path.
-- Unexpected broad index scans.
-- Fetches per scan rising after data distribution change.
+- Many heap fetches per scan on a path expected to return a single row.
+- Ratio changes after data distribution or plan changes.
 
 ## Bounded samples
-- Each SQL sample is ordered and limited before rows enter collector memory.
-- Each column ranks deltas only for keys present in both adjacent bounded samples.
-- Different index series between columns are expected; unmatched keys are not zero or errors.
-- Counter decreases and invalid values are omitted and reported separately.
+- Samples are sorted/limited before memory and matched by stable index OID.
+- Changing Top-N membership, counter reset, and absent endpoints produce missing evidence rather than zero.
 
 ## Common fault causes
-- Low-selectivity predicate.
-- Missing additional filter column in index.
-- Report query using broad range.
+- Low-selectivity predicates, broad range scans, or intentionally large indexed result sets.
+
+## Automatic evaluation
+- This is informational; a high ratio can be correct and a low ratio can reflect index-only or bitmap behavior.
 
 ## Checklist
-- Check query predicates and selectivity.
-- Consider composite or partial indexes only with plan evidence.
-- Validate whether broad result set is expected.
+- Confirm scan volume, expected result cardinality, and representative plans before changing an index.

@@ -21,13 +21,10 @@ select
   'cryptographic_extensions' as check_name,
   available_extensions,
   installed_extensions,
+  'unknown' as risk_level,
   case
-    when not has_available_extension then 'high'
-    else 'medium'
-  end as risk_level,
-  case
-    when not has_available_extension then 'no pgcrypto or pgsodium extension is available on this server'
-    else 'no pgcrypto or pgsodium extension is installed in the connected database'
+    when not has_available_extension then 'no listed database cryptography extension is available; applications may implement cryptography outside PostgreSQL'
+    else 'no listed database cryptography extension is installed; install one only for a defined database-side requirement'
   end as risk_reason
 from summary
 where not has_installed_extension

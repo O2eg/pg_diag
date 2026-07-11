@@ -8,6 +8,6 @@ select
   write_time,
   sync_time,
   buffers_written,
-  (extract(epoch from now() - stats_reset))::int as last_reset_s
-from
-  pg_stat_checkpointer
+  stats_reset,
+  extract(epoch from pg_catalog.clock_timestamp() - stats_reset)::int8 as stats_age_seconds
+from pg_catalog.pg_stat_checkpointer

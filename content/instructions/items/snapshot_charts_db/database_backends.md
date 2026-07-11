@@ -17,6 +17,10 @@ This instruction belongs to report item `snapshot_charts_db.database_backends`. 
 - Retry storm.
 - Slow transactions holding backends.
 
+## Automatic evaluation
+- This is a point gauge for the connected database and includes the pg_diag connection itself.
+- Compare with `max_connections`, reserved slots, pool limits, and other databases before assigning severity.
+
 ## Checklist
 - Compare with connection pressure.
 - Check pooler and application deployment events.

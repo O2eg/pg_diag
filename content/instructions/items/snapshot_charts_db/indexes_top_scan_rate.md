@@ -23,6 +23,10 @@ This instruction belongs to report item `snapshot_charts_db.indexes_top_scan_rat
 - Plan change.
 - Low-selectivity predicate.
 
+## Automatic evaluation
+- This chart ranks scan deltas for stable index OIDs present in both adjacent bounded samples.
+- High usage is not a fault and is evidence against removal during the observed workload.
+
 ## Checklist
 - Map index to Top SQL plans.
 - Check tuple read/fetch ratios.

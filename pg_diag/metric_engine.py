@@ -8,29 +8,22 @@ from datetime import datetime
 from typing import Any
 
 from pg_diag.artifact import item_from_plan
+from pg_diag.contracts import (
+    INTERVAL_COUNTER_DECREASE,
+    INTERVAL_EPOCH_CHANGED,
+    INTERVAL_INVALID_INTERVAL,
+    INTERVAL_INVALID_VALUE,
+    INTERVAL_MISSING_END,
+    INTERVAL_MISSING_START,
+    INTERVAL_NO_ACTIVITY,
+    INTERVAL_OK,
+    INTERVAL_STATUS_ORDER,
+    interval_coverage_totals,
+)
 from pg_diag.planner import PlannedItem
 
 
 SNAPSHOT_TIME_COLUMN = "snapshot_time"
-INTERVAL_OK = "ok"
-INTERVAL_NO_ACTIVITY = "no_activity"
-INTERVAL_MISSING_START = "missing_start"
-INTERVAL_MISSING_END = "missing_end"
-INTERVAL_EPOCH_CHANGED = "epoch_changed"
-INTERVAL_COUNTER_DECREASE = "counter_decrease"
-INTERVAL_INVALID_VALUE = "invalid_value"
-INTERVAL_INVALID_INTERVAL = "invalid_interval"
-INTERVAL_COMPARABLE_STATUSES = {INTERVAL_OK, INTERVAL_NO_ACTIVITY}
-INTERVAL_STATUS_ORDER = (
-    INTERVAL_OK,
-    INTERVAL_NO_ACTIVITY,
-    INTERVAL_MISSING_START,
-    INTERVAL_MISSING_END,
-    INTERVAL_EPOCH_CHANGED,
-    INTERVAL_COUNTER_DECREASE,
-    INTERVAL_INVALID_VALUE,
-    INTERVAL_INVALID_INTERVAL,
-)
 SEVERITY_LEVEL_RANK = {"ok": 0, "unknown": 1, "medium": 2, "high": 3}
 
 
@@ -236,7 +229,14 @@ def _metric_source_header(metric: dict[str, Any], comment_prefix: str, source_la
             value_ref = series.get("value_ref") or series.get("name_from_ref") or ""
             unit = series.get("unit") or chart.get("unit") or ""
             color = f" color={series['color']}" if series.get("color") else ""
-            lines.append(f"{comment_prefix}   - {name}: {transform}({value_ref}) unit={unit}{color}")
+            adjustment = (
+                f" delta_adjustment={series['delta_adjustment']}"
+                if series.get("delta_adjustment") is not None else ""
+            )
+            lines.append(
+                f"{comment_prefix}   - {name}: {transform}({value_ref}) "
+                f"unit={unit}{adjustment}{color}"
+            )
     if metric.get("top_n"):
         top_n = metric.get("top_n") or {}
         refs = top_n.get("value_refs") or ([top_n.get("value_ref")] if top_n.get("value_ref") else [])
@@ -379,6 +379,7 @@ def build_chart_result(
                         "unit": series_def.get("unit") or (metric.get("chart") or {}).get("unit"),
                         "color": series_def.get("color"),
                         "transform": series_def.get("transform") or "gauge",
+                        "delta_adjustment": series_def.get("delta_adjustment") or 0,
                         "raw_points": {},
                     },
                 )
@@ -393,6 +394,7 @@ def build_chart_result(
                 raw["raw_points"],
                 sample_timestamps,
                 transform,
+                _number_or_none(raw.get("delta_adjustment")) or 0.0,
             )
             interval_counts.update(point_counts)
         else:
@@ -1086,17 +1088,11 @@ def _with_interval_coverage(
     result: dict[str, Any],
     counts: Counter[str],
 ) -> dict[str, Any]:
-    total = sum(counts.values())
-    if total <= 0:
+    coverage = interval_coverage_totals(counts)
+    if coverage["total"] <= 0:
         return result
-    comparable = sum(counts.get(status, 0) for status in INTERVAL_COMPARABLE_STATUSES)
-    unmatched = counts.get(INTERVAL_MISSING_START, 0) + counts.get(INTERVAL_MISSING_END, 0)
-    invalid = total - comparable - unmatched
     result["interval_coverage"] = {
-        "total": total,
-        "comparable": comparable,
-        "unmatched": unmatched,
-        "invalid": invalid,
+        **coverage,
         "counts": {
             status: counts[status]
             for status in INTERVAL_STATUS_ORDER
@@ -1237,6 +1233,7 @@ def _transform_interval_points(
     raw_points: dict[int, dict[str, Any]],
     sample_timestamps: list[str],
     transform: str,
+    delta_adjustment: float = 0.0,
 ) -> tuple[list[dict[str, Any]], Counter[str]]:
     points: list[dict[str, Any]] = []
     interval_counts: Counter[str] = Counter()
@@ -1278,10 +1275,11 @@ def _transform_interval_points(
             if interval_value.status != INTERVAL_OK or interval_value.value is None:
                 points.append({"t": point["t"], "value": None})
             else:
+                adjusted_delta = max(interval_value.value - max(delta_adjustment, 0.0), 0.0)
                 transformed = (
-                    interval_value.value / seconds
+                    adjusted_delta / seconds
                     if transform == "rate"
-                    else interval_value.value
+                    else adjusted_delta
                 )
                 points.append({"t": point["t"], "value": round(transformed, 6)})
         previous = point

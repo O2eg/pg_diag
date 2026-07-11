@@ -7,8 +7,8 @@ select
   rolreplication,
   rolbypassrls,
   case
-    when rolsuper or rolbypassrls or rolcreaterole then 'high'
-    when rolreplication or rolcreatedb then 'medium'
+    when rolsuper or rolbypassrls or rolcreaterole then 'medium'
+    when rolreplication or rolcreatedb then 'unknown'
     else 'ok'
   end as risk_level,
   concat_ws(

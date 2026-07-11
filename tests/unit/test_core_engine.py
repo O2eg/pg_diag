@@ -55,11 +55,15 @@ class _BatchTransaction:
 class _BatchConnection:
     def __init__(self) -> None:
         self.readonly_transactions = 0
+        self.executed: list[tuple[str, str]] = []
 
     def transaction(self, *, readonly: bool):
         assert readonly is True
         self.readonly_transactions += 1
         return _BatchTransaction()
+
+    async def execute(self, sql: str, value: str) -> None:
+        self.executed.append((sql, value))
 
 
 def _artifact(*, title: str = "Test", data: str = "ok") -> dict:
@@ -122,7 +126,8 @@ def test_db_snapshots_store_only_varying_table_data(monkeypatch: pytest.MonkeyPa
     query_texts: dict[str, str] = {}
     snapshot_schemas: dict[str, dict] = {}
 
-    async def execute_stub(content, conn, item):
+    async def execute_stub(content, conn, item, *, runtime_guards_set=False):
+        assert runtime_guards_set is True
         return item_from_plan(
             item,
             collection_status="ok",
@@ -146,7 +151,7 @@ def test_db_snapshots_store_only_varying_table_data(monkeypatch: pytest.MonkeyPa
     conn = _BatchConnection()
     snapshots, diagnostics, latest = asyncio.run(
         _collect_db_samples(
-            SimpleNamespace(),
+            SimpleNamespace(report={}),
             conn,
             [planned],
             30,
@@ -177,8 +182,9 @@ def test_db_snapshots_store_only_varying_table_data(monkeypatch: pytest.MonkeyPa
 def test_db_sampler_does_not_start_stale_final_sample(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = 0
 
-    async def execute_stub(content, conn, item):
+    async def execute_stub(content, conn, item, *, runtime_guards_set=False):
         nonlocal calls
+        assert runtime_guards_set is True
         calls += 1
         await asyncio.sleep(0.16)
         return item_from_plan(
@@ -192,7 +198,7 @@ def test_db_sampler_does_not_start_stale_final_sample(monkeypatch: pytest.Monkey
 
     conn = _BatchConnection()
     snapshots, diagnostics, _latest = asyncio.run(
-        _collect_db_samples(SimpleNamespace(), conn, [_planned_query()], 0.05, 0.05)
+        _collect_db_samples(SimpleNamespace(report={}), conn, [_planned_query()], 0.05, 0.05)
     )
 
     assert calls == 1
@@ -206,7 +212,8 @@ def test_window_endpoint_queries_share_one_read_only_transaction(
 ) -> None:
     calls: list[str] = []
 
-    async def execute_stub(content, conn, item):
+    async def execute_stub(content, conn, item, *, runtime_guards_set=False):
+        assert runtime_guards_set is True
         calls.append(item.item_id)
         return item_from_plan(
             item,
@@ -219,7 +226,7 @@ def test_window_endpoint_queries_share_one_read_only_transaction(
     queries = [_planned_query(), replace(_planned_query(), item_id="s.q2", item_key="q2")]
 
     snapshot, items, error_counts = asyncio.run(
-        _execute_query_batch(SimpleNamespace(), conn, queries)
+        _execute_query_batch(SimpleNamespace(report={}), conn, queries)
     )
 
     assert calls == ["s.q", "s.q2"]
@@ -227,15 +234,18 @@ def test_window_endpoint_queries_share_one_read_only_transaction(
     assert set(items) == {"s.q", "s.q2"}
     assert not error_counts
     assert conn.readonly_transactions == 1
+    assert len(conn.executed) == 4
 
 
 def test_python_source_timeout_does_not_block_event_loop(tmp_path: Path) -> None:
     python_dir = tmp_path / "python"
     python_dir.mkdir()
+    completion_marker = tmp_path / "completed"
     (python_dir / "slow.py").write_text(
         "import time\n"
         "def collect(context):\n"
         "    time.sleep(0.5)\n"
+        f"    open({str(completion_marker)!r}, 'w', encoding='utf-8').write('done')\n"
         "    return {'collection_status': 'ok', 'result': {'kind': 'none'}}\n",
         encoding="utf-8",
     )
@@ -269,6 +279,56 @@ def test_python_source_timeout_does_not_block_event_loop(tmp_path: Path) -> None
     assert item["collection_status"] == "error"
     assert item["reason"] == "Python source timed out after 50 ms"
     assert item["diagnostics"][0]["code"] == "python_timeout"
+    time.sleep(0.55)
+    assert not completion_marker.exists()
+
+
+def test_python_source_helpers_are_isolated_per_content_pack(tmp_path: Path) -> None:
+    planned = PlannedItem(
+        item_id="s.helper",
+        section_id="s",
+        item_key="helper",
+        title="Helper",
+        source_kind="python",
+        source_id="test.helper",
+        status="planned",
+        python_file="source.py",
+    )
+
+    def content_pack(root: Path, value: str) -> SimpleNamespace:
+        python_dir = root / "python"
+        python_dir.mkdir(parents=True)
+        (python_dir / "_helper.py").write_text(f"VALUE = {value!r}\n", encoding="utf-8")
+        (python_dir / "source.py").write_text(
+            "from _helper import VALUE\n"
+            "async def collect(context):\n"
+            "    return {\n"
+            "        'collection_status': 'ok',\n"
+            "        'result': {'kind': 'plain_text', 'data': VALUE},\n"
+            "    }\n",
+            encoding="utf-8",
+        )
+        return SimpleNamespace(
+            path=root,
+            pythons={
+                "test.helper": {
+                    "python_file": "source.py",
+                    "function": "collect",
+                    "timeout_ms": 1000,
+                }
+            },
+            python_catalog={"python_catalog": {"defaults": {}}},
+        )
+
+    first = asyncio.run(
+        execute_python_item(content_pack(tmp_path / "first", "first"), SimpleNamespace(), planned)
+    )
+    second = asyncio.run(
+        execute_python_item(content_pack(tmp_path / "second", "second"), SimpleNamespace(), planned)
+    )
+
+    assert first["result"]["data"] == "first"
+    assert second["result"]["data"] == "second"
 
 
 def test_artifact_writer_rejects_nan_and_uses_private_permissions(tmp_path: Path) -> None:
@@ -311,6 +371,23 @@ def test_artifact_validator_accepts_consistent_interval_coverage(tmp_path: Path)
     }
 
     write_json(tmp_path / "valid.json", artifact)
+
+
+def test_artifact_validator_accepts_epoch_changed_as_invalid_interval(tmp_path: Path) -> None:
+    artifact = _artifact()
+    artifact["items"]["s.i"]["result"] = {
+        "kind": "chart",
+        "series": [],
+        "interval_coverage": {
+            "total": 1,
+            "comparable": 0,
+            "unmatched": 0,
+            "invalid": 1,
+            "counts": {"epoch_changed": 1},
+        },
+    }
+
+    write_json(tmp_path / "valid-epoch-change.json", artifact)
 
 
 def test_artifact_validator_rejects_inconsistent_interval_coverage(tmp_path: Path) -> None:
@@ -371,6 +448,20 @@ def test_artifact_v2_accepts_compact_snapshot_rows_with_shared_schema(tmp_path: 
     assert public["runtime"]["snapshot_count"] == 1
     assert public["snapshots"] == []
     assert public["snapshot_schemas"] == {}
+
+
+def test_renderer_projection_does_not_copy_raw_snapshots() -> None:
+    class RawSnapshot:
+        def __deepcopy__(self, memo):
+            raise AssertionError("raw snapshots must not be deep-copied for HTML")
+
+    artifact = _artifact()
+    artifact["snapshots"] = [RawSnapshot()]
+
+    public = _publicize_artifact_for_render(artifact)
+
+    assert public["runtime"]["snapshot_count"] == 1
+    assert public["snapshots"] == []
 
 
 def test_secure_text_writer_replaces_existing_file_atomically(tmp_path: Path) -> None:

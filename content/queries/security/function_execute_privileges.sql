@@ -1,10 +1,16 @@
 with function_acl as (
   select
+    p.oid as function_oid,
     n.nspname as schema_name,
     p.proname as function_name,
     pg_catalog.pg_get_function_identity_arguments(p.oid) as function_signature,
     pg_catalog.pg_get_userbyid(p.proowner) as owner_name,
     p.prosecdef as is_security_definer,
+    exists (
+      select 1
+      from unnest(coalesce(p.proconfig, array[]::text[])) as config(setting)
+      where lower(setting) like 'search_path=%'
+    ) as has_search_path_config,
     l.lanname as language_name,
     acl.grantor,
     acl.grantee,
@@ -28,6 +34,7 @@ with function_acl as (
     )
 )
 select
+  function_oid,
   schema_name,
   function_name,
   function_signature,
@@ -39,14 +46,16 @@ select
   is_security_definer,
   language_name,
   case
-    when grantee = 0 and is_security_definer then 'high'
-    when grantee = 0 then 'medium'
+    when grantee = 0 and is_security_definer and not has_search_path_config then 'high'
+    when grantee = 0 and is_security_definer then 'medium'
+    when grantee = 0 then 'ok'
     when is_grantable then 'medium'
     else 'ok'
   end as risk_level,
   case
-    when grantee = 0 and is_security_definer then 'PUBLIC can execute SECURITY DEFINER function'
-    when grantee = 0 then 'PUBLIC can execute user-defined function'
+    when grantee = 0 and is_security_definer and not has_search_path_config then 'PUBLIC can execute SECURITY DEFINER function without a function-local search_path'
+    when grantee = 0 and is_security_definer then 'PUBLIC can execute SECURITY DEFINER function; review the function body and configured search_path'
+    when grantee = 0 then 'PUBLIC EXECUTE is the PostgreSQL default for functions; shown for inventory'
     when is_grantable then 'function EXECUTE privilege can be granted onward'
     else 'informational function privilege'
   end as risk_reason
@@ -62,3 +71,4 @@ order by
   function_name asc,
   function_signature asc,
   grantee asc
+limit 1000

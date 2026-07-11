@@ -4,10 +4,16 @@ This item reports `pg_hba.conf` file modes broader than the expected local secur
 
 ## What this item shows
 - `pg_hba.conf` path reported by PostgreSQL.
-- File mode and parent directory mode.
-- Risk level when file permissions are broader than `0600` or `0640`.
+- Modes for the main HBA file, recursively included files, and `include_dir` directories.
+- Risk level for unsafe writes or unexpected file access.
+
+## Automatic evaluation
+- `high`: group or other users can write `pg_hba.conf`.
+- `medium`: group execute or any other-user access is present.
+- More restrictive file modes than 0600/0640 are accepted; include directories must not be writable by group/other.
 
 ## Checklist
-- Set `pg_hba.conf` to `0600` or `0640`.
+- Keep HBA files at `0600`/`0640` or a more restrictive mode.
+- Protect every included file and include directory, not only the main file.
 - Keep write access limited to PostgreSQL administrators.
 - Re-check permissions after package upgrades or configuration management changes.

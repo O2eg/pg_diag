@@ -273,6 +273,7 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
                 collection_mode=args.collection_mode,
                 json_out=args.json_out,
                 html_out=args.html_out,
+                content_validated=True,
             )
         )
     except Exception as exc:
@@ -319,6 +320,7 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
                 interval_seconds=args.interval_seconds,
                 json_out=args.json_out,
                 html_out=args.html_out,
+                content_validated=True,
             )
         )
     except Exception as exc:
@@ -367,6 +369,18 @@ def _print_plan(plan: dict[str, Any]) -> None:
         ]
         if item.get("reason"):
             bits.append(item["reason"])
+        print("\t".join(bits))
+    for job in plan.get("source_jobs") or []:
+        bits = [
+            job["job_id"],
+            job["source_kind"],
+            job["status"],
+            job.get("source_id") or "",
+            job.get("variant_id") or "",
+            job.get("collection_scope") or "",
+        ]
+        if job.get("reason"):
+            bits.append(job["reason"])
         print("\t".join(bits))
 
 

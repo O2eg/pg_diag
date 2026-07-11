@@ -17,6 +17,10 @@ This instruction belongs to report item `snapshot_charts_os.os_network_transmit`
 - Backup export.
 - Monitoring or log shipping.
 
+## Automatic evaluation
+- Rates are counter deltas over monotonic elapsed time; counter rollback becomes missing data rather than zero.
+- The loopback interface is intentionally excluded.
+
 ## Checklist
 - Compare with client wait events and replication sender lag.
 - Map interface to workload path.

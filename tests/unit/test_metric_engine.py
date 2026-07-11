@@ -111,6 +111,39 @@ def test_delta_table_can_remove_known_collector_transaction_overhead() -> None:
     assert result["rows"] == [["db", 10.0, 3, 7.0, 1.4]]
 
 
+def test_chart_rate_can_remove_one_collector_commit_per_interval() -> None:
+    metric = {
+        "partition_by": ["dimensions.database"],
+        "series": [
+            {
+                "name": "commits",
+                "value_ref": "counters.xact_commit",
+                "transform": "rate",
+                "delta_adjustment": 1,
+                "unit": "tx/s",
+            }
+        ],
+        "chart": {"kind": "area", "unit": "tx/s"},
+    }
+    semantics = {
+        "dimensions": {"database": "datname"},
+        "counters": {"xact_commit": "xact_commit"},
+    }
+    samples = [
+        {"timestamp": "2026-07-05T00:00:00+00:00", "rows": [{"datname": "db", "xact_commit": 10}]},
+        {"timestamp": "2026-07-05T00:00:05+00:00", "rows": [{"datname": "db", "xact_commit": 16}]},
+        {"timestamp": "2026-07-05T00:00:10+00:00", "rows": [{"datname": "db", "xact_commit": 17}]},
+    ]
+
+    result = build_chart_result(metric, samples, semantics)
+
+    assert result["series"][0]["points"] == [
+        {"t": "2026-07-05T00:00:00+00:00", "value": None},
+        {"t": "2026-07-05T00:00:05+00:00", "value": 1.0},
+        {"t": "2026-07-05T00:00:10+00:00", "value": 0.0},
+    ]
+
+
 def test_metric_table_evaluation_builds_summary_for_matching_rows() -> None:
     result = {
         "kind": "table",

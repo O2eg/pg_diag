@@ -16,6 +16,10 @@ This instruction belongs to report item `snapshot_charts_os.os_cpu_load`. The it
 - Tasks waiting on I/O.
 - Host contention from non-PostgreSQL processes.
 
+## Automatic evaluation
+- This chart is informational because load must be normalized against host CPU count and latency goals.
+- Linux load includes runnable tasks and tasks in uninterruptible sleep; it is not CPU percentage.
+
 ## Checklist
 - Compare load with CPU utilization and disk latency.
 - Check host process list outside pg_diag when load is unexplained.

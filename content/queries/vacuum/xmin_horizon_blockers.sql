@@ -2,6 +2,8 @@ with activity as (
   select
     'pg_stat_activity'::text as component,
     'data'::text as horizon_type,
+    pid::int as blocker_pid,
+    coalesce(backend_type, '')::text as blocker_backend_type,
     coalesce(datname, '')::text as blocker_database,
     coalesce(usename, '')::text as blocker_user,
     coalesce(application_name, '')::text as blocker_appname,
@@ -26,7 +28,7 @@ with activity as (
   from pg_stat_activity as a
   where
     pid <> pg_backend_pid()
-    and backend_type = 'client backend'
+    and backend_type <> 'walsender'
     and backend_xmin is not null
   order by age(backend_xmin) desc, pid asc
   limit 1
@@ -35,6 +37,8 @@ slots as (
   select
     'pg_replication_slots'::text as component,
     'data'::text as horizon_type,
+    null::int as blocker_pid,
+    ''::text as blocker_backend_type,
     coalesce(database, '')::text as blocker_database,
     ''::text as blocker_user,
     ''::text as blocker_appname,
@@ -71,6 +75,8 @@ slots_catalog as (
   select
     'pg_replication_slots_catalog'::text as component,
     'catalog'::text as horizon_type,
+    null::int as blocker_pid,
+    ''::text as blocker_backend_type,
     coalesce(database, '')::text as blocker_database,
     ''::text as blocker_user,
     ''::text as blocker_appname,
@@ -107,6 +113,8 @@ replication as (
   select
     'pg_stat_replication'::text as component,
     'data'::text as horizon_type,
+    pid::int as blocker_pid,
+    'walsender'::text as blocker_backend_type,
     ''::text as blocker_database,
     coalesce(usename, '')::text as blocker_user,
     coalesce(application_name, '')::text as blocker_appname,
@@ -137,6 +145,8 @@ prepared as (
   select
     'pg_prepared_xacts'::text as component,
     'data'::text as horizon_type,
+    null::int as blocker_pid,
+    'prepared transaction'::text as blocker_backend_type,
     coalesce(database, '')::text as blocker_database,
     ''::text as blocker_user,
     ''::text as blocker_appname,
@@ -166,6 +176,8 @@ select
   current_database() as datname,
   component,
   horizon_type,
+  blocker_pid,
+  blocker_backend_type,
   blocker_database,
   blocker_user,
   blocker_appname,
@@ -189,14 +201,14 @@ select
   age_tx
 from activity
 union all
-select current_database(), component, horizon_type, blocker_database, blocker_user, blocker_appname, blocker_state, query_id, query, slot_name, slot_type, slot_plugin, slot_xmin_source, slot_status, slot_wal_status, slot_inactive_since, slot_conflicting, slot_invalidation_reason, replication_state, replication_sync_state, standby_name, prepared_gid, owner, age_tx
+select current_database(), component, horizon_type, blocker_pid, blocker_backend_type, blocker_database, blocker_user, blocker_appname, blocker_state, query_id, query, slot_name, slot_type, slot_plugin, slot_xmin_source, slot_status, slot_wal_status, slot_inactive_since, slot_conflicting, slot_invalidation_reason, replication_state, replication_sync_state, standby_name, prepared_gid, owner, age_tx
 from slots
 union all
-select current_database(), component, horizon_type, blocker_database, blocker_user, blocker_appname, blocker_state, query_id, query, slot_name, slot_type, slot_plugin, slot_xmin_source, slot_status, slot_wal_status, slot_inactive_since, slot_conflicting, slot_invalidation_reason, replication_state, replication_sync_state, standby_name, prepared_gid, owner, age_tx
+select current_database(), component, horizon_type, blocker_pid, blocker_backend_type, blocker_database, blocker_user, blocker_appname, blocker_state, query_id, query, slot_name, slot_type, slot_plugin, slot_xmin_source, slot_status, slot_wal_status, slot_inactive_since, slot_conflicting, slot_invalidation_reason, replication_state, replication_sync_state, standby_name, prepared_gid, owner, age_tx
 from slots_catalog
 union all
-select current_database(), component, horizon_type, blocker_database, blocker_user, blocker_appname, blocker_state, query_id, query, slot_name, slot_type, slot_plugin, slot_xmin_source, slot_status, slot_wal_status, slot_inactive_since, slot_conflicting, slot_invalidation_reason, replication_state, replication_sync_state, standby_name, prepared_gid, owner, age_tx
+select current_database(), component, horizon_type, blocker_pid, blocker_backend_type, blocker_database, blocker_user, blocker_appname, blocker_state, query_id, query, slot_name, slot_type, slot_plugin, slot_xmin_source, slot_status, slot_wal_status, slot_inactive_since, slot_conflicting, slot_invalidation_reason, replication_state, replication_sync_state, standby_name, prepared_gid, owner, age_tx
 from replication
 union all
-select current_database(), component, horizon_type, blocker_database, blocker_user, blocker_appname, blocker_state, query_id, query, slot_name, slot_type, slot_plugin, slot_xmin_source, slot_status, slot_wal_status, slot_inactive_since, slot_conflicting, slot_invalidation_reason, replication_state, replication_sync_state, standby_name, prepared_gid, owner, age_tx
+select current_database(), component, horizon_type, blocker_pid, blocker_backend_type, blocker_database, blocker_user, blocker_appname, blocker_state, query_id, query, slot_name, slot_type, slot_plugin, slot_xmin_source, slot_status, slot_wal_status, slot_inactive_since, slot_conflicting, slot_invalidation_reason, replication_state, replication_sync_state, standby_name, prepared_gid, owner, age_tx
 from prepared

@@ -1,44 +1,54 @@
-with table_sizes as (
+with candidates as materialized (
   select
-    current_database() as datname,
-    n.nspname as schema,
-    c.relname as table_name,
     c.oid as table_oid,
     c.reltoastrelid,
-    pg_relation_size(c.oid, 'main') as table_main_size_b,
-    pg_relation_size(c.oid, 'fsm') as table_fsm_size_b,
-    pg_relation_size(c.oid, 'vm') as table_vm_size_b,
-    pg_indexes_size(c.oid) as table_indexes_size_b,
-    pg_relation_size(c.reltoastrelid, 'main') as toast_main_size_b,
-    pg_relation_size(c.reltoastrelid, 'fsm') as toast_fsm_size_b,
-    pg_relation_size(c.reltoastrelid, 'vm') as toast_vm_size_b,
-    pg_indexes_size(c.reltoastrelid) as toast_indexes_size_b,
-    pg_total_relation_size(c.reltoastrelid) as toast_total_size_b,
-    pg_total_relation_size(c.oid) as total_relation_size_b
-  from pg_class c
-  join pg_namespace n on n.oid = c.relnamespace
+    n.nspname as schema,
+    c.relname as table_name,
+    greatest(c.relpages, 0)::int8 * current_setting('block_size')::int8
+      as estimated_heap_bytes
+  from pg_catalog.pg_class c
+  join pg_catalog.pg_namespace n on n.oid = c.relnamespace
   where c.relkind in ('r', 'p', 'm')
-    and n.nspname not in ('information_schema', 'pg_toast')
+    and n.nspname not in ('pg_catalog', 'information_schema', 'pg_toast')
+    and n.nspname !~ '^pg_temp_'
     and not exists (
-      select 1 from pg_locks
-      where relation = c.oid and mode = 'AccessExclusiveLock'
+      select 1
+      from pg_catalog.pg_locks l
+      where l.relation = c.oid
+        and l.mode = 'AccessExclusiveLock'
+        and l.granted
     )
+  order by estimated_heap_bytes desc, n.nspname, c.relname
+  limit 200
 ),
-ranked as (
+sizes as (
   select
-    row_number() over (
-      order by total_relation_size_b desc nulls last,
-               schema, table_name
-    ) as rownum,
-    *
-  from table_sizes
-  where total_relation_size_b > 0
+    current_database() as datname,
+    c.table_oid,
+    c.schema,
+    c.table_name,
+    c.estimated_heap_bytes,
+    pg_catalog.pg_relation_size(c.table_oid, 'main') as table_main_size_b,
+    pg_catalog.pg_relation_size(c.table_oid, 'fsm') as table_fsm_size_b,
+    pg_catalog.pg_relation_size(c.table_oid, 'vm') as table_vm_size_b,
+    pg_catalog.pg_indexes_size(c.table_oid) as table_indexes_size_b,
+    case when c.reltoastrelid <> 0 then pg_catalog.pg_relation_size(c.reltoastrelid, 'main') else 0 end
+      as toast_main_size_b,
+    case when c.reltoastrelid <> 0 then pg_catalog.pg_relation_size(c.reltoastrelid, 'fsm') else 0 end
+      as toast_fsm_size_b,
+    case when c.reltoastrelid <> 0 then pg_catalog.pg_relation_size(c.reltoastrelid, 'vm') else 0 end
+      as toast_vm_size_b,
+    case when c.reltoastrelid <> 0 then pg_catalog.pg_indexes_size(c.reltoastrelid) else 0 end
+      as toast_indexes_size_b,
+    pg_catalog.pg_total_relation_size(c.table_oid) as total_relation_size_b
+  from candidates c
 )
 select
   datname,
+  table_oid,
   schema,
   table_name,
-  abs(greatest(ceil(log((total_relation_size_b + 1) / 10 ^ 6)), 0))::text as size_cardinality_mb,
+  estimated_heap_bytes,
   table_main_size_b,
   table_fsm_size_b,
   table_vm_size_b,
@@ -48,26 +58,8 @@ select
   toast_vm_size_b,
   toast_indexes_size_b,
   total_relation_size_b,
-  (toast_main_size_b + toast_fsm_size_b + toast_vm_size_b + toast_indexes_size_b) as total_toast_size_b
-from ranked
-where rownum <= 100
-union all
-select
-  current_database() as datname,
-  '$other$'::text as schema,
-  '$other$'::text as table_name,
-  abs(greatest(ceil(log((coalesce(sum(total_relation_size_b), 0) + 1) / 10 ^ 6)), 0))::text as size_cardinality_mb,
-  coalesce(sum(table_main_size_b), 0)::int8 as table_main_size_b,
-  coalesce(sum(table_fsm_size_b), 0)::int8 as table_fsm_size_b,
-  coalesce(sum(table_vm_size_b), 0)::int8 as table_vm_size_b,
-  coalesce(sum(table_indexes_size_b), 0)::int8 as table_indexes_size_b,
-  coalesce(sum(toast_main_size_b), 0)::int8 as toast_main_size_b,
-  coalesce(sum(toast_fsm_size_b), 0)::int8 as toast_fsm_size_b,
-  coalesce(sum(toast_vm_size_b), 0)::int8 as toast_vm_size_b,
-  coalesce(sum(toast_indexes_size_b), 0)::int8 as toast_indexes_size_b,
-  coalesce(sum(total_relation_size_b), 0)::int8 as total_relation_size_b,
-  coalesce(sum(toast_main_size_b + toast_fsm_size_b + toast_vm_size_b + toast_indexes_size_b), 0)::int8 as total_toast_size_b
-from ranked
-where rownum > 100
-group by ()
-having count(*) > 0
+  (toast_main_size_b + toast_fsm_size_b + toast_vm_size_b + toast_indexes_size_b)::int8
+    as total_toast_size_b
+from sizes
+order by total_relation_size_b desc nulls last, schema, table_name
+limit 100

@@ -721,6 +721,19 @@ def _validate_metrics(content: ContentPack, issues: list[ValidationIssue]) -> No
             color = series.get("color")
             if color and not _is_hex_color(str(color)):
                 _issue(issues, "metric_color", f"Invalid series color {color!r}", location)
+            delta_adjustment = series.get("delta_adjustment")
+            if delta_adjustment is not None and (
+                not isinstance(delta_adjustment, (int, float))
+                or isinstance(delta_adjustment, bool)
+                or delta_adjustment < 0
+                or series.get("transform") not in {"delta", "rate"}
+            ):
+                _issue(
+                    issues,
+                    "metric_transform",
+                    "delta_adjustment must be a non-negative number on a delta/rate series",
+                    location,
+                )
 
         partition_by = metric.get("partition_by") or []
         if not isinstance(partition_by, list) or any(

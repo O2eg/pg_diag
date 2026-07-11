@@ -3,23 +3,19 @@
 This instruction belongs to report item `storage_vacuum.table_size_detailed`. The item is backed by `storage.table_size_detailed` (SQL query).
 
 ## What this item shows
-- Top relation size breakdown by heap, indexes, toast, and total bytes.
-- Which tables consume the most storage.
-- Storage distribution that hints at index or toast-heavy tables.
+- Exact heap/FSM/VM/index/TOAST sizes for the largest 100 rows among 200 candidates preselected by `pg_class.relpages` estimate.
+- Stable table OID plus database/schema/table labels.
 
 ## What to watch
-- Large table with index size much larger than heap.
-- Toast size dominating total size.
-- Rapidly growing relation after workload change.
+- Index or TOAST size dominating heap, and growth confirmed across separate reports.
+
+## Automatic evaluation
+- No automatic severity: size is capacity evidence, not proof of bloat or over-indexing.
 
 ## Common fault causes
-- Bloat.
-- Wide toasted columns.
-- Over-indexing.
-- Retention policy not running.
-- Bulk load.
+- Legitimate data growth, wide values, many indexes, retention drift, or bloat.
 
 ## Checklist
-- Prioritize large active tables for deeper review.
-- Compare with DML and vacuum evidence.
-- Use bloat-specific tooling before scheduling rewrites.
+- Candidate selection is deliberately bounded for databases with very many relations; stale `relpages` can omit a recently grown table.
+- Relations holding a granted AccessExclusiveLock are skipped to avoid blocking diagnostics.
+- Use bloat-specific evidence before rewrite/reindex decisions.

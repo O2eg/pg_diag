@@ -14,7 +14,7 @@ queries:
       recommendation: Reduce application pool demand or connection leaks before raising max_connections; preserve reserved administrative access.
     collection:
       default: once
-      supports: [once, every_snapshot]
+      supports: [once]
     variants:
       - id: activity_connection_pressure_pg14_plus
         min_pg_version: 140000
@@ -122,6 +122,9 @@ queries:
       default_sort:
         column: retained_wal_bytes
         direction: desc
+    evaluation:
+      summary_title: A replication slot is no longer usable
+      recommendation: Confirm the consumer state and rebuild or drop the slot only through the owning replication workflow.
     collection:
       default: once
       supports: [once, every_snapshot]
@@ -159,8 +162,11 @@ queries:
     source: queries_collection/pg_stat_archiver_pg_archiver.md
     display:
       default_sort:
-        column: pending_wal_count
+        column: segments_ahead_of_last_archived_same_timeline
         direction: desc
+    evaluation:
+      summary_title: WAL archiving requires review
+      recommendation: Check PostgreSQL archiver logs and archive target health before changing or retrying archive configuration.
     collection:
       default: once
       supports: [once, every_snapshot]
@@ -197,9 +203,12 @@ queries:
       default_sort:
         column: xid_age
         direction: desc
+    evaluation:
+      summary_title: Database freeze age requires attention
+      recommendation: Identify horizon blockers and ensure vacuum progresses before age reaches transaction or multixact safety limits.
     collection:
       default: once
-      supports: [once, every_snapshot]
+      supports: [once]
     variants:
       - id: vacuum_database_wraparound_pg14_plus
         min_pg_version: 140000
@@ -217,7 +226,7 @@ queries:
         direction: desc
     collection:
       default: once
-      supports: [once, every_snapshot]
+      supports: [once]
     variants:
       - id: vacuum_xmin_horizon_pg14_plus
         min_pg_version: 140000
@@ -235,7 +244,7 @@ queries:
         direction: desc
     collection:
       default: once
-      supports: [once, every_snapshot]
+      supports: [once]
     variants:
       - id: vacuum_xmin_horizon_blockers_pg14_plus
         min_pg_version: 140000
@@ -253,7 +262,7 @@ queries:
         direction: desc
     collection:
       default: once
-      supports: [once, every_snapshot]
+      supports: [once]
     variants:
       - id: vacuum_prepared_xacts_pg14_plus
         min_pg_version: 140000
@@ -271,7 +280,7 @@ queries:
         direction: desc
     collection:
       default: once
-      supports: [once, every_snapshot]
+      supports: [once]
     variants:
       - id: progress_vacuum_pg14_pg16
         min_pg_version: 140000
@@ -288,11 +297,11 @@ queries:
     description: Running CREATE INDEX and REINDEX operations.
     display:
       default_sort:
-        column: xact_age_seconds
+        column: query_age_seconds
         direction: desc
     collection:
       default: once
-      supports: [once, every_snapshot]
+      supports: [once]
     variants:
       - id: progress_create_index_pg14_plus
         min_pg_version: 140000
@@ -305,11 +314,11 @@ queries:
     description: Running CLUSTER and VACUUM FULL operations.
     display:
       default_sort:
-        column: xact_age_seconds
+        column: query_age_seconds
         direction: desc
     collection:
       default: once
-      supports: [once, every_snapshot]
+      supports: [once]
     variants:
       - id: progress_cluster_pg14_plus
         min_pg_version: 140000
@@ -322,11 +331,11 @@ queries:
     description: Running COPY operations with byte and tuple progress.
     display:
       default_sort:
-        column: xact_age_seconds
+        column: query_age_seconds
         direction: desc
     collection:
       default: once
-      supports: [once, every_snapshot]
+      supports: [once]
     variants:
       - id: progress_copy_pg14_plus
         min_pg_version: 140000
@@ -343,6 +352,9 @@ queries:
       default_sort:
         column: percent
         direction: desc
+    evaluation:
+      summary_title: Non-cycling sequences are approaching exhaustion
+      recommendation: Validate application ID width and plan a sequence/type range change before remaining values are consumed.
     collection:
       default: once
       supports: [once]
@@ -362,6 +374,9 @@ queries:
       default_sort:
         column: redundant_index_size_bytes
         direction: desc
+    evaluation:
+      summary_title: Structurally overlapping indexes require baseline review
+      recommendation: Treat rows as candidates only; compare plans, constraints, INCLUDE columns, workload, and DDL dependencies before removal.
     collection:
       default: once
       supports: [once]
@@ -379,8 +394,11 @@ queries:
     cost: medium
     display:
       default_sort:
-        column: source_schema
-        direction: asc
+        column: source_n_live_tup
+        direction: desc
+    evaluation:
+      summary_title: Large foreign-key tables lack a supporting left-prefix index
+      recommendation: Prioritize parent UPDATE/DELETE paths and validate the suggested key order before creating an index.
     collection:
       default: once
       supports: [once]
@@ -400,6 +418,9 @@ queries:
       default_sort:
         column: total_index_size_bytes
         direction: desc
+    evaluation:
+      summary_title: Structurally duplicate indexes were found
+      recommendation: Confirm constraint and extension dependencies, keep the required valid index, and remove only verified duplicates.
     collection:
       default: once
       supports: [once]
@@ -419,6 +440,9 @@ queries:
       default_sort:
         column: total_relation_size_bytes
         direction: desc
+    evaluation:
+      summary_title: Large tables lack a primary or non-partial unique index
+      recommendation: Confirm table lifecycle and row-identity requirements before adding a key or unique constraint.
     collection:
       default: once
       supports: [once]

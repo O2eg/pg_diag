@@ -6,11 +6,12 @@ from types import SimpleNamespace
 
 import pytest
 
+import pg_diag.collection as collection_module
 from pg_diag import runtime_config
 from pg_diag.artifact import item_from_plan
 from pg_diag.artifact import report_output_paths
 from pg_diag.errors import PgDiagError, UnsupportedServerVersion
-from pg_diag.planner import PlannedItem
+from pg_diag.planner import PlannedItem, SourceJob
 from pg_diag.snapshot import collect_snapshot
 from pg_diag.snapshots import collect_snapshots
 
@@ -37,6 +38,7 @@ def fake_plan(mode: str, collection_mode: str):
         reason=None,
         sections=[],
         items=[],
+        source_jobs=[],
     )
 
 
@@ -49,6 +51,7 @@ def fake_plan_with_items(mode: str, collection_mode: str, items):
         reason=None,
         sections=[{"section_id": "os", "title": "OS", "items": [item.item_id for item in items]}],
         items=items,
+        source_jobs=[],
     )
 
 
@@ -74,8 +77,6 @@ def test_collect_snapshot_writes_exact_output_files(tmp_path, monkeypatch) -> No
     json_path = tmp_path / "fixed" / "one.json"
     html_path = tmp_path / "html" / "one.html"
 
-    import pg_diag.snapshot as snapshot_module
-
     async def connect_stub(*args, **kwargs):
         return FakeConn()
 
@@ -89,15 +90,14 @@ def test_collect_snapshot_writes_exact_output_files(tmp_path, monkeypatch) -> No
             "capabilities": {},
         }
 
-    monkeypatch.setattr(snapshot_module, "validate_content", lambda content: [])
-    monkeypatch.setattr(snapshot_module, "connect", connect_stub)
-    monkeypatch.setattr(snapshot_module, "detect_runtime_context", detect_runtime_context_stub)
+    monkeypatch.setattr(collection_module, "connect", connect_stub)
+    monkeypatch.setattr(collection_module, "detect_runtime_context", detect_runtime_context_stub)
     monkeypatch.setattr(
-        snapshot_module,
+        collection_module,
         "build_plan",
         lambda content, server_version_num, mode, collection_mode: fake_plan(mode, collection_mode),
     )
-    monkeypatch.setattr(snapshot_module, "render_html", lambda artifact: "<html>snapshot</html>")
+    monkeypatch.setattr(collection_module, "render_html", lambda artifact, **kwargs: "<html>snapshot</html>")
 
     asyncio.run(
         collect_snapshot(
@@ -108,6 +108,7 @@ def test_collect_snapshot_writes_exact_output_files(tmp_path, monkeypatch) -> No
             collection_mode=runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE,
             json_out=json_path,
             html_out=html_path,
+            content_validated=True,
         )
     )
 
@@ -140,16 +141,15 @@ def test_collect_snapshots_writes_exact_output_files(tmp_path, monkeypatch) -> N
     async def collect_db_samples_stub(*args, **kwargs):
         return [], [], {}
 
-    monkeypatch.setattr(snapshots_module, "validate_content", lambda content: [])
-    monkeypatch.setattr(snapshots_module, "connect", connect_stub)
-    monkeypatch.setattr(snapshots_module, "detect_runtime_context", detect_runtime_context_stub)
+    monkeypatch.setattr(collection_module, "connect", connect_stub)
+    monkeypatch.setattr(collection_module, "detect_runtime_context", detect_runtime_context_stub)
     monkeypatch.setattr(snapshots_module, "_collect_db_samples", collect_db_samples_stub)
     monkeypatch.setattr(
-        snapshots_module,
+        collection_module,
         "build_plan",
         lambda content, server_version_num, mode, collection_mode: fake_plan(mode, collection_mode),
     )
-    monkeypatch.setattr(snapshots_module, "render_html", lambda artifact: "<html>snapshots</html>")
+    monkeypatch.setattr(collection_module, "render_html", lambda artifact, **kwargs: "<html>snapshots</html>")
 
     asyncio.run(
         collect_snapshots(
@@ -162,6 +162,7 @@ def test_collect_snapshots_writes_exact_output_files(tmp_path, monkeypatch) -> N
             interval_seconds=15,
             json_out=json_path,
             html_out=html_path,
+            content_validated=True,
         )
     )
 
@@ -203,12 +204,11 @@ def test_collect_snapshots_formats_remote_skipped_once_items(tmp_path, monkeypat
     async def collect_db_samples_stub(*args, **kwargs):
         return [], [], {}
 
-    monkeypatch.setattr(snapshots_module, "validate_content", lambda content: [])
-    monkeypatch.setattr(snapshots_module, "connect", connect_stub)
-    monkeypatch.setattr(snapshots_module, "detect_runtime_context", detect_runtime_context_stub)
+    monkeypatch.setattr(collection_module, "connect", connect_stub)
+    monkeypatch.setattr(collection_module, "detect_runtime_context", detect_runtime_context_stub)
     monkeypatch.setattr(snapshots_module, "_collect_db_samples", collect_db_samples_stub)
     monkeypatch.setattr(
-        snapshots_module,
+        collection_module,
         "build_plan",
         lambda content, server_version_num, mode, collection_mode: fake_plan_with_items(
             mode,
@@ -216,7 +216,7 @@ def test_collect_snapshots_formats_remote_skipped_once_items(tmp_path, monkeypat
             [planned],
         ),
     )
-    monkeypatch.setattr(snapshots_module, "render_html", lambda artifact: "<html>snapshots</html>")
+    monkeypatch.setattr(collection_module, "render_html", lambda artifact, **kwargs: "<html>snapshots</html>")
 
     artifact = asyncio.run(
         collect_snapshots(
@@ -227,6 +227,7 @@ def test_collect_snapshots_formats_remote_skipped_once_items(tmp_path, monkeypat
             collection_mode=runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE,
             duration_seconds=30,
             interval_seconds=15,
+            content_validated=True,
         )
     )
 
@@ -249,29 +250,19 @@ def test_collect_snapshots_runs_static_items_before_chart_window(tmp_path, monke
         status="planned",
         collection_scope="once",
     )
-    chart_source = PlannedItem(
-        item_id="__metric_sources.chart",
-        section_id="__metric_sources",
-        item_key="chart",
+    chart_source = SourceJob(
+        job_id="metrics.chart",
         title="Chart source",
-        source_kind="query",
         source_id="metrics.chart",
         status="planned",
-        state="hidden",
         collection_scope="every_snapshot",
-        source_metadata={"internal": True},
     )
-    endpoint_source = PlannedItem(
-        item_id="__metric_sources.delta",
-        section_id="__metric_sources",
-        item_key="delta",
+    endpoint_source = SourceJob(
+        job_id="metrics.delta",
         title="Delta source",
-        source_kind="query",
         source_id="metrics.delta",
         status="planned",
-        state="hidden",
         collection_scope="window_endpoints",
-        source_metadata={"internal": True},
     )
     plan = SimpleNamespace(
         mode=runtime_config.SNAPSHOTS_MODE,
@@ -287,7 +278,8 @@ def test_collect_snapshots_runs_static_items_before_chart_window(tmp_path, monke
                 "items": [static_item.item_id],
             }
         ],
-        items=[static_item, chart_source, endpoint_source],
+        items=[static_item],
+        source_jobs=[chart_source, endpoint_source],
     )
     call_order = []
 
@@ -349,14 +341,13 @@ def test_collect_snapshots_runs_static_items_before_chart_window(tmp_path, monke
     content = fake_content(tmp_path)
     content.report["runtime_policy"] = {"fail_fast": False}
     content.metrics = {}
-    monkeypatch.setattr(snapshots_module, "validate_content", lambda value: [])
-    monkeypatch.setattr(snapshots_module, "connect", connect_stub)
-    monkeypatch.setattr(snapshots_module, "detect_runtime_context", detect_runtime_context_stub)
-    monkeypatch.setattr(snapshots_module, "build_plan", lambda *args, **kwargs: plan)
-    monkeypatch.setattr(snapshots_module, "_execute_once_item", execute_once_stub)
+    monkeypatch.setattr(collection_module, "connect", connect_stub)
+    monkeypatch.setattr(collection_module, "detect_runtime_context", detect_runtime_context_stub)
+    monkeypatch.setattr(collection_module, "build_plan", lambda *args, **kwargs: plan)
+    monkeypatch.setattr(collection_module, "execute_report_item", execute_once_stub)
     monkeypatch.setattr(snapshots_module, "_collect_window_endpoint", collect_endpoint_stub)
     monkeypatch.setattr(snapshots_module, "_collect_db_samples", collect_db_samples_stub)
-    monkeypatch.setattr(snapshots_module, "render_html", lambda artifact: "<html></html>")
+    monkeypatch.setattr(collection_module, "render_html", lambda artifact, **kwargs: "<html></html>")
 
     artifact = asyncio.run(
         collect_snapshots(
@@ -367,6 +358,7 @@ def test_collect_snapshots_runs_static_items_before_chart_window(tmp_path, monke
             collection_mode=runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE,
             duration_seconds=30,
             interval_seconds=15,
+            content_validated=True,
         )
     )
 
@@ -455,10 +447,9 @@ def test_collect_snapshots_uses_backend_proc_window_endpoints(tmp_path, monkeypa
             "result": "table",
         }
     }
-    monkeypatch.setattr(snapshots_module, "validate_content", lambda value: [])
-    monkeypatch.setattr(snapshots_module, "connect", connect_stub)
-    monkeypatch.setattr(snapshots_module, "detect_runtime_context", detect_runtime_context_stub)
-    monkeypatch.setattr(snapshots_module, "build_plan", lambda *args, **kwargs: plan)
+    monkeypatch.setattr(collection_module, "connect", connect_stub)
+    monkeypatch.setattr(collection_module, "detect_runtime_context", detect_runtime_context_stub)
+    monkeypatch.setattr(collection_module, "build_plan", lambda *args, **kwargs: plan)
     monkeypatch.setattr(snapshots_module, "_collect_db_samples", collect_db_samples_stub)
     monkeypatch.setattr(snapshots_module, "capture_backend_proc_state", capture_backend_proc_state_stub)
     monkeypatch.setattr(
@@ -468,7 +459,7 @@ def test_collect_snapshots_uses_backend_proc_window_endpoints(tmp_path, monkeypa
     )
     monkeypatch.setattr(snapshots_module, "collect_os_metrics", collect_os_metrics_stub)
     monkeypatch.setattr(snapshots_module, "build_metric_item", build_metric_item_stub)
-    monkeypatch.setattr(snapshots_module, "render_html", lambda artifact: "<html></html>")
+    monkeypatch.setattr(collection_module, "render_html", lambda artifact, **kwargs: "<html></html>")
 
     artifact = asyncio.run(
         collect_snapshots(
@@ -479,6 +470,7 @@ def test_collect_snapshots_uses_backend_proc_window_endpoints(tmp_path, monkeypa
             collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
             duration_seconds=30,
             interval_seconds=15,
+            content_validated=True,
         )
     )
 
@@ -487,8 +479,6 @@ def test_collect_snapshots_uses_backend_proc_window_endpoints(tmp_path, monkeypa
 
 
 def test_collect_snapshot_rejects_unsupported_server_before_writing(tmp_path, monkeypatch) -> None:
-    import pg_diag.snapshot as snapshot_module
-
     async def connect_stub(*args, **kwargs):
         return FakeConn()
 
@@ -499,10 +489,9 @@ def test_collect_snapshot_rejects_unsupported_server_before_writing(tmp_path, mo
     unsupported_plan.supported_server_version = False
     unsupported_plan.reason = "unsupported test version"
 
-    monkeypatch.setattr(snapshot_module, "validate_content", lambda content: [])
-    monkeypatch.setattr(snapshot_module, "connect", connect_stub)
-    monkeypatch.setattr(snapshot_module, "detect_runtime_context", detect_runtime_context_stub)
-    monkeypatch.setattr(snapshot_module, "build_plan", lambda *args, **kwargs: unsupported_plan)
+    monkeypatch.setattr(collection_module, "connect", connect_stub)
+    monkeypatch.setattr(collection_module, "detect_runtime_context", detect_runtime_context_stub)
+    monkeypatch.setattr(collection_module, "build_plan", lambda *args, **kwargs: unsupported_plan)
 
     with pytest.raises(UnsupportedServerVersion, match="unsupported test version"):
         asyncio.run(
@@ -511,6 +500,7 @@ def test_collect_snapshot_rejects_unsupported_server_before_writing(tmp_path, mo
                 out_dir=tmp_path / "out",
                 dsn=None,
                 connection_kwargs={},
+                content_validated=True,
             )
         )
 
@@ -519,8 +509,6 @@ def test_collect_snapshot_rejects_unsupported_server_before_writing(tmp_path, mo
 
 
 def test_collect_snapshot_honors_fail_fast_policy(tmp_path, monkeypatch) -> None:
-    import pg_diag.snapshot as snapshot_module
-
     planned = PlannedItem(
         item_id="s.q",
         section_id="s",
@@ -547,11 +535,10 @@ def test_collect_snapshot_honors_fail_fast_policy(tmp_path, monkeypatch) -> None
             result={"kind": "table", "columns": [], "rows": [], "row_count": 0},
         )
 
-    monkeypatch.setattr(snapshot_module, "validate_content", lambda content: [])
-    monkeypatch.setattr(snapshot_module, "connect", connect_stub)
-    monkeypatch.setattr(snapshot_module, "detect_runtime_context", detect_runtime_context_stub)
+    monkeypatch.setattr(collection_module, "connect", connect_stub)
+    monkeypatch.setattr(collection_module, "detect_runtime_context", detect_runtime_context_stub)
     monkeypatch.setattr(
-        snapshot_module,
+        collection_module,
         "build_plan",
         lambda *args, **kwargs: fake_plan_with_items(
             runtime_config.SNAPSHOT_MODE,
@@ -559,7 +546,7 @@ def test_collect_snapshot_honors_fail_fast_policy(tmp_path, monkeypatch) -> None
             [planned],
         ),
     )
-    monkeypatch.setattr(snapshot_module, "execute_query_item", execute_query_stub)
+    monkeypatch.setattr(collection_module, "execute_query_item", execute_query_stub)
 
     with pytest.raises(PgDiagError, match="fail_fast stopped collection at s.q"):
         asyncio.run(
@@ -568,6 +555,7 @@ def test_collect_snapshot_honors_fail_fast_policy(tmp_path, monkeypatch) -> None
                 out_dir=tmp_path / "out",
                 dsn=None,
                 connection_kwargs={},
+                content_validated=True,
             )
         )
 

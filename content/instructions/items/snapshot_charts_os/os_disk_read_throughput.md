@@ -17,6 +17,10 @@ This instruction belongs to report item `snapshot_charts_os.os_disk_read_through
 - Backup or maintenance reads.
 - Index/table reads beyond memory.
 
+## Automatic evaluation
+- Values come from interval `iostat -dxk` reports and are informational; storage limits and topology are external context.
+- The first since-boot iostat report is discarded.
+
 ## Checklist
 - Map device to PostgreSQL mount.
 - Compare with SQL shared I/O and table I/O.

@@ -593,6 +593,7 @@ def _backend_proc_rows(
             continue
         cpu_ticks = max((cur["utime"] + cur["stime"]) - (prev["utime"] + prev["stime"]), 0)
         cpu_pct = round((cpu_ticks / clock_ticks) * 100.0 / seconds, 3) if clock_ticks else 0.0
+        io_access = bool(prev.get("io_access")) and bool(cur.get("io_access"))
         rows.append(
             {
                 "pid": pid,
@@ -600,14 +601,27 @@ def _backend_proc_rows(
                 "state": cur.get("state") or "",
                 "cpu_pct": cpu_pct,
                 "rss_bytes": cur.get("rss_bytes", 0),
-                "io_access": cur.get("io_access", False),
-                "read_bytes_per_sec": _counter_rate(prev["read_bytes"], cur["read_bytes"], seconds),
-                "write_bytes_per_sec": _counter_rate(prev["write_bytes"], cur["write_bytes"], seconds),
-                "cancelled_write_bytes_per_sec": _counter_rate(
-                    prev["cancelled_write_bytes"], cur["cancelled_write_bytes"], seconds
+                "io_access": io_access,
+                "read_bytes_per_sec": (
+                    _counter_rate(prev["read_bytes"], cur["read_bytes"], seconds)
+                    if io_access else None
                 ),
-                "read_syscalls_per_sec": _counter_rate(prev["syscr"], cur["syscr"], seconds),
-                "write_syscalls_per_sec": _counter_rate(prev["syscw"], cur["syscw"], seconds),
+                "write_bytes_per_sec": (
+                    _counter_rate(prev["write_bytes"], cur["write_bytes"], seconds)
+                    if io_access else None
+                ),
+                "cancelled_write_bytes_per_sec": (
+                    _counter_rate(prev["cancelled_write_bytes"], cur["cancelled_write_bytes"], seconds)
+                    if io_access else None
+                ),
+                "read_syscalls_per_sec": (
+                    _counter_rate(prev["syscr"], cur["syscr"], seconds)
+                    if io_access else None
+                ),
+                "write_syscalls_per_sec": (
+                    _counter_rate(prev["syscw"], cur["syscw"], seconds)
+                    if io_access else None
+                ),
                 "command": str(cur.get("cmdline") or "")[:220],
             }
         )

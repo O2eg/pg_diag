@@ -17,6 +17,10 @@ This instruction belongs to report item `snapshot_charts_os.os_disk_utilization`
 - Autovacuum or bulk load.
 - Noisy neighbor on shared storage.
 
+## Automatic evaluation
+- This chart is informational; `%util` saturation semantics differ for rotating, SSD, virtual, and parallel devices.
+- Always interpret utilization with latency and queue depth.
+
 ## Checklist
 - Correlate with disk latency and PostgreSQL I/O.
 - Identify which PostgreSQL path is on the saturated device.

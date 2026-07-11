@@ -18,6 +18,11 @@ This instruction belongs to report item `object_workload.table_io`. The item is 
 - Working set larger than memory.
 - TOAST-heavy access pattern.
 
+## Automatic evaluation
+- This item is informational because physical-read expectations depend on workload and cache warm-up.
+- Counters are cumulative from `stats_reset`; use table I/O deltas for the collection-window rate.
+- Only the top 200 tables by cumulative block reads are retained.
+
 ## Checklist
 - Compare with SQL shared I/O.
 - Check whether reads are expected for reporting/batch jobs.

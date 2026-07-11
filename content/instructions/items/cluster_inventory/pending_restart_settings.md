@@ -17,6 +17,10 @@ This instruction belongs to report item `cluster_inventory.pending_restart_setti
 - ALTER SYSTEM applied without maintenance window.
 - Package or config management changed files.
 
+## Automatic evaluation
+- This is operational evidence, not an automatic severity: a pending restart may be planned.
+- Values are server-scoped and include source file/line when visible.
+
 ## Checklist
 - Schedule restart for intended changes.
 - Rollback unintended pending changes.

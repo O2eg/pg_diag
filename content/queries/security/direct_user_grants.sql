@@ -63,7 +63,8 @@ select
     grantee_name,
     privilege_type,
     is_grantable,
-    'medium' as risk_level,
-    'Privilege is granted directly to a login role instead of a group role' as risk_reason
+    'unknown' as risk_level,
+    'Privilege is granted directly to a login role; whether group roles are required depends on the access-control baseline' as risk_reason
 from grants
 order by schema_name, object_kind, object_name, grantee_name, privilege_type
+limit 1000

@@ -119,7 +119,7 @@ metrics:
       unit: bytes
 
   os.memory_pressure:
-    title: Memory Pressure
+    title: RAM And Swap Usage
     source_sampler: os.memory
     series:
       - name: RAM used
@@ -131,7 +131,7 @@ metrics:
         transform: gauge
         unit: "%"
     chart:
-      kind: stacked_area
+      kind: line
       unit: "%"
 
   os.disk_read_throughput:
@@ -272,6 +272,7 @@ metrics:
       - name: commits
         value_ref: counters.xact_commit
         transform: rate
+        delta_adjustment: 1
         unit: tx/s
       - name: rollbacks
         value_ref: counters.xact_rollback
@@ -302,7 +303,7 @@ metrics:
     source_query: metrics.wal_growth_rate
     requires_collection: every_snapshot
     partition_by:
-      - dimensions.database
+      - dimensions.scope
     series:
       - name: wal bytes
         value_ref: counters.wal_bytes
@@ -370,7 +371,7 @@ metrics:
         transform: rate
         unit: tuples/s
     chart:
-      kind: stacked_area
+      kind: line
       unit: tuples/s
 
   database.block_access_rate:
@@ -478,7 +479,7 @@ metrics:
     top_n:
       mode: interval
       limit: 10
-      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      key_refs: [dimensions.database, dimensions.relation_id]
       label_refs: [dimensions.schema, dimensions.table]
       value_refs: [counters.seq_tup_read, counters.idx_tup_fetch]
       transform: rate
@@ -494,7 +495,7 @@ metrics:
     top_n:
       mode: interval
       limit: 10
-      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      key_refs: [dimensions.database, dimensions.relation_id]
       label_refs: [dimensions.schema, dimensions.table]
       value_ref: counters.seq_tup_read
       transform: rate
@@ -510,7 +511,7 @@ metrics:
     top_n:
       mode: interval
       limit: 10
-      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      key_refs: [dimensions.database, dimensions.relation_id]
       label_refs: [dimensions.schema, dimensions.table]
       value_ref: counters.idx_tup_fetch
       transform: rate
@@ -526,7 +527,7 @@ metrics:
     top_n:
       mode: interval
       limit: 10
-      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      key_refs: [dimensions.database, dimensions.relation_id]
       label_refs: [dimensions.schema, dimensions.table]
       value_refs: [counters.n_tup_ins, counters.n_tup_upd, counters.n_tup_del]
       transform: rate
@@ -542,7 +543,7 @@ metrics:
     top_n:
       mode: interval
       limit: 10
-      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      key_refs: [dimensions.database, dimensions.relation_id]
       label_refs: [dimensions.schema, dimensions.table]
       value_ref: counters.n_tup_ins
       transform: rate
@@ -558,7 +559,7 @@ metrics:
     top_n:
       mode: interval
       limit: 10
-      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      key_refs: [dimensions.database, dimensions.relation_id]
       label_refs: [dimensions.schema, dimensions.table]
       value_ref: counters.n_tup_upd
       transform: rate
@@ -574,7 +575,7 @@ metrics:
     top_n:
       mode: interval
       limit: 10
-      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      key_refs: [dimensions.database, dimensions.relation_id]
       label_refs: [dimensions.schema, dimensions.table]
       value_ref: counters.n_tup_del
       transform: rate
@@ -590,7 +591,7 @@ metrics:
     top_n:
       mode: interval
       limit: 10
-      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      key_refs: [dimensions.database, dimensions.relation_id]
       label_refs: [dimensions.schema, dimensions.table]
       value_ref: counters.n_tup_hot_upd
       transform: rate
@@ -606,7 +607,7 @@ metrics:
     top_n:
       mode: interval
       limit: 10
-      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      key_refs: [dimensions.database, dimensions.relation_id]
       label_refs: [dimensions.schema, dimensions.table]
       value_ref: counters.heap_blks_read
       transform: rate
@@ -622,7 +623,7 @@ metrics:
     top_n:
       mode: interval
       limit: 10
-      key_refs: [dimensions.database, dimensions.schema, dimensions.table]
+      key_refs: [dimensions.database, dimensions.relation_id]
       label_refs: [dimensions.schema, dimensions.table]
       value_ref: counters.idx_blks_read
       transform: rate
@@ -638,7 +639,7 @@ metrics:
     top_n:
       mode: interval
       limit: 10
-      key_refs: [dimensions.database, dimensions.schema, dimensions.table, dimensions.index]
+      key_refs: [dimensions.database, dimensions.index_id]
       label_refs: [dimensions.schema, dimensions.table, dimensions.index]
       value_ref: counters.idx_scan
       transform: rate
@@ -654,7 +655,7 @@ metrics:
     top_n:
       mode: interval
       limit: 10
-      key_refs: [dimensions.database, dimensions.schema, dimensions.table, dimensions.index]
+      key_refs: [dimensions.database, dimensions.index_id]
       label_refs: [dimensions.schema, dimensions.table, dimensions.index]
       value_ref: counters.idx_tup_read
       transform: rate
@@ -670,7 +671,7 @@ metrics:
     top_n:
       mode: interval
       limit: 10
-      key_refs: [dimensions.database, dimensions.schema, dimensions.table, dimensions.index]
+      key_refs: [dimensions.database, dimensions.index_id]
       label_refs: [dimensions.schema, dimensions.table, dimensions.index]
       value_ref: counters.idx_tup_fetch
       transform: rate
@@ -680,54 +681,54 @@ metrics:
       unit: tuples/s
 
   objects.indexes_top_reads_per_scan:
-    title: Top Indexes By Reads Per Scan
+    title: Top Indexes By Tuples Read Per Scan
     source_query: metrics.objects_indexes_top_reads_per_scan
     requires_collection: every_snapshot
     top_n:
       mode: interval
       operation: ratio
       limit: 10
-      key_refs: [dimensions.database, dimensions.schema, dimensions.table, dimensions.index]
+      key_refs: [dimensions.database, dimensions.index_id]
       label_refs: [dimensions.schema, dimensions.table, dimensions.index]
       numerator_refs: [counters.idx_tup_read]
       denominator_ref: counters.idx_scan
-      series_name: reads / scan
+      series_name: tuples read / scan
       unit: ratio
     chart:
       kind: stacked_column
       unit: ratio
 
   objects.indexes_top_fetches_per_scan:
-    title: Top Indexes By Fetches Per Scan
+    title: Top Indexes By Heap Fetches Per Scan
     source_query: metrics.objects_indexes_top_fetches_per_scan
     requires_collection: every_snapshot
     top_n:
       mode: interval
       operation: ratio
       limit: 10
-      key_refs: [dimensions.database, dimensions.schema, dimensions.table, dimensions.index]
+      key_refs: [dimensions.database, dimensions.index_id]
       label_refs: [dimensions.schema, dimensions.table, dimensions.index]
       numerator_refs: [counters.idx_tup_fetch]
       denominator_ref: counters.idx_scan
-      series_name: fetches / scan
+      series_name: heap fetches / scan
       unit: ratio
     chart:
       kind: stacked_column
       unit: ratio
 
   objects.indexes_top_reads_per_fetch:
-    title: Top Indexes By Reads Per Fetch
+    title: Top Indexes By Tuples Read Per Heap Fetch
     source_query: metrics.objects_indexes_top_reads_per_fetch
     requires_collection: every_snapshot
     top_n:
       mode: interval
       operation: ratio
       limit: 10
-      key_refs: [dimensions.database, dimensions.schema, dimensions.table, dimensions.index]
+      key_refs: [dimensions.database, dimensions.index_id]
       label_refs: [dimensions.schema, dimensions.table, dimensions.index]
       numerator_refs: [counters.idx_tup_read]
       denominator_ref: counters.idx_tup_fetch
-      series_name: reads / fetch
+      series_name: tuples read / heap fetch
       unit: ratio
     chart:
       kind: stacked_column

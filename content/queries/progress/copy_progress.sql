@@ -1,27 +1,23 @@
 select
+  p.datid,
   p.datname,
   p.pid,
-  p.relid::regclass::text as relation,
+  p.relid,
+  case when p.relid <> 0 then p.relid::regclass::text end as relation,
   a.state,
   coalesce(a.wait_event_type || '.' || a.wait_event, '') as waiting,
   p.command,
   p.type,
-  pg_relation_size(p.relid) as relation_size_bytes,
-  p.bytes_total as source_total_bytes,
+  p.bytes_total,
   p.bytes_processed as processed_bytes,
   round(p.bytes_processed::numeric * 100 / nullif(p.bytes_total, 0), 3) as processed_pct,
   p.tuples_processed,
   p.tuples_excluded,
-  extract(epoch from clock_timestamp() - a.xact_start)::numeric(20, 3) as xact_age_seconds
-from pg_stat_progress_copy p
-join pg_stat_activity a on p.pid = a.pid
-where
-  a.pid <> pg_backend_pid()
-  and not exists (
-    select 1
-    from pg_locks
-    where relation = p.relid
-      and mode = 'AccessExclusiveLock'
-      and granted
-  )
-order by xact_age_seconds desc
+  nullif(to_jsonb(p)->>'tuples_skipped', '')::int8 as tuples_skipped,
+  extract(epoch from clock_timestamp() - a.query_start)::numeric(20, 3) as query_age_seconds,
+  left(regexp_replace(coalesce(a.query, ''), '\s+', ' ', 'g'), 500) as query
+from pg_catalog.pg_stat_progress_copy p
+join pg_catalog.pg_stat_activity a on p.pid = a.pid
+where p.datid = (select oid from pg_catalog.pg_database where datname = current_database())
+  and a.pid <> pg_catalog.pg_backend_pid()
+order by query_age_seconds desc

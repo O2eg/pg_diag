@@ -7,6 +7,11 @@ This item reports `ALTER DEFAULT PRIVILEGES` entries that grant future-object pr
 - Future-object privileges granted to `PUBLIC`.
 - Grantable default privileges held by non-owner roles.
 
+## Automatic evaluation
+- `high`: future object privileges are granted to PUBLIC.
+- `medium`: a non-owner can grant a default privilege onward.
+- The check applies only to explicit default-privilege entries, not existing object ACLs.
+
 ## Checklist
 - Revoke default PUBLIC grants that are not explicitly required.
 - Keep future-object privileges scoped to application and migration roles.

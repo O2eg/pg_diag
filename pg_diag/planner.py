@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from hashlib import sha256
 from typing import Any
 
 from . import runtime_config
@@ -50,6 +49,44 @@ class PlannedItem:
 
 
 @dataclass(frozen=True)
+class SourceJob:
+    """Internal collection job that supplies one or more metric report items."""
+
+    job_id: str
+    title: str
+    source_id: str
+    status: str
+    reason: str | None = None
+    variant_id: str | None = None
+    sql_file: str | None = None
+    collection_scope: str | None = None
+    source_metadata: dict[str, Any] = field(default_factory=dict)
+
+    source_kind: str = field(default="query", init=False)
+
+    @property
+    def item_id(self) -> str:
+        return self.job_id
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "job_id": self.job_id,
+            "title": self.title,
+            "source_kind": self.source_kind,
+            "source_id": self.source_id,
+            "status": self.status,
+            "reason": self.reason,
+            "variant_id": self.variant_id,
+            "sql_file": self.sql_file,
+            "collection_scope": self.collection_scope,
+            "source_metadata": self.source_metadata,
+        }
+
+
+PlannedEntry = PlannedItem | SourceJob
+
+
+@dataclass(frozen=True)
 class ExecutionPlan:
     mode: str
     collection_mode: str
@@ -58,6 +95,7 @@ class ExecutionPlan:
     reason: str | None
     sections: list[dict[str, Any]]
     items: list[PlannedItem]
+    source_jobs: list[SourceJob]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -68,6 +106,7 @@ class ExecutionPlan:
             "reason": self.reason,
             "sections": self.sections,
             "items": [item.to_dict() for item in self.items],
+            "source_jobs": [job.to_dict() for job in self.source_jobs],
         }
 
 
@@ -82,6 +121,7 @@ def build_plan(
     query_usage_index = _query_usage_index(content)
     sections = _plan_sections(content)
     items: list[PlannedItem] = []
+    source_jobs: list[SourceJob] = []
 
     for section_id, item_key, item_id, item in iter_report_items(content):
         source_kind = _source_kind(item)
@@ -111,8 +151,6 @@ def build_plan(
                     item_id,
                     item,
                     server_version_num,
-                    mode,
-                    metric_dependencies,
                     query_usage_index,
                 )
             )
@@ -150,12 +188,11 @@ def build_plan(
 
     if unsupported_reason is None and metric_dependencies:
         for query_id in sorted(metric_dependencies):
-            items.append(
-                _plan_hidden_metric_source_query(
+            source_jobs.append(
+                _plan_metric_source_job(
                     content,
                     query_id,
                     server_version_num,
-                    mode,
                     metric_dependencies,
                     query_usage_index,
                 )
@@ -169,6 +206,7 @@ def build_plan(
         reason=unsupported_reason,
         sections=sections,
         items=items,
+        source_jobs=source_jobs,
     )
 
 
@@ -307,18 +345,13 @@ def _plan_query_item(
     item_id: str,
     item: dict[str, Any],
     server_version_num: int,
-    mode: str,
-    metric_dependencies: dict[str, str],
     query_usage_index: dict[str, list[str]],
-    internal: bool = False,
 ) -> PlannedItem:
     query_id = item["query"]
     manifest = content.queries[query_id]
     selection = select_query_variant(query_id, manifest, server_version_num)
     if selection.status != "ok" or selection.variant is None:
         source_metadata = _query_usage_metadata(query_id, item_id, query_usage_index)
-        if internal:
-            source_metadata["internal"] = True
         return PlannedItem(
             item_id=item_id,
             section_id=section_id,
@@ -332,29 +365,12 @@ def _plan_query_item(
             source_metadata=_with_item_metadata(content, item_id, item, source_metadata),
         )
 
-    collection_scope = runtime_config.ONCE_COLLECTION_SCOPE
-    if mode == runtime_config.SNAPSHOTS_MODE and internal:
-        collection_scope = metric_dependencies.get(
-            query_id,
-            runtime_config.ONCE_COLLECTION_SCOPE,
-        )
-
     variant = selection.variant
-    source_metadata = {
-        "query_id": query_id,
-        "variant_id": variant.get("id"),
-        "sql_file": variant.get("sql_file"),
-        "main_view": manifest.get("main_view"),
-        "cost": manifest.get("cost"),
-        "source": manifest.get("source"),
-        "optional": bool(manifest.get("optional")),
-        "display": manifest.get("display") or {},
-        "evaluation": manifest.get("evaluation") or {},
-        "semantic_columns": variant.get("semantic_columns") or {},
-        **_query_usage_metadata(query_id, item_id, query_usage_index),
-    }
-    if internal:
-        source_metadata["internal"] = True
+    source_metadata = _query_source_metadata(
+        manifest,
+        variant,
+        _query_usage_metadata(query_id, item_id, query_usage_index),
+    )
     source_metadata = _with_item_metadata(content, item_id, item, source_metadata)
     return PlannedItem(
         item_id=item_id,
@@ -367,33 +383,65 @@ def _plan_query_item(
         state=_item_state(content, item),
         variant_id=variant.get("id"),
         sql_file=variant.get("sql_file"),
-        collection_scope=collection_scope,
+        collection_scope=runtime_config.ONCE_COLLECTION_SCOPE,
         source_metadata=source_metadata,
     )
 
 
-def _plan_hidden_metric_source_query(
+def _plan_metric_source_job(
     content: ContentPack,
     query_id: str,
     server_version_num: int,
-    mode: str,
     metric_dependencies: dict[str, str],
     query_usage_index: dict[str, list[str]],
-) -> PlannedItem:
-    digest = sha256(query_id.encode("utf-8")).hexdigest()[:10]
-    item_key = f"{query_id.replace('.', '_')}_{digest}"
-    return _plan_query_item(
-        content,
-        "__metric_sources",
-        item_key,
-        f"__metric_sources.{item_key}",
-        {"query": query_id, "state": "hidden"},
-        server_version_num,
-        mode,
-        metric_dependencies,
-        query_usage_index,
-        internal=True,
+) -> SourceJob:
+    manifest = content.queries[query_id]
+    selection = select_query_variant(query_id, manifest, server_version_num)
+    collection_scope = metric_dependencies.get(query_id, runtime_config.ONCE_COLLECTION_SCOPE)
+    consumers = query_usage_index.get(query_id) or [query_id]
+    usage = _query_usage_metadata(query_id, consumers[0], query_usage_index)
+    if selection.status != "ok" or selection.variant is None:
+        return SourceJob(
+            job_id=query_id,
+            title=manifest.get("title") or query_id,
+            source_id=query_id,
+            status="unsupported",
+            reason=selection.reason,
+            collection_scope=collection_scope,
+            source_metadata=usage,
+        )
+
+    variant = selection.variant
+    return SourceJob(
+        job_id=query_id,
+        title=manifest.get("title") or query_id,
+        source_id=query_id,
+        status="planned",
+        variant_id=variant.get("id"),
+        sql_file=variant.get("sql_file"),
+        collection_scope=collection_scope,
+        source_metadata=_query_source_metadata(manifest, variant, usage),
     )
+
+
+def _query_source_metadata(
+    manifest: dict[str, Any],
+    variant: dict[str, Any],
+    usage: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "query_id": usage["query_usage"]["query_id"],
+        "variant_id": variant.get("id"),
+        "sql_file": variant.get("sql_file"),
+        "main_view": manifest.get("main_view"),
+        "cost": manifest.get("cost"),
+        "source": manifest.get("source"),
+        "optional": bool(manifest.get("optional")),
+        "display": manifest.get("display") or {},
+        "evaluation": manifest.get("evaluation") or {},
+        "semantic_columns": variant.get("semantic_columns") or {},
+        **usage,
+    }
 
 
 def _plan_script_item(

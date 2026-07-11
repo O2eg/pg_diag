@@ -3,23 +3,20 @@
 This instruction belongs to report item `storage_vacuum.xmin_horizon`. The item is backed by `vacuum.xmin_horizon` (SQL query).
 
 ## What this item shows
-- Oldest xmin horizons split by activity, replication, standby feedback, slots, and prepared transactions.
-- Which subsystem is preventing vacuum from removing old row versions.
-- Catalog and data horizon age context.
+- Cluster-wide oldest data/catalog xmin ages from activity, slots, WAL senders, and prepared transactions, observed from the connected database.
+- Activity includes non-client backends with `backend_xmin`; WAL senders are counted in their dedicated component.
 
 ## What to watch
-- Old activity xmin.
-- Replication slot xmin or catalog_xmin.
-- Prepared transaction holding old xmin.
-- Standby feedback retaining dead rows.
+- One component dominating the data/catalog horizon and increasing between captures.
+- Catalog xmin from logical slots, which can block catalog cleanup independently of data xmin.
+
+## Automatic evaluation
+- No automatic severity: acceptable transaction age depends on workload, churn, storage, and recovery objectives.
 
 ## Common fault causes
-- Long transaction.
-- Lagging logical replication slot.
-- Long standby query with hot_standby_feedback.
-- Unresolved prepared xact.
+- Long/idle transactions, autovacuum or other backend snapshots, lagging slots/standbys, and unresolved prepared transactions.
 
 ## Checklist
-- Identify the oldest horizon source.
-- Clear blockers before vacuum/bloat remediation.
-- Coordinate with replication owners before changing slots or feedback.
+- Open Xmin Horizon Blockers for the concrete PID/slot/GID.
+- Compare captures; zero means no visible holder in that component.
+- Coordinate with owners before terminating sessions or changing replication.

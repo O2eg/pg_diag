@@ -7,8 +7,8 @@ select
     e.privilege_type,
     e.is_grantable,
     c.relforcerowsecurity as force_rls,
-    case when e.grantee = 0 or e.is_grantable then 'high' else 'medium' end as risk_level,
-    'RLS table has broad or directly granted table privileges that should be reviewed with policy coverage' as risk_reason
+    case when e.grantee = 0 or e.is_grantable then 'medium' else 'unknown' end as risk_level,
+    'Table privileges and RLS policies are independent layers; review PUBLIC or grantable access and compare direct grants with the baseline' as risk_reason
 from pg_class c
 join pg_namespace n on n.oid = c.relnamespace
 cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) e
@@ -24,3 +24,4 @@ where c.relkind in ('r', 'p')
       where d.classid = 'pg_class'::regclass and d.objid = c.oid and d.deptype = 'e'
   )
 order by risk_level desc, schema_name, table_name, grantee_name, privilege_type
+limit 1000

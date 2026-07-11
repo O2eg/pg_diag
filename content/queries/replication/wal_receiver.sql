@@ -1,14 +1,31 @@
-select current_database() as datname,
-case status when 'stopped' then 0 when 'starting' then 1 when 'streaming' then 2 when 'waiting' then 3 when 'restarting' then 4 when 'stopping' then 5 else -1 end as status,
-      (receive_start_lsn- '0/0') % (2^52)::bigint as receive_start_lsn,
-      receive_start_tli,
-      (flushed_lsn- '0/0') % (2^52)::bigint as flushed_lsn,
-      received_tli,
-      extract(epoch from last_msg_send_time) as last_msg_send_time,
-      extract(epoch from last_msg_receipt_time) as last_msg_receipt_time,
-      (latest_end_lsn - '0/0') % (2^52)::bigint as latest_end_lsn,
-      extract(epoch from latest_end_time) as latest_end_time,
-      substring(slot_name from 'repmgr_slot_([0-9]*)') as upstream_node,
-      trim(both '''' from substring(conninfo from 'host=([^ ]*)')) as upstream_host,
-      slot_name
-  from pg_catalog.pg_stat_wal_receiver
+select
+  current_database() as datname,
+  pid,
+  status,
+  receive_start_lsn::text as receive_start_lsn,
+  receive_start_tli,
+  written_lsn::text as written_lsn,
+  flushed_lsn::text as flushed_lsn,
+  received_tli,
+  latest_end_lsn::text as latest_end_lsn,
+  pg_catalog.pg_wal_lsn_diff(latest_end_lsn, flushed_lsn)::int8 as receive_lag_bytes,
+  last_msg_send_time,
+  last_msg_receipt_time,
+  latest_end_time,
+  round(
+    extract(epoch from pg_catalog.clock_timestamp() - last_msg_receipt_time)::numeric,
+    3
+  ) as seconds_since_last_message,
+  round(
+    extract(epoch from pg_catalog.clock_timestamp() - latest_end_time)::numeric,
+    3
+  ) as seconds_since_latest_end,
+  sender_host,
+  sender_port,
+  slot_name,
+  case when status = 'streaming' then 'ok' else 'medium' end
+    as pg_diag_internal_severity,
+  case when status = 'streaming' then '' else 'WAL receiver is not streaming' end
+    as pg_diag_internal_reason
+from pg_catalog.pg_stat_wal_receiver
+order by seconds_since_last_message desc nulls last, pid

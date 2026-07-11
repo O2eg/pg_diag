@@ -56,9 +56,10 @@ select
     objects.object_name,
     objects.owner_name,
     db_owner.database_owner,
-    'medium' as risk_level,
-    'Database object is not owned by the database owner role' as risk_reason
+    'unknown' as risk_level,
+    'Database and object ownership differ; this is common with dedicated owner roles and requires a baseline comparison' as risk_reason
 from objects
 cross join db_owner
 where objects.owner_name <> db_owner.database_owner
 order by objects.schema_name, objects.object_kind, objects.object_name
+limit 1000

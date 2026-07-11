@@ -17,6 +17,10 @@ This instruction belongs to report item `snapshot_charts_db.database_io_time_rat
 - Large reads/writes.
 - Checkpoint or WAL pressure.
 
+## Automatic evaluation
+- `ms/s` is accumulated backend time per wall-clock second and can exceed 1000 under concurrent I/O.
+- With `track_io_timing=off`, zero counters mean unavailable timing rather than proven absence of I/O waits.
+
 ## Checklist
 - Compare with pg_stat_io and OS latency.
 - Separate read-time and write-time symptoms.

@@ -17,6 +17,11 @@ This instruction belongs to report item `indexes.foreign_keys_without_index`. Th
 - Manual schema change omitted index.
 - Index dropped as unused without FK review.
 
+## Automatic evaluation
+- `medium`: the referencing table estimate is at least 100,000 rows and no valid full non-partial left-prefix index exists.
+- `unknown`: the same structural gap exists on a smaller table; parent UPDATE/DELETE frequency determines impact.
+- `suggested_index` is a starting definition, not executable advice for partitioned tables or a substitute for workload review.
+
 ## Checklist
 - Prioritize FKs where parent rows are updated/deleted.
 - Create supporting index concurrently where needed.

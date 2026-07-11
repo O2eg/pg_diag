@@ -11,7 +11,9 @@ extension_state as (
     w.name,
     ae.default_version,
     ae.installed_version,
-    lower(coalesce(s.session_preload_libraries, '')) like '%' || w.name || '%' as is_preloaded
+    w.name = any(
+      regexp_split_to_array(lower(coalesce(s.session_preload_libraries, '')), '\\s*,\\s*')
+    ) as is_preloaded
   from wanted w
   cross join settings s
   left join pg_catalog.pg_available_extensions ae on ae.name = w.name
@@ -35,7 +37,7 @@ select
   available_extensions,
   installed_extensions,
   preloaded_extensions,
-  'medium' as risk_level,
+  'unknown' as risk_level,
   case
     when not has_available_extension then 'no anon or pg_anonymize extension is available on this server'
     else 'no anon or pg_anonymize extension is installed or preloaded for the connected database'

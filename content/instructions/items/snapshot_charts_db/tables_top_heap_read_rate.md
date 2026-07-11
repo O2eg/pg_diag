@@ -23,6 +23,10 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_heap_read
 - Working set too large.
 - Plan change.
 
+## Automatic evaluation
+- This chart ranks physical heap-block read counter deltas by stable relation OID.
+- Changing bounded membership and counter resets become missing evidence; correlate with OS latency and cache state.
+
 ## Checklist
 - Review SQL touching top tables.
 - Compare with OS disk reads.

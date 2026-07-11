@@ -3,22 +3,25 @@
 This instruction belongs to report item `replication.standby_conflicts`. The item is backed by `replication.database_conflicts` (SQL query).
 
 ## What this item shows
-- Recovery conflict counters for the current standby database.
-- Canceled queries caused by replay conflicts such as locks, snapshots, buffers, or tablespace drops.
-- Whether read workload on standby conflicts with WAL replay.
+- Cluster-wide cumulative recovery-conflict counters per database, with server role and the matching database statistics reset time where available.
+- Tablespace, lock, snapshot, buffer-pin, and deadlock cancellations; PostgreSQL 18 also includes active logical-slot conflicts.
+- On a primary these rows normally remain zero.
 
 ## What to watch
-- Conflict counters increasing during reporting workload.
-- Snapshot conflicts with long standby queries.
-- Lock conflicts after DDL on primary.
+- Non-zero counters on a standby, especially increases between captures.
+- Snapshot conflicts with long reporting queries and lock conflicts after primary-side DDL.
+- Whether mitigation would trade replay freshness, primary bloat, or query availability.
+
+## Automatic evaluation
+- `medium`: a database has one or more cumulative recovery conflicts since reset.
+- This is historical evidence; it does not prove a conflict is occurring now.
 
 ## Common fault causes
-- Long queries on standby.
-- Vacuum cleanup on primary.
-- DDL replay.
-- hot_standby_feedback policy tradeoff.
+- Long standby queries, vacuum cleanup on the primary, DDL replay, buffer pins, or logical-slot invalidation during recovery.
+- Low `max_standby_streaming_delay`/`max_standby_archive_delay` or a deliberate no-delay policy.
 
 ## Checklist
-- Use deltas or repeated captures to see current conflict rate.
-- Identify standby queries being canceled.
-- Balance replay freshness against long-running standby reads.
+- Calculate a delta from two captures and correlate it with canceled-query logs.
+- Identify the conflict type before considering delay settings or `hot_standby_feedback`.
+- Do not reset shared counters for diagnosis; preserve evidence used by other monitoring.
+- Zero rows/counters on a primary do not validate standby behavior elsewhere.

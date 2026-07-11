@@ -44,8 +44,9 @@ select
     object_name,
     object_owner,
     schema_owner,
-    'medium' as risk_level,
-    'Object owner differs from the containing schema owner' as risk_reason
+    'unknown' as risk_level,
+    'Object owner differs from the schema owner; compare with the intended ownership baseline' as risk_reason
 from objects
 where object_owner <> schema_owner
 order by schema_name, object_kind, object_name
+limit 1000

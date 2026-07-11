@@ -1,23 +1,27 @@
-# Memory Pressure
+# RAM And Swap Usage
 
 This instruction belongs to report item `snapshot_charts_os.os_memory_pressure`. The item is backed by `os.memory_pressure` (snapshot metric).
 
 ## What this item shows
-- Memory pressure signals collected during snapshots mode.
-- Whether the host shows sustained shortage symptoms rather than normal cache use.
+- Two independent line series: RAM used as `MemTotal - MemAvailable`, and swap used as `SwapTotal - SwapFree`.
+- Each percentage has its own denominator, so the values are not stacked or added.
+- This is usage evidence, not Linux PSI memory-pressure or paging-rate data.
 
 ## What to watch
-- Pressure spikes during workload peaks.
-- Swap or reclaim indicators.
-- Memory pressure coinciding with latency.
+- RAM usage rising while available memory approaches zero.
+- Sustained or increasing swap use aligned with database latency.
+- A sharp change during high connection or sort/hash concurrency.
 
 ## Common fault causes
-- RAM undersized.
-- work_mem overuse.
-- Non-database process pressure.
-- Container limit too low.
+- RAM or cgroup limit too small for the combined workload.
+- Concurrent memory-heavy operations or too many backends.
+- Pressure from colocated non-PostgreSQL processes.
+
+## Automatic evaluation
+- The chart is informational because a healthy Linux host normally uses most RAM for reclaimable cache.
+- Swap usage alone does not prove active swapping; confirm with paging counters or OS tools.
 
 ## Checklist
-- Confirm with OS tools if pressure is high.
-- Reduce concurrency or memory-heavy operations before raising PostgreSQL memory settings.
+- Compare with the memory composition chart, temp I/O, connection count, and workload timing.
 - Check cgroup/container limits where applicable.
+- Confirm paging activity before changing PostgreSQL memory settings.

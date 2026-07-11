@@ -2,27 +2,20 @@
 
 from __future__ import annotations
 
-import json
 import math
 from typing import Any
 
 from . import runtime_config
+from .contracts import (
+    COLLECTION_STATUSES,
+    INTERVAL_COVERAGE_STATUSES,
+    RESULT_KINDS,
+    SEVERITY_LEVELS,
+    interval_coverage_totals,
+)
 from .errors import ValidationError
 
 
-COLLECTION_STATUSES = {"ok", "empty", "error", "unsupported", "skipped"}
-SEVERITY_LEVELS = {"high", "medium", "ok", "unknown"}
-RESULT_KINDS = {"none", "plain_text", "table", "chart"}
-INTERVAL_COVERAGE_STATUSES = {
-    "ok",
-    "no_activity",
-    "missing_start",
-    "missing_end",
-    "epoch_changed",
-    "counter_decrease",
-    "invalid_value",
-    "invalid_interval",
-}
 SUPPORTED_ARTIFACT_SCHEMA_VERSIONS = {1, runtime_config.ARTIFACT_SCHEMA_VERSION}
 
 
@@ -86,10 +79,6 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
             raise ValidationError("Artifact field 'query_texts' must map strings to strings")
 
     _validate_json_data(artifact, "$", set())
-    try:
-        json.dumps(artifact, ensure_ascii=False, allow_nan=False)
-    except (TypeError, ValueError, RecursionError) as exc:
-        raise ValidationError(f"Artifact is not strict JSON data: {exc}") from exc
 
 
 def _validate_sections(sections: list[Any]) -> set[str]:
@@ -211,18 +200,12 @@ def _validate_interval_coverage(item_id: str, coverage: Any) -> None:
             )
     if sum(counts.values()) != values["total"]:
         raise ValidationError(f"Artifact item {item_id!r} interval_coverage counts do not match total")
-    expected_comparable = counts.get("ok", 0) + counts.get("no_activity", 0)
-    expected_unmatched = counts.get("missing_start", 0) + counts.get("missing_end", 0)
-    expected_invalid = (
-        counts.get("counter_decrease", 0)
-        + counts.get("invalid_value", 0)
-        + counts.get("invalid_interval", 0)
-    )
-    if values["comparable"] != expected_comparable:
+    expected = interval_coverage_totals(counts)
+    if values["comparable"] != expected["comparable"]:
         raise ValidationError(f"Artifact item {item_id!r} interval_coverage comparable count is inconsistent")
-    if values["unmatched"] != expected_unmatched:
+    if values["unmatched"] != expected["unmatched"]:
         raise ValidationError(f"Artifact item {item_id!r} interval_coverage unmatched count is inconsistent")
-    if values["invalid"] != expected_invalid:
+    if values["invalid"] != expected["invalid"]:
         raise ValidationError(f"Artifact item {item_id!r} interval_coverage invalid count is inconsistent")
 
 
@@ -336,7 +319,7 @@ def _validate_json_data(value: Any, path: str, active_ids: set[int]) -> None:
     )
 
 
-def _value_in(value: Any, allowed: set[str]) -> bool:
+def _value_in(value: Any, allowed: set[str] | frozenset[str]) -> bool:
     return isinstance(value, str) and value in allowed
 
 

@@ -3,22 +3,22 @@
 This instruction belongs to report item `storage_vacuum.database_wraparound`. The item is backed by `vacuum.database_wraparound` (SQL query).
 
 ## What this item shows
-- Transaction ID and multixact age by database.
-- Distance to wraparound-related limits.
-- Whether any database needs urgent vacuum attention.
+- Cluster database XID and multixact ages relative to autovacuum freeze triggers and vacuum failsafe settings.
+- Database OID and frozen horizon identifiers for stable comparison.
 
 ## What to watch
-- Age approaching autovacuum_freeze_max_age or multixact limits.
-- Databases not regularly vacuumed.
-- High age after bulk load or long outage.
+- Ages crossing freeze triggers, approaching failsafe, or failing to fall after vacuum activity.
+- Rarely connected databases and blockers that prevent horizon advancement.
+
+## Automatic evaluation
+- `high`: XID or multixact age reached its configured failsafe threshold.
+- `medium`: it crossed the configured autovacuum freeze trigger.
+- Percentages are relative to configured operational thresholds, not the raw 32-bit wrap boundary.
 
 ## Common fault causes
-- Autovacuum disabled or lagging.
-- Long transactions prevent freezing.
-- Database rarely connected but still aging.
-- Prepared transactions retaining horizons.
+- Autovacuum backlog/disablement, old transactions or slots, unresolved prepared transactions, and databases not vacuumed regularly.
 
 ## Checklist
-- Treat high wraparound age as urgent.
-- Vacuum oldest databases first.
-- Find and clear blockers before expecting progress.
+- Identify blockers before manual vacuum and verify age decreases afterward.
+- Treat failsafe findings as urgent; do not reset counters or disable safeguards.
+- Include every connectable database in the response plan.

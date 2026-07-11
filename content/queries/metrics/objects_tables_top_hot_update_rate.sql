@@ -1,6 +1,7 @@
 select
   statement_timestamp() as snapshot_time,
   current_database() as datname,
+  st.relid,
   st.schemaname,
   st.relname,
   st.n_tup_hot_upd::int8 as n_tup_hot_upd

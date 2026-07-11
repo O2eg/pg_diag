@@ -1,25 +1,21 @@
 from __future__ import annotations
 
 import ipaddress
-import shlex
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from _pg_hba_common import (
+    HOST_TYPES,
+    HbaEntry,
+    _host_address_and_auth_method,
+    _read_hba_entries,
+    _resolve_hba_path,
+    _split_hba_line,
+)
 from pg_diag.executors.python import PythonSourceContext, PythonSourceResult, table_result
 
 
-HOST_TYPES = {"host", "hostssl", "hostnossl", "hostgssenc", "hostnogssenc"}
-INCLUDE_DIRECTIVES = {"include", "include_if_exists", "include_dir"}
-RISK_RANK = {"ok": 0, "medium": 1, "high": 2}
-
-
-@dataclass(frozen=True)
-class HbaEntry:
-    file_path: str
-    line_number: int
-    raw_line: str
-    fields: list[str]
+RISK_RANK = {"ok": 0, "unknown": 1, "medium": 2, "high": 3}
 
 
 async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
@@ -154,53 +150,6 @@ def _unavailable_result(reason: str, code: str) -> PythonSourceResult:
     )
 
 
-def _read_hba_entries(path: Path, seen: set[Path] | None = None) -> list[HbaEntry]:
-    real_path = path.resolve()
-    if seen is None:
-        seen = set()
-    if real_path in seen:
-        return []
-    seen.add(real_path)
-
-    entries: list[HbaEntry] = []
-    for line_number, raw_line in enumerate(real_path.read_text(encoding="utf-8").splitlines(), start=1):
-        fields = _split_hba_line(raw_line)
-        if not fields:
-            continue
-        directive = fields[0]
-        if directive in INCLUDE_DIRECTIVES:
-            entries.extend(_read_include_entries(real_path, fields, seen))
-            continue
-        entries.append(HbaEntry(str(real_path), line_number, raw_line.strip(), fields))
-    return entries
-
-
-def _read_include_entries(current_file: Path, fields: list[str], seen: set[Path]) -> list[HbaEntry]:
-    if len(fields) < 2:
-        return []
-    directive, include_ref = fields[0], fields[1]
-    include_path = _resolve_hba_path(current_file.parent, include_ref)
-    if directive == "include_if_exists" and not include_path.exists():
-        return []
-    if directive == "include_dir":
-        if not include_path.is_dir():
-            return []
-        entries: list[HbaEntry] = []
-        for child in sorted(include_path.iterdir()):
-            if child.name.startswith(".") or child.suffix != ".conf" or not child.is_file():
-                continue
-            entries.extend(_read_hba_entries(child, seen))
-        return entries
-    return _read_hba_entries(include_path, seen)
-
-
-def _split_hba_line(line: str) -> list[str]:
-    try:
-        return shlex.split(line, comments=True, posix=True)
-    except ValueError:
-        return []
-
-
 def _host_row(
     entry: HbaEntry,
     superusers: set[str],
@@ -210,8 +159,7 @@ def _host_row(
     connection_type = fields[0]
     database = fields[1] if len(fields) > 1 else ""
     user = fields[2] if len(fields) > 2 else ""
-    address = fields[3] if len(fields) > 3 else ""
-    method = fields[4] if len(fields) > 4 else ""
+    address, method = _host_address_and_auth_method(fields)
     matched = [] if method == "reject" else _allowed_superusers(
         user,
         Path(entry.file_path).parent,

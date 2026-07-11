@@ -18,6 +18,11 @@ This instruction belongs to report item `object_workload.function_workload`. The
 - track_functions disabled or set too narrowly.
 - Application overusing procedural helper.
 
+## Automatic evaluation
+- This item is informational because function cost is workload-specific.
+- Counters are cumulative from `stats_reset`; an empty result is expected when `track_functions=none`.
+- Overloaded functions are distinguished by OID and identity arguments, and output is limited to 100 rows.
+
 ## Checklist
 - Confirm track_functions setting.
 - Profile functions with high self time.

@@ -23,6 +23,10 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_index_blo
 - Cold cache.
 - Index-heavy workload.
 
+## Automatic evaluation
+- This chart ranks physical index-block read counter deltas by stable relation OID.
+- It aggregates all indexes of a table; use index-level and SQL evidence for attribution.
+
 ## Checklist
 - Inspect index_workload for top table.
 - Review query predicates and index design.
