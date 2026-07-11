@@ -72,6 +72,7 @@ Use this when the report needs another PostgreSQL result table.
    queries:
      locks.mode_summary:
        title: Lock Mode Summary
+       database_scope: current_database
        group: Activity & Locks
        main_view: pg_locks
        description: Current lock count by lock type and mode.
@@ -115,6 +116,17 @@ inherited from the query catalog unless explicitly overridden by supported
 report item keys. Every report item must define at least one validated `tags`
 entry. Use `render.empty_message` when an empty table, empty chart, or no-result
 payload needs item-specific wording in the HTML report.
+
+Every non-OS item inherits `database_scope: all_databases` from
+`defaults.item`. Override it with `database_scope: current_database` when the
+source can only inspect the connection database. The report appends
+`(All databases)` or `(Only DB_NAME)` to every such item title. Pure OS
+sections declare `show_database_scope: false`.
+
+For `current_database`, top-level `datname` and `database_name` table columns
+are omitted from the final presentation because the title already identifies
+the database; source snapshots and metric identity still retain them.
+Query-backed metrics must repeat the same explicit scope as their source query.
 
 4. Add the item instruction Markdown file.
 
@@ -160,11 +172,11 @@ Use this when the report needs a time-series chart from SQL samples.
    ```sql
    select
      statement_timestamp() as snapshot_time,
-     current_database() as datname,
+     datname,
      xact_commit::int8 as xact_commit,
      xact_rollback::int8 as xact_rollback
    from pg_stat_database
-   where datname = current_database()
+   where datname is not null
    ```
 
    Different keys in adjacent bounded samples are expected. The metric engine
@@ -181,6 +193,7 @@ Use this when the report needs a time-series chart from SQL samples.
    queries:
      metrics.transaction_counters:
        title: Transaction Counter Chart Source
+       database_scope: all_databases
        group: Metric Sources
        main_view: pg_stat_database
        description: Minimal transaction counters for chart metrics.
@@ -210,6 +223,7 @@ Use this when the report needs a time-series chart from SQL samples.
    ```yaml
    metrics.transaction_rate:
      title: Database Transaction Rate
+     database_scope: all_databases
      source_query: metrics.transaction_counters
      requires_collection: every_snapshot
      partition_by:
@@ -295,6 +309,7 @@ Example:
 ```yaml
 database.workload_delta:
   title: Database Workload Delta
+  database_scope: all_databases
   source_query: metrics.database_workload_delta
   requires_collection: window_endpoints
   result: table

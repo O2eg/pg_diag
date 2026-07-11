@@ -18,7 +18,7 @@ This instruction belongs to report item `snapshot_charts_db.database_temp_bytes_
 - Insufficient work_mem for specific query.
 
 ## Automatic evaluation
-- The chart derives bytes/second from cumulative temp bytes for the connected database.
+- The chart derives bytes/second from cumulative temp bytes and partitions the result by database.
 - Counter reset produces missing data; correlate with temp-file count and SQL temp I/O.
 
 ## Checklist

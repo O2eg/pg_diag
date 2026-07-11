@@ -98,6 +98,13 @@ report item has no Markdown instruction file.
 ## Query Manifests
 
 Query manifests live in files listed by `queries.yaml`.
+Every item outside pure OS sections inherits `database_scope: all_databases`.
+Sources limited to the connection database declare
+`database_scope: current_database`. The runtime exposes the resolved scope in
+the item title and removes redundant top-level `datname` or `database_name`
+columns from current-database items. Pure OS sections set
+`show_database_scope: false`. A query-backed metric must declare the same
+explicit scope as its source query.
 
 Important keys:
 

@@ -69,30 +69,14 @@ def test_delta_table_rejects_changed_counter_epoch_even_when_counter_increases()
     assert result["interval_coverage"]["counts"] == {"epoch_changed": 1}
 
 
-def test_delta_table_can_remove_known_collector_transaction_overhead() -> None:
+def test_delta_table_reports_raw_database_counter_delta_and_rate() -> None:
     metric = {
         "table": {
             "key_refs": ["database"],
             "columns": [
                 {"name": "database", "role": "key", "key_index": 0},
-                {"name": "raw", "value_ref": "commits", "transform": "delta"},
-                {
-                    "name": "overhead",
-                    "transform": "context",
-                    "context_key": "collector_transactions",
-                },
-                {
-                    "name": "adjusted",
-                    "value_ref": "commits",
-                    "transform": "delta_minus_context",
-                    "context_key": "collector_transactions",
-                },
-                {
-                    "name": "adjusted_rate",
-                    "value_ref": "commits",
-                    "transform": "rate_minus_context",
-                    "context_key": "collector_transactions",
-                },
+                {"name": "delta", "value_ref": "commits", "transform": "delta"},
+                {"name": "rate", "value_ref": "commits", "transform": "rate"},
             ],
         }
     }
@@ -101,17 +85,12 @@ def test_delta_table_can_remove_known_collector_transaction_overhead() -> None:
         {"timestamp": "2026-07-05T00:00:05+00:00", "rows": [{"database": "db", "commits": 20}]},
     ]
 
-    result = build_table_result(
-        metric,
-        samples,
-        {},
-        {"collector_transactions": 3},
-    )
+    result = build_table_result(metric, samples, {})
 
-    assert result["rows"] == [["db", 10.0, 3, 7.0, 1.4]]
+    assert result["rows"] == [["db", 10.0, 2.0]]
 
 
-def test_chart_rate_can_remove_one_collector_commit_per_interval() -> None:
+def test_chart_rate_uses_raw_database_counter_delta() -> None:
     metric = {
         "partition_by": ["dimensions.database"],
         "series": [
@@ -119,7 +98,6 @@ def test_chart_rate_can_remove_one_collector_commit_per_interval() -> None:
                 "name": "commits",
                 "value_ref": "counters.xact_commit",
                 "transform": "rate",
-                "delta_adjustment": 1,
                 "unit": "tx/s",
             }
         ],
@@ -139,8 +117,8 @@ def test_chart_rate_can_remove_one_collector_commit_per_interval() -> None:
 
     assert result["series"][0]["points"] == [
         {"t": "2026-07-05T00:00:00+00:00", "value": None},
-        {"t": "2026-07-05T00:00:05+00:00", "value": 1.0},
-        {"t": "2026-07-05T00:00:10+00:00", "value": 0.0},
+        {"t": "2026-07-05T00:00:05+00:00", "value": 1.2},
+        {"t": "2026-07-05T00:00:10+00:00", "value": 0.2},
     ]
 
 

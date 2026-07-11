@@ -264,6 +264,7 @@ metrics:
 
   database.transaction_rate:
     title: Database Transaction Rate
+    database_scope: all_databases
     source_query: metrics.database_transaction_rate
     requires_collection: every_snapshot
     partition_by:
@@ -272,7 +273,6 @@ metrics:
       - name: commits
         value_ref: counters.xact_commit
         transform: rate
-        delta_adjustment: 1
         unit: tx/s
       - name: rollbacks
         value_ref: counters.xact_rollback
@@ -284,6 +284,7 @@ metrics:
 
   activity.sessions_by_state:
     title: Sessions By State
+    database_scope: all_databases
     source_query: metrics.activity_sessions_by_state
     requires_collection: every_snapshot
     partition_by:
@@ -334,6 +335,7 @@ metrics:
 
   database.tuple_dml_rate:
     title: Database Tuple DML Rate
+    database_scope: all_databases
     source_query: metrics.database_tuple_dml_rate
     requires_collection: every_snapshot
     partition_by:
@@ -357,6 +359,7 @@ metrics:
 
   database.tuple_access_rate:
     title: Database Tuple Access Rate
+    database_scope: all_databases
     source_query: metrics.database_tuple_access_rate
     requires_collection: every_snapshot
     partition_by:
@@ -376,6 +379,7 @@ metrics:
 
   database.block_access_rate:
     title: Database Block Access Rate
+    database_scope: all_databases
     source_query: metrics.database_block_access_rate
     requires_collection: every_snapshot
     partition_by:
@@ -395,6 +399,7 @@ metrics:
 
   database.temp_files_delta:
     title: Database Temp Files Delta
+    database_scope: all_databases
     source_query: metrics.database_temp_files_delta
     requires_collection: every_snapshot
     partition_by:
@@ -410,6 +415,7 @@ metrics:
 
   database.temp_bytes_rate:
     title: Database Temp Bytes Rate
+    database_scope: all_databases
     source_query: metrics.database_temp_bytes_rate
     requires_collection: every_snapshot
     partition_by:
@@ -425,6 +431,7 @@ metrics:
 
   database.io_time_rate:
     title: Database I/O Time Rate
+    database_scope: all_databases
     source_query: metrics.database_io_time_rate
     requires_collection: every_snapshot
     partition_by:
@@ -444,6 +451,7 @@ metrics:
 
   database.backends:
     title: Database Backends
+    database_scope: all_databases
     source_query: metrics.database_backends
     requires_collection: every_snapshot
     partition_by:
@@ -459,6 +467,7 @@ metrics:
 
   database.deadlocks:
     title: Database Deadlocks
+    database_scope: all_databases
     source_query: metrics.database_deadlocks
     requires_collection: every_snapshot
     partition_by:
@@ -474,6 +483,7 @@ metrics:
 
   objects.tables_top_tuple_access_rate:
     title: Top Tables By Tuple Access Rate
+    database_scope: current_database
     source_query: metrics.objects_tables_top_tuple_access_rate
     requires_collection: every_snapshot
     top_n:
@@ -490,6 +500,7 @@ metrics:
 
   objects.tables_top_seq_read_rate:
     title: Top Tables By Sequential Tuple Read Rate
+    database_scope: current_database
     source_query: metrics.objects_tables_top_seq_read_rate
     requires_collection: every_snapshot
     top_n:
@@ -506,6 +517,7 @@ metrics:
 
   objects.tables_top_index_fetch_rate:
     title: Top Tables By Index Fetch Rate
+    database_scope: current_database
     source_query: metrics.objects_tables_top_index_fetch_rate
     requires_collection: every_snapshot
     top_n:
@@ -522,6 +534,7 @@ metrics:
 
   objects.tables_top_dml_rate:
     title: Top Tables By DML Rate
+    database_scope: current_database
     source_query: metrics.objects_tables_top_dml_rate
     requires_collection: every_snapshot
     top_n:
@@ -538,6 +551,7 @@ metrics:
 
   objects.tables_top_insert_rate:
     title: Top Tables By Insert Rate
+    database_scope: current_database
     source_query: metrics.objects_tables_top_insert_rate
     requires_collection: every_snapshot
     top_n:
@@ -554,6 +568,7 @@ metrics:
 
   objects.tables_top_update_rate:
     title: Top Tables By Update Rate
+    database_scope: current_database
     source_query: metrics.objects_tables_top_update_rate
     requires_collection: every_snapshot
     top_n:
@@ -570,6 +585,7 @@ metrics:
 
   objects.tables_top_delete_rate:
     title: Top Tables By Delete Rate
+    database_scope: current_database
     source_query: metrics.objects_tables_top_delete_rate
     requires_collection: every_snapshot
     top_n:
@@ -586,6 +602,7 @@ metrics:
 
   objects.tables_top_hot_update_rate:
     title: Top Tables By HOT Update Rate
+    database_scope: current_database
     source_query: metrics.objects_tables_top_hot_update_rate
     requires_collection: every_snapshot
     top_n:
@@ -602,6 +619,7 @@ metrics:
 
   objects.tables_top_heap_read_rate:
     title: Top Tables By Heap Block Read Rate
+    database_scope: current_database
     source_query: metrics.objects_tables_top_heap_read_rate
     requires_collection: every_snapshot
     top_n:
@@ -618,6 +636,7 @@ metrics:
 
   objects.tables_top_index_block_read_rate:
     title: Top Tables By Index Block Read Rate
+    database_scope: current_database
     source_query: metrics.objects_tables_top_index_block_read_rate
     requires_collection: every_snapshot
     top_n:
@@ -634,6 +653,7 @@ metrics:
 
   objects.indexes_top_scan_rate:
     title: Top Indexes By Scan Rate
+    database_scope: current_database
     source_query: metrics.objects_indexes_top_scan_rate
     requires_collection: every_snapshot
     top_n:
@@ -650,6 +670,7 @@ metrics:
 
   objects.indexes_top_tuple_read_rate:
     title: Top Indexes By Tuple Read Rate
+    database_scope: current_database
     source_query: metrics.objects_indexes_top_tuple_read_rate
     requires_collection: every_snapshot
     top_n:
@@ -666,6 +687,7 @@ metrics:
 
   objects.indexes_top_tuple_fetch_rate:
     title: Top Indexes By Tuple Fetch Rate
+    database_scope: current_database
     source_query: metrics.objects_indexes_top_tuple_fetch_rate
     requires_collection: every_snapshot
     top_n:
@@ -682,6 +704,7 @@ metrics:
 
   objects.indexes_top_reads_per_scan:
     title: Top Indexes By Tuples Read Per Scan
+    database_scope: current_database
     source_query: metrics.objects_indexes_top_reads_per_scan
     requires_collection: every_snapshot
     top_n:
@@ -700,6 +723,7 @@ metrics:
 
   objects.indexes_top_fetches_per_scan:
     title: Top Indexes By Heap Fetches Per Scan
+    database_scope: current_database
     source_query: metrics.objects_indexes_top_fetches_per_scan
     requires_collection: every_snapshot
     top_n:
@@ -718,6 +742,7 @@ metrics:
 
   objects.indexes_top_reads_per_fetch:
     title: Top Indexes By Tuples Read Per Heap Fetch
+    database_scope: current_database
     source_query: metrics.objects_indexes_top_reads_per_fetch
     requires_collection: every_snapshot
     top_n:
@@ -736,6 +761,7 @@ metrics:
 
   database.workload_delta:
     title: Database Workload Delta
+    database_scope: all_databases
     source_query: metrics.database_workload_delta
     requires_collection: window_endpoints
     result: table
@@ -756,6 +782,7 @@ metrics:
     table:
       key_refs: [dimensions.database_id]
       epoch_refs: [dimensions.stats_reset]
+      drop_zero_rows: false
       sort:
         column: commits_per_sec
         direction: desc
@@ -767,23 +794,13 @@ metrics:
         - name: datid
           role: key
           key_index: 0
-        - name: commit_delta_raw
+        - name: commit_delta
           value_ref: counters.xact_commit
           transform: delta
           pg_type: float8
-        - name: pg_diag_commit_overhead
-          transform: context
-          context_key: collector_db_transactions_between_endpoints
-          pg_type: float8
-        - name: commit_delta
-          value_ref: counters.xact_commit
-          transform: delta_minus_context
-          context_key: collector_db_transactions_between_endpoints
-          pg_type: float8
         - name: commits_per_sec
           value_ref: counters.xact_commit
-          transform: rate_minus_context
-          context_key: collector_db_transactions_between_endpoints
+          transform: rate
           pg_type: float8
         - name: rollback_delta
           value_ref: counters.xact_rollback
@@ -795,8 +812,7 @@ metrics:
           pg_type: float8
         - name: transactions_per_sec
           value_ref: counters.total_xacts
-          transform: rate_minus_context
-          context_key: collector_db_transactions_between_endpoints
+          transform: rate
           pg_type: float8
         - name: blks_read_delta
           value_ref: counters.blks_read
@@ -857,6 +873,7 @@ metrics:
 
   statements.total_time_delta:
     title: SQL Time Delta
+    database_scope: current_database
     source_query: metrics.statements_total_time_delta
     requires_collection: window_endpoints
     result: table
@@ -915,6 +932,7 @@ metrics:
 
   statements.io_delta:
     title: SQL Shared I/O Delta
+    database_scope: current_database
     source_query: metrics.statements_io_delta
     requires_collection: window_endpoints
     result: table
@@ -977,6 +995,7 @@ metrics:
 
   statements.wal_delta:
     title: SQL WAL Delta
+    database_scope: current_database
     source_query: metrics.statements_wal_delta
     requires_collection: window_endpoints
     result: table
@@ -1031,6 +1050,7 @@ metrics:
 
   objects.table_dml_delta:
     title: Table DML Delta
+    database_scope: current_database
     source_query: metrics.objects_table_dml_delta
     requires_collection: window_endpoints
     result: table
@@ -1091,6 +1111,7 @@ metrics:
 
   objects.table_scan_delta:
     title: Table Scan Delta
+    database_scope: current_database
     source_query: metrics.objects_table_scan_delta
     requires_collection: window_endpoints
     result: table
@@ -1164,6 +1185,7 @@ metrics:
 
   objects.table_io_delta:
     title: Table I/O Delta
+    database_scope: current_database
     source_query: metrics.objects_table_io_delta
     requires_collection: window_endpoints
     result: table
@@ -1220,6 +1242,7 @@ metrics:
 
   objects.index_usage_delta:
     title: Index Usage Delta
+    database_scope: current_database
     source_query: metrics.objects_index_usage_delta
     requires_collection: window_endpoints
     result: table
@@ -1284,6 +1307,7 @@ metrics:
 
   objects.function_time_delta:
     title: Function Time Delta
+    database_scope: current_database
     source_query: metrics.objects_function_time_delta
     requires_collection: window_endpoints
     result: table
@@ -1340,6 +1364,7 @@ metrics:
 
   activity.wait_sample_profile:
     title: Wait Event Sample Profile
+    database_scope: all_databases
     source_query: metrics.activity_wait_sample_profile
     requires_collection: every_snapshot
     top_n:

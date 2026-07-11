@@ -22,6 +22,7 @@ defaults:
     page_size: 25
   item:
     state: expanded
+    database_scope: all_databases
 
 sections:
   overview:
@@ -89,6 +90,7 @@ sections:
   os:
     title: Operating System
     description: Local host data. Remote DB-only mode keeps these items with skipped status.
+    show_database_scope: false
     state: collapsed
     items:
       kernel_version:
@@ -880,6 +882,7 @@ sections:
   snapshot_charts_os:
     title: Snapshot charts OS
     description: Operating system charts from local threaded samplers in snapshots mode.
+    show_database_scope: false
     state: collapsed
     items:
       os_cpu_utilization:

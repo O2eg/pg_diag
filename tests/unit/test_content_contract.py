@@ -385,13 +385,137 @@ def test_snapshot_delta_version_epochs_and_database_output_are_complete(
     database_columns = {
         column["name"]: column for column in database_metric["table"]["columns"]
     }
-    assert database_columns["commit_delta_raw"]["transform"] == "delta"
-    assert database_columns["commit_delta"]["transform"] == "delta_minus_context"
-    assert database_columns["commits_per_sec"]["transform"] == "rate_minus_context"
+    assert "commit_delta_raw" not in database_columns
+    assert "pg_diag_commit_overhead" not in database_columns
+    assert database_columns["commit_delta"]["transform"] == "delta"
+    assert database_columns["commits_per_sec"]["transform"] == "rate"
+    assert database_metric["table"]["drop_zero_rows"] is False
     assert database_metric["evaluation"]["rules"][0]["severity"] == "medium"
     assert content.metrics["objects.table_scan_delta"]["evaluation"]["rules"][0][
         "severity"
     ] == "medium"
+
+
+def test_database_scope_contract_matches_queries_and_actual_sql(content_path: Path) -> None:
+    content = load_content(content_path)
+
+    for metric_id, metric in content.metrics.items():
+        if metric.get("database_scope") is None:
+            continue
+        source = content.queries[metric["source_query"]]
+        assert source.get("database_scope") == metric["database_scope"], metric_id
+
+    all_database_sources = {
+        "metrics.database_transaction_rate",
+        "metrics.database_tuple_dml_rate",
+        "metrics.database_tuple_access_rate",
+        "metrics.database_block_access_rate",
+        "metrics.database_temp_files_delta",
+        "metrics.database_temp_bytes_rate",
+        "metrics.database_io_time_rate",
+        "metrics.database_backends",
+        "metrics.database_deadlocks",
+        "metrics.database_workload_delta",
+    }
+    for source_id in all_database_sources:
+        source = content.queries[source_id]
+        assert source["database_scope"] == "all_databases"
+        for variant in source["variants"]:
+            sql = (content.path / "queries" / variant["sql_file"]).read_text(
+                encoding="utf-8"
+            ).lower()
+            assert "where datname is not null" in sql, source_id
+            assert "where datname = current_database()" not in sql, source_id
+
+    assert content.metrics["database.workload_delta"]["database_scope"] == "all_databases"
+    assert content.metrics["statements.total_time_delta"]["database_scope"] == (
+        "current_database"
+    )
+    assert content.queries["statements.top_by_total_time"]["database_scope"] == (
+        "current_database"
+    )
+
+    for source_id in ("activity.session_states", "metrics.activity_sessions_by_state"):
+        source = content.queries[source_id]
+        assert source["database_scope"] == "all_databases"
+        for variant in source["variants"]:
+            sql = (content.path / "queries" / variant["sql_file"]).read_text(
+                encoding="utf-8"
+            ).lower()
+            assert "current_database()" not in sql, source_id
+            assert "datallowconn" not in sql, source_id
+
+
+def test_validator_rejects_invalid_or_mismatched_database_scope(content_path: Path) -> None:
+    content = load_content(content_path)
+    content.queries["metrics.database_transaction_rate"]["database_scope"] = "cluster"
+
+    issues = validate_content(content)
+
+    assert any(
+        issue.code == "database_scope"
+        and issue.location == "query:metrics.database_transaction_rate"
+        for issue in issues
+    )
+    assert any(
+        issue.code == "database_scope"
+        and issue.location == "metric:database.transaction_rate"
+        and "must match source query" in issue.message
+        for issue in issues
+    )
+
+
+def test_every_non_os_item_resolves_database_scope(content_path: Path) -> None:
+    content = load_content(content_path)
+    plan = build_plan(
+        content,
+        180000,
+        mode=SNAPSHOTS_MODE,
+        collection_mode="local",
+    )
+    os_sections = {"os", "snapshot_charts_os"}
+
+    for item in plan.items:
+        scope = item.source_metadata.get("database_scope")
+        if item.section_id in os_sections:
+            assert scope is None, item.item_id
+        else:
+            assert scope in {"all_databases", "current_database"}, item.item_id
+
+    by_id = {item.item_id: item for item in plan.items}
+    assert by_id["overview.server_version"].source_metadata["database_scope"] == (
+        "all_databases"
+    )
+    assert by_id["activity_locks.connection_pressure"].source_metadata[
+        "database_scope"
+    ] == "all_databases"
+    assert all(
+        item.source_metadata["database_scope"] == "current_database"
+        for item in plan.items
+        if item.section_id in {"sql_workload", "object_workload", "indexes"}
+    )
+
+
+def test_validator_rejects_invalid_scope_defaults_and_section_switch(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    content.report["defaults"]["item"]["database_scope"] = "cluster"
+    content.report["sections"]["os"]["show_database_scope"] = "no"
+
+    issues = validate_content(content)
+
+    assert any(
+        issue.code == "database_scope"
+        and issue.location == "report.yaml:defaults.item"
+        for issue in issues
+    )
+    assert any(
+        issue.code == "database_scope"
+        and issue.location == "report.yaml:sections.os"
+        and "must be boolean" in issue.message
+        for issue in issues
+    )
 
 
 @pytest.mark.parametrize("section_id, expected_count", [("replication", 8), ("wal_io_checkpoints", 7)])
@@ -1007,6 +1131,12 @@ def test_snapshots_promotes_metric_sources(content_path: Path) -> None:
     assert by_id["snapshot_charts_db.database_transaction_rate"].source_metadata["source_query"] == (
         "metrics.database_transaction_rate"
     )
+    assert by_id["snapshot_charts_db.database_transaction_rate"].source_metadata[
+        "database_scope"
+    ] == "all_databases"
+    assert by_id["snapshot_delta_workload.sql_time_delta"].source_metadata[
+        "database_scope"
+    ] == "current_database"
     metric_usage = by_id["snapshot_charts_db.database_tuple_dml_rate"].source_metadata["query_usage"]
     assert metric_usage["query_id"] == "metrics.database_tuple_dml_rate"
     assert metric_usage["isolation"] == "isolated"
@@ -1185,7 +1315,7 @@ def test_remaining_chart_sections_have_complete_and_consistent_contracts(
 
     assert content.metrics["os.memory_pressure"]["chart"]["kind"] == "line"
     assert content.metrics["database.tuple_access_rate"]["chart"]["kind"] == "line"
-    assert content.metrics["database.transaction_rate"]["series"][0]["delta_adjustment"] == 1
+    assert "delta_adjustment" not in content.metrics["database.transaction_rate"]["series"][0]
     assert content.metrics["wal.growth_rate"]["partition_by"] == ["dimensions.scope"]
 
     for metric_id, metric in content.metrics.items():

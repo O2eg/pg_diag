@@ -49,6 +49,7 @@ queries:
 
   replication.database_conflicts:
     title: Standby Recovery Conflicts
+    database_scope: all_databases
     group: Replication
     main_view: pg_stat_database_conflicts
     description: Recovery conflict counters for standby databases.
@@ -74,6 +75,7 @@ queries:
 
   replication.subscription_workers:
     title: Logical Replication Subscription Workers
+    database_scope: current_database
     group: Replication
     main_view: pg_stat_subscription
     description: Logical replication subscription worker state and LSN progress.

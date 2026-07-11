@@ -1,6 +1,7 @@
 queries:
   metrics.database_transaction_rate:
     title: Database Transaction Rate Chart Source
+    database_scope: all_databases
     group: Metric Sources
     main_view: pg_stat_database
     description: Minimal cumulative transaction counters used by the transaction-rate chart.
@@ -80,6 +81,7 @@ queries:
 
   metrics.activity_sessions_by_state:
     title: Sessions By State Chart Source
+    database_scope: all_databases
     group: Metric Sources
     main_view: pg_stat_activity
     description: Narrow sampled SQL source used only by the Sessions By State Chart item.
@@ -104,6 +106,7 @@ queries:
 
   metrics.activity_wait_sample_profile:
     title: Wait Event Sample Profile Source
+    database_scope: all_databases
     group: Metric Sources
     main_view: pg_stat_activity
     description: Bounded active-process sample used only by the Wait Event Sample Profile item.
@@ -131,6 +134,7 @@ queries:
 
   metrics.database_tuple_dml_rate:
     title: Database Tuple DML Rate Source
+    database_scope: all_databases
     group: Metric Sources
     main_view: pg_stat_database
     description: Narrow sampled SQL source used only by the Database Tuple DML Rate item.
@@ -156,6 +160,7 @@ queries:
 
   metrics.database_tuple_access_rate:
     title: Database Tuple Access Rate Source
+    database_scope: all_databases
     group: Metric Sources
     main_view: pg_stat_database
     description: Narrow sampled SQL source used only by the Database Tuple Access Rate item.
@@ -180,6 +185,7 @@ queries:
 
   metrics.database_block_access_rate:
     title: Database Block Access Rate Source
+    database_scope: all_databases
     group: Metric Sources
     main_view: pg_stat_database
     description: Narrow sampled SQL source used only by the Database Block Access Rate item.
@@ -204,6 +210,7 @@ queries:
 
   metrics.database_temp_files_delta:
     title: Database Temp Files Delta Source
+    database_scope: all_databases
     group: Metric Sources
     main_view: pg_stat_database
     description: Narrow sampled SQL source used only by the Database Temp Files Delta item.
@@ -227,6 +234,7 @@ queries:
 
   metrics.database_temp_bytes_rate:
     title: Database Temp Bytes Rate Source
+    database_scope: all_databases
     group: Metric Sources
     main_view: pg_stat_database
     description: Narrow sampled SQL source used only by the Database Temp Bytes Rate item.
@@ -250,6 +258,7 @@ queries:
 
   metrics.database_io_time_rate:
     title: Database I/O Time Rate Source
+    database_scope: all_databases
     group: Metric Sources
     main_view: pg_stat_database
     description: Narrow sampled SQL source used only by the Database I/O Time Rate item.
@@ -274,6 +283,7 @@ queries:
 
   metrics.database_backends:
     title: Database Backends Source
+    database_scope: all_databases
     group: Metric Sources
     main_view: pg_stat_database
     description: Narrow sampled SQL source used only by the Database Backends item.
@@ -297,6 +307,7 @@ queries:
 
   metrics.database_deadlocks:
     title: Database Deadlocks Source
+    database_scope: all_databases
     group: Metric Sources
     main_view: pg_stat_database
     description: Narrow sampled SQL source used only by the Database Deadlocks item.
@@ -320,6 +331,7 @@ queries:
 
   metrics.database_workload_delta:
     title: Database Workload Delta Source
+    database_scope: all_databases
     group: Metric Sources
     main_view: pg_stat_database
     description: Narrow sampled SQL source used only by the Database Workload Delta item.
@@ -360,6 +372,7 @@ queries:
 
   metrics.objects_table_dml_delta:
     title: Table DML Delta Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_all_tables
     description: Narrow sampled SQL source used only by the Table DML Delta item.
@@ -392,6 +405,7 @@ queries:
 
   metrics.objects_table_scan_delta:
     title: Table Scan Delta Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_all_tables
     description: Narrow sampled SQL source used only by the Table Scan Delta item.
@@ -423,6 +437,7 @@ queries:
 
   metrics.objects_tables_top_tuple_access_rate:
     title: Top Tables By Tuple Access Rate Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_all_tables
     description: Narrow sampled SQL source used only by the Top Tables By Tuple Access Rate item.
@@ -450,6 +465,7 @@ queries:
 
   metrics.objects_tables_top_seq_read_rate:
     title: Top Tables By Sequential Tuple Read Rate Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_all_tables
     description: Narrow sampled SQL source used only by the Top Tables By Sequential Tuple Read Rate item.
@@ -476,6 +492,7 @@ queries:
 
   metrics.objects_tables_top_index_fetch_rate:
     title: Top Tables By Index Fetch Rate Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_all_tables
     description: Narrow sampled SQL source used only by the Top Tables By Index Fetch Rate item.
@@ -502,6 +519,7 @@ queries:
 
   metrics.objects_tables_top_dml_rate:
     title: Top Tables By DML Rate Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_all_tables
     description: Narrow sampled SQL source used only by the Top Tables By DML Rate item.
@@ -530,6 +548,7 @@ queries:
 
   metrics.objects_tables_top_insert_rate:
     title: Top Tables By Insert Rate Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_all_tables
     description: Narrow sampled SQL source used only by the Top Tables By Insert Rate item.
@@ -556,6 +575,7 @@ queries:
 
   metrics.objects_tables_top_update_rate:
     title: Top Tables By Update Rate Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_all_tables
     description: Narrow sampled SQL source used only by the Top Tables By Update Rate item.
@@ -582,6 +602,7 @@ queries:
 
   metrics.objects_tables_top_delete_rate:
     title: Top Tables By Delete Rate Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_all_tables
     description: Narrow sampled SQL source used only by the Top Tables By Delete Rate item.
@@ -608,6 +629,7 @@ queries:
 
   metrics.objects_tables_top_hot_update_rate:
     title: Top Tables By HOT Update Rate Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_all_tables
     description: Narrow sampled SQL source used only by the Top Tables By HOT Update Rate item.
@@ -634,6 +656,7 @@ queries:
 
   metrics.objects_table_io_delta:
     title: Table I/O Delta Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_statio_all_tables
     description: Narrow sampled SQL source used only by the Table I/O Delta item.
@@ -665,6 +688,7 @@ queries:
 
   metrics.objects_tables_top_heap_read_rate:
     title: Top Tables By Heap Block Read Rate Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_statio_all_tables
     description: Narrow sampled SQL source used only by the Top Tables By Heap Block Read Rate item.
@@ -691,6 +715,7 @@ queries:
 
   metrics.objects_tables_top_index_block_read_rate:
     title: Top Tables By Index Block Read Rate Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_statio_all_tables
     description: Narrow sampled SQL source used only by the Top Tables By Index Block Read Rate item.
@@ -717,6 +742,7 @@ queries:
 
   metrics.objects_index_usage_delta:
     title: Index Usage Delta Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_all_indexes
     description: Narrow sampled SQL source used only by the Index Usage Delta item.
@@ -751,6 +777,7 @@ queries:
 
   metrics.objects_indexes_top_scan_rate:
     title: Top Indexes By Scan Rate Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_all_indexes
     description: Narrow sampled SQL source used only by the Top Indexes By Scan Rate item.
@@ -779,6 +806,7 @@ queries:
 
   metrics.objects_indexes_top_tuple_read_rate:
     title: Top Indexes By Tuple Read Rate Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_all_indexes
     description: Narrow sampled SQL source used only by the Top Indexes By Tuple Read Rate item.
@@ -807,6 +835,7 @@ queries:
 
   metrics.objects_indexes_top_tuple_fetch_rate:
     title: Top Indexes By Tuple Fetch Rate Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_all_indexes
     description: Narrow sampled SQL source used only by the Top Indexes By Tuple Fetch Rate item.
@@ -835,6 +864,7 @@ queries:
 
   metrics.objects_indexes_top_reads_per_scan:
     title: Top Indexes By Tuples Read Per Scan Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_all_indexes
     description: Narrow sampled SQL source used only by the Top Indexes By Tuples Read Per Scan item.
@@ -864,6 +894,7 @@ queries:
 
   metrics.objects_indexes_top_fetches_per_scan:
     title: Top Indexes By Heap Fetches Per Scan Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_all_indexes
     description: Narrow sampled SQL source used only by the Top Indexes By Heap Fetches Per Scan item.
@@ -893,6 +924,7 @@ queries:
 
   metrics.objects_indexes_top_reads_per_fetch:
     title: Top Indexes By Tuples Read Per Heap Fetch Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_all_indexes
     description: Narrow sampled SQL source used only by the Top Indexes By Tuples Read Per Heap Fetch item.
@@ -922,6 +954,7 @@ queries:
 
   metrics.objects_function_time_delta:
     title: Function Time Delta Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_user_functions
     description: Narrow sampled SQL source used only by the Function Time Delta item.
@@ -952,6 +985,7 @@ queries:
 
   metrics.statements_total_time_delta:
     title: SQL Time Delta Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_statements
     description: Narrow sampled SQL source used only by the SQL Time Delta item.
@@ -990,6 +1024,7 @@ queries:
 
   metrics.statements_wal_delta:
     title: SQL WAL Delta Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_statements
     description: Narrow sampled SQL source used only by the SQL WAL Delta item.
@@ -1028,6 +1063,7 @@ queries:
 
   metrics.statements_io_delta:
     title: SQL Shared I/O Delta Source
+    database_scope: current_database
     group: Metric Sources
     main_view: pg_stat_statements
     description: Narrow sampled statement I/O counters used only by the SQL shared I/O delta item.

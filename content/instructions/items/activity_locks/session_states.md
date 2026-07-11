@@ -3,7 +3,7 @@
 This instruction belongs to report item `activity_locks.session_states`. The item is backed by `activity.session_states` (SQL query).
 
 ## What this item shows
-- An instantaneous count of client sessions in the connected database, grouped by `application_name` and PostgreSQL state.
+- An instantaneous count of client sessions across all databases, grouped by database, `application_name`, and PostgreSQL state.
 - Maximum open-transaction age in seconds for each populated state group.
 - Zero-count rows for known states when no session currently has that state. pg_diag's own backend is excluded.
 

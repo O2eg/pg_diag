@@ -9,6 +9,7 @@ import re
 from typing import Any
 
 from . import runtime_config
+from .contracts import DATABASE_SCOPES
 from .content_loader import (
     ContentLoadError,
     ContentPack,
@@ -245,6 +246,12 @@ def _validate_report_contract(content: ContentPack, issues: list[ValidationIssue
         state = group_defaults.get("state")
         if state is not None and not _is_valid_state(state):
             _issue(issues, "state", f"defaults.{group}.state has an unsupported value", "report.yaml")
+    item_defaults = defaults.get("item") if isinstance(defaults.get("item"), dict) else {}
+    _validate_database_scope(
+        item_defaults.get("database_scope"),
+        issues,
+        "report.yaml:defaults.item",
+    )
 
     sections = content.report.get("sections") or {}
     if not sections:
@@ -260,6 +267,14 @@ def _validate_report_contract(content: ContentPack, issues: list[ValidationIssue
         title = section.get("title")
         if title is not None and (not isinstance(title, str) or not title.strip()):
             _issue(issues, "section", "Section title must be a non-empty string", location)
+        show_database_scope = section.get("show_database_scope")
+        if show_database_scope is not None and not isinstance(show_database_scope, bool):
+            _issue(
+                issues,
+                "database_scope",
+                "Section show_database_scope must be boolean",
+                location,
+            )
         for item_key in (section.get("items") or {}):
             item_location = f"{location}.items.{item_key}"
             if not isinstance(item_key, str) or not IDENTIFIER_RE.fullmatch(item_key):
@@ -347,6 +362,7 @@ def _validate_report_items(content: ContentPack, issues: list[ValidationIssue]) 
         title = item.get("title")
         if title is not None and (not isinstance(title, str) or not title.strip()):
             _issue(issues, "item_title", "Report item title must be a non-empty string", location)
+        _validate_database_scope(item.get("database_scope"), issues, location)
 
         if source_key == "query" and source_id not in content.queries:
             _issue(issues, "missing_query", f"Unknown query id {source_id!r}", location)
@@ -459,6 +475,7 @@ def _validate_query_manifests(content: ContentPack, issues: list[ValidationIssue
         optional = manifest.get("optional")
         if optional is not None and not isinstance(optional, bool):
             _issue(issues, "query", "optional must be boolean", location)
+        _validate_database_scope(manifest.get("database_scope"), issues, location)
 
         ranges: list[tuple[int, int, str]] = []
         variant_ids: set[str] = set()
@@ -691,6 +708,7 @@ def _validate_python_sources(content: ContentPack, issues: list[ValidationIssue]
 def _validate_metrics(content: ContentPack, issues: list[ValidationIssue]) -> None:
     for metric_id, metric in content.metrics.items():
         location = f"metric:{metric_id}"
+        _validate_database_scope(metric.get("database_scope"), issues, location)
         source_query = metric.get("source_query")
         source_sampler = metric.get("source_sampler")
         if bool(source_query) == bool(source_sampler):
@@ -721,20 +739,6 @@ def _validate_metrics(content: ContentPack, issues: list[ValidationIssue]) -> No
             color = series.get("color")
             if color and not _is_hex_color(str(color)):
                 _issue(issues, "metric_color", f"Invalid series color {color!r}", location)
-            delta_adjustment = series.get("delta_adjustment")
-            if delta_adjustment is not None and (
-                not isinstance(delta_adjustment, (int, float))
-                or isinstance(delta_adjustment, bool)
-                or delta_adjustment < 0
-                or series.get("transform") not in {"delta", "rate"}
-            ):
-                _issue(
-                    issues,
-                    "metric_transform",
-                    "delta_adjustment must be a non-negative number on a delta/rate series",
-                    location,
-                )
-
         partition_by = metric.get("partition_by") or []
         if not isinstance(partition_by, list) or any(
             not isinstance(ref, str) or not ref for ref in partition_by
@@ -800,6 +804,18 @@ def _validate_metrics(content: ContentPack, issues: list[ValidationIssue]) -> No
             _issue(issues, "metric_source", f"Unknown source_query {source_query!r}", location)
             continue
         query = content.queries[source_query]
+        query_scope = query.get("database_scope")
+        metric_scope = metric.get("database_scope")
+        if metric_scope != query_scope:
+            _issue(
+                issues,
+                "database_scope",
+                (
+                    f"Metric database_scope {metric_scope!r} must match source query "
+                    f"database_scope {query_scope!r}"
+                ),
+                location,
+            )
         collection = query.get("collection") or {}
         if metric.get("requires_collection") in {
             runtime_config.EVERY_SNAPSHOT_COLLECTION_SCOPE,
@@ -864,6 +880,20 @@ def _validate_metrics(content: ContentPack, issues: list[ValidationIssue]) -> No
                 ):
                     _issue(issues, "metric_ref", f"Unresolvable table column ref {ref!r}", location)
         _validate_metric_result_shape(metric, issues, location)
+
+
+def _validate_database_scope(
+    scope: Any,
+    issues: list[ValidationIssue],
+    location: str,
+) -> None:
+    if scope is not None and scope not in DATABASE_SCOPES:
+        _issue(
+            issues,
+            "database_scope",
+            "database_scope must be all_databases or current_database",
+            location,
+        )
 
 
 def _validate_metric_result_shape(

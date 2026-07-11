@@ -1,6 +1,7 @@
 queries:
   activity.session_states:
     title: Session States
+    database_scope: all_databases
     group: Activity & Locks
     main_view: pg_stat_activity
     description: Session counts by database, application, and state with max transaction age.
@@ -26,6 +27,7 @@ queries:
 
   locks.lock_waits:
     title: Lock Waits
+    database_scope: current_database
     group: Activity & Locks
     main_view: pg_locks
     description: Blocked and blocking sessions for current lock waits.

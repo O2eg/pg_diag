@@ -4,7 +4,7 @@ This instruction belongs to report item `sql_workload.top_sql_by_total_time`. Th
 
 ## What this item shows
 - Up to 50 current-database entries ranked by cumulative execution time, not by activity during the pg_diag capture window.
-- Full entry identity: database OID, user OID, query ID, and `toplevel`, plus role/database labels and representative SQL text.
+- Full entry identity: database OID, user OID, query ID, and `toplevel`, plus the role label and representative SQL text; the database name is carried by the item title.
 - Calls, mean/max execution time, planning time, rows, shared/temp blocks, I/O timing, and WAL counters. PostgreSQL 17+ adds entry/min-max start timestamps; PostgreSQL 18 adds parallel-worker launch counters.
 
 ## What to watch

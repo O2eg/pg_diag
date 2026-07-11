@@ -1,6 +1,7 @@
 queries:
   objects.table_workload:
     title: Table Workload Counters
+    database_scope: current_database
     group: Object Workload
     main_view: pg_stat_all_tables
     description: Cumulative table scan, DML, vacuum, and analyze counters for user-visible relations.
@@ -45,6 +46,7 @@ queries:
 
   objects.table_io:
     title: Table I/O Counters
+    database_scope: current_database
     group: Object Workload
     main_view: pg_statio_all_tables
     description: Cumulative heap, index, and toast block I/O counters by table.
@@ -80,6 +82,7 @@ queries:
 
   objects.index_workload:
     title: Index Workload Counters
+    database_scope: current_database
     group: Object Workload
     main_view: pg_stat_all_indexes
     description: Cumulative index scans, tuple reads, tuple fetches, and index cache I/O.
@@ -115,6 +118,7 @@ queries:
 
   objects.function_workload:
     title: Function Workload Counters
+    database_scope: current_database
     group: Object Workload
     main_view: pg_stat_user_functions
     description: Function call counters and execution time. Requires track_functions=pl or all.

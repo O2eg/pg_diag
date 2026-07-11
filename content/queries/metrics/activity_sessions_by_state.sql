@@ -21,5 +21,4 @@ left join (
   from pg_stat_activity
   group by datname, state
 ) as activity on activity.datname = pg_database.datname and activity.state = states.state
-where pg_database.datname = current_database()
-order by states.state
+order by pg_database.datname, states.state

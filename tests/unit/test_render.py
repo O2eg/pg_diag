@@ -55,9 +55,15 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
                     "columns": [
                         {"name": "value"},
                         {"name": "query_id", "pg_type": "int8"},
+                        {"name": "snapshot_time", "pg_type": "timestamptz"},
                         {"name": "captured_at", "pg_type": "timestamptz"},
                     ],
-                    "rows": [["</script><script>alert(1)</script>", "123", "2026-05-29T21:27:18.283630+00:00"]],
+                    "rows": [[
+                        "</script><script>alert(1)</script>",
+                        "123",
+                        "2026-05-29T21:27:17.123456+00:00",
+                        "2026-05-29T21:27:18.283630+00:00",
+                    ]],
                     "row_count": 1,
                 },
                 "source_metadata": {
@@ -104,8 +110,18 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "hydrateTagFilter()" in html
     assert "TAG_ORDER" in html
     assert "details.__tags = itemTags(item)" in html
+    assert "renderItemTags(item)" in html
+    assert 'list.className = "item-tag-list"' in html
+    assert 'badge.className = "item-tag"' in html
+    assert 'list.setAttribute("aria-label", "Item tags")' in html
+    assert html.index("buttons.appendChild(sourceButton)") < html.index(
+        "buttons.appendChild(instructionButton)"
+    ) < html.index("buttons.appendChild(renderMetaButton(item))")
     assert "const tag = document.getElementById(\"tagFilter\").value" in html
     assert "const matchesTag = !tag || (item.__tags || []).includes(tag)" in html
+    assert "updateFilteredTagHighlights(tag)" in html
+    assert 'badge.classList.toggle("filter-match", matches)' in html
+    assert ".item-tag.filter-match" in html
     assert "All items" in html
     assert "Plain Text" in html
     assert "Table" in html
@@ -167,6 +183,11 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "refreshTable(state)" in html
     assert "tbody.replaceChildren()" in html
     assert "sort-button" in html
+    assert 'column.name === "snapshot_time"' in html
+    assert 'container.className = "snapshot-table-result"' in html
+    assert 'label.className = "snapshot-time-label"' in html
+    assert 'setHighlightableText(label, "Snapshot time: " + display.text)' in html
+    assert ".snapshot-time-label" in html
     assert "renderChart(result, item)" in html
     assert "ApexCharts v5.16.0" in html
     assert 'id="apexcharts-library"' in html
@@ -215,13 +236,29 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "reset: true" in html
     assert 'autoSelected: "zoom"' in html
     assert ".apexcharts-toolbar .apexcharts-selected svg" in html
+    assert "fill: none !important;\n      stroke: currentColor !important;" in html
+    assert "fill: var(--muted) !important;" not in html
     assert "chartTitle(item.title || \"\", unit)" in html
     assert "title: {text: \"\"}" in html
     assert "formatChartAxisValue(value, unit)" in html
     assert "formatChartTooltipValue(value, unit)" in html
+    assert "formatChartSeriesLabel(seriesName)" in html
+    assert 'const queryIdMatch = /^(.*)\\.(-?\\d+)$/.exec(rawName)' in html
+    assert 'baseLabel + " / SQL: " + shortQuery' in html
+    assert 'title: {formatter: (seriesName) => formatChartSeriesLabel(seriesName)}' in html
+    assert ".replace(/</g, \"&lt;\")" in html
     assert "formatCompactMetricValue(numeric, 1000)" in html
     assert "Highlight.js v11.11.1" in html
     assert 'id="sourceModal"' in html
+    assert "html.report-modal-open,\n    body.report-modal-open" in html
+    assert "overscroll-behavior: none;" in html
+    assert "overscroll-behavior: contain;" in html
+    assert 'const REPORT_MODAL_IDS = ["sourceModal", "metaModal", "instructionModal"]' in html
+    assert "syncReportModalScrollLock()" in html
+    assert 'showReportModal(modal, "closeSource")' in html
+    assert 'showReportModal(modal, "closeMeta")' in html
+    assert 'showReportModal(modal, "closeInstruction")' in html
+    assert "hideReportModal(modal)" in html
     assert "const queryTexts = artifact.query_texts || {}" in html
     assert "query-id-button" in html
     assert "openQueryTextModal(queryId)" in html

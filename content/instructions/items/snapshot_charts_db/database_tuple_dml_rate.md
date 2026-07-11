@@ -3,7 +3,7 @@
 This instruction belongs to report item `snapshot_charts_db.database_tuple_dml_rate`. The item is backed by `database.tuple_dml_rate` (snapshot metric).
 
 ## What this item shows
-- Insert, update, delete, and HOT update rates for the current database.
+- Insert, update, and delete rates for every named database.
 - Current row-change workload intensity.
 
 ## What to watch
@@ -18,7 +18,7 @@ This instruction belongs to report item `snapshot_charts_db.database_tuple_dml_r
 - Index set preventing HOT updates.
 
 ## Automatic evaluation
-- Insert, update, and delete counter deltas are stacked for the connected database.
+- Insert, update, and delete counter deltas are stacked and partitioned by database.
 - Counter decreases after reset become missing points; no workload-independent rate threshold is assigned.
 
 ## Checklist

@@ -41,7 +41,6 @@ def build_metric_item(
     source_item_by_query: dict[str, str],
     source_metadata_by_item: dict[str, dict[str, Any]],
     source_diagnostics: list[dict[str, Any]] | None = None,
-    collection_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     source_query = metric.get("source_query")
     source_sampler = metric.get("source_sampler")
@@ -159,7 +158,7 @@ def build_metric_item(
     source_text = _metric_source_text(metric, source_text, source_language) if source_text else None
 
     if metric.get("result") == "table" or metric.get("table"):
-        table = build_table_result(metric, samples, semantic_columns, collection_context)
+        table = build_table_result(metric, samples, semantic_columns)
         severity_level, issues = evaluate_metric_table_findings(
             table,
             metric.get("evaluation") or {},
@@ -229,13 +228,9 @@ def _metric_source_header(metric: dict[str, Any], comment_prefix: str, source_la
             value_ref = series.get("value_ref") or series.get("name_from_ref") or ""
             unit = series.get("unit") or chart.get("unit") or ""
             color = f" color={series['color']}" if series.get("color") else ""
-            adjustment = (
-                f" delta_adjustment={series['delta_adjustment']}"
-                if series.get("delta_adjustment") is not None else ""
-            )
             lines.append(
                 f"{comment_prefix}   - {name}: {transform}({value_ref}) "
-                f"unit={unit}{adjustment}{color}"
+                f"unit={unit}{color}"
             )
     if metric.get("top_n"):
         top_n = metric.get("top_n") or {}
@@ -379,7 +374,6 @@ def build_chart_result(
                         "unit": series_def.get("unit") or (metric.get("chart") or {}).get("unit"),
                         "color": series_def.get("color"),
                         "transform": series_def.get("transform") or "gauge",
-                        "delta_adjustment": series_def.get("delta_adjustment") or 0,
                         "raw_points": {},
                     },
                 )
@@ -394,7 +388,6 @@ def build_chart_result(
                 raw["raw_points"],
                 sample_timestamps,
                 transform,
-                _number_or_none(raw.get("delta_adjustment")) or 0.0,
             )
             interval_counts.update(point_counts)
         else:
@@ -746,7 +739,6 @@ def build_table_result(
     metric: dict[str, Any],
     samples: list[dict[str, Any]],
     semantic_columns: dict[str, dict[str, str]],
-    collection_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     table = metric.get("table") or {}
     sorted_samples = sorted(samples, key=lambda sample: str(sample.get("timestamp") or ""))
@@ -799,7 +791,6 @@ def build_table_result(
                 last_row,
                 semantic_columns,
                 interval_seconds,
-                collection_context,
             )
             rendered.append(value)
             if column.get("role") != "key" and isinstance(value, (int, float)) and value != 0:
@@ -980,7 +971,6 @@ def _table_column_value(
     last_row: dict[str, Any],
     semantic_columns: dict[str, dict[str, str]],
     interval_seconds: float,
-    collection_context: dict[str, Any] | None = None,
 ) -> Any:
     role = column.get("role")
     if role == "key":
@@ -989,22 +979,8 @@ def _table_column_value(
 
     ref = column.get("value_ref") or column.get("ref")
     transform = column.get("transform") or "last"
-    if transform == "context":
-        return (collection_context or {}).get(str(column.get("context_key") or ""))
     last_value = _number_or_none(_resolve_ref(last_row, semantic_columns, ref)) if ref else None
     first_value = _number_or_none(_resolve_ref(first_row or {}, semantic_columns, ref)) if ref and first_row else None
-
-    if transform in {"delta_minus_context", "rate_minus_context"}:
-        delta = _counter_delta_value(first_value, last_value).value
-        adjustment = _number_or_none(
-            (collection_context or {}).get(str(column.get("context_key") or ""))
-        )
-        if delta is None or adjustment is None or delta < adjustment:
-            return None
-        adjusted = delta - adjustment
-        if transform == "rate_minus_context":
-            return round(adjusted / interval_seconds, 6) if interval_seconds > 0 else None
-        return adjusted
 
     if transform == "last":
         resolved = _resolve_ref(last_row, semantic_columns, ref) if ref else None
@@ -1054,7 +1030,7 @@ def _table_row_interval_status(
             statuses.append(INTERVAL_EPOCH_CHANGED)
     for column in table.get("columns") or []:
         if column.get("transform") not in {
-            "delta", "rate", "pct_delta", "delta_minus_context", "rate_minus_context"
+            "delta", "rate", "pct_delta"
         }:
             continue
         ref = column.get("value_ref") or column.get("ref")
@@ -1233,7 +1209,6 @@ def _transform_interval_points(
     raw_points: dict[int, dict[str, Any]],
     sample_timestamps: list[str],
     transform: str,
-    delta_adjustment: float = 0.0,
 ) -> tuple[list[dict[str, Any]], Counter[str]]:
     points: list[dict[str, Any]] = []
     interval_counts: Counter[str] = Counter()
@@ -1275,11 +1250,10 @@ def _transform_interval_points(
             if interval_value.status != INTERVAL_OK or interval_value.value is None:
                 points.append({"t": point["t"], "value": None})
             else:
-                adjusted_delta = max(interval_value.value - max(delta_adjustment, 0.0), 0.0)
                 transformed = (
-                    adjusted_delta / seconds
+                    interval_value.value / seconds
                     if transform == "rate"
-                    else adjusted_delta
+                    else interval_value.value
                 )
                 points.append({"t": point["t"], "value": round(transformed, 6)})
         previous = point

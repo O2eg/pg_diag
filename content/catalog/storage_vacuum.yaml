@@ -1,6 +1,7 @@
 queries:
   vacuum.autovacuum_queue:
     title: Autovacuum Queue Pressure
+    database_scope: current_database
     group: Storage & Vacuum
     main_view: pg_stat_all_tables
     description: Dead tuple pressure relative to the autovacuum vacuum threshold.
@@ -23,6 +24,7 @@ queries:
 
   storage.table_size_detailed:
     title: Top Table Size Breakdown
+    database_scope: current_database
     group: Storage & Vacuum
     main_view: pg_class
     description: Top table storage breakdown including heap, indexes, and toast.

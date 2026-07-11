@@ -4,7 +4,7 @@ This instruction belongs to report item `snapshot_charts_db.database_transaction
 
 ## What this item shows
 - Commit and rollback rates over the snapshot window.
-- Current transaction throughput for the connected database.
+- Transaction throughput for every named database, partitioned by database.
 
 ## What to watch
 - Commit rate spikes.
@@ -17,7 +17,7 @@ This instruction belongs to report item `snapshot_charts_db.database_transaction
 - Lock waits or I/O bottleneck reducing throughput.
 
 ## Automatic evaluation
-- Commit rate subtracts exactly one known pg_diag sample-transaction commit per interval; rollback rate is unadjusted.
+- Commit and rollback rates are direct `pg_stat_database` counter deltas without collector-specific correction.
 - Counter decreases produce missing points rather than zero; no universal throughput severity is assigned.
 
 ## Checklist

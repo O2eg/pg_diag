@@ -25,6 +25,7 @@ semantic_profiles:
 queries:
   database.database_stats:
     title: Current Database Statistics
+    database_scope: current_database
     group: Database Workload
     main_view: pg_stat_database
     description: Per-current-database cumulative workload counters.

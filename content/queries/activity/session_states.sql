@@ -9,6 +9,7 @@ with states(state) as (
 ),
 activity as (
   select
+    datname,
     coalesce(nullif(application_name, ''), '<unset>') as application_name,
     state,
     count(*)::int8 as sessions,
@@ -16,18 +17,25 @@ activity as (
       as max_tx_duration_seconds
   from pg_stat_activity
   where
-    datname = current_database()
+    datname is not null
     and backend_type = 'client backend'
     and pid <> pg_backend_pid()
-  group by 1, 2
+  group by 1, 2, 3
+),
+databases as (
+  select datname
+  from pg_database
 )
 select
   statement_timestamp() as snapshot_time,
-  current_database() as datname,
+  databases.datname,
   activity.application_name,
   states.state,
   coalesce(activity.sessions, 0)::int8 as count,
   activity.max_tx_duration_seconds as max_tx_duration
-from states
-left join activity on activity.state = states.state
-order by count desc, states.state, activity.application_name nulls last
+from databases
+cross join states
+left join activity
+  on activity.datname = databases.datname
+  and activity.state = states.state
+order by count desc, databases.datname, states.state, activity.application_name nulls last

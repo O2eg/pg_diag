@@ -1,6 +1,7 @@
 queries:
   statements.pg_stat_statements_capabilities:
     title: pg_stat_statements Capability Check
+    database_scope: current_database
     group: SQL Workload
     main_view: pg_extension
     description: Extension, preload, query-id, and tracking settings needed for statement workload diagnostics.
@@ -21,6 +22,7 @@ queries:
 
   statements.top_by_total_time:
     title: Top SQL By Total Time
+    database_scope: current_database
     group: SQL Workload
     main_view: pg_stat_statements
     description: Statements with the highest cumulative execution time.
@@ -79,6 +81,7 @@ queries:
 
   statements.top_by_mean_time:
     title: Top SQL By Mean Time
+    database_scope: current_database
     group: SQL Workload
     main_view: pg_stat_statements
     description: Statements with the highest mean execution time.
@@ -103,6 +106,7 @@ queries:
 
   statements.top_by_calls:
     title: Top SQL By Calls
+    database_scope: current_database
     group: SQL Workload
     main_view: pg_stat_statements
     description: Most frequently executed statements.
@@ -127,6 +131,7 @@ queries:
 
   statements.top_by_io:
     title: Top SQL By Shared Block I/O
+    database_scope: current_database
     group: SQL Workload
     main_view: pg_stat_statements
     description: Statements with the most shared block reads and writes.
@@ -153,6 +158,7 @@ queries:
 
   statements.top_by_temp_io:
     title: Top SQL By Temp I/O
+    database_scope: current_database
     group: SQL Workload
     main_view: pg_stat_statements
     description: Statements spilling the most temporary blocks.
@@ -177,6 +183,7 @@ queries:
 
   statements.top_by_wal:
     title: Top SQL By WAL Generated
+    database_scope: current_database
     group: SQL Workload
     main_view: pg_stat_statements
     description: Statements generating the most WAL bytes, records, and full-page images.

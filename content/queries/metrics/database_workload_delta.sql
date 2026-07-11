@@ -20,4 +20,4 @@ select
   round(blk_read_time::numeric, 3) as blk_read_time_ms,
   round(blk_write_time::numeric, 3) as blk_write_time_ms
 from pg_stat_database
-where datname = current_database()
+where datname is not null

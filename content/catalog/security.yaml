@@ -35,6 +35,7 @@ queries:
 
   security.public_schema_privileges:
     title: Public Schema Privileges
+    database_scope: current_database
     group: Cluster Inventory
     main_view: pg_namespace
     description: Risky grants on the public schema in the connected database.
@@ -52,6 +53,7 @@ queries:
 
   security.excessive_dml_privileges:
     title: Excessive DML Privileges
+    database_scope: current_database
     group: Object Workload
     main_view: information_schema.table_privileges
     description: Public or grantable DML privileges on non-system tables.
@@ -69,6 +71,7 @@ queries:
 
   security.security_definer_functions:
     title: Security Definer Functions
+    database_scope: current_database
     group: Object Workload
     main_view: pg_proc
     description: User-defined SECURITY DEFINER functions and their privilege-risk context.
@@ -154,6 +157,7 @@ queries:
 
   security.function_execute_privileges:
     title: Function Execute Privileges
+    database_scope: current_database
     group: Object Workload
     main_view: pg_proc
     description: PUBLIC or grantable EXECUTE privileges on user-defined functions.
@@ -171,6 +175,7 @@ queries:
 
   security.rls_configuration:
     title: Row Level Security Configuration
+    database_scope: current_database
     group: Object Workload
     main_view: pg_class
     description: RLS policies that are inactive, incomplete, or not forced for table owners.
@@ -188,6 +193,7 @@ queries:
 
   security.pgaudit_configuration:
     title: pgAudit Configuration
+    database_scope: current_database
     group: Cluster Inventory
     main_view: pg_settings
     description: pgAudit preload and audit logging configuration gaps.
@@ -205,6 +211,7 @@ queries:
 
   security.cryptographic_extensions:
     title: Cryptographic Extensions
+    database_scope: current_database
     group: Cluster Inventory
     main_view: pg_available_extensions
     description: Missing pgcrypto or pgsodium support in the connected database.
@@ -222,6 +229,7 @@ queries:
 
   security.anonymization_extensions:
     title: Anonymization Extensions
+    database_scope: current_database
     group: Cluster Inventory
     main_view: pg_available_extensions
     description: Missing anonymization extension installation or preload configuration.
@@ -293,6 +301,7 @@ queries:
 
   security.default_privileges_public_grants:
     title: Default Privileges Public Grants
+    database_scope: current_database
     group: Object Workload
     main_view: pg_default_acl
     description: ALTER DEFAULT PRIVILEGES entries that grant PUBLIC or grantable future-object privileges.
@@ -310,6 +319,7 @@ queries:
 
   security.sequence_privileges:
     title: Sequence Privileges
+    database_scope: current_database
     group: Object Workload
     main_view: pg_class
     description: PUBLIC or grantable privileges on user-defined sequences.
@@ -327,6 +337,7 @@ queries:
 
   security.non_public_schema_privileges:
     title: Non-Public Schema Privileges
+    database_scope: current_database
     group: Cluster Inventory
     main_view: pg_namespace
     description: PUBLIC, CREATE, or grantable privileges on non-system schemas other than public.
@@ -344,6 +355,7 @@ queries:
 
   security.installed_risky_extensions:
     title: Installed Risky Extensions
+    database_scope: current_database
     group: Cluster Inventory
     main_view: pg_extension
     description: Installed extensions and untrusted procedural languages with elevated security impact.
@@ -435,6 +447,7 @@ queries:
 
   security.superuser_owned_user_objects:
     title: Superuser-Owned User Objects
+    database_scope: current_database
     group: Object Workload
     main_view: pg_class
     description: User-defined relations, sequences, views, and functions owned by superusers.
@@ -452,6 +465,7 @@ queries:
 
   security.object_owner_drift:
     title: Object Owner Drift
+    database_scope: current_database
     group: Object Workload
     main_view: pg_class
     description: Schemas where same-kind user objects are split across multiple owners.
@@ -469,6 +483,7 @@ queries:
 
   security.database_owner_mismatch:
     title: Database Owner Mismatch
+    database_scope: current_database
     group: Object Workload
     main_view: pg_database
     description: User objects whose owner differs from the connected database owner.
@@ -486,6 +501,7 @@ queries:
 
   security.schema_owner_drift:
     title: Schema Owner Drift
+    database_scope: current_database
     group: Object Workload
     main_view: pg_namespace
     description: User objects whose owner differs from the containing schema owner.
@@ -503,6 +519,7 @@ queries:
 
   security.object_acl_drift:
     title: Object ACL Drift
+    database_scope: current_database
     group: Object Workload
     main_view: pg_class
     description: Same-kind user objects in one schema with inconsistent ACL signatures.
@@ -520,6 +537,7 @@ queries:
 
   security.direct_user_grants:
     title: Direct User Grants
+    database_scope: current_database
     group: Object Workload
     main_view: pg_class
     description: Object privileges granted directly to login roles instead of group roles.
@@ -537,6 +555,7 @@ queries:
 
   security.grant_option_holders:
     title: Grant Option Holders
+    database_scope: current_database
     group: Object Workload
     main_view: pg_class
     description: Non-owner roles that can re-grant privileges with grant option.
@@ -554,6 +573,7 @@ queries:
 
   security.orphaned_object_owners:
     title: Orphaned Object Owners
+    database_scope: current_database
     group: Object Workload
     main_view: pg_roles
     description: No-login roles that own user objects and should be verified as intentional owner roles.
@@ -571,6 +591,7 @@ queries:
 
   security.sequence_table_owner_mismatch:
     title: Sequence Table Owner Mismatch
+    database_scope: current_database
     group: Object Workload
     main_view: pg_depend
     description: Owned sequences whose owner differs from the dependent table owner.
@@ -588,6 +609,7 @@ queries:
 
   security.security_definer_owner_drift:
     title: Security Definer Owner Drift
+    database_scope: current_database
     group: Object Workload
     main_view: pg_proc
     description: SECURITY DEFINER functions owned by superusers or roles that differ from the schema owner.
@@ -605,6 +627,7 @@ queries:
 
   security.extension_objects_acl_drift:
     title: Extension Objects ACL Drift
+    database_scope: current_database
     group: Object Workload
     main_view: pg_extension
     description: Extension-owned relations and functions that carry manual ACL entries.
@@ -622,6 +645,7 @@ queries:
 
   security.rls_table_privilege_mismatch:
     title: RLS Table Privilege Mismatch
+    database_scope: current_database
     group: Object Workload
     main_view: pg_class
     description: RLS-enabled tables with broad, grantable, or direct login-role table privileges.
@@ -639,6 +663,7 @@ queries:
 
   security.unused_privileged_grants:
     title: Unused Privileged Grants
+    database_scope: current_database
     group: Object Workload
     main_view: pg_stat_user_tables
     description: Powerful table privileges on tables with no observed activity since statistics reset.
@@ -656,6 +681,7 @@ queries:
 
   security.privilege_surface_by_role:
     title: Privilege Surface By Role
+    database_scope: current_database
     group: Cluster Inventory
     main_view: pg_roles
     description: Aggregated explicit object privilege footprint per grantee role.
@@ -673,6 +699,7 @@ queries:
 
   security.schema_privilege_matrix:
     title: Schema Privilege Matrix
+    database_scope: current_database
     group: Cluster Inventory
     main_view: pg_namespace
     description: Schema owner, grantee, CREATE/USAGE, and object-count matrix for user schemas.

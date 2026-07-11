@@ -51,6 +51,12 @@ __APEXCHARTS_JS__
       --err-fg: #ffb4b4;
       --neutral-bg: #30333a;
       --neutral-fg: #d6d8dd;
+      --tag-bg: #2c3036;
+      --tag-border: #59616b;
+      --tag-fg: #e0e4e8;
+      --tag-filter-bg: #403b2d;
+      --tag-filter-border: #9c8950;
+      --tag-filter-fg: #f6e7ad;
     }
 
     html[data-theme="light"] {
@@ -92,6 +98,12 @@ __APEXCHARTS_JS__
       --err-fg: #991b1b;
       --neutral-bg: #e7edf3;
       --neutral-fg: #334155;
+      --tag-bg: #eef1f4;
+      --tag-border: #c4c9cf;
+      --tag-fg: #3f4751;
+      --tag-filter-bg: #fff3c7;
+      --tag-filter-border: #b59a46;
+      --tag-filter-fg: #5f4a0b;
     }
 
     * {
@@ -103,6 +115,12 @@ __APEXCHARTS_JS__
       font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       color: var(--text);
       background: var(--bg);
+    }
+
+    html.report-modal-open,
+    body.report-modal-open {
+      overflow: hidden;
+      overscroll-behavior: none;
     }
 
     button,
@@ -1037,6 +1055,7 @@ __APEXCHARTS_JS__
       place-items: center;
       padding: 24px;
       background: rgba(12, 8, 18, 0.72);
+      overscroll-behavior: none;
     }
 
     .source-dialog {
@@ -1082,6 +1101,7 @@ __APEXCHARTS_JS__
       min-width: 0;
       min-height: 0;
       overflow: auto;
+      overscroll-behavior: contain;
       background: #0d1117;
     }
 
@@ -1102,6 +1122,7 @@ __APEXCHARTS_JS__
       min-width: 0;
       min-height: 0;
       overflow: auto;
+      overscroll-behavior: contain;
       background: var(--panel);
       padding: 14px;
     }
@@ -1143,6 +1164,7 @@ __APEXCHARTS_JS__
       min-width: 0;
       min-height: 0;
       overflow: auto;
+      overscroll-behavior: contain;
       background: var(--panel);
       padding: 18px;
     }
@@ -1333,8 +1355,46 @@ __APEXCHARTS_JS__
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 8px;
+      justify-content: space-between;
+      gap: 8px 16px;
       margin: 0 0 10px;
+    }
+
+    .item-action-buttons,
+    .item-tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .item-tag-list {
+      justify-content: flex-end;
+      margin-left: auto;
+      gap: 6px;
+    }
+
+    .item-tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 3px 8px;
+      border: 1px solid var(--tag-border);
+      border-radius: 5px;
+      background: var(--tag-bg);
+      color: var(--tag-fg);
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.2;
+      white-space: nowrap;
+      transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+    }
+
+    .item-tag.filter-match {
+      border-color: var(--tag-filter-border);
+      background: var(--tag-filter-bg);
+      color: var(--tag-filter-fg);
     }
 
     .table-shell {
@@ -1345,6 +1405,26 @@ __APEXCHARTS_JS__
       width: 100%;
       min-width: 0;
       max-width: 100%;
+    }
+
+    .snapshot-table-result {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .snapshot-time-label {
+      justify-self: start;
+      max-width: 100%;
+      padding: 4px 8px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
     }
 
     .chart-shell {
@@ -1456,8 +1536,8 @@ __APEXCHARTS_JS__
     .apexcharts-toolbar .apexcharts-pan-icon svg,
     .apexcharts-toolbar .apexcharts-selection-icon svg,
     .apexcharts-toolbar .apexcharts-toolbar-custom-icon svg {
-      fill: var(--muted) !important;
-      stroke: var(--muted) !important;
+      fill: none !important;
+      stroke: currentColor !important;
     }
 
     .apexcharts-toolbar .apexcharts-menu-icon:hover svg,
@@ -1469,14 +1549,14 @@ __APEXCHARTS_JS__
     .apexcharts-toolbar .apexcharts-pan-icon:hover svg,
     .apexcharts-toolbar .apexcharts-selection-icon:hover svg,
     .apexcharts-toolbar .apexcharts-toolbar-custom-icon:hover svg {
-      fill: var(--accent) !important;
-      stroke: var(--accent) !important;
+      fill: none !important;
+      stroke: currentColor !important;
     }
 
     .apexcharts-toolbar .apexcharts-selected svg,
     .apexcharts-toolbar .apexcharts-menu-open svg {
-      fill: var(--accent-fg) !important;
-      stroke: var(--accent-fg) !important;
+      fill: none !important;
+      stroke: currentColor !important;
     }
 
     .apexcharts-menu {
@@ -1734,6 +1814,12 @@ __APEXCHARTS_JS__
         justify-content: flex-start;
       }
 
+      .item-tag-list {
+        width: 100%;
+        justify-content: flex-start;
+        margin-left: 0;
+      }
+
       .section-body {
         padding-left: 8px;
       }
@@ -1956,6 +2042,8 @@ __HIGHLIGHT_JS__
     const SEVERITY_LEVEL_RANK = {high: 4, medium: 3, ok: 2, unknown: 1};
     const CELL_COLLAPSED_LINE_LIMIT = 6;
     const DETAILS_ANIMATION_MS = 300;
+    const CHART_QUERY_LABEL_MAX_CHARS = 80;
+    const REPORT_MODAL_IDS = ["sourceModal", "metaModal", "instructionModal"];
     let currentSourceText = "";
     let scrollControlsRaf = 0;
     let chartResizeRaf = 0;
@@ -2774,16 +2862,43 @@ __HIGHLIGHT_JS__
     function renderItemMetadata(item) {
       const meta = document.createElement("div");
       meta.className = "item-actions";
+      const buttons = document.createElement("div");
+      buttons.className = "item-action-buttons";
       const sourceButton = renderSourceButton(item);
       if (sourceButton) {
-        meta.appendChild(sourceButton);
+        buttons.appendChild(sourceButton);
       }
-      meta.appendChild(renderMetaButton(item));
       const instructionButton = renderInstructionButton(item);
       if (instructionButton) {
-        meta.appendChild(instructionButton);
+        buttons.appendChild(instructionButton);
+      }
+      buttons.appendChild(renderMetaButton(item));
+      meta.appendChild(buttons);
+      const tags = renderItemTags(item);
+      if (tags) {
+        meta.appendChild(tags);
       }
       return meta;
+    }
+
+    function renderItemTags(item) {
+      const tags = itemTags(item);
+      if (!tags.length) {
+        return null;
+      }
+      const list = document.createElement("div");
+      list.className = "item-tag-list";
+      list.setAttribute("role", "list");
+      list.setAttribute("aria-label", "Item tags");
+      for (const tag of tags) {
+        const badge = document.createElement("span");
+        badge.className = "item-tag";
+        badge.dataset.tag = tag;
+        badge.setAttribute("role", "listitem");
+        badge.textContent = tag;
+        list.appendChild(badge);
+      }
+      return list;
     }
 
     function sourceKindLabel(sourceKind) {
@@ -2925,6 +3040,28 @@ __HIGHLIGHT_JS__
       return String((((source || {}).instructions || {}).text) || "");
     }
 
+    function showReportModal(modal, focusTargetId) {
+      modal.hidden = false;
+      modal.setAttribute("aria-hidden", "false");
+      syncReportModalScrollLock();
+      document.getElementById(focusTargetId).focus();
+    }
+
+    function hideReportModal(modal) {
+      modal.hidden = true;
+      modal.setAttribute("aria-hidden", "true");
+      syncReportModalScrollLock();
+    }
+
+    function syncReportModalScrollLock() {
+      const hasOpenModal = REPORT_MODAL_IDS.some((modalId) => {
+        const modal = document.getElementById(modalId);
+        return modal && !modal.hidden;
+      });
+      document.documentElement.classList.toggle("report-modal-open", hasOpenModal);
+      document.body.classList.toggle("report-modal-open", hasOpenModal);
+    }
+
     function openSourceModal(item) {
       currentSourceText = sourceText(item);
       const modal = document.getElementById("sourceModal");
@@ -2938,9 +3075,7 @@ __HIGHLIGHT_JS__
       if (window.hljs && typeof window.hljs.highlightElement === "function") {
         window.hljs.highlightElement(code);
       }
-      modal.hidden = false;
-      modal.setAttribute("aria-hidden", "false");
-      document.getElementById("closeSource").focus();
+      showReportModal(modal, "closeSource");
     }
 
     function openQueryTextModal(queryId) {
@@ -2959,9 +3094,7 @@ __HIGHLIGHT_JS__
       if (window.hljs && typeof window.hljs.highlightElement === "function") {
         window.hljs.highlightElement(code);
       }
-      modal.hidden = false;
-      modal.setAttribute("aria-hidden", "false");
-      document.getElementById("closeSource").focus();
+      showReportModal(modal, "closeSource");
     }
 
     function openMetaModal(item) {
@@ -2970,9 +3103,7 @@ __HIGHLIGHT_JS__
       const body = document.getElementById("metaBody");
       title.textContent = "Show meta: " + (item.title || item.item_id || "");
       body.replaceChildren(renderMetaTable(itemMetaRows(item)));
-      modal.hidden = false;
-      modal.setAttribute("aria-hidden", "false");
-      document.getElementById("closeMeta").focus();
+      showReportModal(modal, "closeMeta");
     }
 
     function openInstructionModal(item) {
@@ -2981,22 +3112,18 @@ __HIGHLIGHT_JS__
       const body = document.getElementById("instructionBody");
       title.textContent = "Show Instruction: " + (item.title || item.item_id || "");
       body.replaceChildren(PgDiagMarkdown.render(instructionText(item)));
-      modal.hidden = false;
-      modal.setAttribute("aria-hidden", "false");
-      document.getElementById("closeInstruction").focus();
+      showReportModal(modal, "closeInstruction");
     }
 
     function closeInstructionModal() {
       const modal = document.getElementById("instructionModal");
-      modal.hidden = true;
-      modal.setAttribute("aria-hidden", "true");
+      hideReportModal(modal);
       document.getElementById("instructionBody").replaceChildren();
     }
 
     function closeMetaModal() {
       const modal = document.getElementById("metaModal");
-      modal.hidden = true;
-      modal.setAttribute("aria-hidden", "true");
+      hideReportModal(modal);
       document.getElementById("metaBody").replaceChildren();
     }
 
@@ -3250,8 +3377,7 @@ __HIGHLIGHT_JS__
 
     function closeSourceModal() {
       const modal = document.getElementById("sourceModal");
-      modal.hidden = true;
-      modal.setAttribute("aria-hidden", "true");
+      hideReportModal(modal);
       currentSourceText = "";
       const copyButton = document.getElementById("copySource");
       copyButton.textContent = "Copy";
@@ -3522,13 +3648,17 @@ __HIGHLIGHT_JS__
           show: true,
           position: "bottom",
           height: CHART_LEGEND_HEIGHT_PX,
+          formatter: (seriesName) => formatChartSeriesLabel(seriesName),
           labels: {colors: theme.text},
           itemMargin: {horizontal: 8, vertical: 2},
         },
         tooltip: {
           theme: document.documentElement.dataset.theme === "light" ? "light" : "dark",
           x: xType === "datetime" ? {format: "HH:mm:ss"} : {},
-          y: {formatter: (value) => formatChartTooltipValue(value, unit)},
+          y: {
+            formatter: (value) => formatChartTooltipValue(value, unit),
+            title: {formatter: (seriesName) => formatChartSeriesLabel(seriesName)},
+          },
         },
         xaxis: {
           type: xType === "datetime" ? "datetime" : "category",
@@ -3582,6 +3712,33 @@ __HIGHLIGHT_JS__
         return title;
       }
       return title + " [" + unit + "]";
+    }
+
+    function formatChartSeriesLabel(seriesName) {
+      const rawName = String(seriesName || "");
+      const queryIdMatch = /^(.*)\.(-?\d+)$/.exec(rawName);
+      if (!queryIdMatch) {
+        return escapeChartLabel(rawName);
+      }
+      const queryText = queryTextForId(queryIdMatch[2]);
+      if (!queryText) {
+        return escapeChartLabel(rawName);
+      }
+      const baseLabel = queryIdMatch[1].split(".").join(" / ");
+      const normalizedQuery = String(queryText).replace(/\s+/g, " ").trim();
+      const shortQuery = normalizedQuery.length > CHART_QUERY_LABEL_MAX_CHARS
+        ? normalizedQuery.slice(0, CHART_QUERY_LABEL_MAX_CHARS - 3).trimEnd() + "..."
+        : normalizedQuery;
+      return escapeChartLabel(baseLabel + " / SQL: " + shortQuery);
+    }
+
+    function escapeChartLabel(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
     }
 
     function chartColors(series) {
@@ -3647,7 +3804,9 @@ __HIGHLIGHT_JS__
     function renderTable(result, item) {
       const itemId = item.item_id || "";
       const rows = Array.isArray(result.rows) ? result.rows : [];
-      const columns = buildColumns(result.columns, rows);
+      const allColumns = buildColumns(result.columns, rows);
+      const snapshotTimeColumn = allColumns.find((column) => column.name === "snapshot_time");
+      const columns = allColumns.filter((column) => column !== snapshotTimeColumn);
       if (!rows.length) {
         const empty = document.createElement("div");
         empty.className = "empty-state";
@@ -3776,7 +3935,37 @@ __HIGHLIGHT_JS__
 
       tableViews.push(state);
       refreshTable(state);
-      return shell;
+      const snapshotTimeLabel = renderSnapshotTimeLabel(rows, snapshotTimeColumn, allColumns);
+      if (!snapshotTimeLabel) {
+        return shell;
+      }
+      const container = document.createElement("div");
+      container.className = "snapshot-table-result";
+      container.appendChild(snapshotTimeLabel);
+      container.appendChild(shell);
+      return container;
+    }
+
+    function renderSnapshotTimeLabel(rows, column, columns) {
+      if (!column) {
+        return null;
+      }
+      const snapshotRow = rows.find((row) => {
+        const value = Array.isArray(row) ? row[column.sourceIndex] : null;
+        return value !== undefined && value !== null && String(value).trim() !== "";
+      });
+      if (!snapshotRow) {
+        return null;
+      }
+      const rawValue = snapshotRow[column.sourceIndex];
+      const display = displayValue(rawValue, column, snapshotRow, columns);
+      const label = document.createElement("div");
+      label.className = "snapshot-time-label";
+      setHighlightableText(label, "Snapshot time: " + display.text);
+      if (display.title && display.title !== display.text) {
+        label.title = display.title;
+      }
+      return label;
     }
 
     function buildColumns(columns, rows) {
@@ -4467,6 +4656,7 @@ __HIGHLIGHT_JS__
       const collection = document.getElementById("collectionStatusFilter").value;
       const severity = document.getElementById("severityLevelFilter").value;
       const tag = document.getElementById("tagFilter").value;
+      updateFilteredTagHighlights(tag);
       let visibleTotal = 0;
       for (const section of document.querySelectorAll("details.section")) {
         const sectionMatchesQuery = Boolean(query) && (section.__searchText || "").includes(query);
@@ -4500,6 +4690,19 @@ __HIGHLIGHT_JS__
       }
       refreshStaticHighlights(query);
       requestPageScrollControlsUpdate();
+    }
+
+    function updateFilteredTagHighlights(selectedTag) {
+      const activeTag = String(selectedTag || "");
+      for (const badge of document.querySelectorAll(".item-tag")) {
+        const matches = Boolean(activeTag) && badge.dataset.tag === activeTag;
+        badge.classList.toggle("filter-match", matches);
+        if (matches) {
+          badge.setAttribute("aria-current", "true");
+        } else {
+          badge.removeAttribute("aria-current");
+        }
+      }
     }
 
     function updateVisibleSummary(visibleTotal) {

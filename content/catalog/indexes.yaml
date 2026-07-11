@@ -1,6 +1,7 @@
 queries:
   indexes.invalid_indexes:
     title: Invalid Indexes
+    database_scope: current_database
     group: Index Health
     main_view: pg_index
     description: Invalid indexes with remediation context.
@@ -23,6 +24,7 @@ queries:
 
   indexes.unused_indexes:
     title: Never Used Indexes
+    database_scope: current_database
     group: Index Health
     main_view: pg_index
     description: Non-unique btree indexes with no scans and supporting context.

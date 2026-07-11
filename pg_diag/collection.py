@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .artifact import (
+    apply_database_scope_presentation,
     create_artifact,
     extract_item_query_texts,
     item_error_from_exception,
@@ -194,6 +195,7 @@ def finish_collection(
     if runtime_updates:
         run.artifact["runtime"].update(runtime_updates)
     run.artifact["runtime"]["finished_at"] = utc_now()
+    apply_database_scope_presentation(run.artifact)
     validate_artifact(run.artifact)
     html_text = render_html(run.artifact, validate=False)
     write_text_secure(run.html_path, html_text)

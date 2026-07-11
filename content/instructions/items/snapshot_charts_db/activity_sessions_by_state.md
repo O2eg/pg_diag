@@ -3,7 +3,7 @@
 This instruction belongs to report item `snapshot_charts_db.activity_sessions_by_state`. The item is backed by `activity.sessions_by_state` (snapshot metric).
 
 ## What this item shows
-- Session state counts over time.
+- Per-database session state counts over time for all databases.
 - Active, idle, idle-in-transaction, aborted, fastpath, and disabled state trends.
 
 ## What to watch
@@ -18,7 +18,7 @@ This instruction belongs to report item `snapshot_charts_db.activity_sessions_by
 - Slow client behavior.
 
 ## Automatic evaluation
-- This chart is informational and counts only the connected database.
+- This chart is informational and partitions every series by database and state.
 - A session can be active and waiting simultaneously; use wait-profile and lock items for waits.
 
 ## Checklist

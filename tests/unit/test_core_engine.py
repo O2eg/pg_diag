@@ -14,6 +14,7 @@ import yaml
 
 from pg_diag import runtime_config
 from pg_diag.artifact import (
+    apply_database_scope_presentation,
     artifact_has_errors,
     item_from_plan,
     report_output_paths,
@@ -89,6 +90,56 @@ def _artifact(*, title: str = "Test", data: str = "ok") -> dict:
         "snapshots": [],
         "diagnostics": [],
     }
+
+
+def test_database_scope_presentation_labels_items_and_hides_redundant_datname() -> None:
+    artifact = _artifact()
+    artifact["runtime"]["current_database"] = "pg_diag_loadtest"
+    artifact["items"]["s.i"].update(
+        {
+            "title": "SQL Time Delta",
+            "source_metadata": {
+                "database_scope": "current_database",
+                "display": {"default_sort": {"column": "datname", "direction": "asc"}},
+            },
+            "result": {
+                "kind": "table",
+                "columns": [
+                    {"name": "datname"},
+                    {"name": "database_name"},
+                    {"name": "calls_delta"},
+                ],
+                "rows": [["pg_diag_loadtest", "pg_diag_loadtest", 42]],
+                "row_count": 1,
+            },
+        }
+    )
+    artifact["items"]["s.all"] = {
+        "title": "Database Workload Delta",
+        "source_metadata": {"database_scope": "all_databases"},
+        "result": {
+            "kind": "table",
+            "columns": [{"name": "datname"}, {"name": "commit_delta"}],
+            "rows": [["postgres", 1], ["pg_diag_loadtest", 2]],
+            "row_count": 2,
+        },
+    }
+
+    apply_database_scope_presentation(artifact)
+    apply_database_scope_presentation(artifact)
+
+    current = artifact["items"]["s.i"]
+    assert current["title"] == "SQL Time Delta (Only pg_diag_loadtest)"
+    assert [column["name"] for column in current["result"]["columns"]] == ["calls_delta"]
+    assert current["result"]["rows"] == [[42]]
+    assert current["source_metadata"]["display"] == {}
+
+    all_databases = artifact["items"]["s.all"]
+    assert all_databases["title"] == "Database Workload Delta (All databases)"
+    assert [column["name"] for column in all_databases["result"]["columns"]] == [
+        "datname",
+        "commit_delta",
+    ]
 
 
 def test_snapshot_schedule_is_bounded_and_includes_window_end() -> None:

@@ -1,6 +1,7 @@
 queries:
   wait.pg_wait_sampling_capabilities:
     title: pg_wait_sampling Capability Check
+    database_scope: current_database
     group: Wait Profile
     main_view: pg_extension
     description: Optional pg_wait_sampling package, extension, schema, and profile-view visibility state.

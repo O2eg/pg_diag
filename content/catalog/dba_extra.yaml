@@ -22,6 +22,7 @@ queries:
 
   activity.wait_events:
     title: Active Wait Events
+    database_scope: all_databases
     group: Activity & Locks
     main_view: pg_stat_activity
     description: Active processes grouped by database, application, wait event, query_id, and query text.
@@ -50,6 +51,7 @@ queries:
 
   activity.long_transactions:
     title: Transactions Over 1 Minute
+    database_scope: all_databases
     group: Activity & Locks
     main_view: pg_stat_activity
     description: Active and idle-in-transaction client sessions with transactions open for more than one minute.
@@ -72,6 +74,7 @@ queries:
 
   activity.idle_in_transaction:
     title: Idle In Transaction Over 1 Minute
+    database_scope: all_databases
     group: Activity & Locks
     main_view: pg_stat_activity
     description: Sessions stuck idle in transaction for more than one minute.
@@ -93,6 +96,7 @@ queries:
 
   locks.lock_modes:
     title: Lock Mode Counts
+    database_scope: current_database
     group: Activity & Locks
     main_view: pg_locks
     description: Current lock counts by type, mode, and granted state for the connected database and its sessions.
@@ -195,6 +199,7 @@ queries:
 
   vacuum.database_wraparound:
     title: Database Wraparound Age
+    database_scope: all_databases
     group: Storage & Vacuum
     main_view: pg_database
     description: Transaction ID and multixact age for databases relative to autovacuum freeze limits.
@@ -270,6 +275,7 @@ queries:
 
   progress.vacuum:
     title: Vacuum Progress
+    database_scope: current_database
     group: Maintenance Progress
     main_view: pg_stat_progress_vacuum
     description: Running VACUUM and autovacuum operations with heap/index progress.
@@ -292,6 +298,7 @@ queries:
 
   progress.create_index:
     title: Create Index Progress
+    database_scope: current_database
     group: Maintenance Progress
     main_view: pg_stat_progress_create_index
     description: Running CREATE INDEX and REINDEX operations.
@@ -309,6 +316,7 @@ queries:
 
   progress.cluster:
     title: Cluster Progress
+    database_scope: current_database
     group: Maintenance Progress
     main_view: pg_stat_progress_cluster
     description: Running CLUSTER and VACUUM FULL operations.
@@ -326,6 +334,7 @@ queries:
 
   progress.copy:
     title: Copy Progress
+    database_scope: current_database
     group: Maintenance Progress
     main_view: pg_stat_progress_copy
     description: Running COPY operations with byte and tuple progress.
@@ -343,6 +352,7 @@ queries:
 
   storage.sequence_status:
     title: Sequence Exhaustion
+    database_scope: current_database
     group: Storage & Vacuum
     main_view: pg_sequences
     description: Sequence usage, capacity, and related tables to detect approaching exhaustion.
@@ -365,6 +375,7 @@ queries:
 
   indexes.redundant_indexes:
     title: Redundant Indexes
+    database_scope: current_database
     group: Index Health
     main_view: pg_index
     description: Indexes covered by another index on the same relation.
@@ -387,6 +398,7 @@ queries:
 
   indexes.foreign_keys_without_index:
     title: Foreign Keys Without Supporting Index
+    database_scope: current_database
     group: Index Health
     main_view: pg_constraint
     description: Foreign keys whose referencing columns are not the leftmost prefix of a valid index.
@@ -409,6 +421,7 @@ queries:
 
   indexes.duplicate_indexes:
     title: Duplicate Indexes
+    database_scope: current_database
     group: Index Health
     main_view: pg_index
     description: Indexes with identical key/operator/collation/predicate/expression fingerprints.
@@ -431,6 +444,7 @@ queries:
 
   indexes.tables_without_pk_or_unique:
     title: Tables Without PK Or Unique Index
+    database_scope: current_database
     group: Index Health
     main_view: pg_class
     description: User tables without a primary key or any valid unique index.
@@ -453,6 +467,7 @@ queries:
 
   indexes.large_indexes:
     title: Indexes Large Relative To Table
+    database_scope: current_database
     group: Index Health
     main_view: pg_index
     description: Indexes larger than half of the table heap, with usage counters.
@@ -472,6 +487,7 @@ queries:
 
   cluster.extensions:
     title: Available Extensions
+    database_scope: current_database
     group: Cluster Inventory
     main_view: pg_available_extensions
     description: Server extensions with installed/default versions.

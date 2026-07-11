@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__, runtime_config
-from .contracts import SEVERITY_LEVELS
+from .contracts import DATABASE_SCOPE_ALL, DATABASE_SCOPE_CURRENT, SEVERITY_LEVELS
 from .content_loader import ContentPack
 from .planner import ExecutionPlan, PlannedEntry
 from .security import (
@@ -241,6 +241,64 @@ def artifact_has_errors(artifact: dict[str, Any]) -> bool:
         if isinstance(snapshot, dict)
         for item in (snapshot.get("items") or {}).values()
     )
+
+
+def apply_database_scope_presentation(artifact: dict[str, Any]) -> None:
+    """Label database scope and remove redundant current-database columns."""
+    current_database = str(
+        (artifact.get("runtime") or {}).get("current_database") or "current database"
+    )
+    for item in (artifact.get("items") or {}).values():
+        if not isinstance(item, dict):
+            continue
+        metadata = item.get("source_metadata") or {}
+        scope = metadata.get("database_scope") if isinstance(metadata, dict) else None
+        if scope == DATABASE_SCOPE_ALL:
+            suffix = " (All databases)"
+        elif scope == DATABASE_SCOPE_CURRENT:
+            suffix = f" (Only {current_database})"
+            for column_name in ("datname", "database_name"):
+                _remove_table_column(item.get("result"), column_name)
+                _remove_redundant_default_sort(metadata, column_name)
+        else:
+            continue
+        title = str(item.get("title") or "")
+        if not title.endswith(suffix):
+            item["title"] = title + suffix
+
+
+def _remove_table_column(result: Any, column_name: str) -> None:
+    if not isinstance(result, dict) or result.get("kind") != "table":
+        return
+    columns = result.get("columns")
+    rows = result.get("rows")
+    if not isinstance(columns, list) or not isinstance(rows, list):
+        return
+    remove_indexes = [
+        index
+        for index, column in enumerate(columns)
+        if _column_name(column, index) == column_name
+    ]
+    if not remove_indexes:
+        return
+    remove = set(remove_indexes)
+    result["columns"] = [column for index, column in enumerate(columns) if index not in remove]
+    result["rows"] = [
+        [value for index, value in enumerate(row) if index not in remove]
+        if isinstance(row, list)
+        else row
+        for row in rows
+    ]
+    result["row_count"] = len(rows)
+
+
+def _remove_redundant_default_sort(metadata: dict[str, Any], column_name: str) -> None:
+    display = metadata.get("display")
+    if not isinstance(display, dict):
+        return
+    default_sort = display.get("default_sort")
+    if isinstance(default_sort, dict) and default_sort.get("column") == column_name:
+        display.pop("default_sort", None)
 
 
 def extract_item_query_texts(item: dict[str, Any], query_texts: dict[str, str]) -> None:

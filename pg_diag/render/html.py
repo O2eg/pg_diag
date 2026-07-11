@@ -11,7 +11,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-from pg_diag.artifact import write_text_secure
+from pg_diag.artifact import apply_database_scope_presentation, write_text_secure
 from pg_diag.artifact_schema import validate_artifact
 from pg_diag.executors.sql import publicize_table_result
 
@@ -130,4 +130,5 @@ def _publicize_artifact_for_render(artifact: dict[str, Any]) -> dict[str, Any]:
         result["columns"] = public_columns
         result["rows"] = public_rows
         result["row_count"] = len(public_rows)
+    apply_database_scope_presentation(public_artifact)
     return public_artifact

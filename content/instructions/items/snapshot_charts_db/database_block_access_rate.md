@@ -18,7 +18,7 @@ This instruction belongs to report item `snapshot_charts_db.database_block_acces
 - Plan change.
 
 ## Automatic evaluation
-- Read and buffer-hit deltas are distinct block access outcomes and are stacked for the connected database.
+- Read and buffer-hit deltas are distinct block access outcomes and are stacked per database.
 - pg_diag's own catalog reads contribute observer overhead; use object/SQL I/O deltas for attribution.
 
 ## Checklist

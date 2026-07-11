@@ -4,7 +4,7 @@ This instruction belongs to report item `snapshot_delta_workload.sql_time_delta`
 
 ## What this item shows
 - Calls, rows, execution-time delta, and execution milliseconds per wall-clock second for statement entries present at both endpoints.
-- Full `(dbid, userid, queryid, toplevel)` identity with current database/role labels.
+- Full `(dbid, userid, queryid, toplevel)` identity; the title names the only database in scope and the table retains the role label.
 - A bounded candidate set: each endpoint keeps the 50 entries with highest cumulative execution time before backend loading.
 
 ## What to watch

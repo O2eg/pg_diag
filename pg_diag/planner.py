@@ -279,6 +279,11 @@ def _with_item_metadata(
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     result = dict(metadata or {})
+    database_scope = _item_database_scope(content, item_id, item, result)
+    if database_scope is None:
+        result.pop("database_scope", None)
+    else:
+        result["database_scope"] = database_scope
     tags = _item_tags(item)
     if tags:
         result["tags"] = tags
@@ -289,6 +294,34 @@ def _with_item_metadata(
     if instruction:
         result["instructions"] = instruction
     return result
+
+
+def _item_database_scope(
+    content: ContentPack,
+    item_id: str,
+    item: dict[str, Any],
+    metadata: dict[str, Any],
+) -> str | None:
+    section_id = item_id.partition(".")[0]
+    section = (content.report.get("sections") or {}).get(section_id) or {}
+    if section.get("show_database_scope") is False:
+        return None
+
+    scope = item.get("database_scope") or metadata.get("database_scope")
+    if scope is None:
+        source_kind = _source_kind(item)
+        source_id = item.get(source_kind)
+        catalogs = {
+            "query": content.queries,
+            "script": content.scripts,
+            "metric": content.metrics,
+            "python": content.pythons,
+        }
+        scope = (catalogs.get(source_kind, {}).get(source_id) or {}).get("database_scope")
+    if scope is None:
+        defaults = content.report.get("defaults") or {}
+        scope = (defaults.get("item") or {}).get("database_scope")
+    return str(scope) if scope is not None else None
 
 
 def _item_tags(item: dict[str, Any]) -> list[str]:
@@ -351,7 +384,10 @@ def _plan_query_item(
     manifest = content.queries[query_id]
     selection = select_query_variant(query_id, manifest, server_version_num)
     if selection.status != "ok" or selection.variant is None:
-        source_metadata = _query_usage_metadata(query_id, item_id, query_usage_index)
+        source_metadata = {
+            "database_scope": manifest.get("database_scope"),
+            **_query_usage_metadata(query_id, item_id, query_usage_index),
+        }
         return PlannedItem(
             item_id=item_id,
             section_id=section_id,
@@ -439,6 +475,7 @@ def _query_source_metadata(
         "optional": bool(manifest.get("optional")),
         "display": manifest.get("display") or {},
         "evaluation": manifest.get("evaluation") or {},
+        "database_scope": manifest.get("database_scope"),
         "semantic_columns": variant.get("semantic_columns") or {},
         **usage,
     }
@@ -579,6 +616,7 @@ def _plan_metric_item(
                 "metric_id": metric_id,
                 "source_query": source_query,
                 "source_sampler": metric.get("source_sampler"),
+                "database_scope": metric.get("database_scope"),
                 "chart": metric.get("chart") or {},
                 "display": metric.get("display") or {},
                 **query_usage_metadata,
@@ -602,6 +640,7 @@ def _plan_metric_item(
             source_metadata=_with_item_metadata(content, item_id, item, {
                 "metric_id": metric_id,
                 "source_sampler": metric.get("source_sampler"),
+                "database_scope": metric.get("database_scope"),
                 "chart": metric.get("chart") or {},
                 "display": metric.get("display") or {},
             }),
@@ -611,6 +650,7 @@ def _plan_metric_item(
         "metric_id": metric_id,
         "source_query": source_query,
         "source_sampler": metric.get("source_sampler"),
+        "database_scope": metric.get("database_scope"),
         "chart": metric.get("chart") or {},
         "display": metric.get("display") or {},
         **query_usage_metadata,

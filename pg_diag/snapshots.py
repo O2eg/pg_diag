@@ -164,9 +164,6 @@ async def collect_snapshots(
             snapshot_schemas=artifact["snapshot_schemas"],
         )
         artifact["runtime"]["snapshot_window_finished_at"] = utc_now()
-        artifact["runtime"]["collector_db_transactions_between_endpoints"] = (
-            len(snapshots) + (1 if endpoint_queries else 0)
-        )
         artifact["diagnostics"].extend(db_sample_diagnostics)
         artifact["snapshots"] = snapshots
         source_latest_items.update(latest_sample_items)
@@ -248,12 +245,6 @@ async def collect_snapshots(
                     source_item_by_query,
                     source_metadata_by_item,
                     os_diagnostics_by_sampler.get(str(metric.get("source_sampler") or ""), []),
-                    {
-                        "collector_db_transactions_between_endpoints": artifact["runtime"].get(
-                            "collector_db_transactions_between_endpoints",
-                            0,
-                        )
-                    },
                 )
                 raise_if_fail_fast(fail_fast, artifact["items"][planned.item_id])
             except Exception as exc:
