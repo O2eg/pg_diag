@@ -171,6 +171,7 @@ field_reference:
     metrics/*/series[]/name_from_ref: Semantic reference supplying a dynamic series name.
     metrics/*/series[]/value_ref: Semantic value read for this series.
     metrics/*/series[]/transform: Gauge, delta, rate, or other calculation applied to source values.
+    metrics/*/series[]/optional: Whether null counter endpoints represent an inapplicable series value and are omitted without invalid-interval coverage.
     metrics/*/series[]/unit: Display and formatting unit for series values.
     metrics/*/series[]/color: Optional fixed hexadecimal series color.
     metrics/*/chart: Chart presentation configuration.

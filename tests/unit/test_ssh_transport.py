@@ -894,6 +894,24 @@ def test_asyncssh_end_to_end_forward_shell_sftp_and_local_python_evaluation(
                     "ssl_crl_file": "",
                 }
 
+                class ReadOnlyTransaction:
+                    async def __aenter__(self):
+                        return self
+
+                    async def __aexit__(self, exc_type, exc, traceback):
+                        return False
+
+                def transaction(self, *, readonly: bool):
+                    assert readonly is True
+                    return self.ReadOnlyTransaction()
+
+                async def fetchrow(self, sql: str) -> dict[str, Any]:
+                    assert "current_setting('data_directory')" in sql
+                    return {
+                        "data_directory": str(pgdata),
+                        "server_version_num": 180000,
+                    }
+
                 async def fetchval(self, sql: str, *args: Any) -> str:
                     if args:
                         return self.settings.get(str(args[0]), "")
@@ -943,7 +961,8 @@ def test_asyncssh_end_to_end_forward_shell_sftp_and_local_python_evaluation(
                 for source_id, item in zip(ordered_sources, all_items)
                 if item["collection_status"] == "error"
             ]
-            assert errors == []
+            assert [source_id for source_id, _reason in errors] == ["cluster.pg_controldata"]
+            assert errors[0][1]
 
             forbidden = ("python", "tar", "mktemp", "remote_agent")
             assert not any(token in command.lower() for command in commands for token in forbidden)

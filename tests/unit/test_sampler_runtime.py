@@ -139,3 +139,7 @@ def test_postgresql_process_sampler_matcher_is_exact(content_path: Path) -> None
 
     assert "postgres|postmaster|postgres:*)" in script
     assert "postgres*|postmaster*)" not in script
+    assert 'io_data="$(cat "$proc_dir/io" 2>/dev/null)"' in script
+    assert 'status_data="$(cat "$proc_dir/status" 2>/dev/null)"' in script
+    assert 'done < "$proc_dir/io"' not in script
+    assert 'done < "$proc_dir/status"' not in script

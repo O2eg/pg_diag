@@ -550,6 +550,18 @@ or scaled.
 Chart axes MAY use a single SI count scale (`k`, `M`, `G`) to save space. The
 axis title states the scale and chart tooltips show the exact grouped count.
 
+For a sampled gauge, `transform: difference` means the signed arithmetic
+difference between adjacent available samples. It permits negative values and
+must not be used for cumulative counters. If either endpoint is absent, the
+result is `null`; a newly appearing or disappearing dynamic Top-N member is
+never interpreted as zero.
+
+The first sample of a `rate`, counter `delta`, or gauge `difference` series is
+an endpoint baseline and has a `null` value. The renderer must not display a
+leading or trailing timestamp for which every series is `null`; it must retain
+all-null timestamps inside the populated range as visible gaps. A baseline is
+never converted to zero.
+
 ### 10.2 Estimates
 
 An integer physical representation does not imply an exact measurement.
@@ -581,7 +593,8 @@ instant to the browser timezone and displays:
 Rules:
 
 - exact UTC text remains available in title/detail text;
-- point-in-time tables hide system `snapshot_time` and show `Snapshot time`;
+- one-shot tables hide system `snapshot_time` and show `One-shot time`;
+- repeatedly sampled point-in-time tables hide system `snapshot_time` and show `Snapshot time`;
 - Delta tables show `Snapshot start time`, `Snapshot finish`, and
   `Delta duration`;
 - ordinary business timestamps remain columns;
@@ -664,8 +677,19 @@ already scaled MiB, GiB, thousands, or percentages represented as strings.
   declared compatible conversion;
 - stacked series require the identical canonical unit and quantity family;
 - missing or invalid points remain null and are not interpolated as zero;
+- a series whose complete collection window contains no non-zero datapoint is
+  omitted from the artifact, legend, and tooltip; a required all-null series
+  carrying invalid-coverage evidence is not treated as an all-zero series;
 - rates use actual adjacent-snapshot duration;
 - timestamp coordinates use UTC artifact instants and browser-local display.
+- before passing sparse series to a shared-tooltip chart library, the renderer
+  aligns them to the union of x coordinates using `null` placeholders; it must
+  not substitute zero, and a tooltip omits a series whose selected point is
+  null;
+- column and bar charts treat snapshot timestamps as discrete ordered
+  categories, format their labels as browser-local times, and disable the
+  continuous-axis crosshair; tooltip identity is matched by the configured x
+  value rather than a library-internal datapoint index;
 
 When an exact integer chart point uses `decimal_string`, the renderer derives a
 temporary plotting value only after selecting an axis scale. That approximation
@@ -694,6 +718,33 @@ exact: 194,060,000 B/s
 
 A tooltip must not display `194060000 bytes/s`, `185.07 MB/s`, or bare
 `185.07 M` as its primary value.
+
+### 13.3 Legend and shared-tooltip ordering
+
+By default, the renderer orders chart series in the legend by descending
+arithmetic mean of their finite observed points. Missing points do not
+participate in the average. Equal averages retain declaration order so
+rendering remains stable. The series color remains bound to its declared
+series, not to its position after sorting.
+
+A chart with `series_order: configured` preserves declaration order. This is
+required when order has visual semantics, especially stacked charts whose last
+declared series must remain the top layer. The CPU utilization chart uses this
+contract to keep `idle` above busy CPU states. The renderer applies no
+item-name-specific exception.
+
+For stacked column/bar charts, Apex renders the first series at the bottom and
+the last series at the top. The renderer therefore orders drawable series by
+ascending arithmetic mean so the largest series is the top layer. The legend
+uses the inverse display order and remains descending by mean. Shared-tooltip
+rows remain independently sorted by the selected datapoint value.
+
+For a shared tooltip, rows are sorted independently at every selected x value
+by descending datapoint value. Equal values retain the legend order. A series
+without a finite point at the selected x value is omitted rather than shown as
+zero. Tooltip content remains pointer-interactive so its vertical scrollbar can
+be used when many non-zero series are present. This display ordering never
+changes artifact series or point order.
 
 ## 14. Delta And Rate Contracts
 
@@ -725,8 +776,12 @@ Every cumulative-counter Delta item declares:
 - unavailable optional counter: keep the row, set only affected derived cells
   to null, and attach column/cell status;
 - a counter that is legitimately inapplicable for some source rows MAY declare
-  its derived column `optional: true`; a null endpoint then leaves that cell
-  null without invalidating independent values in the row;
+  its derived table column or chart series `optional: true`; a null endpoint
+  then leaves that cell or point null without invalidating independent values
+  and without creating `invalid_value` coverage;
+- an optional chart series with no finite value across the complete collection
+  window is omitted rather than transported as an all-null series; a required
+  all-null series is retained when its gaps carry invalid-coverage evidence;
 - counter decrease with unchanged epoch: invalidate the affected counter cells,
   record `counter_decrease` per column, and keep independent valid counters;
 - invalid interval duration: omit the whole row;

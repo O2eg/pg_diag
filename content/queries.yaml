@@ -14,6 +14,7 @@ query_catalog:
     - catalog/activity_locks.yaml
     - catalog/database.yaml
     - catalog/metric_sources.yaml
+    - catalog/buffer_cache.yaml
     - catalog/delta_workload.yaml
     - catalog/statements.yaml
     - catalog/object_workload.yaml

@@ -1,0 +1,160 @@
+queries:
+  buffer_cache.utilization:
+    title: Buffer Cache Utilization Chart Source
+    database_scope: all_databases
+    group: Buffer Cache
+    main_view: pg_buffercache
+    description: Used and unused shared buffers sampled from pg_buffercache.
+    display: {default_sort: {column: used_blocks, direction: desc}}
+    collection: {default: every_snapshot, supports: [once, every_snapshot]}
+    variants:
+      - id: buffer_cache_utilization_pg14_plus
+        min_pg_version: 140000
+        sql_file: buffer_cache/utilization.sql
+        semantic_columns:
+          dimensions: {scope: scope}
+          gauges: {used_blocks: used_blocks, unused_blocks: unused_blocks}
+
+  buffer_cache.usage_count_distribution:
+    title: Buffer Usage Count Distribution Chart Source
+    database_scope: all_databases
+    group: Buffer Cache
+    main_view: pg_buffercache
+    description: Shared-buffer counts grouped by usage count.
+    display: {default_sort: {column: usage_count_label, direction: asc}}
+    collection: {default: every_snapshot, supports: [once, every_snapshot]}
+    variants:
+      - id: buffer_cache_usage_count_distribution_pg14_plus
+        min_pg_version: 140000
+        sql_file: buffer_cache/usage_count_distribution.sql
+        semantic_columns:
+          dimensions: {usage_count: usage_count_label}
+          gauges: {buffers: buffers}
+
+  buffer_cache.dirty_and_pinned:
+    title: Dirty And Pinned Buffers Chart Source
+    database_scope: all_databases
+    group: Buffer Cache
+    main_view: pg_buffercache
+    description: Dirty and pinned shared-buffer gauges.
+    display: {default_sort: {column: dirty_blocks, direction: desc}}
+    collection: {default: every_snapshot, supports: [once, every_snapshot]}
+    variants:
+      - id: buffer_cache_dirty_and_pinned_pg14_plus
+        min_pg_version: 140000
+        sql_file: buffer_cache/dirty_and_pinned.sql
+        semantic_columns:
+          dimensions: {scope: scope}
+          gauges: {dirty_blocks: dirty_blocks, pinned_blocks: pinned_blocks}
+
+  buffer_cache.dirty_by_usage_count:
+    title: Dirty Buffers By Usage Count Chart Source
+    database_scope: all_databases
+    group: Buffer Cache
+    main_view: pg_buffercache
+    description: Dirty shared buffers grouped by usage count.
+    display: {default_sort: {column: usage_count_label, direction: asc}}
+    collection: {default: every_snapshot, supports: [once, every_snapshot]}
+    variants:
+      - id: buffer_cache_dirty_by_usage_count_pg14_plus
+        min_pg_version: 140000
+        sql_file: buffer_cache/dirty_by_usage_count.sql
+        semantic_columns:
+          dimensions: {usage_count: usage_count_label}
+          gauges: {dirty_blocks: dirty_blocks}
+
+  buffer_cache.by_database:
+    title: Buffer Cache By Database Chart Source
+    database_scope: all_databases
+    group: Buffer Cache
+    main_view: pg_buffercache
+    description: Cached shared buffers grouped by database, including shared catalogs.
+    display: {default_sort: {column: cached_blocks, direction: desc}}
+    collection: {default: every_snapshot, supports: [once, every_snapshot]}
+    variants:
+      - id: buffer_cache_by_database_pg14_plus
+        min_pg_version: 140000
+        sql_file: buffer_cache/by_database.sql
+        semantic_columns:
+          dimensions: {database: database_name}
+          gauges: {cached_blocks: cached_blocks}
+
+  buffer_cache.top_relations:
+    title: Top Relations In Buffer Cache Chart Source
+    database_scope: current_database
+    group: Buffer Cache
+    main_view: pg_buffercache
+    description: Top current-database relations by cached blocks, with a bounded Other bucket.
+    display: {default_sort: {column: cached_blocks, direction: desc}}
+    collection: {default: every_snapshot, supports: [once, every_snapshot]}
+    variants:
+      - id: buffer_cache_top_relations_pg14_plus
+        min_pg_version: 140000
+        sql_file: buffer_cache/top_relations.sql
+        semantic_columns:
+          dimensions: {relation: relation_name}
+          gauges: {cached_blocks: cached_blocks}
+
+  buffer_cache.top_dirty_relations:
+    title: Top Dirty Relations In Buffer Cache Chart Source
+    database_scope: current_database
+    group: Buffer Cache
+    main_view: pg_buffercache
+    description: Top current-database relations by dirty cached blocks, with a bounded Other bucket.
+    display: {default_sort: {column: dirty_blocks, direction: desc}}
+    collection: {default: every_snapshot, supports: [once, every_snapshot]}
+    variants:
+      - id: buffer_cache_top_dirty_relations_pg14_plus
+        min_pg_version: 140000
+        sql_file: buffer_cache/top_dirty_relations.sql
+        semantic_columns:
+          dimensions: {relation: relation_name}
+          gauges: {dirty_blocks: dirty_blocks}
+
+  buffer_cache.relation_coverage:
+    title: Relation Cache Coverage Chart Source
+    database_scope: current_database
+    group: Buffer Cache
+    main_view: pg_buffercache
+    description: Cached percentage for the top current-database relations with known physical sizes.
+    display: {default_sort: {column: coverage_pct, direction: desc}}
+    collection: {default: every_snapshot, supports: [once, every_snapshot]}
+    variants:
+      - id: buffer_cache_relation_coverage_pg14_plus
+        min_pg_version: 140000
+        sql_file: buffer_cache/relation_coverage.sql
+        semantic_columns:
+          dimensions: {relation: relation_name}
+          gauges: {coverage_pct: coverage_pct}
+
+  buffer_cache.relation_residency_delta:
+    title: Relation Cache Residency Delta Chart Source
+    database_scope: current_database
+    group: Buffer Cache
+    main_view: pg_buffercache
+    description: Bounded relation residency gauges used to calculate signed adjacent-snapshot changes.
+    display: {default_sort: {column: cached_blocks, direction: desc}}
+    collection: {default: every_snapshot, supports: [once, every_snapshot]}
+    variants:
+      - id: buffer_cache_relation_residency_delta_pg14_plus
+        min_pg_version: 140000
+        sql_file: buffer_cache/relation_residency_delta.sql
+        semantic_columns:
+          dimensions: {relation: relation_name}
+          gauges: {cached_blocks: cached_blocks}
+
+  buffer_cache.relation_kinds:
+    title: Cached Relation Kinds Chart Source
+    database_scope: current_database
+    group: Buffer Cache
+    main_view: pg_buffercache
+    description: Current-database cached blocks grouped by resolved relation kind.
+    display: {default_sort: {column: cached_blocks, direction: desc}}
+    collection: {default: every_snapshot, supports: [once, every_snapshot]}
+    variants:
+      - id: buffer_cache_relation_kinds_pg14_plus
+        min_pg_version: 140000
+        sql_file: buffer_cache/relation_kinds.sql
+        semantic_columns:
+          dimensions: {relation_kind: relation_kind}
+          gauges: {cached_blocks: cached_blocks}

@@ -5,6 +5,18 @@ python_catalog:
     local_only: false
 
 python_sources:
+  cluster.pg_controldata:
+    title: PostgreSQL Control Data
+    description: Read cluster control and initdb-format information with the pg_controldata binary belonging to the running PostgreSQL server.
+    python_file: cluster/pg_controldata.py
+    function: collect
+    timeout_ms: 1000
+    local_only: true
+    display:
+      default_sort:
+        column: parameter
+        direction: asc
+
   database.database_volume:
     title: Database Volume
     description: Collect database sizes and user-object counts by connecting sequentially to every database.

@@ -1624,12 +1624,40 @@ __APEXCHARTS_JS__
     }
 
     .chart-shell {
+      position: relative;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: var(--panel-soft);
       padding: 12px;
       min-width: 0;
       overflow: visible;
+    }
+
+    .chart-hover-tooltip-panel {
+      position: absolute;
+      top: 70px;
+      z-index: 55;
+      max-width: min(520px, calc(100% - 60px));
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
+      color: var(--text);
+      pointer-events: auto;
+    }
+
+    .chart-hover-tooltip-panel.is-left {
+      left: 30px;
+      right: auto;
+    }
+
+    .chart-hover-tooltip-panel.is-right {
+      left: auto;
+      right: 30px;
+    }
+
+    .chart-hover-tooltip-panel[hidden] {
+      display: none;
     }
 
     .apex-chart {
@@ -1792,6 +1820,62 @@ __APEXCHARTS_JS__
       border-color: var(--line) !important;
       color: var(--text) !important;
       z-index: 60 !important;
+    }
+
+    .apexcharts-tooltip {
+      pointer-events: auto !important;
+    }
+
+    .pg-diag-chart-tooltip {
+      box-sizing: border-box;
+      min-width: 260px;
+      max-width: min(520px, 70vw);
+      color: var(--text);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .pg-diag-chart-tooltip-title {
+      padding: 9px 11px;
+      border-bottom: 1px solid var(--line);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .pg-diag-chart-tooltip-rows {
+      max-height: 360px;
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-gutter: stable;
+      touch-action: pan-y;
+      padding: 5px 0;
+    }
+
+    .pg-diag-chart-tooltip-row {
+      display: grid;
+      grid-template-columns: 9px minmax(0, 1fr) max-content;
+      align-items: start;
+      gap: 9px;
+      padding: 5px 11px;
+    }
+
+    .pg-diag-chart-tooltip-marker {
+      width: 9px;
+      height: 9px;
+      margin-top: 3px;
+      border-radius: 50%;
+    }
+
+    .pg-diag-chart-tooltip-label {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .pg-diag-chart-tooltip-value {
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
     }
 
     .table-toolbar {
@@ -2751,7 +2835,11 @@ __HIGHLIGHT_JS__
         if (!isVisibleThroughDetails(entry.container)) {
           continue;
         }
-        entry.chart.updateOptions(buildApexChartOptions(entry.result, entry.item, entry.series), false, true);
+        entry.chart.updateOptions(
+          buildApexChartOptions(entry.result, entry.item, entry.series, entry.tooltipPanel),
+          false,
+          true
+        );
       }
     }
 
@@ -4274,7 +4362,15 @@ __HIGHLIGHT_JS__
       container.className = "apex-chart";
       container.id = "apex_chart_" + pendingCharts.length;
       shell.appendChild(container);
-      pendingCharts.push({container, result, item, series});
+      const tooltipPanel = document.createElement("div");
+      tooltipPanel.className = "chart-hover-tooltip-panel";
+      tooltipPanel.classList.add("is-right");
+      tooltipPanel.hidden = true;
+      shell.appendChild(tooltipPanel);
+      shell.addEventListener("mouseleave", () => {
+        tooltipPanel.hidden = true;
+      });
+      pendingCharts.push({shell, container, tooltipPanel, result, item, series});
       return shell;
     }
 
@@ -4284,25 +4380,132 @@ __HIGHLIGHT_JS__
           pending.container.textContent = "ApexCharts is unavailable";
           continue;
         }
-        const chart = new ApexCharts(pending.container, buildApexChartOptions(pending.result, pending.item, pending.series));
-        apexCharts.push({chart, result: pending.result, item: pending.item, series: pending.series});
+        enableChartTooltipScrolling(pending.shell);
+        const chart = new ApexCharts(
+          pending.container,
+          buildApexChartOptions(pending.result, pending.item, pending.series, pending.tooltipPanel)
+        );
+        apexCharts.push({
+          chart,
+          result: pending.result,
+          item: pending.item,
+          series: pending.series,
+          tooltipPanel: pending.tooltipPanel,
+        });
         chart.render();
       }
     }
 
-    function apexSeries(result) {
-      const xType = (result.chart || {}).x_type || "datetime";
-      return (result.series || [])
-        .map((entry) => {
-          const data = (entry.points || [])
-            .filter((point) => isFiniteNumber(point.value) && (xType !== "datetime" || Number.isFinite(Date.parse(point.t))))
-            .map((point) => ({x: xType === "datetime" ? point.t : String(point.x || point.t || ""), y: Number(point.value)}));
-          return {name: entry.name, unit: entry.unit, _color: entry.color || "", data};
-        })
-        .filter((entry) => entry.data.length > 0);
+    function enableChartTooltipScrolling(container) {
+      container.addEventListener("wheel", (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        const rows = target ? target.closest(".pg-diag-chart-tooltip-rows") : null;
+        if (!rows) {
+          return;
+        }
+        const scale = event.deltaMode === 1
+          ? 16
+          : event.deltaMode === 2
+            ? rows.clientHeight
+            : 1;
+        const maximum = Math.max(rows.scrollHeight - rows.clientHeight, 0);
+        const next = Math.min(Math.max(rows.scrollTop + event.deltaY * scale, 0), maximum);
+        if (next === rows.scrollTop) {
+          return;
+        }
+        rows.scrollTop = next;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }, {capture: true, passive: false});
     }
 
-    function buildApexChartOptions(result, item, series) {
+    function apexSeries(result) {
+      const xType = (result.chart || {}).x_type || "datetime";
+      const chartKind = (result.chart || {}).kind || "line";
+      const largestStackSeriesOnTop = chartKind === "stacked_column" || chartKind === "stacked_bar";
+      const xGrid = chartXGrid(result.series || [], xType);
+      const series = (result.series || [])
+        .map((entry, sourceIndex) => {
+          const valuesByX = new Map();
+          for (const point of entry.points || []) {
+            const coordinate = chartPointCoordinate(point, xType);
+            if (!coordinate) {
+              continue;
+            }
+            const numeric = point.value === null || point.value === undefined
+              ? null
+              : Number(point.value);
+            valuesByX.set(coordinate.key, Number.isFinite(numeric) ? numeric : null);
+          }
+          const data = xGrid.map((coordinate) => ({
+            x: coordinate.value,
+            y: valuesByX.has(coordinate.key) ? valuesByX.get(coordinate.key) : null,
+          }));
+          const finiteValues = data.map((point) => point.y).filter((value) => Number.isFinite(value));
+          const total = finiteValues.reduce((sum, value) => sum + value, 0);
+          const average = finiteValues.length ? total / finiteValues.length : Number.NEGATIVE_INFINITY;
+          return {name: entry.name, unit: entry.unit, _color: entry.color || "", _sourceIndex: sourceIndex, _average: average, data};
+        })
+        .filter((entry) => entry.data.some((point) => Number.isFinite(point.y)))
+        .filter((entry) => entry.data.some((point) => Number.isFinite(point.y) && point.y !== 0));
+      if ((result.chart || {}).series_order === "configured") {
+        return series;
+      }
+      if (largestStackSeriesOnTop) {
+        return series.sort((left, right) => left._average - right._average || left._sourceIndex - right._sourceIndex);
+      }
+      return series.sort((left, right) => right._average - left._average || left._sourceIndex - right._sourceIndex);
+    }
+
+    function chartXGrid(series, xType) {
+      const coordinates = new Map();
+      for (const entry of series || []) {
+        for (const point of entry.points || []) {
+          const coordinate = chartPointCoordinate(point, xType);
+          if (!coordinate) {
+            continue;
+          }
+          const stored = coordinates.get(coordinate.key) || {
+            ...coordinate,
+            hasFiniteValue: false,
+          };
+          const numeric = point.value === null || point.value === undefined
+            ? null
+            : Number(point.value);
+          stored.hasFiniteValue = stored.hasFiniteValue || Number.isFinite(numeric);
+          coordinates.set(coordinate.key, stored);
+        }
+      }
+      const grid = [...coordinates.values()];
+      if (xType === "datetime") {
+        grid.sort((left, right) => left.sortValue - right.sortValue);
+      }
+      const firstFinite = grid.findIndex((coordinate) => coordinate.hasFiniteValue);
+      if (firstFinite < 0) {
+        return [];
+      }
+      let lastFinite = grid.length - 1;
+      while (lastFinite > firstFinite && !grid[lastFinite].hasFiniteValue) {
+        lastFinite -= 1;
+      }
+      return grid.slice(firstFinite, lastFinite + 1);
+    }
+
+    function chartPointCoordinate(point, xType) {
+      if (!point || typeof point !== "object") {
+        return null;
+      }
+      if (xType === "datetime") {
+        const timestamp = Date.parse(point.t);
+        return Number.isFinite(timestamp)
+          ? {key: String(timestamp), value: point.t, sortValue: timestamp}
+          : null;
+      }
+      const value = String(point.x || point.t || "");
+      return {key: value, value, sortValue: 0};
+    }
+
+    function buildApexChartOptions(result, item, series, tooltipPanel) {
       const unit = chartUnit(result, series);
       const theme = apexThemeOptions();
       const chartKind = (result.chart || {}).kind || "line";
@@ -4310,9 +4513,10 @@ __HIGHLIGHT_JS__
       const stacked = chartKind === "stacked_bar" || chartKind === "stacked_column" || chartKind === "stacked_area";
       const axisScale = chartAxisScale(series, unit, (result.chart || {}).quantity, stacked);
       const xType = (result.chart || {}).x_type || "datetime";
-      const datetimeBounds = xType === "datetime" ? chartDatetimeBounds(series) : {};
       const isBar = apexType === "bar";
       const isArea = apexType === "area";
+      const axisXType = xType;
+      const datetimeBounds = axisXType === "datetime" ? chartDatetimeBounds(series) : {};
       return {
         series,
         chart: {
@@ -4340,6 +4544,20 @@ __HIGHLIGHT_JS__
             },
             autoSelected: "zoom",
           },
+          events: {
+            dataPointMouseEnter: (event, _chartContext, context) => {
+              if (!isBar || !tooltipPanel) {
+                return;
+              }
+              const content = buildSortedChartTooltip(context, unit, xType);
+              if (!content) {
+                return;
+              }
+              tooltipPanel.innerHTML = content;
+              positionChartTooltipPanel(tooltipPanel, event);
+              tooltipPanel.hidden = false;
+            },
+          },
           background: "transparent",
           foreColor: theme.text,
         },
@@ -4363,26 +4581,33 @@ __HIGHLIGHT_JS__
           show: true,
           position: "bottom",
           height: CHART_LEGEND_HEIGHT_PX,
+          inverseOrder: isBar && stacked,
           formatter: (seriesName) => formatChartSeriesLabel(seriesName),
           labels: {colors: theme.text},
           itemMargin: {horizontal: 8, vertical: 2},
         },
         tooltip: {
+          enabled: !isBar,
           theme: document.documentElement.dataset.theme === "light" ? "light" : "dark",
-          x: xType === "datetime" ? {format: "HH:mm:ss"} : {},
-          y: {
-            formatter: (value) => formatChartTooltipValue(value, unit),
-            title: {formatter: (seriesName) => formatChartSeriesLabel(seriesName)},
-          },
+          shared: true,
+          intersect: false,
+          custom: (context) => buildSortedChartTooltip(context, unit, xType),
         },
         xaxis: {
-          type: xType === "datetime" ? "datetime" : "category",
+          type: axisXType === "datetime" ? "datetime" : "category",
           min: datetimeBounds.min,
           max: datetimeBounds.max,
           title: {text: ""},
-          labels: {datetimeUTC: false, rotate: xType === "datetime" ? 0 : -35, trim: true, style: {colors: theme.muted}},
+          labels: {
+            datetimeUTC: false,
+            rotate: xType === "datetime" ? 0 : -35,
+            trim: true,
+            formatter: undefined,
+            style: {colors: theme.muted},
+          },
           axisBorder: {color: theme.line},
           axisTicks: {color: theme.line},
+          crosshairs: {show: !isBar},
         },
         yaxis: {
           min: unit === "percent" ? 0 : undefined,
@@ -4394,6 +4619,20 @@ __HIGHLIGHT_JS__
           },
         },
       };
+    }
+
+    function positionChartTooltipPanel(tooltipPanel, event) {
+      const shell = tooltipPanel.closest(".chart-shell");
+      if (!shell) {
+        return;
+      }
+      const bounds = shell.getBoundingClientRect();
+      const cursorX = Number(event && event.clientX);
+      const cursorOnRight = Number.isFinite(cursorX)
+        ? cursorX >= bounds.left + bounds.width / 2
+        : false;
+      tooltipPanel.classList.toggle("is-left", cursorOnRight);
+      tooltipPanel.classList.toggle("is-right", !cursorOnRight);
     }
 
     function chartDatetimeBounds(series) {
@@ -4447,6 +4686,82 @@ __HIGHLIGHT_JS__
       return escapeChartLabel(baseLabel + " / SQL: " + shortQuery);
     }
 
+    function buildSortedChartTooltip(context, unit, xType) {
+      const w = context.w || {};
+      const globals = w.globals || {};
+      const configuredSeries = ((w.config || {}).series) || [];
+      const hoveredPoint = ((configuredSeries[context.seriesIndex] || {}).data || [])[context.dataPointIndex];
+      if (!hoveredPoint || typeof hoveredPoint !== "object") {
+        return "";
+      }
+      const hoveredX = hoveredPoint.x;
+      const entries = [];
+
+      for (let seriesIndex = 0; seriesIndex < configuredSeries.length; seriesIndex += 1) {
+        const configured = configuredSeries[seriesIndex] || {};
+        const configuredData = configured.data || [];
+        const pointIndex = configuredData.findIndex((point) => point && point.x === hoveredX);
+        if (pointIndex < 0) {
+          continue;
+        }
+        const configuredPoint = configuredData[pointIndex];
+        const rawValue = configuredPoint.y;
+        if (rawValue === null || rawValue === undefined) {
+          continue;
+        }
+        const value = Number(rawValue);
+        if (!Number.isFinite(value)) {
+          continue;
+        }
+        entries.push({
+          seriesIndex,
+          value,
+          name: configured.name || "Series " + (seriesIndex + 1),
+          color: safeChartColor((globals.colors || [])[seriesIndex]),
+        });
+      }
+
+      entries.sort((left, right) => right.value - left.value || left.seriesIndex - right.seriesIndex);
+      const title = chartTooltipXLabel(hoveredX, xType);
+      const rows = entries.map((entry) => {
+        return '<div class="pg-diag-chart-tooltip-row">'
+          + '<span class="pg-diag-chart-tooltip-marker" style="background:' + entry.color + '"></span>'
+          + '<span class="pg-diag-chart-tooltip-label">' + formatChartSeriesLabel(entry.name) + '</span>'
+          + '<span class="pg-diag-chart-tooltip-value">' + escapeChartLabel(formatChartTooltipValue(entry.value, unit)) + '</span>'
+          + '</div>';
+      }).join("");
+      return '<div class="pg-diag-chart-tooltip">'
+        + '<div class="pg-diag-chart-tooltip-title">' + title + '</div>'
+        + '<div class="pg-diag-chart-tooltip-rows">' + rows + '</div>'
+        + '</div>';
+    }
+
+    function chartTooltipXLabel(value, xType) {
+      if (xType === "datetime") {
+        return escapeChartLabel(formatChartTimeCoordinate(value));
+      }
+      return escapeChartLabel(String(value || ""));
+    }
+
+    function formatChartTimeCoordinate(value) {
+      const timestamp = typeof value === "number" ? value : Date.parse(value);
+      if (!Number.isFinite(timestamp)) {
+        return String(value || "");
+      }
+      const date = new Date(timestamp);
+      return [date.getHours(), date.getMinutes(), date.getSeconds()]
+        .map((part) => String(part).padStart(2, "0"))
+        .join(":");
+    }
+
+    function safeChartColor(value) {
+      const color = String(value || "").trim();
+      if (/^#[0-9a-f]{3,8}$/i.test(color) || /^(?:rgb|hsl)a?\([0-9.,%\s]+\)$/i.test(color)) {
+        return color;
+      }
+      return "currentColor";
+    }
+
     function escapeChartLabel(value) {
       return String(value)
         .replace(/&/g, "&amp;")
@@ -4471,7 +4786,10 @@ __HIGHLIGHT_JS__
           "#d6b45d",
           "#aeb4bd",
       ];
-      return series.map((entry, index) => entry._color || defaults[index % defaults.length]);
+      return series.map((entry, index) => {
+        const colorIndex = Number.isInteger(entry._sourceIndex) ? entry._sourceIndex : index;
+        return entry._color || defaults[colorIndex % defaults.length];
+      });
     }
 
     function apexChartType(kind) {
@@ -4560,7 +4878,11 @@ __HIGHLIGHT_JS__
 
     function refreshApexChartsTheme() {
       for (const entry of apexCharts) {
-        entry.chart.updateOptions(buildApexChartOptions(entry.result, entry.item, entry.series), false, true);
+        entry.chart.updateOptions(
+          buildApexChartOptions(entry.result, entry.item, entry.series, entry.tooltipPanel),
+          false,
+          true
+        );
       }
     }
 
@@ -4584,7 +4906,8 @@ __HIGHLIGHT_JS__
         rows,
         snapshotTimeColumn,
         allColumns,
-        collectedAt
+        collectedAt,
+        item
       );
       if (!rows.length) {
         const empty = document.createElement("div");
@@ -4758,12 +5081,15 @@ __HIGHLIGHT_JS__
         .trim();
     }
 
-    function renderTableContextLabels(result, rows, column, columns, fallbackValue) {
+    function renderTableContextLabels(result, rows, column, columns, fallbackValue, item) {
       const deltaLabels = renderDeltaWindowLabels(result.delta_window);
       if (deltaLabels) {
         return deltaLabels;
       }
-      return renderSnapshotTimeLabel(rows, column, columns, fallbackValue);
+      const labelName = item && item.collection_scope === "once"
+        ? "One-shot time"
+        : "Snapshot time";
+      return renderSnapshotTimeLabel(rows, column, columns, fallbackValue, labelName);
     }
 
     function renderDeltaWindowLabels(window) {
@@ -4798,7 +5124,7 @@ __HIGHLIGHT_JS__
       return label;
     }
 
-    function renderSnapshotTimeLabel(rows, column, columns, fallbackValue) {
+    function renderSnapshotTimeLabel(rows, column, columns, fallbackValue, labelName) {
       let rawValue = fallbackValue;
       let display = null;
       if (column) {
@@ -4821,7 +5147,7 @@ __HIGHLIGHT_JS__
       if (!display) {
         display = {text: formatBrowserTimestamp(rawValue), title: String(rawValue)};
       }
-      return renderTimeContextLabel("Snapshot time", display.text, display.title);
+      return renderTimeContextLabel(labelName, display.text, display.title);
     }
 
     function buildColumns(columns, rows) {

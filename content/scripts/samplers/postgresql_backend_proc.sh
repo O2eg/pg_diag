@@ -26,7 +26,7 @@ for proc_dir in /proc/[0-9]*; do
   syscr=0
   syscw=0
   io_access=0
-  if [ -r "$proc_dir/io" ]; then
+  if io_data="$(cat "$proc_dir/io" 2>/dev/null)"; then
     while IFS=': ' read -r key value rest; do
       case "$key" in
         read_bytes) read_bytes="$value" ;;
@@ -35,16 +35,20 @@ for proc_dir in /proc/[0-9]*; do
         syscr) syscr="$value" ;;
         syscw) syscw="$value" ;;
       esac
-    done < "$proc_dir/io"
+    done <<EOF
+$io_data
+EOF
     io_access=1
   fi
   rss_kb=0
-  if [ -r "$proc_dir/status" ]; then
+  if status_data="$(cat "$proc_dir/status" 2>/dev/null)"; then
     while IFS= read -r status_line; do
       case "$status_line" in
         VmRSS:*) set -- $status_line; rss_kb="${2:-0}"; break ;;
       esac
-    done < "$proc_dir/status"
+    done <<EOF
+$status_data
+EOF
   fi
   pid="${proc_dir##*/}"
   printf '%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0' \

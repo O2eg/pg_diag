@@ -310,7 +310,10 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert 'column.name === "snapshot_time"' in html
     assert 'container.className = "snapshot-table-result"' in html
     assert 'label.className = "snapshot-time-label"' in html
-    assert 'return renderTimeContextLabel("Snapshot time", display.text, display.title)' in html
+    assert 'item && item.collection_scope === "once"' in html
+    assert '? "One-shot time"' in html
+    assert ': "Snapshot time"' in html
+    assert "return renderTimeContextLabel(labelName, display.text, display.title)" in html
     assert ".snapshot-time-label" in html
     assert "renderChart(result, item)" in html
     assert "ApexCharts v5.16.0" in html
@@ -332,10 +335,15 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "max: datetimeBounds.max" in html
     assert "const padding = 60000" in html
     assert "chartColors(series)" in html
-    assert "entry._color || defaults[index % defaults.length]" in html
+    assert '(result.chart || {}).series_order === "configured"' in html
+    assert 'chartKind === "stacked_column" || chartKind === "stacked_bar"' in html
+    assert "left._average - right._average || left._sourceIndex - right._sourceIndex" in html
+    assert "inverseOrder: isBar && stacked" in html
+    assert "right._average - left._average || left._sourceIndex - right._sourceIndex" in html
+    assert "entry._color || defaults[colorIndex % defaults.length]" in html
     assert '"stacked_area"' in html
     assert "kind === \"area\" || kind === \"stacked_area\"" in html
-    assert "xType === \"datetime\" ? \"datetime\" : \"category\"" in html
+    assert 'type: axisXType === "datetime" ? "datetime" : "category"' in html
     assert "apex-chart" in html
     assert "z-index: 60 !important" in html
     assert ".apexcharts-toolbar {\n      display: inline-flex !important;" in html
@@ -366,10 +374,43 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "title: {text: \"\"}" in html
     assert "formatChartAxisValue(value, unit, axisScale)" in html
     assert "formatChartTooltipValue(value, unit)" in html
+    assert "buildSortedChartTooltip(context, unit, xType)" in html
+    assert "right.value - left.value || left.seriesIndex - right.seriesIndex" in html
+    assert "const axisXType = xType" in html
+    assert 'const axisXType = isBar && xType === "datetime" ? "category" : xType' not in html
+    assert "crosshairs: {show: !isBar}" in html
+    assert "formatChartTimeCoordinate(value)" in html
+    assert "configuredData.findIndex((point) => point && point.x === hoveredX)" in html
+    assert ".pg-diag-chart-tooltip-row" in html
+    assert "enableChartTooltipScrolling(pending.shell)" in html
+    assert 'tooltipPanel.className = "chart-hover-tooltip-panel"' in html
+    assert 'shell.addEventListener("mouseleave"' in html
+    assert "dataPointMouseEnter:" in html
+    assert "tooltipPanel.innerHTML = content" in html
+    assert "positionChartTooltipPanel(tooltipPanel, event)" in html
+    assert "tooltipPanel.hidden = false" in html
+    assert 'tooltipPanel.classList.toggle("is-left", cursorOnRight)' in html
+    assert 'tooltipPanel.classList.toggle("is-right", !cursorOnRight)' in html
+    assert "cursorX >= bounds.left + bounds.width / 2" in html
+    assert "enabled: !isBar" in html
+    assert 'target.closest(".pg-diag-chart-tooltip-rows")' in html
+    assert "rows.scrollTop = next" in html
+    assert "event.stopImmediatePropagation()" in html
+    assert "{capture: true, passive: false}" in html
+    assert "pointer-events: auto !important;" in html
+    assert "chartXGrid(result.series || [], xType)" in html
+    assert "hasFiniteValue: false" in html
+    assert "stored.hasFiniteValue = stored.hasFiniteValue || Number.isFinite(numeric)" in html
+    assert "const firstFinite = grid.findIndex" in html
+    assert "return grid.slice(firstFinite, lastFinite + 1)" in html
+    assert "valuesByX.has(coordinate.key) ? valuesByX.get(coordinate.key) : null" in html
+    assert "Number.isFinite(point.y) && point.y !== 0" in html
+    assert "((w.config || {}).series) || []" in html
+    assert "configuredPoint.y" in html
+    assert "rawValue === null || rawValue === undefined" in html
     assert "formatChartSeriesLabel(seriesName)" in html
     assert 'const queryIdMatch = /^(.*)\\.(-?\\d+)$/.exec(rawName)' in html
     assert 'baseLabel + " / SQL: " + shortQuery' in html
-    assert 'title: {formatter: (seriesName) => formatChartSeriesLabel(seriesName)}' in html
     assert ".replace(/</g, \"&lt;\")" in html
     assert "chartAxisScale(series, unit" in html
     assert "formatAdaptiveBytes(numeric, unit === \"bytes/s\")" in html
@@ -508,7 +549,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert 'diagnosticParts.push(key + ":\\n" + stringifyValue(value));' in html
     assert 'parts.push("diagnostic[" + index + "]:\\n" + diagnosticParts.join("\\n\\n"));' in html
     assert 'parts.push("output:\\n" + stringifyValue(result.data));' in html
-    assert "getBoundingClientRect" not in app_html
+    assert 'const bounds = shell.getBoundingClientRect()' in app_html
     assert "offsetHeight" not in app_html
     assert "details.animate([" not in app_html
     assert 'window.dispatchEvent(new Event("resize"))' not in app_html

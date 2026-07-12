@@ -30,6 +30,26 @@ def test_content_manifests_are_valid(content_path: Path) -> None:
     assert not issues
 
 
+def test_buffer_cache_section_has_ten_independent_chart_sources(content_path: Path) -> None:
+    content = load_content(content_path)
+    section = content.report["sections"]["buffer_cache"]
+
+    assert len(section["items"]) == 10
+    metric_ids = [item["metric"] for item in section["items"].values()]
+    source_ids = [content.metrics[metric_id]["source_query"] for metric_id in metric_ids]
+    assert len(source_ids) == len(set(source_ids)) == 10
+    assert all(content.queries[source_id].get("optional") is not True for source_id in source_ids)
+
+
+def test_zero_disk_reads_have_an_explicit_empty_message(content_path: Path) -> None:
+    content = load_content(content_path)
+    item = content.report["sections"]["snapshot_charts_os"]["items"]["os_disk_read_throughput"]
+
+    assert item["render"]["empty_message"] == (
+        "No non-zero physical disk read throughput was observed during the snapshot window."
+    )
+
+
 def test_metric_table_columns_declare_output_types(content_path: Path) -> None:
     content = load_content(content_path)
     for metric_id, metric in content.metrics.items():
@@ -447,7 +467,7 @@ def test_overview_instructions_have_interpretation_sections(content_path: Path) 
         for section_id, _item_key, item_id, _item in iter_report_items(content)
         if section_id == "overview"
     ]
-    assert len(overview_item_ids) == 13
+    assert len(overview_item_ids) == 14
     for item_id in overview_item_ids:
         text = content.instructions[item_id]["text"]
         assert "## What to watch" in text, item_id
@@ -920,6 +940,7 @@ def test_every_non_os_item_resolves_database_scope(content_path: Path) -> None:
     overview_items = list(content.report["sections"]["overview"]["items"])
     assert overview_items.index("database_volume") == overview_items.index("server_version") + 1
     assert overview_items.index("pg_config") == overview_items.index("database_volume") + 1
+    assert overview_items.index("pg_controldata") == overview_items.index("pg_config") + 1
     plan = build_plan(
         content,
         180000,
@@ -944,6 +965,8 @@ def test_every_non_os_item_resolves_database_scope(content_path: Path) -> None:
     ] == "all_databases"
     assert by_id["overview.pg_config"].source_metadata["database_scope"] == "all_databases"
     assert by_id["overview.pg_config"].source_kind == "script"
+    assert by_id["overview.pg_controldata"].source_metadata["database_scope"] == "all_databases"
+    assert by_id["overview.pg_controldata"].source_kind == "python"
     assert by_id["overview.database_volume"].source_metadata["database_scope"] == "all_databases"
     assert by_id["overview.database_volume"].source_kind == "python"
     assert all(

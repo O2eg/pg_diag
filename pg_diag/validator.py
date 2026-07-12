@@ -1296,6 +1296,14 @@ def _validate_metrics(content: ContentPack, issues: list[ValidationIssue]) -> No
             color = series.get("color")
             if color and not _is_hex_color(str(color)):
                 _issue(issues, "metric_color", f"Invalid series color {color!r}", location)
+            optional = series.get("optional")
+            if optional is not None and not isinstance(optional, bool):
+                _issue(
+                    issues,
+                    "metric_series",
+                    "Metric series optional must be boolean",
+                    f"{location}.series[{index}]",
+                )
         partition_by = metric.get("partition_by") or []
         if not isinstance(partition_by, list) or any(
             not isinstance(ref, str) or not ref for ref in partition_by

@@ -268,6 +268,94 @@ def test_chart_rate_uses_raw_database_counter_delta() -> None:
     ]
 
 
+def test_optional_chart_series_omits_null_counter_intervals_without_warning() -> None:
+    metric = {
+        "series": [
+            {
+                "name": "optional read",
+                "value_ref": "read_bytes",
+                "transform": "rate",
+                "optional": True,
+                "unit": "bytes/s",
+            },
+            {
+                "name": "write",
+                "value_ref": "write_bytes",
+                "transform": "rate",
+                "unit": "bytes/s",
+            },
+        ],
+        "chart": {"kind": "stacked_area", "unit": "bytes/s"},
+    }
+    samples = [
+        {
+            "timestamp": "2026-07-05T00:00:00+00:00",
+            "rows": [{"read_bytes": None, "write_bytes": 100}],
+        },
+        {
+            "timestamp": "2026-07-05T00:00:05+00:00",
+            "rows": [{"read_bytes": None, "write_bytes": 150}],
+        },
+    ]
+
+    result = build_chart_result(metric, samples, {})
+
+    assert result["series"] == [
+        {
+            "name": "write",
+            "unit": "bytes/s",
+            "color": None,
+            "points": [
+                {"t": "2026-07-05T00:00:00+00:00", "value": None},
+                {"t": "2026-07-05T00:00:05+00:00", "value": 10.0},
+            ],
+        },
+    ]
+    assert result["interval_coverage"] == {
+        "total": 1,
+        "comparable": 1,
+        "unmatched": 0,
+        "invalid": 0,
+        "counts": {"ok": 1},
+    }
+
+
+def test_chart_omits_series_when_every_observed_datapoint_is_zero() -> None:
+    metric = {
+        "partition_by": ["state"],
+        "series": [
+            {
+                "name_from_ref": "state",
+                "value_ref": "sessions",
+                "transform": "gauge",
+                "unit": "sessions",
+            }
+        ],
+        "chart": {"kind": "stacked_area", "unit": "sessions"},
+    }
+    samples = [
+        {
+            "timestamp": "2026-07-05T00:00:00+00:00",
+            "rows": [
+                {"state": "active", "sessions": 0},
+                {"state": "idle", "sessions": 2},
+            ],
+        },
+        {
+            "timestamp": "2026-07-05T00:00:05+00:00",
+            "rows": [
+                {"state": "active", "sessions": 0},
+                {"state": "idle", "sessions": 3},
+            ],
+        },
+    ]
+
+    result = build_chart_result(metric, samples, {})
+
+    assert [series["name"] for series in result["series"]] == ["idle"]
+    assert [point["value"] for point in result["series"][0]["points"]] == [2, 3]
+
+
 def test_metric_table_evaluation_builds_summary_for_matching_rows() -> None:
     result = {
         "kind": "table",
@@ -907,6 +995,97 @@ def test_chart_can_preserve_configured_series_order() -> None:
 
     assert [series["name"] for series in result["series"]] == ["Application memory", "Free", "Buffers"]
     assert result["series"][0]["color"] == "#00cc00"
+
+
+def test_gauge_difference_preserves_signed_changes_and_sparse_membership() -> None:
+    metric = {
+        "partition_by": ["dimensions.relation"],
+        "series": [
+            {
+                "name_from_ref": "dimensions.relation",
+                "value_ref": "gauges.cached_blocks",
+                "transform": "difference",
+                "unit": "blocks",
+            }
+        ],
+        "chart": {"kind": "stacked_column", "unit": "blocks"},
+    }
+    semantics = {
+        "dimensions": {"relation": "relation_name"},
+        "gauges": {"cached_blocks": "cached_blocks"},
+    }
+    samples = [
+        {
+            "timestamp": "2026-07-13T00:00:00+00:00",
+            "rows": [
+                {"relation_name": "public.growing", "cached_blocks": 10},
+                {"relation_name": "public.shrinking", "cached_blocks": 20},
+                {"relation_name": "public.disappears", "cached_blocks": 5},
+            ],
+        },
+        {
+            "timestamp": "2026-07-13T00:00:05+00:00",
+            "rows": [
+                {"relation_name": "public.growing", "cached_blocks": 17},
+                {"relation_name": "public.shrinking", "cached_blocks": 12},
+            ],
+        },
+    ]
+
+    result = build_chart_result(metric, samples, semantics)
+    series = {item["name"]: item["points"] for item in result["series"]}
+
+    assert series["public.growing"][-1]["value"] == 7
+    assert series["public.shrinking"][-1]["value"] == -8
+    assert series["public.disappears"][-1]["value"] is None
+
+
+def test_metric_item_propagates_missing_pg_buffercache_as_error() -> None:
+    source_item_id = "__metric_sources.buffer_cache_utilization"
+    planned = PlannedItem(
+        item_id="buffer_cache.utilization",
+        section_id="buffer_cache",
+        item_key="utilization",
+        title="Buffer Cache Utilization",
+        source_kind="metric",
+        status="planned",
+        source_id="buffer_cache.utilization",
+        source_metadata={"metric_id": "buffer_cache.utilization"},
+    )
+    metric = {
+        "source_query": "buffer_cache.utilization",
+        "series": [{"name": "used", "value_ref": "gauges.used_blocks"}],
+        "chart": {"kind": "stacked_area", "unit": "blocks"},
+    }
+    source_error = {
+        "collection_status": "error",
+        "reason": 'relation "public.pg_buffercache" does not exist',
+        "result": {"kind": "table", "columns": [], "rows": [], "row_count": 0},
+    }
+
+    item = build_metric_item(
+        planned,
+        metric,
+        db_snapshots=[
+            {
+                "timestamp": "2026-07-13T00:00:00+00:00",
+                "items": {source_item_id: source_error},
+            }
+        ],
+        sampler_samples={},
+        source_item_by_query={"buffer_cache.utilization": source_item_id},
+        source_metadata_by_item={
+            source_item_id: {
+                "semantic_columns": {"gauges": {"used_blocks": "used_blocks"}},
+                "source_text": "select * from public.pg_buffercache",
+                "source_language": "sql",
+            }
+        },
+    )
+
+    assert item["collection_status"] == "error"
+    assert item["reason"] == 'relation "public.pg_buffercache" does not exist'
+    assert item["result"]["kind"] == "chart"
 
 
 def test_cpu_utilization_stacked_chart_omits_total_series() -> None:

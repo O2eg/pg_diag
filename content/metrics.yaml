@@ -366,10 +366,12 @@ metrics:
       - name: read
         value_ref: counters.read_bytes
         transform: rate
+        optional: true
         unit: bytes/s
       - name: write
         value_ref: counters.write_bytes
         transform: rate
+        optional: true
         unit: bytes/s
     chart:
       kind: stacked_area
@@ -1921,3 +1923,103 @@ metrics:
         - {name: apply_error_count_delta, value_ref: counters.apply_error_count, transform: delta, pg_type: float8}
         - {name: sync_error_count_delta, value_ref: counters.sync_error_count, transform: delta, pg_type: float8}
         - {name: conflict_count_delta, value_ref: counters.conflict_count, transform: delta, pg_type: float8}
+
+  buffer_cache.utilization:
+    title: Buffer Cache Utilization
+    database_scope: all_databases
+    source_query: buffer_cache.utilization
+    requires_collection: every_snapshot
+    series:
+      - {name: used, value_ref: gauges.used_blocks, transform: gauge, unit: blocks}
+      - {name: unused, value_ref: gauges.unused_blocks, transform: gauge, unit: blocks}
+    chart: {kind: stacked_area, series_order: configured, unit: blocks}
+
+  buffer_cache.usage_count_distribution:
+    title: Buffer Usage Count Distribution
+    database_scope: all_databases
+    source_query: buffer_cache.usage_count_distribution
+    requires_collection: every_snapshot
+    partition_by: [dimensions.usage_count]
+    series:
+      - {name_from_ref: dimensions.usage_count, value_ref: gauges.buffers, transform: gauge, unit: blocks}
+    chart: {kind: stacked_column, unit: blocks}
+
+  buffer_cache.dirty_and_pinned:
+    title: Dirty And Pinned Buffers
+    database_scope: all_databases
+    source_query: buffer_cache.dirty_and_pinned
+    requires_collection: every_snapshot
+    series:
+      - {name: dirty, value_ref: gauges.dirty_blocks, transform: gauge, unit: blocks}
+      - {name: pinned, value_ref: gauges.pinned_blocks, transform: gauge, unit: blocks}
+    chart: {kind: line, unit: blocks}
+
+  buffer_cache.dirty_by_usage_count:
+    title: Dirty Buffers By Usage Count
+    database_scope: all_databases
+    source_query: buffer_cache.dirty_by_usage_count
+    requires_collection: every_snapshot
+    partition_by: [dimensions.usage_count]
+    series:
+      - {name_from_ref: dimensions.usage_count, value_ref: gauges.dirty_blocks, transform: gauge, unit: blocks}
+    chart: {kind: stacked_column, unit: blocks}
+
+  buffer_cache.by_database:
+    title: Buffer Cache By Database
+    database_scope: all_databases
+    source_query: buffer_cache.by_database
+    requires_collection: every_snapshot
+    partition_by: [dimensions.database]
+    series:
+      - {name_from_ref: dimensions.database, value_ref: gauges.cached_blocks, transform: gauge, unit: blocks}
+    chart: {kind: stacked_column, unit: blocks}
+
+  buffer_cache.top_relations:
+    title: Top Relations In Buffer Cache
+    database_scope: current_database
+    source_query: buffer_cache.top_relations
+    requires_collection: every_snapshot
+    partition_by: [dimensions.relation]
+    series:
+      - {name_from_ref: dimensions.relation, value_ref: gauges.cached_blocks, transform: gauge, unit: blocks}
+    chart: {kind: stacked_column, unit: blocks}
+
+  buffer_cache.top_dirty_relations:
+    title: Top Dirty Relations In Buffer Cache
+    database_scope: current_database
+    source_query: buffer_cache.top_dirty_relations
+    requires_collection: every_snapshot
+    partition_by: [dimensions.relation]
+    series:
+      - {name_from_ref: dimensions.relation, value_ref: gauges.dirty_blocks, transform: gauge, unit: blocks}
+    chart: {kind: stacked_column, unit: blocks}
+
+  buffer_cache.relation_coverage:
+    title: Relation Cache Coverage
+    database_scope: current_database
+    source_query: buffer_cache.relation_coverage
+    requires_collection: every_snapshot
+    partition_by: [dimensions.relation]
+    series:
+      - {name_from_ref: dimensions.relation, value_ref: gauges.coverage_pct, transform: gauge, unit: "%"}
+    chart: {kind: column, unit: "%"}
+
+  buffer_cache.relation_residency_delta:
+    title: Relation Cache Residency Delta
+    database_scope: current_database
+    source_query: buffer_cache.relation_residency_delta
+    requires_collection: every_snapshot
+    partition_by: [dimensions.relation]
+    series:
+      - {name_from_ref: dimensions.relation, value_ref: gauges.cached_blocks, transform: difference, unit: blocks}
+    chart: {kind: stacked_column, unit: blocks}
+
+  buffer_cache.relation_kinds:
+    title: Cached Relation Kinds
+    database_scope: current_database
+    source_query: buffer_cache.relation_kinds
+    requires_collection: every_snapshot
+    partition_by: [dimensions.relation_kind]
+    series:
+      - {name_from_ref: dimensions.relation_kind, value_ref: gauges.cached_blocks, transform: gauge, unit: blocks}
+    chart: {kind: stacked_column, unit: blocks}

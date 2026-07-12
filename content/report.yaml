@@ -86,6 +86,10 @@ sections:
         script: cluster.pg_config
         tags: [Configuration]
         state: collapsed
+      pg_controldata:
+        python: cluster.pg_controldata
+        tags: [Configuration, Storage]
+        state: collapsed
       pg_settings:
         query: cluster.settings
         tags: [Configuration]
@@ -1014,6 +1018,8 @@ sections:
         metric: os.disk_read_throughput
         tags: [Disk, "I/O"]
         state: collapsed
+        render:
+          empty_message: No non-zero physical disk read throughput was observed during the snapshot window.
       os_disk_write_throughput:
         metric: os.disk_write_throughput
         tags: [Disk, "I/O"]
@@ -1158,4 +1164,49 @@ sections:
       indexes_top_reads_per_fetch:
         metric: objects.indexes_top_reads_per_fetch
         tags: [Indexes]
+        state: collapsed
+
+  buffer_cache:
+    title: Buffer Cache
+    description: Shared-buffer occupancy, churn, dirty state, and relation residency from pg_buffercache.
+    state: collapsed
+    items:
+      utilization:
+        metric: buffer_cache.utilization
+        tags: [Memory]
+      usage_count_distribution:
+        metric: buffer_cache.usage_count_distribution
+        tags: [Memory]
+        state: collapsed
+      dirty_and_pinned:
+        metric: buffer_cache.dirty_and_pinned
+        tags: [Memory, "I/O"]
+        state: collapsed
+      dirty_by_usage_count:
+        metric: buffer_cache.dirty_by_usage_count
+        tags: [Memory, "I/O"]
+        state: collapsed
+      by_database:
+        metric: buffer_cache.by_database
+        tags: [Memory, Databases]
+        state: collapsed
+      top_relations:
+        metric: buffer_cache.top_relations
+        tags: [Memory, Tables, Indexes]
+        state: collapsed
+      top_dirty_relations:
+        metric: buffer_cache.top_dirty_relations
+        tags: [Memory, Tables, Indexes, "I/O"]
+        state: collapsed
+      relation_coverage:
+        metric: buffer_cache.relation_coverage
+        tags: [Memory, Tables, Indexes]
+        state: collapsed
+      relation_residency_delta:
+        metric: buffer_cache.relation_residency_delta
+        tags: [Memory, Tables, Indexes]
+        state: collapsed
+      relation_kinds:
+        metric: buffer_cache.relation_kinds
+        tags: [Memory, Tables, Indexes]
         state: collapsed

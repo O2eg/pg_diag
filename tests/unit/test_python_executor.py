@@ -3,12 +3,14 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from pg_diag.content_loader import load_content
 from pg_diag.executors.python import execute_python_item
 from pg_diag.planner import build_plan
 from pg_diag.runtime_config import LOCAL_COLLECTION_MODE
+from pg_diag.ssh_transport import SshCommandResult
 
 
 class FakeConn:
@@ -93,6 +95,99 @@ class FakeReadOnlyTransaction:
 
     async def __aexit__(self, exc_type, exc, traceback):
         return False
+
+
+class ControlDataConn:
+    def transaction(self, *, readonly: bool):
+        assert readonly is True
+        return FakeReadOnlyTransaction()
+
+    async def fetchrow(self, sql: str) -> dict[str, Any]:
+        assert "current_setting('data_directory')" in sql
+        assert "current_setting('server_version_num')" in sql
+        return {
+            "data_directory": "/var/lib/postgresql/18/main",
+            "server_version_num": 180004,
+        }
+
+
+class ControlDataHost:
+    def __init__(self, *, returncode: int = 0, stderr: str = "") -> None:
+        self.returncode = returncode
+        self.stderr = stderr
+        self.arguments: tuple[str, ...] | None = None
+        self.script: str | None = None
+
+    async def run_script(
+        self,
+        script: str,
+        *,
+        arguments: tuple[str, ...] = (),
+    ) -> SshCommandResult:
+        self.script = script
+        self.arguments = arguments
+        return SshCommandResult(
+            self.returncode,
+            "PG_CONFIG: /usr/bin/pg_config\n"
+            "PG_CONFIG_BINDIR: /usr/lib/postgresql/18/bin\n"
+            "PG_CONTROLDATA: /usr/lib/postgresql/18/bin/pg_controldata\n"
+            "pg_control version number:            1800\n"
+            "Database system identifier:           123456\n",
+            self.stderr,
+        )
+
+
+def test_pg_controldata_uses_running_server_binary_and_parses_output(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    plan = build_plan(content, 180004, collection_mode=LOCAL_COLLECTION_MODE)
+    planned = {item.item_id: item for item in plan.items}["overview.pg_controldata"]
+    host = ControlDataHost()
+
+    item = asyncio.run(
+        execute_python_item(
+            content,
+            ControlDataConn(),
+            planned,
+            ssh_transport=SimpleNamespace(host_access=host),
+        )
+    )
+
+    assert item["collection_status"] == "ok"
+    assert item["result"]["kind"] == "table"
+    assert host.arguments == ("/var/lib/postgresql/18/main", "18")
+    assert "pg_config_bin=$(command -v pg_config" in str(host.script)
+    assert '\"$pg_controldata_bin\" -D \"$data_directory\"' in str(host.script)
+    rows = {row[0]: row[1] for row in item["result"]["rows"]}
+    assert rows["PG_CONTROLDATA"] == "/usr/lib/postgresql/18/bin/pg_controldata"
+    assert rows["DATA_DIRECTORY"] == "/var/lib/postgresql/18/main"
+    assert rows["SERVER_VERSION_NUM"] == "180004"
+    assert rows["pg_control version number"] == "1800"
+    assert rows["Database system identifier"] == "123456"
+
+
+def test_pg_controldata_permission_failure_is_an_item_error(content_path: Path) -> None:
+    content = load_content(content_path)
+    plan = build_plan(content, 180004, collection_mode=LOCAL_COLLECTION_MODE)
+    planned = {item.item_id: item for item in plan.items}["overview.pg_controldata"]
+    host = ControlDataHost(
+        returncode=1,
+        stderr="pg_controldata: could not open global/pg_control: Permission denied",
+    )
+
+    item = asyncio.run(
+        execute_python_item(
+            content,
+            ControlDataConn(),
+            planned,
+            ssh_transport=SimpleNamespace(host_access=host),
+        )
+    )
+
+    assert item["collection_status"] == "error"
+    assert "Permission denied" in item["reason"]
+    assert item["diagnostics"][0]["code"] == "pg_controldata_failed"
 
 
 class DatabaseVolumeMainConn:

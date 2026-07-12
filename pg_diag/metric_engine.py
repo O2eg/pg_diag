@@ -334,7 +334,9 @@ def build_chart_result(
     semantic_columns: dict[str, dict[str, str]],
 ) -> dict[str, Any]:
     if metric.get("top_n"):
-        return _build_top_n_chart_result(metric, samples, semantic_columns)
+        return _without_all_zero_series(
+            _build_top_n_chart_result(metric, samples, semantic_columns)
+        )
 
     raw_series: dict[str, dict[str, Any]] = {}
     sorted_samples = sorted(samples, key=lambda sample: str(sample.get("timestamp") or ""))
@@ -362,6 +364,7 @@ def build_chart_result(
                         "unit": series_def.get("unit") or (metric.get("chart") or {}).get("unit"),
                         "color": series_def.get("color"),
                         "transform": series_def.get("transform") or "gauge",
+                        "optional": series_def.get("optional") is True,
                         "raw_points": {},
                     },
                 )
@@ -371,11 +374,12 @@ def build_chart_result(
     interval_counts: Counter[str] = Counter()
     for raw in raw_series.values():
         transform = raw.get("transform")
-        if transform in {"rate", "delta"}:
+        if transform in {"rate", "delta", "difference"}:
             points, point_counts = _transform_interval_points(
                 raw["raw_points"],
                 sample_timestamps,
                 transform,
+                optional=bool(raw.get("optional")),
             )
             interval_counts.update(point_counts)
         else:
@@ -383,6 +387,8 @@ def build_chart_result(
                 {"t": point["t"], "value": point["value"]}
                 for _sample_index, point in sorted(raw["raw_points"].items())
             ]
+        if raw.get("optional") and not any(point.get("value") is not None for point in points):
+            continue
         series.append(
             {
                 "name": raw["name"],
@@ -400,7 +406,25 @@ def build_chart_result(
         "series": ordered_series,
         "sample_count": len(sorted_samples),
     }
-    return _with_interval_coverage(result, interval_counts)
+    return _without_all_zero_series(_with_interval_coverage(result, interval_counts))
+
+
+def _without_all_zero_series(result: dict[str, Any]) -> dict[str, Any]:
+    result["series"] = [
+        series
+        for series in result.get("series") or []
+        if not _series_is_all_zero(series)
+    ]
+    return result
+
+
+def _series_is_all_zero(series: dict[str, Any]) -> bool:
+    values = [
+        point.get("value")
+        for point in series.get("points") or []
+        if point.get("value") is not None
+    ]
+    return bool(values) and all(value == 0 for value in values)
 
 
 def _build_top_n_chart_result(
@@ -1306,6 +1330,8 @@ def _transform_interval_points(
     raw_points: dict[int, dict[str, Any]],
     sample_timestamps: list[str],
     transform: str,
+    *,
+    optional: bool = False,
 ) -> tuple[list[dict[str, Any]], Counter[str]]:
     points: list[dict[str, Any]] = []
     interval_counts: Counter[str] = Counter()
@@ -1339,11 +1365,15 @@ def _transform_interval_points(
             interval_counts[INTERVAL_INVALID_INTERVAL] += 1
             points.append({"t": point["t"], "value": None})
         else:
-            interval_value = _counter_delta_value(
-                _number_or_none(previous.get("value")),
-                _number_or_none(point.get("value")),
+            previous_value = _number_or_none(previous.get("value"))
+            current_value = _number_or_none(point.get("value"))
+            interval_value = (
+                _gauge_difference_value(previous_value, current_value)
+                if transform == "difference"
+                else _counter_delta_value(previous_value, current_value)
             )
-            interval_counts[interval_value.status] += 1
+            if not (optional and interval_value.status == INTERVAL_INVALID_VALUE):
+                interval_counts[interval_value.status] += 1
             if interval_value.status != INTERVAL_OK or interval_value.value is None:
                 points.append({"t": point["t"], "value": None})
             else:
@@ -1362,6 +1392,17 @@ def _seconds_between(start: str, end: str) -> float:
         return max((datetime.fromisoformat(end) - datetime.fromisoformat(start)).total_seconds(), 0.0)
     except ValueError:
         return 0.0
+
+
+def _gauge_difference_value(
+    first_value: int | float | Decimal | None,
+    last_value: int | float | Decimal | None,
+) -> IntervalValue:
+    if first_value is None or last_value is None:
+        return IntervalValue(None, INTERVAL_INVALID_VALUE)
+    difference = last_value - first_value
+    status = INTERVAL_NO_ACTIVITY if difference == 0 else INTERVAL_OK
+    return IntervalValue(difference, status)
 
 
 def _number_or_none(value: Any) -> int | float | Decimal | None:
