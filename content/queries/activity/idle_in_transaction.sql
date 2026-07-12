@@ -6,10 +6,10 @@ select
   pid,
   wait_event_type,
   wait_event,
-  extract(epoch from clock_timestamp() - state_change)::numeric(20, 3) as idle_seconds,
+  extract(epoch from clock_timestamp() - state_change)::numeric as idle_seconds,
   case
     when xact_start is null then null
-    else extract(epoch from clock_timestamp() - xact_start)::numeric(20, 3)
+    else extract(epoch from clock_timestamp() - xact_start)::numeric
   end as xact_age_seconds,
   backend_xid::text as backend_xid,
   backend_xmin::text as backend_xmin,

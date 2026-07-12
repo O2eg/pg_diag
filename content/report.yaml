@@ -1,7 +1,7 @@
 report:
   id: pg_diag_minimal
   title: PostgreSQL Diagnostic Report
-  schema_version: 3
+  schema_version: 4
   allowed_item_tags:
     - CPU
     - Checkpoints
@@ -39,6 +39,7 @@ report:
     python: python.yaml
     instructions: instructions
     field_reference: field_reference.yaml
+    presentation: presentation.yaml
 
 runtime_policy:
   default_sql_timeout_ms: 3000
@@ -51,6 +52,7 @@ runtime_policy:
   fail_fast: false
 
 defaults:
+  numeric_locale: en-US
   table:
     page_size: 25
   item:
@@ -450,6 +452,62 @@ sections:
       function_time_delta:
         metric: objects.function_time_delta
         tags: [Functions]
+        state: collapsed
+      sql_temp_io_delta:
+        metric: statements.temp_io_delta
+        tags: [SQL, "I/O", Storage]
+        state: collapsed
+      postgresql_io_delta:
+        metric: io.activity_delta
+        tags: ["I/O"]
+        state: collapsed
+      checkpointer_delta:
+        metric: checkpoints.checkpointer_delta
+        tags: [Checkpoints, "I/O"]
+        state: collapsed
+      wal_activity_delta:
+        metric: wal.activity_delta
+        tags: [WAL]
+        state: collapsed
+      table_maintenance_delta:
+        metric: objects.table_maintenance_delta
+        tags: [Tables, Vacuum]
+        state: collapsed
+      standby_recovery_conflicts_delta:
+        metric: replication.recovery_conflicts_delta
+        tags: [Replication, Databases]
+        state: collapsed
+      database_session_outcomes_delta:
+        metric: database.session_outcomes_delta
+        tags: [Databases, Sessions]
+        state: collapsed
+      physical_replication_progress_delta:
+        metric: replication.physical_progress_delta
+        tags: [Replication, WAL]
+        state: collapsed
+      sql_planning_delta:
+        metric: statements.planning_delta
+        tags: [SQL]
+        state: collapsed
+      background_writer_delta:
+        metric: checkpoints.bgwriter_delta
+        tags: [Checkpoints, "I/O"]
+        state: collapsed
+      slru_activity_delta:
+        metric: slru.activity_delta
+        tags: [Storage]
+        state: collapsed
+      wal_archiver_delta:
+        metric: wal.archiver_delta
+        tags: [WAL]
+        state: collapsed
+      logical_decoding_slot_delta:
+        metric: replication.logical_slot_delta
+        tags: [Replication, WAL]
+        state: collapsed
+      subscription_errors_conflicts_delta:
+        metric: replication.subscription_errors_delta
+        tags: [Replication]
         state: collapsed
 
   replication:

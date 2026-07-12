@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
+import math
 from typing import Any
 
 from pg_diag.artifact import item_from_plan
@@ -29,7 +31,7 @@ SEVERITY_LEVEL_RANK = {"ok": 0, "unknown": 1, "medium": 2, "high": 3}
 
 @dataclass(frozen=True)
 class IntervalValue:
-    value: float | None
+    value: int | float | Decimal | None
     status: str
 
 
@@ -50,6 +52,7 @@ def build_metric_item(
     metric_diagnostics: list[dict[str, Any]] = []
     source_failure_status: str | None = None
     source_failure_reason: str | None = None
+    source_column_statuses: dict[str, dict[str, str]] = {}
     if source_query:
         source_item_id = source_item_by_query.get(source_query)
         if not source_item_id:
@@ -69,6 +72,7 @@ def build_metric_item(
         source_metadata = source_metadata_by_item.get(source_item_id, {})
         semantic_columns = source_metadata.get("semantic_columns") or {}
         source_columns = source_metadata.get("_result_columns") or []
+        source_column_statuses = source_metadata.get("column_statuses") or {}
         source_text = source_metadata.get("source_text")
         source_language = source_metadata.get("source_language") or "sql"
         source_items = [
@@ -176,7 +180,12 @@ def build_metric_item(
     source_text = _metric_source_text(metric, source_text, source_language) if source_text else None
 
     if metric.get("result") == "table" or metric.get("table"):
-        table = build_table_result(metric, samples, semantic_columns)
+        table = build_table_result(
+            metric,
+            samples,
+            semantic_columns,
+            source_column_statuses,
+        )
         severity_level, issues = evaluate_metric_table_findings(
             table,
             metric.get("evaluation") or {},
@@ -449,7 +458,7 @@ def _top_n_interval_series(
         previous_rows = _rows_by_key(previous.get("rows") or [], key_refs, semantic_columns)
         current_rows = _rows_by_key(current.get("rows") or [], key_refs, semantic_columns)
         candidates: list[tuple[float, str, str]] = []
-        for key in sorted(set(previous_rows) | set(current_rows)):
+        for key in _sorted_metric_keys(set(previous_rows) | set(current_rows)):
             first_row = previous_rows.get(key)
             last_row = current_rows.get(key)
             if first_row is None:
@@ -487,7 +496,7 @@ def _top_n_interval_series(
                     "_total": 0.0,
                 },
             )
-            series["points"].append({"t": timestamp, "value": round(value, 6)})
+            series["points"].append({"t": timestamp, "value": value})
             series["_total"] += value
 
     series = _strip_private_series_keys(_order_top_n_series(series_by_label.values(), chart))
@@ -514,7 +523,7 @@ def _top_n_first_last_series(
     last_rows = _rows_by_key(last.get("rows") or [], key_refs, semantic_columns)
     drop_zero = top_n.get("drop_zero", True)
     candidates: list[tuple[float, str, str]] = []
-    for key in sorted(set(first_rows) | set(last_rows)):
+    for key in _sorted_metric_keys(set(first_rows) | set(last_rows)):
         first_row = first_rows.get(key)
         last_row = last_rows.get(key)
         if first_row is None:
@@ -547,7 +556,7 @@ def _top_n_first_last_series(
         {
             "name": label,
             "unit": top_n.get("unit") or chart.get("unit"),
-            "points": [{"t": point_timestamp, "value": round(value, 6)}],
+            "points": [{"t": point_timestamp, "value": value}],
             "_total": value,
         }
         for value, label, point_timestamp in candidates[:limit]
@@ -593,12 +602,12 @@ def _top_n_metric_value(
         if denominator.value is None or denominator.value <= 0:
             return IntervalValue(None, INTERVAL_NO_ACTIVITY)
         return IntervalValue(
-            round(float(numerator.value or 0.0) / denominator.value, 6),
+            float(numerator.value or 0.0) / float(denominator.value),
             INTERVAL_OK,
         )
 
     transform = top_n.get("transform") or "rate"
-    values: list[float] = []
+    values: list[int | float | Decimal] = []
     for ref in value_refs:
         if not ref:
             continue
@@ -624,8 +633,8 @@ def _top_n_metric_value(
             values.append(value)
     value = sum(values)
     if transform == "rate":
-        return IntervalValue(round(value / interval_seconds, 6), INTERVAL_OK)
-    return IntervalValue(round(value, 6), INTERVAL_OK)
+        return IntervalValue(float(value) / interval_seconds, INTERVAL_OK)
+    return IntervalValue(value, INTERVAL_OK)
 
 
 def _top_n_value_refs(top_n: dict[str, Any]) -> list[str]:
@@ -653,7 +662,7 @@ def _counter_delta_sum(
     semantic_columns: dict[str, dict[str, str]],
     refs: list[str],
 ) -> IntervalValue:
-    values: list[float] = []
+    values: list[int | float | Decimal] = []
     statuses: list[str] = []
     for ref in refs:
         interval_value = _counter_delta_for_ref(
@@ -681,12 +690,12 @@ def _average_for_ref(
     first_value = _number_or_none(_resolve_ref(first_row or {}, semantic_columns, ref)) if first_row else None
     if first_value is None or last_value is None:
         return None
-    return (first_value + last_value) / 2.0
+    return float(first_value + last_value) / 2.0
 
 
 def _top_n_label(
     top_n: dict[str, Any],
-    key: tuple[str, ...],
+    key: tuple[Any, ...],
     row: dict[str, Any],
     semantic_columns: dict[str, dict[str, str]],
 ) -> str:
@@ -694,7 +703,7 @@ def _top_n_label(
     if label_refs:
         parts = [_string_value(_resolve_ref(row, semantic_columns, ref)) for ref in label_refs]
     else:
-        parts = list(key)
+        parts = [_string_value(value) for value in key]
     label = ".".join(part for part in parts if part)
     return label or "<unknown>"
 
@@ -718,14 +727,23 @@ def build_table_result(
     metric: dict[str, Any],
     samples: list[dict[str, Any]],
     semantic_columns: dict[str, dict[str, str]],
+    source_column_statuses: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     table = metric.get("table") or {}
+    result_column_statuses = _metric_result_column_statuses(
+        table,
+        semantic_columns,
+        source_column_statuses or {},
+    )
     sorted_samples = sorted(samples, key=lambda sample: str(sample.get("timestamp") or ""))
     columns = _table_columns(table)
     if table.get("mode") == "sample_sum":
         return _build_sample_sum_table(table, sorted_samples, semantic_columns, columns)
     if len(sorted_samples) < 2:
-        return {"kind": "table", "columns": columns, "rows": [], "row_count": 0}
+        result = {"kind": "table", "columns": columns, "rows": [], "row_count": 0}
+        if result_column_statuses:
+            result["column_statuses"] = result_column_statuses
+        return result
 
     first = sorted_samples[0]
     last = sorted_samples[-1]
@@ -738,7 +756,7 @@ def build_table_result(
 
     rows: list[list[Any]] = []
     interval_counts: Counter[str] = Counter()
-    for key in sorted(set(first_rows) | set(last_rows)):
+    for key in _sorted_metric_keys(set(first_rows) | set(last_rows)):
         first_row = first_rows.get(key)
         last_row = last_rows.get(key)
         if first_row is None:
@@ -756,6 +774,7 @@ def build_table_result(
             first_row,
             last_row,
             semantic_columns,
+            set(result_column_statuses),
         )
         interval_counts[interval_status] += 1
         if interval_status != INTERVAL_OK:
@@ -763,16 +782,24 @@ def build_table_result(
         rendered: list[Any] = []
         nonzero_metric = False
         for column in table.get("columns") or []:
-            value = _table_column_value(
-                column,
-                key,
-                first_row,
-                last_row,
-                semantic_columns,
-                interval_seconds,
-            )
+            column_name = str(column.get("name") or column.get("ref") or "value")
+            value = None
+            if column_name not in result_column_statuses:
+                value = _table_column_value(
+                    column,
+                    key,
+                    first_row,
+                    last_row,
+                    semantic_columns,
+                    interval_seconds,
+                )
             rendered.append(value)
-            if column.get("role") != "key" and isinstance(value, (int, float)) and value != 0:
+            if (
+                column.get("role") != "key"
+                and isinstance(value, (int, float, Decimal))
+                and not isinstance(value, bool)
+                and value != 0
+            ):
                 nonzero_metric = True
         if table.get("drop_zero_rows", True) and not nonzero_metric:
             continue
@@ -783,7 +810,16 @@ def build_table_result(
     if isinstance(limit, int) and limit > 0:
         rows = rows[:limit]
     result = {"kind": "table", "columns": columns, "rows": rows, "row_count": len(rows)}
-    return _with_interval_coverage(result, interval_counts)
+    if result_column_statuses:
+        result["column_statuses"] = result_column_statuses
+    result = _with_interval_coverage(result, interval_counts)
+    if any(column.get("transform") == "delta" for column in table.get("columns") or []):
+        result["delta_window"] = {
+            "start_time": first_timestamp,
+            "finish_time": last_timestamp,
+            "duration_seconds": _seconds_between(first_timestamp, last_timestamp),
+        }
+    return result
 
 
 def _build_sample_sum_table(
@@ -793,10 +829,10 @@ def _build_sample_sum_table(
     columns: list[dict[str, Any]],
 ) -> dict[str, Any]:
     key_refs = table.get("key_refs") or table.get("partition_by") or []
-    groups: dict[tuple[str, ...], dict[str, Any]] = {}
+    groups: dict[tuple[Any, ...], dict[str, Any]] = {}
     for sample in sorted_samples:
         for row in sample.get("rows") or []:
-            key = tuple(_string_value(_resolve_ref(row, semantic_columns, ref)) for ref in key_refs)
+            key = tuple(_metric_key_value(_resolve_ref(row, semantic_columns, ref)) for ref in key_refs)
             if not key:
                 continue
             group = groups.setdefault(key, {"rows": [], "last": row})
@@ -804,7 +840,7 @@ def _build_sample_sum_table(
             group["last"] = row
 
     rendered_rows: list[list[Any]] = []
-    for key in sorted(groups):
+    for key in _sorted_metric_keys(set(groups)):
         group = groups[key]
         rendered: list[Any] = []
         nonzero_metric = False
@@ -826,7 +862,7 @@ def _build_sample_sum_table(
 
 def _sample_sum_column_value(
     column: dict[str, Any],
-    key: tuple[str, ...],
+    key: tuple[Any, ...],
     rows: list[dict[str, Any]],
     last_row: dict[str, Any],
     semantic_columns: dict[str, dict[str, str]],
@@ -842,11 +878,11 @@ def _sample_sum_column_value(
     if transform == "sample_count":
         return len(rows)
     if transform == "sum":
-        return round(sum(numeric_values), 6)
+        return sum(numeric_values) if numeric_values else None
     if transform == "avg":
-        return round(sum(numeric_values) / len(numeric_values), 6) if numeric_values else 0.0
+        return sum(numeric_values) / len(numeric_values) if numeric_values else None
     if transform == "max":
-        return max(numeric_values) if numeric_values else 0.0
+        return max(numeric_values) if numeric_values else None
     if transform == "last":
         return _resolve_ref(last_row, semantic_columns, ref) if ref else None
     return _resolve_ref(last_row, semantic_columns, ref) if ref else None
@@ -855,7 +891,25 @@ def _sample_sum_column_value(
 def _table_columns(table: dict[str, Any]) -> list[dict[str, Any]]:
     columns = []
     for column in table.get("columns") or []:
-        columns.append({"name": column.get("name") or column.get("ref") or "value", "pg_type": column.get("pg_type") or ""})
+        result_column = {
+            "name": column.get("name") or column.get("ref") or "value",
+            "pg_type": column.get("pg_type") or "",
+        }
+        for key in (
+            "label",
+            "value_kind",
+            "semantic_role",
+            "quantity",
+            "quantity_ref",
+            "unit",
+            "unit_ref",
+            "quality",
+            "nullable",
+            "encoding",
+        ):
+            if key in column:
+                result_column[key] = column[key]
+        columns.append(result_column)
     return columns
 
 
@@ -934,18 +988,35 @@ def _rows_by_key(
     rows: list[dict[str, Any]],
     key_refs: list[str],
     semantic_columns: dict[str, dict[str, str]],
-) -> dict[tuple[str, ...], dict[str, Any]]:
-    keyed: dict[tuple[str, ...], dict[str, Any]] = {}
+) -> dict[tuple[Any, ...], dict[str, Any]]:
+    keyed: dict[tuple[Any, ...], dict[str, Any]] = {}
     for row in rows:
-        key = tuple(_string_value(_resolve_ref(row, semantic_columns, ref)) for ref in key_refs)
+        key = tuple(_metric_key_value(_resolve_ref(row, semantic_columns, ref)) for ref in key_refs)
         if key:
             keyed[key] = row
     return keyed
 
 
+def _metric_key_value(value: Any) -> Any:
+    if value is None:
+        return ""
+    try:
+        hash(value)
+    except TypeError:
+        return str(value)
+    return value
+
+
+def _sorted_metric_keys(keys: set[tuple[Any, ...]]) -> list[tuple[Any, ...]]:
+    return sorted(
+        keys,
+        key=lambda key: tuple((type(value).__name__, _string_value(value)) for value in key),
+    )
+
+
 def _table_column_value(
     column: dict[str, Any],
-    key: tuple[str, ...],
+    key: tuple[Any, ...],
     first_row: dict[str, Any] | None,
     last_row: dict[str, Any],
     semantic_columns: dict[str, dict[str, str]],
@@ -971,23 +1042,23 @@ def _table_column_value(
         return _counter_delta_value(first_value, last_value).value
     if transform == "rate":
         delta = _counter_delta_value(first_value, last_value).value
-        return round(delta / interval_seconds, 6) if delta is not None else None
+        return float(delta) / interval_seconds if delta is not None else None
     if transform == "pct_delta":
         previous = first_value or 0.0
         delta = _counter_delta_value(first_value, last_value).value
-        return round(delta * 100.0 / previous, 3) if delta is not None and previous > 0 else None
+        return float(delta) * 100.0 / float(previous) if delta is not None and previous > 0 else None
     return _resolve_ref(last_row, semantic_columns, ref) if ref else None
 
 
 def _counter_delta_value(
-    first_value: float | None,
-    last_value: float | None,
+    first_value: int | float | Decimal | None,
+    last_value: int | float | Decimal | None,
 ) -> IntervalValue:
     if first_value is None or last_value is None:
         return IntervalValue(None, INTERVAL_INVALID_VALUE)
     if last_value < first_value:
         return IntervalValue(None, INTERVAL_COUNTER_DECREASE)
-    return IntervalValue(round(last_value - first_value, 6), INTERVAL_OK)
+    return IntervalValue(last_value - first_value, INTERVAL_OK)
 
 
 def _table_row_interval_status(
@@ -995,6 +1066,7 @@ def _table_row_interval_status(
     first_row: dict[str, Any],
     last_row: dict[str, Any],
     semantic_columns: dict[str, dict[str, str]],
+    unavailable_output_columns: set[str] | None = None,
 ) -> str:
     statuses: list[str] = []
     for ref in table.get("epoch_refs") or []:
@@ -1008,6 +1080,9 @@ def _table_row_interval_status(
         if str(first_epoch) != str(last_epoch):
             statuses.append(INTERVAL_EPOCH_CHANGED)
     for column in table.get("columns") or []:
+        output_name = str(column.get("name") or column.get("ref") or "value")
+        if output_name in (unavailable_output_columns or set()):
+            continue
         if column.get("transform") not in {
             "delta", "rate", "pct_delta"
         }:
@@ -1018,8 +1093,43 @@ def _table_row_interval_status(
             continue
         first_value = _number_or_none(_resolve_ref(first_row, semantic_columns, ref))
         last_value = _number_or_none(_resolve_ref(last_row, semantic_columns, ref))
-        statuses.append(_counter_delta_value(first_value, last_value).status)
+        status = _counter_delta_value(first_value, last_value).status
+        if column.get("optional") is True and status == INTERVAL_INVALID_VALUE:
+            continue
+        statuses.append(status)
     return _combined_interval_status(statuses)
+
+
+def _metric_result_column_statuses(
+    table: dict[str, Any],
+    semantic_columns: dict[str, dict[str, str]],
+    source_column_statuses: dict[str, dict[str, str]],
+) -> dict[str, dict[str, str]]:
+    statuses: dict[str, dict[str, str]] = {}
+    for column in table.get("columns") or []:
+        ref = str(column.get("value_ref") or column.get("ref") or "")
+        source_column = _source_column_for_ref(ref, semantic_columns)
+        status = source_column_statuses.get(source_column)
+        if not isinstance(status, dict):
+            continue
+        output_name = str(column.get("name") or column.get("ref") or "value")
+        statuses[output_name] = {
+            "status": str(status["status"]),
+            "reason": str(status["reason"]),
+        }
+    return statuses
+
+
+def _source_column_for_ref(
+    ref: str,
+    semantic_columns: dict[str, dict[str, str]],
+) -> str:
+    parts = ref.split(".", 1)
+    if len(parts) == 2:
+        column = (semantic_columns.get(parts[0]) or {}).get(parts[1])
+        if column:
+            return str(column)
+    return ref
 
 
 def _combined_interval_status(statuses: list[str]) -> str:
@@ -1238,11 +1348,11 @@ def _transform_interval_points(
                 points.append({"t": point["t"], "value": None})
             else:
                 transformed = (
-                    interval_value.value / seconds
+                    float(interval_value.value) / seconds
                     if transform == "rate"
                     else interval_value.value
                 )
-                points.append({"t": point["t"], "value": round(transformed, 6)})
+                points.append({"t": point["t"], "value": transformed})
         previous = point
     return points, interval_counts
 
@@ -1254,13 +1364,26 @@ def _seconds_between(start: str, end: str) -> float:
         return 0.0
 
 
-def _number_or_none(value: Any) -> float | None:
+def _number_or_none(value: Any) -> int | float | Decimal | None:
     if value is None:
         return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
+    if isinstance(value, bool):
         return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, Decimal):
+        return value if value.is_finite() else None
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    if not parsed.is_finite():
+        return None
+    if parsed == parsed.to_integral_value():
+        return int(parsed)
+    return parsed
 
 
 def _string_value(value: Any) -> str:

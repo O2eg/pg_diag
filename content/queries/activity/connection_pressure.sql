@@ -50,7 +50,7 @@ select
   idle_connections,
   idle_in_transaction_connections,
   waiting_connections,
-  round(used_connections::numeric * 100 / nullif(max_connections, 0), 3) as used_pct,
+  (used_connections::numeric * 100 / nullif(max_connections, 0)) as used_pct,
   ordinary_available_connections,
   reserved_role_available_connections,
   total_available_connections,

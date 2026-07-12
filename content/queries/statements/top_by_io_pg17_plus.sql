@@ -14,9 +14,9 @@ select
   s.shared_blks_written::int8 as shared_blks_written,
   ((s.shared_blks_read + s.shared_blks_written)::numeric * current_setting('block_size')::int)
     as shared_io_bytes,
-  round(s.shared_blk_read_time::numeric, 3) as blk_read_time_ms,
-  round(s.shared_blk_write_time::numeric, 3) as blk_write_time_ms,
-  round(s.total_exec_time::numeric, 3) as total_exec_time_ms,
+  (s.shared_blk_read_time::numeric) as blk_read_time_ms,
+  (s.shared_blk_write_time::numeric) as blk_write_time_ms,
+  (s.total_exec_time::numeric) as total_exec_time_ms,
   s.rows::int8 as rows,
   s.stats_since,
   left(coalesce(s.query, '<query text unavailable>'), 4000) as query,

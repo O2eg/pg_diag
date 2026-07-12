@@ -22,7 +22,7 @@ queries:
           counters:
             wal_bytes: xlog_location_b
           gauges:
-            in_recovery: in_recovery_int
+            in_recovery: in_recovery
             timeline: timeline
 
   checkpoints.bgwriter:
@@ -82,7 +82,7 @@ queries:
     source: postgresai
     display:
       default_sort:
-        column: read_bytes_mb
+        column: read_bytes
         direction: desc
     evaluation:
       summary_title: Client backend fsync activity requires review
@@ -103,10 +103,10 @@ queries:
             object: object
             context: context
           counters:
-            read_mb: read_bytes_mb
-            write_mb: write_bytes_mb
-            writeback_mb: writeback_bytes_mb
-            extend_mb: extend_bytes_mb
+            read_bytes: read_bytes
+            write_bytes: write_bytes
+            writeback_bytes: writeback_bytes
+            extend_bytes: extend_bytes
             reads: reads
             writes: writes
             fsyncs: fsyncs
@@ -114,3 +114,7 @@ queries:
         min_pg_version: 180000
         sql_file: io/pg_stat_io_pg18_plus.sql
         semantic_columns: *pg_stat_io_semantics
+        column_statuses:
+          writeback_bytes:
+            status: unsupported
+            reason: PostgreSQL 18 does not expose a writeback byte counter in pg_stat_io.

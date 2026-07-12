@@ -23,6 +23,43 @@ class FakeConn:
 
 
 def fake_content(tmp_path):
+    presentation = {
+        "presentation_catalog": {
+            "numeric_locale": "en-US",
+            "descriptor_fields": [
+                "label",
+                "value_kind",
+                "semantic_role",
+                "quantity",
+                "unit",
+                "quality",
+                "nullable",
+                "encoding",
+            ],
+            "value_kinds": ["text"],
+            "semantic_roles": ["label"],
+            "qualities": ["exact"],
+            "encodings": ["json_string"],
+            "units": {"none": {}},
+            "type_defaults": {
+                "text": {
+                    "value_kind": "text",
+                    "semantic_role": "label",
+                    "quantity": "text",
+                    "unit": "none",
+                    "quality": "exact",
+                    "nullable": True,
+                    "encoding": "json_string",
+                }
+            },
+            "rules": [],
+            "source_overrides": {},
+            "label_terms": {},
+            "unit_aliases": {"none": "none"},
+            "quantity_aliases": {},
+            "unit_values": {},
+        }
+    }
     report = {
         "report": {"id": "test", "title": "Test"},
         "runtime_policy": {
@@ -57,7 +94,7 @@ def fake_content(tmp_path):
             "runtime_policy": report["runtime_policy"],
             "defaults": report["defaults"],
             "sections": report["sections"],
-            "catalogs": {},
+            "catalogs": {"presentation": presentation["presentation_catalog"]},
             "queries": {},
             "scripts": {},
             "metrics": {},
@@ -67,6 +104,7 @@ def fake_content(tmp_path):
             "field_reference": {"report": "Report metadata."},
         },
         provenance={"report": ["report.yaml"]},
+        presentation_catalog=presentation,
         queries={},
         scripts={},
         metrics={},
@@ -436,6 +474,8 @@ def test_collect_snapshots_runs_static_items_before_chart_window(tmp_path, monke
         "endpoint:end",
     ]
     assert set(artifact["items"]) == {"overview.pg_settings"}
+    assert isinstance(artifact["items"]["overview.pg_settings"]["collected_at"], str)
+    assert artifact["items"]["overview.pg_settings"]["collected_at"]
     assert set(artifact["snapshots"][0]["items"]) == {chart_source.item_id}
     assert artifact["runtime"]["once_item_count"] == 1
     assert artifact["runtime"]["chart_queries_per_sample"] == 1

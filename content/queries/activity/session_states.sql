@@ -13,7 +13,7 @@ activity as (
     coalesce(nullif(application_name, ''), '<unset>') as application_name,
     state,
     count(*)::int8 as sessions,
-    max(extract(epoch from clock_timestamp() - xact_start))::numeric(20, 3)
+    max(extract(epoch from clock_timestamp() - xact_start))::numeric
       as max_tx_duration_seconds
   from pg_stat_activity
   where

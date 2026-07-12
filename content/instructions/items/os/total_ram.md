@@ -3,7 +3,7 @@
 This instruction belongs to report item `os.total_ram`. The item is backed by `os.total_ram` (local host script).
 
 ## What this item shows
-- Host total RAM capacity from `/proc/meminfo`, shown as GiB and exact bytes.
+- Host total RAM capacity from `/proc/meminfo`, stored as exact bytes and displayed with an adaptive IEC unit.
 - Sizing evidence for shared_buffers, work_mem, maintenance_work_mem, and connection limits.
 
 ## What to watch

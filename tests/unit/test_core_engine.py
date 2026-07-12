@@ -67,6 +67,32 @@ class _BatchConnection:
         self.executed.append((sql, value))
 
 
+def _test_column(name: str, *, value_kind: str = "integer") -> dict:
+    if value_kind == "integer":
+        return {
+            "name": name,
+            "label": name,
+            "value_kind": "integer",
+            "semantic_role": "gauge",
+            "quantity": "count",
+            "unit": "count",
+            "quality": "exact",
+            "nullable": True,
+            "encoding": "json_number",
+        }
+    return {
+        "name": name,
+        "label": name,
+        "value_kind": "text",
+        "semantic_role": "label",
+        "quantity": "text",
+        "unit": "none",
+        "quality": "exact",
+        "nullable": True,
+        "encoding": "json_string",
+    }
+
+
 def _artifact(*, title: str = "Test", data: str = "ok") -> dict:
     return {
         "artifact_schema_version": runtime_config.ARTIFACT_SCHEMA_VERSION,
@@ -81,7 +107,11 @@ def _artifact(*, title: str = "Test", data: str = "ok") -> dict:
                 "runtime_policy": {},
                 "defaults": {"table": {"page_size": 25}},
                 "sections": {},
-                "catalogs": {},
+                "catalogs": {
+                    "presentation": {
+                        "units": {"none": {}, "count": {}},
+                    }
+                },
                 "queries": {},
                 "scripts": {},
                 "metrics": {},
@@ -467,7 +497,7 @@ def test_artifact_validator_accepts_consistent_interval_coverage(tmp_path: Path)
     artifact = _artifact()
     artifact["items"]["s.i"]["result"] = {
         "kind": "table",
-        "columns": [{"name": "value"}],
+            "columns": [_test_column("value")],
         "rows": [[1]],
         "row_count": 1,
         "interval_coverage": {
@@ -525,6 +555,32 @@ def test_artifact_validator_rejects_non_json_container_types(tmp_path: Path) -> 
         write_json(tmp_path / "invalid.json", artifact)
 
 
+def test_artifact_validator_rejects_invalid_item_collected_at(tmp_path: Path) -> None:
+    artifact = _artifact()
+    artifact["items"]["s.i"]["collected_at"] = ""
+
+    with pytest.raises(ValidationError, match="collected_at must be a non-empty string"):
+        write_json(tmp_path / "invalid.json", artifact)
+
+
+def test_artifact_validator_rejects_invalid_delta_window(tmp_path: Path) -> None:
+    artifact = _artifact()
+    artifact["items"]["s.i"]["result"] = {
+        "kind": "table",
+        "columns": [_test_column("value")],
+        "rows": [[1]],
+        "row_count": 1,
+        "delta_window": {
+            "start_time": "2026-07-05T00:00:00+00:00",
+            "finish_time": "2026-07-05T00:00:05+00:00",
+            "duration_seconds": -1,
+        },
+    }
+
+    with pytest.raises(ValidationError, match="duration_seconds must be non-negative"):
+        write_json(tmp_path / "invalid.json", artifact)
+
+
 def test_artifact_validator_rejects_invalid_content_provenance(tmp_path: Path) -> None:
     artifact = _artifact()
     artifact["content"]["provenance"] = {"queries/q": "queries.yaml"}
@@ -553,7 +609,7 @@ def test_artifact_validator_rejects_internal_result_columns(tmp_path: Path) -> N
     artifact = _artifact()
     artifact["items"]["s.i"]["result"] = {
         "kind": "table",
-        "columns": [{"name": "epoch_ns"}, {"name": "tag_value"}],
+        "columns": [_test_column("epoch_ns"), _test_column("tag_value", value_kind="text")],
         "rows": [[1783182080458119000, "visible"]],
         "row_count": 1,
     }
@@ -566,11 +622,11 @@ def test_artifact_v3_accepts_compact_snapshot_rows_with_shared_schema(tmp_path: 
     artifact = _artifact()
     artifact["items"]["s.i"]["result"] = {
         "kind": "table",
-        "columns": [{"name": "value"}],
+        "columns": [_test_column("value")],
         "rows": [[2]],
         "row_count": 1,
     }
-    artifact["snapshot_schemas"] = {"s.i": {"columns": [{"name": "value"}]}}
+    artifact["snapshot_schemas"] = {"s.i": {"columns": [_test_column("value")]}}
     artifact["snapshots"] = [
         {
             "timestamp": "2026-07-09T00:00:00+00:00",
@@ -587,7 +643,7 @@ def test_artifact_v3_accepts_compact_snapshot_rows_with_shared_schema(tmp_path: 
     write_json(output, artifact)
 
     assert json.loads(output.read_text(encoding="utf-8"))["snapshot_schemas"]["s.i"] == {
-        "columns": [{"name": "value"}]
+        "columns": [_test_column("value")]
     }
     public = _publicize_artifact_for_render(artifact)
     assert public["runtime"]["snapshot_count"] == 1

@@ -41,30 +41,31 @@ select
   name as setting_name,
   effective_setting as setting_value,
   case
-    when numeric_value is null then null
-    when numeric_value < 0 then effective_setting
-    when unit = '8kB' then pg_size_pretty((numeric_value * 8192)::bigint)
-    when unit = 'kB' then pg_size_pretty((numeric_value * 1024)::bigint)
-    when unit = 'MB' then pg_size_pretty((numeric_value * 1024 * 1024)::bigint)
-    when unit = 'GB' then pg_size_pretty((numeric_value * 1024 * 1024 * 1024)::bigint)
-    when unit = 'B' then pg_size_pretty(numeric_value::bigint)
-    when unit = 'ms' then
-      case
-        when numeric_value = 0 then '0 ms'
-        when numeric_value < 1000 then numeric_value::text || ' ms'
-        when numeric_value < 60000 then
-          trim(trailing '.' from trim(trailing '0' from round(numeric_value / 1000, 3)::text)) || ' s'
-        else trim(trailing '.' from trim(trailing '0' from round(numeric_value / 60000, 3)::text)) || ' min'
-      end
-    when unit = 's' then
-      case
-        when numeric_value < 60 then numeric_value::text || ' s'
-        else trim(trailing '.' from trim(trailing '0' from round(numeric_value / 60, 3)::text)) || ' min'
-      end
-    when unit = 'min' then numeric_value::text || ' min'
-    else null
-  end as pretty_value,
-  unit as unit,
+    when numeric_value is null or numeric_value < 0 then null
+    when unit = '8kB' then numeric_value * 8192
+    when unit = 'kB' then numeric_value * 1024
+    when unit = 'MB' then numeric_value * 1024 * 1024
+    when unit = 'GB' then numeric_value * 1024 * 1024 * 1024
+    when unit = 'B' then numeric_value
+    when unit = 'ms' then numeric_value / 1000
+    when unit = 's' then numeric_value
+    when unit = 'min' then numeric_value * 60
+    else numeric_value
+  end as setting_normalized,
+  case
+    when numeric_value is null or numeric_value < 0 then null
+    when unit in ('8kB', 'kB', 'MB', 'GB', 'B') then 'bytes'
+    when unit in ('ms', 's', 'min') then 'seconds'
+    when unit is null then 'none'
+    else 'none'
+  end as unit_normalized,
+  case
+    when numeric_value is null or numeric_value < 0 then null
+    when unit in ('8kB', 'kB', 'MB', 'GB', 'B') then 'data_volume'
+    when unit in ('ms', 's', 'min') then 'seconds'
+    else 'measurement'
+  end as quantity_normalized,
+  unit as source_unit,
   pending_restart as pending_restart,
   category as category,
   vartype as vartype,
@@ -74,8 +75,7 @@ select
   sourceline,
   boot_val,
   reset_val,
-  case when is_default_bool then 1 else 0 end as is_default,
-  1 as configured,
+  is_default_bool as is_default,
   case
     when pending_restart then 'medium'
     when name = 'work_mem' and is_default_bool then 'medium'

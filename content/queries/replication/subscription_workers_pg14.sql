@@ -1,8 +1,8 @@
 with workers as (
   select
     current_database() as datname,
-    w.subid,
-    w.subname,
+    s.oid as subid,
+    s.subname,
     s.subenabled,
     case
       when w.pid is null then 'not running'
@@ -18,8 +18,8 @@ with workers as (
     w.last_msg_send_time,
     w.last_msg_receipt_time,
     w.latest_end_time
-  from pg_catalog.pg_stat_subscription w
-  join pg_catalog.pg_subscription s on s.oid = w.subid
+  from pg_catalog.pg_subscription s
+  left join pg_catalog.pg_stat_subscription w on w.subid = s.oid
 )
 select
   datname,
@@ -29,7 +29,7 @@ select
   worker_type,
   pid,
   leader_pid,
-  case when pid is null then 0 else 1 end as worker_running,
+  (pid is not null) as worker_running,
   relid,
   relation_name,
   received_lsn::text as received_lsn,
@@ -39,9 +39,9 @@ select
   last_msg_send_time,
   last_msg_receipt_time,
   latest_end_time,
-  round(extract(epoch from pg_catalog.clock_timestamp() - last_msg_receipt_time)::numeric, 3)
+  (extract(epoch from pg_catalog.clock_timestamp() - last_msg_receipt_time)::numeric)
     as seconds_since_last_msg_receipt,
-  round(extract(epoch from pg_catalog.clock_timestamp() - latest_end_time)::numeric, 3)
+  (extract(epoch from pg_catalog.clock_timestamp() - latest_end_time)::numeric)
     as seconds_since_latest_end,
   null::int8 as apply_error_count,
   null::int8 as sync_error_count,

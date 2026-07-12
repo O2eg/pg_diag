@@ -213,13 +213,17 @@ async def execute_query_item(
         )
 
     status = "ok" if rows else "empty"
+    result = {"kind": "table", "columns": columns, "rows": rows, "row_count": len(rows)}
+    column_statuses = planned.source_metadata.get("column_statuses") or {}
+    if column_statuses:
+        result["column_statuses"] = column_statuses
     return item_from_plan(
         planned,
         collection_status=status,
         severity_level=severity_level,
         issues=issues,
         timing_ms=elapsed_ms(started),
-        result={"kind": "table", "columns": columns, "rows": rows, "row_count": len(rows)},
+        result=result,
         source_text=sql_text,
         source_language="sql",
     )

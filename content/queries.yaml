@@ -1,5 +1,5 @@
 query_catalog:
-  schema_version: 3
+  schema_version: 4
   sql_root: queries
   defaults:
     result_shape: dynamic_table
@@ -14,6 +14,7 @@ query_catalog:
     - catalog/activity_locks.yaml
     - catalog/database.yaml
     - catalog/metric_sources.yaml
+    - catalog/delta_workload.yaml
     - catalog/statements.yaml
     - catalog/object_workload.yaml
     - catalog/wait_profile.yaml

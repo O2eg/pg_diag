@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 from copy import deepcopy
 from dataclasses import replace
+import json
 from pathlib import Path
 import re
 import subprocess
@@ -12,6 +13,7 @@ import pytest
 from pg_diag.artifact import create_artifact
 from pg_diag.content_loader import ContentLoadError, iter_report_items, load_content, load_yaml_file
 from pg_diag.planner import build_plan
+from pg_diag.presentation import apply_presentation_contract, resolve_column_descriptor
 from pg_diag.runtime_config import (
     HOST_COMMAND_TIMEOUT_SECONDS,
     REMOTE_DB_ONLY_COLLECTION_MODE,
@@ -26,6 +28,153 @@ def test_content_manifests_are_valid(content_path: Path) -> None:
     content = load_content(content_path)
     issues = validate_content(content)
     assert not issues
+
+
+def test_metric_table_columns_declare_output_types(content_path: Path) -> None:
+    content = load_content(content_path)
+    for metric_id, metric in content.metrics.items():
+        for column in (metric.get("table") or {}).get("columns") or []:
+            assert column.get("pg_type"), f"{metric_id}.{column.get('name')}"
+
+    metrics = deepcopy(content.metrics)
+    metrics["database.workload_delta"]["table"]["columns"][0].pop("pg_type")
+    invalid = replace(content, metrics=metrics)
+
+    issues = validate_content(invalid)
+
+    assert any(
+        issue.code == "metric_result"
+        and "must define its output pg_type" in issue.message
+        for issue in issues
+    )
+
+    metrics = deepcopy(content.metrics)
+    metrics["io.activity_delta"]["table"]["columns"][3]["optional"] = "yes"
+    invalid = replace(content, metrics=metrics)
+
+    issues = validate_content(invalid)
+
+    assert any(
+        issue.code == "metric_result"
+        and "optional must be boolean" in issue.message
+        for issue in issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("name", "pg_type", "expected"),
+    [
+        ("blks_read_bytes_delta", "float8", ("integer", "counter_delta", "bytes")),
+        ("total_blks_read_per_sec", "float8", ("decimal", "rate", "blocks/s")),
+        ("plan_time_ms_per_sec", "float8", ("decimal", "rate", "milliseconds/s")),
+        ("postmaster_uptime_s", "int8", ("decimal", "duration", "seconds")),
+        ("clock", "int8", ("integer", "gauge", "hertz")),
+        ("xact_start", "timestamptz", ("timestamp", "state", "none")),
+        ("blocks_done_pct", "numeric", ("decimal", "gauge", "percent")),
+        ("bytes_total", "int8", ("integer", "gauge", "bytes")),
+        ("buffers_written_delta", "float8", ("integer", "counter_delta", "blocks")),
+        ("buffers_backend_fsync_delta", "float8", ("integer", "counter_delta", "count")),
+    ],
+)
+def test_presentation_rules_resolve_canonical_dimensions_without_rows(
+    content_path: Path,
+    name: str,
+    pg_type: str,
+    expected: tuple[str, str, str],
+) -> None:
+    content = load_content(content_path)
+
+    descriptor = resolve_column_descriptor(
+        content,
+        {"name": name, "pg_type": pg_type},
+        [],
+        source_kind="query",
+        source_id="test.synthetic",
+        item_id="test.synthetic",
+    )
+
+    assert (
+        descriptor["value_kind"],
+        descriptor["semantic_role"],
+        descriptor["unit"],
+    ) == expected
+
+
+def test_millisecond_duration_label_does_not_promise_a_fixed_display_scale(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+
+    descriptor = resolve_column_descriptor(
+        content,
+        {"name": "total_exec_time_ms", "pg_type": "float8"},
+        [],
+        source_kind="query",
+        source_id="test.synthetic",
+        item_id="test.synthetic",
+    )
+
+    assert descriptor["unit"] == "milliseconds"
+    assert descriptor["label"] == "Total exec time"
+
+
+def test_pg_settings_keeps_source_unit_separate_from_canonical_unit(content_path: Path) -> None:
+    content = load_content(content_path)
+
+    source_unit = resolve_column_descriptor(
+        content,
+        {"name": "source_unit", "pg_type": "text"},
+        [],
+        source_kind="query",
+        source_id="cluster.settings",
+        item_id="overview.pg_settings",
+    )
+    normalized_unit = resolve_column_descriptor(
+        content,
+        {"name": "unit_normalized", "pg_type": "text"},
+        [],
+        source_kind="query",
+        source_id="cluster.settings",
+        item_id="overview.pg_settings",
+    )
+
+    assert source_unit["quantity"] == "text"
+    assert normalized_unit["quantity"] == "unit_code"
+
+
+def test_chart_delta_uses_exact_counter_delta_descriptor(content_path: Path) -> None:
+    content = load_content(content_path)
+    artifact = {
+        "items": {
+            "snapshot_charts_db.database_temp_files_delta": {
+                "source_kind": "metric",
+                "source_metadata": {"metric_id": "database.temp_files_delta"},
+                "result": {
+                    "kind": "chart",
+                    "chart": {"kind": "column", "unit": "files"},
+                    "series": [
+                        {
+                            "name": "temp files (db)",
+                            "unit": "files",
+                            "points": [
+                                {"t": "2026-07-12T00:00:00+00:00", "value": 2}
+                            ],
+                        }
+                    ],
+                },
+            }
+        },
+        "snapshot_schemas": {},
+        "snapshots": [],
+    }
+
+    apply_presentation_contract(content, artifact)
+
+    series = artifact["items"]["snapshot_charts_db.database_temp_files_delta"]["result"]["series"][0]
+    assert series["semantic_role"] == "counter_delta"
+    assert series["value_kind"] == "integer"
+    assert series["encoding"] == "decimal_string"
+    assert series["points"][0]["value"] == "2"
 
 
 def test_host_source_timeouts_do_not_exceed_one_second(content_path: Path) -> None:
@@ -44,6 +193,82 @@ def test_host_source_timeouts_do_not_exceed_one_second(content_path: Path) -> No
             assert 0 < source["timeout_ms"] <= max_timeout_ms, source_id
 
     assert content.pythons["security.role_password_hashes"]["timeout_ms"] == 5000
+
+
+def test_os_capacity_scripts_emit_canonical_structured_values(content_path: Path) -> None:
+    content = load_content(content_path)
+    for script_id in ("os.disk_usage", "os.memory_info", "os.total_ram"):
+        assert content.scripts[script_id]["output"] == "table_json"
+        script = content.path / "scripts" / content.scripts[script_id]["script_file"]
+        completed = subprocess.run(
+            ["/bin/sh", str(script)],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        rows = json.loads(completed.stdout)
+        assert isinstance(rows, list) and rows, script_id
+
+    disk_rows = json.loads(
+        subprocess.run(
+            ["/bin/sh", str(content.path / "scripts/os/df_h.sh")],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        ).stdout
+    )
+    assert all(
+        isinstance(row[key], int)
+        for row in disk_rows
+        for key in ("total_bytes", "used_bytes", "available_bytes", "used_pct")
+    )
+
+    volume_text = (content.path / "scripts/os/lshw_volume.sh").read_text(encoding="utf-8")
+    assert "fsuse_pct" in volume_text
+    assert "fsuse%" in volume_text
+
+
+def test_sql_sources_do_not_apply_presentation_formatting(content_path: Path) -> None:
+    for sql_path in (content_path / "queries").rglob("*.sql"):
+        sql = sql_path.read_text(encoding="utf-8")
+        assert re.search(r"\bround\s*\(", sql, re.IGNORECASE) is None, sql_path
+        assert "pg_size_pretty" not in sql.lower(), sql_path
+        assert "time_since_reset" not in sql, sql_path
+
+
+def test_version_optional_metric_counters_are_null_not_zero(content_path: Path) -> None:
+    metric_sql = {
+        path.relative_to(content_path).as_posix(): path.read_text(encoding="utf-8")
+        for path in (content_path / "queries" / "metrics").glob("*.sql")
+    }
+    for path, sql in metric_sql.items():
+        assert re.search(r"\b0::[a-z0-9_ ]+\s+as\s+", sql, re.IGNORECASE) is None, path
+
+    content = load_content(content_path)
+    checkpointer = content.queries["metrics.checkpointer_delta"]["variants"]
+    assert set(checkpointer[0]["column_statuses"]) == {
+        "restartpoints_timed",
+        "restartpoints_requested",
+        "restartpoints_done",
+        "slru_written",
+    }
+    assert set(checkpointer[1]["column_statuses"]) == {"slru_written"}
+
+    maintenance = content.queries["metrics.objects_table_maintenance_delta"]["variants"]
+    assert maintenance[0]["max_pg_version"] == 179999
+    assert set(maintenance[0]["column_statuses"]) == {
+        "vacuum_time_ms",
+        "autovacuum_time_ms",
+        "analyze_time_ms",
+        "autoanalyze_time_ms",
+        "maintenance_time_ms",
+    }
+
+    conflicts = content.queries["metrics.recovery_conflicts_delta"]["variants"]
+    assert conflicts[0]["max_pg_version"] == 159999
+    assert set(conflicts[0]["column_statuses"]) == {"confl_active_logicalslot"}
 
 
 def test_validator_rejects_host_source_timeouts_over_one_second(
@@ -380,6 +605,8 @@ def test_statement_delta_sources_do_not_collapse_hidden_query_ids(content_path: 
         "statements.total_time_delta",
         "statements.io_delta",
         "statements.wal_delta",
+        "statements.temp_io_delta",
+        "statements.planning_delta",
     }
     for metric_id in metric_ids:
         metric = content.metrics[metric_id]
@@ -405,7 +632,7 @@ def test_snapshot_delta_workload_defines_complete_interval_contract(
         if section_id == "snapshot_delta_workload"
     ]
 
-    assert len(item_ids) == 9
+    assert len(item_ids) == 23
     for item_id in item_ids:
         text = content.instructions[item_id]["text"]
         assert "This instruction belongs to" in text, item_id
@@ -421,6 +648,33 @@ def test_snapshot_delta_workload_defines_complete_interval_contract(
         )
         assert metric_ref in content.metrics
         assert content.metrics[metric_ref]["requires_collection"] == "window_endpoints"
+
+
+def test_new_delta_items_keep_scope_notation_contract(content_path: Path) -> None:
+    content = load_content(content_path)
+    new_metric_ids = {
+        "statements.temp_io_delta",
+        "io.activity_delta",
+        "checkpoints.checkpointer_delta",
+        "wal.activity_delta",
+        "objects.table_maintenance_delta",
+        "replication.recovery_conflicts_delta",
+        "database.session_outcomes_delta",
+        "replication.physical_progress_delta",
+        "statements.planning_delta",
+        "checkpoints.bgwriter_delta",
+        "slru.activity_delta",
+        "wal.archiver_delta",
+        "replication.logical_slot_delta",
+        "replication.subscription_errors_delta",
+    }
+
+    for metric_id in new_metric_ids:
+        metric = content.metrics[metric_id]
+        assert metric["title"].endswith("Delta"), metric_id
+        assert metric["database_scope"] in {"all_databases", "current_database"}, metric_id
+        source = content.queries[metric["source_query"]]
+        assert source["database_scope"] == metric["database_scope"], metric_id
 
 
 def test_snapshot_delta_sources_keep_bounded_oid_identity_and_reset_epochs(
@@ -476,6 +730,32 @@ def test_snapshot_delta_sources_keep_bounded_oid_identity_and_reset_epochs(
             ["dimensions.database_id", "dimensions.function_id"],
             100,
         ),
+        "statements.temp_io_delta": (
+            ["dimensions.database_id", "dimensions.user_id", "dimensions.query_id", "dimensions.toplevel"],
+            50,
+        ),
+        "io.activity_delta": (
+            ["dimensions.backend_type", "dimensions.object", "dimensions.context"],
+            None,
+        ),
+        "checkpoints.checkpointer_delta": (["dimensions.scope"], None),
+        "wal.activity_delta": (["dimensions.scope"], None),
+        "objects.table_maintenance_delta": (
+            ["dimensions.database_id", "dimensions.relation_id"],
+            200,
+        ),
+        "replication.recovery_conflicts_delta": (["dimensions.database_id"], None),
+        "database.session_outcomes_delta": (["dimensions.database_id"], None),
+        "replication.physical_progress_delta": (["dimensions.sender_pid"], 50),
+        "statements.planning_delta": (
+            ["dimensions.database_id", "dimensions.user_id", "dimensions.query_id", "dimensions.toplevel"],
+            50,
+        ),
+        "checkpoints.bgwriter_delta": (["dimensions.scope"], None),
+        "slru.activity_delta": (["dimensions.name"], None),
+        "wal.archiver_delta": (["dimensions.scope"], None),
+        "replication.logical_slot_delta": (["dimensions.slot_name"], 50),
+        "replication.subscription_errors_delta": (["dimensions.subscription_id"], 50),
     }
 
     for metric_id, (key_refs, source_limit) in expected.items():
@@ -491,7 +771,6 @@ def test_snapshot_delta_sources_keep_bounded_oid_identity_and_reset_epochs(
             sql = (content.path / "queries" / variant["sql_file"]).read_text(
                 encoding="utf-8"
             ).lower()
-            assert "order by" not in sql if source_limit is None else "order by" in sql
             assert "limit" not in sql if source_limit is None else f"limit {source_limit}" in sql
             assert not re.search(r"\bpg_stat(?:ements)?_reset\w*\s*\(", sql), metric_id
 
@@ -521,6 +800,8 @@ def test_snapshot_delta_version_epochs_and_database_output_are_complete(
         "statements.total_time_delta",
         "statements.io_delta",
         "statements.wal_delta",
+        "statements.temp_io_delta",
+        "statements.planning_delta",
     ):
         source = content.queries[content.metrics[metric_id]["source_query"]]
         pg16 = select_query_variant(source["title"], source, 160000)
@@ -752,11 +1033,20 @@ def test_subscription_workers_cover_pg14_through_pg18_without_fake_apply_lag(
     query = content.queries["replication.subscription_workers"]
     pg14 = select_query_variant("replication.subscription_workers", query, 140000)
     pg15 = select_query_variant("replication.subscription_workers", query, 150000)
+    pg16 = select_query_variant("replication.subscription_workers", query, 160000)
+    pg17 = select_query_variant("replication.subscription_workers", query, 170000)
     pg18 = select_query_variant("replication.subscription_workers", query, 180000)
 
     assert pg14.variant["sql_file"].endswith("subscription_workers_pg14.sql")
-    assert pg15.variant["sql_file"].endswith("subscription_workers_pg15_plus.sql")
-    assert pg18.variant["sql_file"] == pg15.variant["sql_file"]
+    assert pg15.variant["sql_file"].endswith("subscription_workers_pg15.sql")
+    assert pg16.variant["sql_file"].endswith("subscription_workers_pg16.sql")
+    assert pg17.variant["sql_file"].endswith("subscription_workers_pg17.sql")
+    assert pg18.variant["sql_file"].endswith("subscription_workers_pg18.sql")
+    assert "leader_pid" in pg14.variant["column_statuses"]
+    assert "leader_pid" in pg15.variant["column_statuses"]
+    assert "leader_pid" not in pg16.variant.get("column_statuses", {})
+    assert "conflict_count" in pg17.variant["column_statuses"]
+    assert "conflict_count" not in pg18.variant.get("column_statuses", {})
 
     pg14_sql = (content.path / "queries" / pg14.variant["sql_file"]).read_text(
         encoding="utf-8"
@@ -764,13 +1054,76 @@ def test_subscription_workers_cover_pg14_through_pg18_without_fake_apply_lag(
     pg15_sql = (content.path / "queries" / pg15.variant["sql_file"]).read_text(
         encoding="utf-8"
     ).lower()
-    for sql in (pg14_sql, pg15_sql):
+    pg16_sql = (content.path / "queries" / pg16.variant["sql_file"]).read_text(
+        encoding="utf-8"
+    ).lower()
+    pg17_sql = (content.path / "queries" / pg17.variant["sql_file"]).read_text(
+        encoding="utf-8"
+    ).lower()
+    pg18_sql = (content.path / "queries" / pg18.variant["sql_file"]).read_text(
+        encoding="utf-8"
+    ).lower()
+    for sql in (pg14_sql, pg15_sql, pg16_sql, pg17_sql, pg18_sql):
         assert "pg_wal_lsn_diff(latest_end_lsn, received_lsn)" in sql
         assert "publisher_receive_lag_bytes" in sql
         assert "receive_apply_lag_bytes" not in sql
+        assert "from pg_catalog.pg_subscription s" in sql
+        assert "left join pg_catalog.pg_stat_subscription w" in sql
+        assert "to_jsonb" not in sql
     assert "pg_stat_subscription_stats" not in pg14_sql
     assert "pg_stat_subscription_stats" in pg15_sql
-    assert "worker_type" in pg15_sql
+    assert "w.leader_pid" not in pg15_sql
+    assert "w.leader_pid" in pg16_sql
+    assert "w.worker_type" in pg17_sql
+    assert "confl_insert_exists" not in pg17_sql
+    assert "confl_insert_exists" in pg18_sql
+
+
+def test_replication_slot_variants_match_versioned_view_columns(content_path: Path) -> None:
+    content = load_content(content_path)
+    query = content.queries["replication.slots"]
+    pg15 = select_query_variant("replication.slots", query, 150000)
+    pg16 = select_query_variant("replication.slots", query, 160000)
+    pg17 = select_query_variant("replication.slots", query, 170000)
+
+    assert pg15.variant["sql_file"].endswith("replication_slots_pg14_pg15.sql")
+    assert pg16.variant["sql_file"].endswith("replication_slots_pg16.sql")
+    assert pg17.variant["sql_file"].endswith("replication_slots_pg17_plus.sql")
+    assert set(pg15.variant["column_statuses"]) == {
+        "inactive_since", "invalidation_reason", "failover", "synced", "conflicting"
+    }
+    assert set(pg16.variant["column_statuses"]) == {
+        "inactive_since", "invalidation_reason", "failover", "synced"
+    }
+    assert not pg17.variant.get("column_statuses")
+
+    for selected in (pg15, pg16, pg17):
+        sql = (content.path / "queries" / selected.variant["sql_file"]).read_text(
+            encoding="utf-8"
+        ).lower()
+        assert "to_jsonb" not in sql
+        assert "retained_wal_bytes" in sql
+
+
+def test_subscription_delta_does_not_fabricate_pre_pg18_conflicts(content_path: Path) -> None:
+    content = load_content(content_path)
+    query = content.queries["metrics.subscription_errors_delta"]
+    pg17 = select_query_variant("metrics.subscription_errors_delta", query, 170000)
+    pg18 = select_query_variant("metrics.subscription_errors_delta", query, 180000)
+
+    assert "conflict_count" in pg17.variant["column_statuses"]
+    assert "conflict_count" not in pg18.variant.get("column_statuses", {})
+    pg17_sql = (content.path / "queries" / pg17.variant["sql_file"]).read_text(
+        encoding="utf-8"
+    ).lower()
+    pg18_sql = (content.path / "queries" / pg18.variant["sql_file"]).read_text(
+        encoding="utf-8"
+    ).lower()
+    assert "null::int8 as conflict_count" in pg17_sql
+    assert "coalesce" not in pg17_sql
+    assert "confl_insert_exists" in pg18_sql
+    assert "errors_total" not in pg17_sql
+    assert "errors_total" not in pg18_sql
 
 
 def test_wal_archiver_uses_real_segment_size_and_timeline_guard(content_path: Path) -> None:
@@ -828,8 +1181,9 @@ def test_pg_stat_io_keeps_dimensions_and_unknown_pg18_writeback_bytes(
     pg18_sql = (content.path / "queries" / pg18.variant["sql_file"]).read_text(
         encoding="utf-8"
     ).lower()
-    assert "null::numeric as writeback_bytes_mb" in pg18_sql
-    assert "0::int8 as writeback_bytes_mb" not in pg18_sql
+    assert "null::numeric as writeback_bytes" in pg18_sql
+    assert "0::int8 as writeback_bytes" not in pg18_sql
+    assert "_bytes_mb" not in pg18_sql
 
 
 def test_replication_and_wal_sources_never_reset_statistics(content_path: Path) -> None:
@@ -1231,9 +1585,12 @@ def test_high_cardinality_metric_sources_keep_order_and_limit(content_path: Path
         for metric_id, metric in content.metrics.items()
         if metric.get("source_query")
         and metric_id != "activity.wait_sample_profile"
-        and (metric.get("top_n") or (metric.get("table") and metric_id != "database.workload_delta"))
+        and (
+            metric.get("top_n")
+            or ((metric.get("table") or {}).get("limit"))
+        )
     }
-    assert len(bounded_metrics) == 24
+    assert len(bounded_metrics) == 30
 
     for metric_id, metric in bounded_metrics.items():
         query = content.queries[metric["source_query"]]

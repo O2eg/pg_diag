@@ -7,7 +7,7 @@ from pg_diag.executors.python import PythonSourceContext, PythonSourceResult, ta
 
 
 DATABASE_SIZE_TIMEOUT_SECONDS = 10.0
-DATABASE_SIZE_TIMEOUT_MESSAGE = "превышен таймаут на вычисление размера БД"
+DATABASE_SIZE_TIMEOUT_REASON = "Database size calculation exceeded 10 seconds"
 
 DATABASES_SQL = """
 select
@@ -230,9 +230,23 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
         rows.append(row)
 
     rows.sort(key=_size_sort_key, reverse=True)
+    cell_statuses = []
+    for row_index, row in enumerate(rows):
+        status = row.pop("_database_size_status", None)
+        if status:
+            cell_statuses.append(
+                {
+                    "row_index": row_index,
+                    "column": "database_size_bytes",
+                    **status,
+                }
+            )
+    result = table_result(rows)
+    if cell_statuses:
+        result["cell_statuses"] = cell_statuses
     return PythonSourceResult(
         collection_status="ok" if rows else "empty",
-        result=table_result(rows),
+        result=result,
         severity_level="unknown",
         diagnostics=diagnostics,
     )
@@ -242,10 +256,18 @@ async def _collect_connected_database(conn: Any, row: dict[str, Any]) -> None:
     try:
         row["database_size_bytes"] = await _database_size(conn)
     except TimeoutError:
-        row["database_size_bytes"] = DATABASE_SIZE_TIMEOUT_MESSAGE
+        row["database_size_bytes"] = None
+        row["_database_size_status"] = {
+            "status": "timeout",
+            "reason": DATABASE_SIZE_TIMEOUT_REASON,
+        }
         row["collection_status"] = "database size timed out"
     except Exception as exc:
-        row["database_size_bytes"] = f"size calculation failed: {_error_text(exc)}"
+        row["database_size_bytes"] = None
+        row["_database_size_status"] = {
+            "status": "error",
+            "reason": f"Database size calculation failed: {_error_text(exc)}",
+        }
         row["collection_status"] = "database size failed"
 
     try:
@@ -268,9 +290,17 @@ async def _collect_size_from_main_connection(
             int(database["database_oid"]),
         )
     except TimeoutError:
-        row["database_size_bytes"] = DATABASE_SIZE_TIMEOUT_MESSAGE
+        row["database_size_bytes"] = None
+        row["_database_size_status"] = {
+            "status": "timeout",
+            "reason": DATABASE_SIZE_TIMEOUT_REASON,
+        }
     except Exception as exc:
-        row["database_size_bytes"] = f"size calculation failed: {_error_text(exc)}"
+        row["database_size_bytes"] = None
+        row["_database_size_status"] = {
+            "status": "error",
+            "reason": f"Database size calculation failed: {_error_text(exc)}",
+        }
 
 
 async def _database_size(conn: Any, database_oid: int | None = None) -> int:

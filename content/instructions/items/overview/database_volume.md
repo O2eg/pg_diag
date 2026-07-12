@@ -8,7 +8,7 @@ This instruction belongs to report item `overview.database_volume`. The item is 
 - The on-disk database size returned by `pg_database_size` and logical counts of user schemas, relations, routines, triggers, constraints, types, collations, conversions, extended statistics, policies, rules, extensions, publications, subscriptions, large objects, and foreign-data objects.
 - Separate `partitions` and `index_partitions` columns for physical partition children that are excluded from the logical `tables` and `indexes` counts.
 - A row-local collection status when a database does not accept connections, the diagnostic role lacks `CONNECT`, or a catalog query fails.
-- The value `превышен таймаут на вычисление размера БД` in `database_size_bytes` when a size calculation exceeds 10 seconds.
+- A typed `Timeout` cell status for `database_size_bytes` when a size calculation exceeds 10 seconds; the numeric raw cell remains null.
 
 ## Checklist
 

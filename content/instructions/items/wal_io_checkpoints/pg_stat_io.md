@@ -4,8 +4,8 @@ This instruction belongs to report item `wal_io_checkpoints.pg_stat_io`. The ite
 
 ## What this item shows
 - PostgreSQL 16+ cluster-wide cumulative I/O grouped by the real `backend_type`, `object`, and `context` dimensions without a duplicate total rollup.
-- Counts, MiB, timing, hits, evictions, reuses, fsyncs, writebacks, extends, reset age, and timing settings.
-- PostgreSQL 18 uses direct byte counters and adds WAL-object rows; it exposes no writeback-byte count, so `writeback_bytes_mb` is null rather than zero.
+- Exact byte and operation counters, timing, hits, evictions, reuses, fsyncs, writebacks, extends, reset age, and timing settings. Byte values are collected as bytes and rendered with adaptive IEC units.
+- PostgreSQL 18 uses direct byte counters and adds WAL-object rows; it exposes no writeback-byte count, so `writeback_bytes` is null with an unsupported column status rather than zero.
 
 ## What to watch
 - Relation fsyncs by client backends, client relation writes displacing background work, high eviction/read deltas, or slow operation times.

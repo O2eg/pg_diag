@@ -1,0 +1,487 @@
+presentation_catalog:
+  schema_version: 1
+  numeric_locale: en-US
+
+  descriptor_fields:
+    - label
+    - value_kind
+    - semantic_role
+    - quantity
+    - unit
+    - quality
+    - nullable
+    - encoding
+
+  value_kinds: [integer, decimal, text, boolean, timestamp, date, time, lsn, json]
+  semantic_roles: [identifier, counter, counter_delta, gauge, rate, duration, estimate, state, label]
+  qualities: [exact, estimated, sampled, derived]
+  encodings: [json_number, decimal_string, json_string, json_boolean, json_value]
+  cell_statuses: [timeout, error, permission_denied, unavailable, unsupported]
+
+  units:
+    none: {symbol: "", family: none}
+    count: {symbol: "", family: count}
+    count/s: {symbol: /s, family: count_rate}
+    bytes: {symbol: B, family: bytes, scale: iec}
+    bytes/s: {symbol: B/s, family: bytes_rate, scale: iec}
+    blocks: {symbol: blocks, family: blocks}
+    blocks/s: {symbol: blocks/s, family: blocks_rate}
+    milliseconds: {symbol: ms, family: duration}
+    milliseconds/s: {symbol: ms/s, family: duration_rate}
+    seconds: {symbol: s, family: duration}
+    percent: {symbol: "%", family: percent}
+    ratio: {symbol: "", family: ratio}
+    operations/s: {symbol: ops/s, family: count_rate}
+    iops: {symbol: IOPS, family: count_rate}
+    hertz: {symbol: Hz, family: frequency, scale: si}
+    bits: {symbol: bits, family: bits}
+    bits/s: {symbol: bits/s, family: bit_rate, scale: si}
+    load: {symbol: "", family: load}
+
+  unit_aliases:
+    "%": percent
+    percent: percent
+    ratio: ratio
+    bytes: bytes
+    bytes/s: bytes/s
+    blocks: blocks
+    blocks/s: blocks/s
+    ms: milliseconds
+    ms/s: milliseconds/s
+    seconds: seconds
+    s: seconds
+    sessions: count
+    backends: count
+    deadlocks: count
+    files: count
+    packets/s: count/s
+    rows/s: count/s
+    tuples/s: count/s
+    scans/s: count/s
+    tx/s: count/s
+    operations/s: operations/s
+    iops: iops
+    Hz: hertz
+    hertz: hertz
+    bits: bits
+    bits/s: bits/s
+    load: load
+
+  quantity_aliases:
+    sessions: sessions
+    backends: backends
+    deadlocks: deadlocks
+    files: files
+    packets/s: packets
+    rows/s: rows
+    tuples/s: tuples
+    scans/s: scans
+    tx/s: transactions
+    blocks/s: blocks
+    bytes: data_volume
+    bytes/s: data_volume
+    bits: bit_width
+    bits/s: bandwidth
+    ms: milliseconds
+    ms/s: milliseconds
+    "%": percentage
+    ratio: ratio
+    iops: operations
+    operations/s: operations
+    load: load_average
+
+  unit_values:
+    bytes: bytes
+    B: bytes
+    bit/s: bits/s
+    bits/s: bits/s
+    Hz: hertz
+    hertz: hertz
+    bits: bits
+    seconds: seconds
+    s: seconds
+    ms: milliseconds
+    "%": percent
+    percent: percent
+    ratio: ratio
+    count: count
+
+  label_terms:
+    ai: AI
+    api: API
+    bgwriter: background writer
+    cpu: CPU
+    db: DB
+    dbid: DB ID
+    ddl: DDL
+    dml: DML
+    dns: DNS
+    fpi: FPI
+    fsync: fsync
+    hba: HBA
+    io: I/O
+    iops: IOPS
+    ip: IP
+    irq: IRQ
+    json: JSON
+    lsn: LSN
+    numa: NUMA
+    oid: OID
+    os: OS
+    pg: PostgreSQL
+    pid: PID
+    pk: PK
+    rls: RLS
+    rss: RSS
+    slru: SLRU
+    sql: SQL
+    ssl: SSL
+    tcp: TCP
+    tli: timeline ID
+    tls: TLS
+    udp: UDP
+    uuid: UUID
+    wal: WAL
+    xid: XID
+
+  type_defaults:
+    bool:
+      value_kind: boolean
+      semantic_role: state
+      quantity: state
+      unit: none
+      quality: exact
+      nullable: true
+      encoding: json_boolean
+    int2:
+      value_kind: integer
+      semantic_role: gauge
+      quantity: count
+      unit: count
+      quality: exact
+      nullable: true
+      encoding: json_number
+    int4:
+      value_kind: integer
+      semantic_role: gauge
+      quantity: count
+      unit: count
+      quality: exact
+      nullable: true
+      encoding: json_number
+    int8:
+      value_kind: integer
+      semantic_role: gauge
+      quantity: count
+      unit: count
+      quality: exact
+      nullable: true
+      encoding: decimal_string
+    oid:
+      value_kind: integer
+      semantic_role: identifier
+      quantity: identifier
+      unit: none
+      quality: exact
+      nullable: true
+      encoding: json_number
+    float4:
+      value_kind: decimal
+      semantic_role: gauge
+      quantity: measurement
+      unit: none
+      quality: exact
+      nullable: true
+      encoding: json_number
+    float8:
+      value_kind: decimal
+      semantic_role: gauge
+      quantity: measurement
+      unit: none
+      quality: exact
+      nullable: true
+      encoding: json_number
+    numeric:
+      value_kind: decimal
+      semantic_role: gauge
+      quantity: measurement
+      unit: none
+      quality: exact
+      nullable: true
+      encoding: json_number
+    decimal:
+      value_kind: decimal
+      semantic_role: gauge
+      quantity: measurement
+      unit: none
+      quality: exact
+      nullable: true
+      encoding: json_number
+    text:
+      value_kind: text
+      semantic_role: label
+      quantity: text
+      unit: none
+      quality: exact
+      nullable: true
+      encoding: json_string
+    name:
+      value_kind: text
+      semantic_role: label
+      quantity: text
+      unit: none
+      quality: exact
+      nullable: true
+      encoding: json_string
+    timestamptz:
+      value_kind: timestamp
+      semantic_role: state
+      quantity: timestamp
+      unit: none
+      quality: exact
+      nullable: true
+      encoding: json_string
+    timestamp:
+      value_kind: text
+      semantic_role: state
+      quantity: local_datetime
+      unit: none
+      quality: exact
+      nullable: true
+      encoding: json_string
+    date:
+      value_kind: date
+      semantic_role: state
+      quantity: date
+      unit: none
+      quality: exact
+      nullable: true
+      encoding: json_string
+    time:
+      value_kind: time
+      semantic_role: state
+      quantity: time
+      unit: none
+      quality: exact
+      nullable: true
+      encoding: json_string
+    timetz:
+      value_kind: time
+      semantic_role: state
+      quantity: time
+      unit: none
+      quality: exact
+      nullable: true
+      encoding: json_string
+    interval:
+      value_kind: decimal
+      semantic_role: duration
+      quantity: seconds
+      unit: seconds
+      quality: exact
+      nullable: true
+      encoding: json_number
+    json:
+      value_kind: json
+      semantic_role: state
+      quantity: structured_data
+      unit: none
+      quality: exact
+      nullable: true
+      encoding: json_value
+    jsonb:
+      value_kind: json
+      semantic_role: state
+      quantity: structured_data
+      unit: none
+      quality: exact
+      nullable: true
+      encoding: json_value
+
+  rules:
+    - match: {name_regex: '(^|_)(lsn)($|_)'}
+      descriptor: {value_kind: lsn, semantic_role: identifier, quantity: lsn, unit: none, encoding: json_string}
+    - match: {name_regex: '(^|_)(id|oid|pid|xid|xmin|xmax|txid|queryid|query_id|dbid|userid|datid|relid|subid|sys_id|timeline|tli|port|inode)$'}
+      descriptor: {semantic_role: identifier, quantity: identifier, unit: none}
+    - match: {name_regex: '(^|_)(id|oid|pid|xid|xmin|xmax|txid|query_id|tli|port)$'}
+      descriptor: {semantic_role: identifier, quantity: identifier, unit: none}
+    - match: {name_regex: '(^physid$)'}
+      descriptor: {semantic_role: identifier, quantity: identifier, unit: none}
+    - match: {name_regex: '(_bytes_per_sec$|_bytes_per_second$|^bytes_per_sec$)'}
+      descriptor: {value_kind: decimal, semantic_role: rate, quantity: data_volume, unit: bytes/s, quality: derived, encoding: json_number}
+    - match: {name_regex: '(^bytes$|_bytes$|_bytes_delta$|_size_bytes$|_size_b$|_location_b$|^temp_bytes$|^size_bytes$)'}
+      descriptor: {value_kind: integer, quantity: data_volume, unit: bytes, encoding: decimal_string}
+    - match: {name_regex: '(_bytes_delta$)'}
+      descriptor: {semantic_role: counter_delta, quality: exact}
+    - match: {name_regex: '(_blocks_per_sec$|_blks_per_sec$)'}
+      descriptor: {value_kind: decimal, semantic_role: rate, quantity: blocks, unit: blocks/s, quality: derived, encoding: json_number}
+    - match: {name_regex: '(^blocks$|_blocks$|^blks_|_blks_|_blocks_delta$|_blks_delta$)'}
+      descriptor: {value_kind: integer, quantity: blocks, unit: blocks, encoding: decimal_string}
+    - match: {name_regex: '(_blks_delta$|_blocks_delta$)'}
+      descriptor: {semantic_role: counter_delta, quality: exact}
+    - match: {name_regex: '(_ms_per_sec$|_time_ms_per_sec$)'}
+      descriptor: {value_kind: decimal, semantic_role: rate, quantity: milliseconds, unit: milliseconds/s, quality: derived, encoding: json_number}
+    - match: {name_regex: '(^time_ms$|_time_ms$|_time_ms_delta$|_latency_ms$|^blocked_ms$|_tx_ms$|_duration_ms$|_elapsed_ms$)'}
+      descriptor: {value_kind: decimal, semantic_role: duration, quantity: milliseconds, unit: milliseconds, encoding: json_number}
+    - match: {name_regex: '(^time_s$|_time_s$|_seconds$|_duration_seconds$|_age_seconds$|^seconds_|_seconds_)'}
+      descriptor: {value_kind: decimal, semantic_role: duration, quantity: seconds, unit: seconds, encoding: json_number}
+    - match: {name_regex: '(^max_tx_duration$)'}
+      descriptor: {value_kind: decimal, semantic_role: duration, quantity: seconds, unit: seconds, encoding: json_number}
+    - match:
+        name_regex: '(_time$)'
+        pg_type: [int2, int4, int8, float4, float8, numeric, decimal]
+      descriptor: {value_kind: decimal, semantic_role: duration, quantity: milliseconds, unit: milliseconds, encoding: json_number}
+    - match: {name_regex: '(_pct$|^pct_|_percent$|^percent_|percentage)'}
+      descriptor: {value_kind: decimal, semantic_role: gauge, quantity: percentage, unit: percent, quality: derived, encoding: json_number}
+    - match: {name_regex: '(^ratio$|_ratio$|^ratio_)'}
+      descriptor: {value_kind: decimal, semantic_role: gauge, quantity: ratio, unit: ratio, quality: derived, encoding: json_number}
+    - match: {name_regex: '(_factor$)'}
+      descriptor: {value_kind: decimal, semantic_role: gauge, quantity: ratio, unit: ratio, quality: derived, encoding: json_number}
+    - match: {name_regex: '(^percent$)'}
+      descriptor: {value_kind: decimal, semantic_role: gauge, quantity: percentage, unit: percent, quality: derived, encoding: json_number}
+    - match: {name_regex: '(^bytes_per_record$)'}
+      descriptor: {value_kind: decimal, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: derived, encoding: json_number}
+    - match: {name_regex: '(^iops$|_iops$)'}
+      descriptor: {value_kind: decimal, semantic_role: rate, quantity: operations, unit: iops, quality: derived, encoding: json_number}
+    - match: {name_regex: '(^frequency$|_frequency$|_hz$)'}
+      descriptor: {value_kind: decimal, semantic_role: gauge, quantity: frequency, unit: hertz, encoding: json_number}
+    - match: {name_regex: '(^load[0-9]+$|_load$|load_average)'}
+      descriptor: {value_kind: decimal, semantic_role: gauge, quantity: load_average, unit: load, encoding: json_number}
+    - match: {name_regex: '(_per_sec$|_per_second$)'}
+      descriptor: {value_kind: decimal, semantic_role: rate, quantity: events, unit: count/s, quality: derived, encoding: json_number}
+    - match: {name_regex: '(_delta$)'}
+      descriptor: {semantic_role: counter_delta}
+    - match: {name_regex: '(_bytes_per_sec$|_bytes_per_second$|^bytes_per_sec$)'}
+      descriptor: {value_kind: decimal, semantic_role: rate, quantity: data_volume, unit: bytes/s, quality: derived, encoding: json_number}
+    - match: {name_regex: '(_blocks_per_sec$|_blks_per_sec$)'}
+      descriptor: {value_kind: decimal, semantic_role: rate, quantity: blocks, unit: blocks/s, quality: derived, encoding: json_number}
+    - match: {name_regex: '(_ms_per_sec$|_time_ms_per_sec$)'}
+      descriptor: {value_kind: decimal, semantic_role: rate, quantity: milliseconds, unit: milliseconds/s, quality: derived, encoding: json_number}
+    - match: {name_regex: '(^bytes_total$)'}
+      descriptor: {value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: exact, encoding: decimal_string}
+    - match: {name_regex: '(^relpages$|^index_relpages$)'}
+      descriptor: {value_kind: integer, semantic_role: estimate, quantity: blocks, unit: blocks, quality: estimated}
+    - match: {name_regex: '(^postmaster_uptime_s$)'}
+      descriptor: {value_kind: decimal, semantic_role: duration, quantity: seconds, unit: seconds, encoding: json_number}
+    - match: {name_regex: '(^width$)'}
+      descriptor: {value_kind: integer, semantic_role: gauge, quantity: bit_width, unit: bits, quality: exact}
+    - match: {name_regex: '(^wal_distance$)'}
+      descriptor: {value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: exact, encoding: decimal_string}
+    - match: {name_regex: '(^block_distance$)'}
+      descriptor: {value_kind: integer, semantic_role: gauge, quantity: blocks, unit: blocks, quality: exact}
+    - match: {name_regex: '(^clock$)'}
+      descriptor: {value_kind: integer, semantic_role: gauge, quantity: frequency, unit: hertz, quality: exact, encoding: decimal_string}
+    - match: {name_regex: '(^n_live_tup$|^n_dead_tup$|^reltuples$|^relpages$|^index_relpages$|^estimated_)'}
+      descriptor: {semantic_role: estimate, quality: estimated}
+    - match: {name_regex: '(^xact_|^tup_|^blks_|^temp_files$|^deadlocks$|^conflicts$|^checksum_failures$|^calls$|^rows$|^wal_records$|^wal_fpi$|^wal_bytes$|^buffers_|^checkpoints_|^num_timed$|^num_requested$|^sessions_|^parallel_workers_)'}
+      descriptor: {semantic_role: counter}
+    - match: {name_regex: '(^object_count$|^total_values$|^values_consumed$|^remaining_values$|^segments_ahead_of_last_archived_same_timeline$)'}
+      descriptor: {value_kind: integer, semantic_role: gauge, quantity: count, unit: count, encoding: decimal_string}
+    - match: {name_regex: '(^analyze_count_delta$|^apply_error_count_delta$|^archived_count_delta$|^autoanalyze_count_delta$|^autovacuum_count_delta$|^calls_delta$|^checkpoints_done_delta$|^checkpoints_requested_delta$|^checkpoints_timed_delta$|^commit_delta$|^confl_.*_delta$|^conflict_count_delta$|^conflicts_total_delta$|^deadlocks_delta$|^deletes_delta$|^errors_total_delta$|^evictions_delta$|^extends_delta$|^failed_count_delta$|^flushes_delta$|^fsyncs_delta$|^hits_delta$|^hot_updates_delta$|^idx_scan_delta$|^idx_tup_fetch_delta$|^idx_tup_read_delta$|^inserts_delta$|^maintenance_count_delta$|^plans_delta$|^reads_delta$|^restartpoints_done_delta$|^restartpoints_requested_delta$|^restartpoints_timed_delta$|^reuses_delta$|^rollback_delta$|^rows_delta$|^seq_scan_delta$|^seq_tup_read_delta$|^sessions_delta$|^sessions_.*_delta$|^slru_written_delta$|^spill_count_delta$|^spill_txns_delta$|^stream_count_delta$|^stream_txns_delta$|^sync_error_count_delta$|^temp_files_delta$|^total_dml_delta$|^total_txns_delta$|^truncates_delta$|^tup_.*_delta$|^updates_delta$|^vacuum_count_delta$|^wal_buffers_full_delta$|^wal_fpi_delta$|^wal_records_delta$|^writebacks_delta$|^writes_delta$|^buffers_.*_delta$|^maxwritten_clean_delta$)'}
+      descriptor: {value_kind: integer, semantic_role: counter_delta, quantity: events, unit: count, quality: exact, encoding: decimal_string}
+    - match: {name_regex: '(_delta$)'}
+      descriptor: {semantic_role: counter_delta}
+    - match: {name_regex: '(^|_)(status|state|mode|reason|available|enabled|disabled|granted|valid|ready|active|in_recovery|pending_restart|claimed)$'}
+      descriptor: {semantic_role: state}
+    - match: {name_regex: '(^units$|^unit_normalized$)'}
+      descriptor: {value_kind: text, semantic_role: state, quantity: unit_code, unit: none, encoding: json_string}
+    # Reassert dimensional rules after broad counter/name rules. Later rules have
+    # higher precedence, and the renderer never inspects field names.
+    - match: {name_regex: '(^time_s$|_time_s$|_seconds$|_duration_seconds$|_age_seconds$|^seconds_|_seconds_|_uptime_s$|_failure_s$)'}
+      descriptor: {value_kind: decimal, semantic_role: duration, quantity: seconds, unit: seconds, encoding: json_number}
+    - match: {name_regex: '(^blks$|_blks$|^blks_|_blks_|^blocks$|_blocks$|^blocks_|_blocks_|^block_accesses$)'}
+      descriptor: {value_kind: integer, quantity: blocks, unit: blocks, encoding: decimal_string}
+    - match: {name_regex: '(_blks_.*_per_sec$|_blocks_.*_per_sec$|_blks_per_sec$|_blocks_per_sec$)'}
+      descriptor: {value_kind: decimal, semantic_role: rate, quantity: blocks, unit: blocks/s, quality: derived, encoding: json_number}
+    - match: {name_regex: '(^bytes$|_bytes$|_bytes_delta$|_size_bytes$|_size_b$|_location_b$|^temp_bytes$|^size_bytes$|^bytes_total$)'}
+      descriptor: {value_kind: integer, quantity: data_volume, unit: bytes, encoding: decimal_string}
+    - match: {name_regex: '(_bytes_delta$)'}
+      descriptor: {semantic_role: counter_delta, quality: exact}
+    - match: {name_regex: '(_pct$|^pct_|_percent$|^percent_|percentage)'}
+      descriptor: {value_kind: decimal, semantic_role: gauge, quantity: percentage, unit: percent, quality: derived, encoding: json_number}
+    - match: {name_regex: '^(buffers_(checkpoint|clean|backend|alloc|written)|slru_written)$'}
+      descriptor: {value_kind: integer, semantic_role: counter, quantity: blocks, unit: blocks, quality: exact, encoding: decimal_string}
+    - match: {name_regex: '^(buffers_(checkpoint|clean|backend|alloc|written)|slru_written)_delta$'}
+      descriptor: {value_kind: integer, semantic_role: counter_delta, quantity: blocks, unit: blocks, quality: exact, encoding: decimal_string}
+    - match:
+        pg_type: [timestamptz, timestamp, date, time, timetz]
+      descriptor: {semantic_role: state}
+
+  source_overrides:
+    cluster.settings:
+      setting_normalized:
+        label: Normalized value
+        value_kind: decimal
+        semantic_role: gauge
+        quantity_ref: quantity_normalized
+        unit_ref: unit_normalized
+        quality: exact
+        nullable: true
+        encoding: json_number
+      unit_normalized:
+        label: Normalized unit
+        value_kind: text
+        semantic_role: state
+        quantity: unit_code
+        unit: none
+        quality: exact
+        nullable: true
+        encoding: json_string
+      source_unit:
+        label: Source unit
+        value_kind: text
+        semantic_role: state
+        quantity: text
+        unit: none
+        quality: exact
+        nullable: true
+        encoding: json_string
+      quantity_normalized:
+        label: Normalized quantity
+        value_kind: text
+        semantic_role: state
+        quantity: quantity_code
+        unit: none
+        quality: exact
+        nullable: true
+        encoding: json_string
+    os.lshw_memory:
+      size: {label: Size, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: exact, nullable: true, encoding: decimal_string}
+    os.lshw_processor:
+      size: {label: Current frequency, value_kind: integer, semantic_role: gauge, quantity: frequency, unit: hertz, quality: exact, nullable: true, encoding: decimal_string}
+      capacity: {label: Maximum frequency, value_kind: integer, semantic_role: gauge, quantity: frequency, unit: hertz, quality: exact, nullable: true, encoding: decimal_string}
+      width: {label: Width, value_kind: integer, semantic_role: gauge, quantity: bit_width, unit: bits, quality: exact, nullable: true, encoding: decimal_string}
+    os.lshw_volume:
+      size: {label: Size, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: exact, nullable: true, encoding: decimal_string}
+      capacity: {label: Capacity, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: exact, nullable: true, encoding: decimal_string}
+      fsavail: {label: Filesystem available, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: exact, nullable: true, encoding: decimal_string}
+    os.lshw_network:
+      capacity: {label: Capacity, value_kind: integer, semantic_role: gauge, quantity: bandwidth, unit: bits/s, quality: exact, nullable: true, encoding: decimal_string}
+    os.memory_info:
+      value_normalized:
+        label: Value
+        value_kind: integer
+        semantic_role: gauge
+        quantity_ref: quantity_normalized
+        unit_ref: unit_normalized
+        quality: exact
+        nullable: false
+        encoding: decimal_string
+      unit_normalized:
+        label: Unit
+        value_kind: text
+        semantic_role: state
+        quantity: unit_code
+        unit: none
+        quality: exact
+        nullable: false
+        encoding: json_string
+      quantity_normalized:
+        label: Quantity
+        value_kind: text
+        semantic_role: state
+        quantity: quantity_code
+        unit: none
+        quality: exact
+        nullable: false
+        encoding: json_string

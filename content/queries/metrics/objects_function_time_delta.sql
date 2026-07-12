@@ -8,8 +8,8 @@ select
   (select stats_reset from pg_stat_database where datname = current_database())
     as database_stats_reset,
   calls::int8 as calls,
-  round(total_time::numeric, 3) as total_time_ms,
-  round(self_time::numeric, 3) as self_time_ms
+  (total_time::numeric) as total_time_ms,
+  (self_time::numeric) as self_time_ms
 from pg_stat_user_functions
 order by total_time desc nulls last, schemaname, funcname
 limit 100

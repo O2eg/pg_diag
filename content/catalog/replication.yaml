@@ -92,9 +92,34 @@ queries:
         min_pg_version: 140000
         max_pg_version: 149999
         sql_file: replication/subscription_workers_pg14.sql
-      - id: replication_subscription_workers_pg15_plus
+        column_statuses:
+          leader_pid: {status: unsupported, reason: PostgreSQL 14 does not expose subscription worker leader_pid.}
+          apply_error_count: {status: unsupported, reason: pg_stat_subscription_stats is available from PostgreSQL 15.}
+          sync_error_count: {status: unsupported, reason: pg_stat_subscription_stats is available from PostgreSQL 15.}
+          conflict_count: {status: unsupported, reason: Logical replication conflict counters are available from PostgreSQL 18.}
+          subscription_stats_reset: {status: unsupported, reason: pg_stat_subscription_stats is available from PostgreSQL 15.}
+      - id: replication_subscription_workers_pg15
         min_pg_version: 150000
-        sql_file: replication/subscription_workers_pg15_plus.sql
+        max_pg_version: 159999
+        sql_file: replication/subscription_workers_pg15.sql
+        column_statuses:
+          leader_pid: {status: unsupported, reason: PostgreSQL 15 does not expose subscription worker leader_pid.}
+          conflict_count: {status: unsupported, reason: Logical replication conflict counters are available from PostgreSQL 18.}
+      - id: replication_subscription_workers_pg16
+        min_pg_version: 160000
+        max_pg_version: 169999
+        sql_file: replication/subscription_workers_pg16.sql
+        column_statuses:
+          conflict_count: {status: unsupported, reason: Logical replication conflict counters are available from PostgreSQL 18.}
+      - id: replication_subscription_workers_pg17
+        min_pg_version: 170000
+        max_pg_version: 179999
+        sql_file: replication/subscription_workers_pg17.sql
+        column_statuses:
+          conflict_count: {status: unsupported, reason: Logical replication conflict counters are available from PostgreSQL 18.}
+      - id: replication_subscription_workers_pg18_plus
+        min_pg_version: 180000
+        sql_file: replication/subscription_workers_pg18.sql
 
   replication.recovery_prefetch:
     title: Recovery Prefetch

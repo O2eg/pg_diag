@@ -6,11 +6,6 @@ if [ ! -r /proc/meminfo ]; then
   exit 3
 fi
 
-awk '
-$1 == "MemTotal:" {
-  bytes = $2 * 1024
-  printf "%.2f GiB (%.0f bytes)\n", bytes / 1073741824, bytes
-  found = 1
-}
-END { if (!found) exit 1 }
-' /proc/meminfo
+total_kib="$(awk '$1 == "MemTotal:" { print $2; found = 1 } END { if (!found) exit 1 }' /proc/meminfo)"
+total_bytes=$((total_kib * 1024))
+printf '[{"total_ram_bytes":%s}]\n' "$total_bytes"

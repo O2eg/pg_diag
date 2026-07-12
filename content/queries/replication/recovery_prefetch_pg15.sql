@@ -33,8 +33,8 @@ select
   skip_fpw,
   skip_rep,
   decisions_total,
-  round(100.0 * prefetch / nullif(decisions_total, 0), 2) as prefetch_pct,
-  round(100.0 * hit / nullif(decisions_total, 0), 2) as hit_pct,
+  (100.0 * prefetch / nullif(decisions_total, 0)) as prefetch_pct,
+  (100.0 * hit / nullif(decisions_total, 0)) as hit_pct,
   wal_distance,
   block_distance,
   io_depth

@@ -218,9 +218,15 @@ def test_database_volume_collects_databases_sequentially_and_preserves_size_time
     assert rows[0][columns.index("partitions")] == 20
     assert rows[0][columns.index("index_partitions")] == 30
     assert rows[1][columns.index("database_name")] == "timeout_db"
-    assert rows[1][columns.index("database_size_bytes")] == (
-        "превышен таймаут на вычисление размера БД"
-    )
+    assert rows[1][columns.index("database_size_bytes")] is None
+    assert item["result"]["cell_statuses"] == [
+        {
+            "row_index": 1,
+            "column": "database_size_bytes",
+            "status": "timeout",
+            "reason": "Database size calculation exceeded 10 seconds",
+        }
+    ]
     assert rows[1][columns.index("tables")] == 10
     assert rows[1][columns.index("collection_status")] == "database size timed out"
 

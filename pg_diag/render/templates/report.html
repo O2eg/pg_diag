@@ -57,6 +57,8 @@ __APEXCHARTS_JS__
       --tag-filter-bg: #403b2d;
       --tag-filter-border: #9c8950;
       --tag-filter-fg: #f6e7ad;
+      --code-panel-bg: #0d1117;
+      --code-panel-fg: #c9d1d9;
     }
 
     html[data-theme="light"] {
@@ -104,6 +106,8 @@ __APEXCHARTS_JS__
       --tag-filter-bg: #fff3c7;
       --tag-filter-border: #b59a46;
       --tag-filter-fg: #5f4a0b;
+      --code-panel-bg: #f6f8fa;
+      --code-panel-fg: #24292f;
     }
 
     * {
@@ -1117,7 +1121,7 @@ __APEXCHARTS_JS__
       min-height: 0;
       overflow: auto;
       overscroll-behavior: contain;
-      background: #0d1117;
+      background: var(--code-panel-bg);
     }
 
     .source-code-shell pre {
@@ -1128,6 +1132,7 @@ __APEXCHARTS_JS__
     }
 
     .source-code-shell code {
+      color: var(--code-panel-fg);
       font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       white-space: pre;
       tab-size: 2;
@@ -1196,7 +1201,7 @@ __APEXCHARTS_JS__
       min-height: 0;
       overflow: auto;
       overscroll-behavior: contain;
-      background: #0d1117;
+      background: var(--code-panel-bg);
     }
 
     .meta-raw-shell pre {
@@ -1207,6 +1212,7 @@ __APEXCHARTS_JS__
     }
 
     .meta-raw-shell code {
+      color: var(--code-panel-fg);
       font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       white-space: pre;
       tab-size: 2;
@@ -1402,6 +1408,104 @@ __APEXCHARTS_JS__
       transform: translate(-50%, -65%) rotate(225deg);
     }
 
+    html[data-theme="light"] .scroll-jump {
+      border-color: #bba3d0;
+      background: #ffffff;
+      color: #5d3978;
+      box-shadow: 0 6px 18px rgba(63, 38, 82, 0.18);
+    }
+
+    html[data-theme="light"] .scroll-jump:hover {
+      border-color: #7a4da0;
+      background: #eadbf6;
+      color: #2a1738;
+    }
+
+    html[data-theme="light"] .scroll-jump:focus-visible {
+      outline-color: #7a4da0;
+    }
+
+    html[data-theme="light"] .source-code-shell .hljs,
+    html[data-theme="light"] .meta-raw-shell .hljs {
+      color: #24292f;
+      background: #f6f8fa;
+    }
+
+    html[data-theme="light"] .hljs-doctag,
+    html[data-theme="light"] .hljs-keyword,
+    html[data-theme="light"] .hljs-meta .hljs-keyword,
+    html[data-theme="light"] .hljs-template-tag,
+    html[data-theme="light"] .hljs-template-variable,
+    html[data-theme="light"] .hljs-type,
+    html[data-theme="light"] .hljs-variable.language_ {
+      color: #cf222e;
+    }
+
+    html[data-theme="light"] .hljs-title,
+    html[data-theme="light"] .hljs-title.class_,
+    html[data-theme="light"] .hljs-title.class_.inherited__,
+    html[data-theme="light"] .hljs-title.function_ {
+      color: #8250df;
+    }
+
+    html[data-theme="light"] .hljs-attr,
+    html[data-theme="light"] .hljs-attribute,
+    html[data-theme="light"] .hljs-literal,
+    html[data-theme="light"] .hljs-meta,
+    html[data-theme="light"] .hljs-number,
+    html[data-theme="light"] .hljs-operator,
+    html[data-theme="light"] .hljs-selector-attr,
+    html[data-theme="light"] .hljs-selector-class,
+    html[data-theme="light"] .hljs-selector-id,
+    html[data-theme="light"] .hljs-variable {
+      color: #0550ae;
+    }
+
+    html[data-theme="light"] .hljs-meta .hljs-string,
+    html[data-theme="light"] .hljs-regexp,
+    html[data-theme="light"] .hljs-string {
+      color: #0a3069;
+    }
+
+    html[data-theme="light"] .hljs-built_in,
+    html[data-theme="light"] .hljs-symbol,
+    html[data-theme="light"] .hljs-bullet {
+      color: #953800;
+    }
+
+    html[data-theme="light"] .hljs-code,
+    html[data-theme="light"] .hljs-comment,
+    html[data-theme="light"] .hljs-formula {
+      color: #6e7781;
+    }
+
+    html[data-theme="light"] .hljs-name,
+    html[data-theme="light"] .hljs-quote,
+    html[data-theme="light"] .hljs-selector-pseudo,
+    html[data-theme="light"] .hljs-selector-tag {
+      color: #116329;
+    }
+
+    html[data-theme="light"] .hljs-subst,
+    html[data-theme="light"] .hljs-emphasis,
+    html[data-theme="light"] .hljs-strong {
+      color: #24292f;
+    }
+
+    html[data-theme="light"] .hljs-section {
+      color: #0550ae;
+    }
+
+    html[data-theme="light"] .hljs-addition {
+      color: #116329;
+      background-color: #dafbe1;
+    }
+
+    html[data-theme="light"] .hljs-deletion {
+      color: #82071e;
+      background-color: #ffebe9;
+    }
+
     .kv {
       display: flex;
       flex-wrap: wrap;
@@ -1510,6 +1614,13 @@ __APEXCHARTS_JS__
       font-variant-numeric: tabular-nums;
       line-height: 1.35;
       overflow-wrap: anywhere;
+    }
+
+    .delta-window-labels {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      min-width: 0;
     }
 
     .chart-shell {
@@ -2170,6 +2281,7 @@ __HIGHLIGHT_JS__
     let scrollControlsRaf = 0;
     let chartResizeRaf = 0;
     const chartResizeScopes = new Set();
+    let cachedReportCollator = null;
 
     hydrateTheme();
     hydrateHeader();
@@ -3776,6 +3888,7 @@ __HIGHLIGHT_JS__
       appendMetaValue(rows, "severity_level", itemSeverityLevel(item));
       appendMetaValue(rows, "state", item.state);
       appendMetaValue(rows, "reason", item.reason);
+      appendMetaValue(rows, "collected_at", item.collected_at);
       appendMetaValue(rows, "timing_ms", item.timing_ms);
 
       const result = item.result || {};
@@ -4195,6 +4308,7 @@ __HIGHLIGHT_JS__
       const chartKind = (result.chart || {}).kind || "line";
       const apexType = apexChartType(chartKind);
       const stacked = chartKind === "stacked_bar" || chartKind === "stacked_column" || chartKind === "stacked_area";
+      const axisScale = chartAxisScale(series, unit, (result.chart || {}).quantity, stacked);
       const xType = (result.chart || {}).x_type || "datetime";
       const datetimeBounds = xType === "datetime" ? chartDatetimeBounds(series) : {};
       const isBar = apexType === "bar";
@@ -4208,7 +4322,7 @@ __HIGHLIGHT_JS__
           zoom: {
             enabled: true,
             type: "x",
-            autoScaleYaxis: unit !== "%",
+            autoScaleYaxis: unit !== "percent",
             allowMouseWheelZoom: false,
           },
           toolbar: {
@@ -4240,7 +4354,7 @@ __HIGHLIGHT_JS__
             borderRadius: 2,
           },
         },
-        title: {text: chartTitle(item.title || "", unit), align: "left", margin: 12, offsetX: 0, offsetY: 4, style: {color: theme.text}},
+        title: {text: chartTitle(item.title || "", axisScale.label), align: "left", margin: 12, offsetX: 0, offsetY: 4, style: {color: theme.text}},
         grid: {
           borderColor: theme.line,
           row: {colors: [theme.panelSoft, "transparent"], opacity: 0.14},
@@ -4271,12 +4385,12 @@ __HIGHLIGHT_JS__
           axisTicks: {color: theme.line},
         },
         yaxis: {
-          min: unit === "%" ? 0 : undefined,
-          max: unit === "%" ? 100 : undefined,
+          min: unit === "percent" ? 0 : undefined,
+          max: unit === "percent" ? 100 : undefined,
           title: {text: ""},
           labels: {
             style: {colors: theme.muted},
-            formatter: (value) => formatChartAxisValue(value, unit),
+            formatter: (value) => formatChartAxisValue(value, unit, axisScale),
           },
         },
       };
@@ -4379,6 +4493,62 @@ __HIGHLIGHT_JS__
       return firstWithUnit ? firstWithUnit.unit : "";
     }
 
+    function chartAxisScale(series, unit, quantity, stacked) {
+      let maximum = 0;
+      if (stacked) {
+        const totals = new Map();
+        for (const entry of series || []) {
+          for (const point of entry.data || []) {
+            totals.set(point.x, (totals.get(point.x) || 0) + Math.abs(Number(point.y) || 0));
+          }
+        }
+        maximum = Math.max(0, ...totals.values());
+      } else {
+        for (const entry of series || []) {
+          for (const point of entry.data || []) {
+            maximum = Math.max(maximum, Math.abs(Number(point.y) || 0));
+          }
+        }
+      }
+      if (unit === "bytes" || unit === "bytes/s") {
+        const labels = unit === "bytes/s"
+          ? ["B/s", "KiB/s", "MiB/s", "GiB/s", "TiB/s", "PiB/s", "EiB/s"]
+          : ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"];
+        let factor = 1;
+        let index = 0;
+        while (maximum >= factor * 1024 && index < labels.length - 1) {
+          factor *= 1024;
+          index += 1;
+        }
+        return {factor, label: labels[index]};
+      }
+      if (unit === "count" || unit === "count/s" || unit === "operations/s" || unit === "iops") {
+        const prefixes = ["", "k", "M", "G", "T", "P"];
+        let factor = 1;
+        let index = 0;
+        while (maximum >= factor * 1000 && index < prefixes.length - 1) {
+          factor *= 1000;
+          index += 1;
+        }
+        const quantityLabel = String(quantity || "count").replace(/_/g, " ");
+        const base = unit === "count" ? quantityLabel : unit === "count/s" ? quantityLabel + "/s" : unit === "iops" ? "IOPS" : "ops/s";
+        return {factor, label: prefixes[index] + base};
+      }
+      const labels = {
+        percent: "%",
+        ratio: "ratio",
+        blocks: "blocks",
+        "blocks/s": "blocks/s",
+        milliseconds: "ms",
+        "milliseconds/s": "ms/s",
+        seconds: "s",
+        hertz: "Hz",
+        "bits/s": "bits/s",
+        load: "load",
+      };
+      return {factor: 1, label: labels[unit] || unit || ""};
+    }
+
     function apexThemeOptions() {
       return {
         text: cssVar("--text"),
@@ -4408,11 +4578,26 @@ __HIGHLIGHT_JS__
       const allColumns = buildColumns(result.columns, rows);
       const snapshotTimeColumn = allColumns.find((column) => column.name === "snapshot_time");
       const columns = allColumns.filter((column) => column !== snapshotTimeColumn);
+      const collectedAt = item.source_kind === "metric" ? null : item.collected_at;
+      const tableContextLabels = renderTableContextLabels(
+        result,
+        rows,
+        snapshotTimeColumn,
+        allColumns,
+        collectedAt
+      );
       if (!rows.length) {
         const empty = document.createElement("div");
         empty.className = "empty-state";
         empty.textContent = itemEmptyMessage(item, "No rows");
-        return empty;
+        if (!tableContextLabels) {
+          return empty;
+        }
+        const container = document.createElement("div");
+        container.className = "snapshot-table-result";
+        container.appendChild(tableContextLabels);
+        container.appendChild(empty);
+        return container;
       }
       const defaultSort = normalizeDefaultSort(item, columns);
       const shell = document.createElement("div");
@@ -4484,7 +4669,7 @@ __HIGHLIGHT_JS__
         button.type = "button";
         button.className = "sort-button";
         const label = document.createElement("span");
-        setHighlightableText(label, column.name);
+        setHighlightableText(label, tableColumnLabel(column));
         const indicator = document.createElement("span");
         indicator.className = "sort-indicator";
         indicator.setAttribute("aria-hidden", "true");
@@ -4503,6 +4688,9 @@ __HIGHLIGHT_JS__
 
       const state = {
         rows,
+        rowIndexes: new Map(rows.map((row, index) => [row, index])),
+        cellStatuses: buildCellStatusMap(result.cell_statuses),
+        columnStatuses: result.column_statuses || {},
         columns,
         filteredRows: rows,
         page: 0,
@@ -4548,37 +4736,92 @@ __HIGHLIGHT_JS__
 
       tableViews.push(state);
       refreshTable(state);
-      const snapshotTimeLabel = renderSnapshotTimeLabel(rows, snapshotTimeColumn, allColumns);
-      if (!snapshotTimeLabel) {
+      if (!tableContextLabels) {
         return shell;
       }
       const container = document.createElement("div");
       container.className = "snapshot-table-result";
-      container.appendChild(snapshotTimeLabel);
+      container.appendChild(tableContextLabels);
       container.appendChild(shell);
       return container;
     }
 
-    function renderSnapshotTimeLabel(rows, column, columns) {
-      if (!column) {
+    function tableColumnLabel(column) {
+      const original = String(column.label || column.name || "");
+      if (column.unit !== "milliseconds") {
+        return original;
+      }
+      return original
+        .replace(/\s*\(ms\)\s*$/i, "")
+        .replace(/\bms\b/gi, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function renderTableContextLabels(result, rows, column, columns, fallbackValue) {
+      const deltaLabels = renderDeltaWindowLabels(result.delta_window);
+      if (deltaLabels) {
+        return deltaLabels;
+      }
+      return renderSnapshotTimeLabel(rows, column, columns, fallbackValue);
+    }
+
+    function renderDeltaWindowLabels(window) {
+      if (!window || !window.start_time || !window.finish_time) {
         return null;
       }
-      const snapshotRow = rows.find((row) => {
-        const value = Array.isArray(row) ? row[column.sourceIndex] : null;
-        return value !== undefined && value !== null && String(value).trim() !== "";
-      });
-      if (!snapshotRow) {
-        return null;
-      }
-      const rawValue = snapshotRow[column.sourceIndex];
-      const display = displayValue(rawValue, column, snapshotRow, columns);
+      const labels = document.createElement("div");
+      labels.className = "delta-window-labels";
+      labels.appendChild(renderTimeContextLabel(
+        "Snapshot start time",
+        formatBrowserTimestamp(window.start_time),
+        String(window.start_time)
+      ));
+      labels.appendChild(renderTimeContextLabel(
+        "Snapshot finish",
+        formatBrowserTimestamp(window.finish_time),
+        String(window.finish_time)
+      ));
+      const duration = Number(window.duration_seconds);
+      const durationText = Number.isFinite(duration) ? duration.toFixed(3) + " s" : "unknown";
+      labels.appendChild(renderTimeContextLabel("Delta duration", durationText));
+      return labels;
+    }
+
+    function renderTimeContextLabel(name, value, title) {
       const label = document.createElement("div");
       label.className = "snapshot-time-label";
-      setHighlightableText(label, "Snapshot time: " + display.text);
-      if (display.title && display.title !== display.text) {
-        label.title = display.title;
+      setHighlightableText(label, name + ": " + value);
+      if (title && title !== value) {
+        label.title = title;
       }
       return label;
+    }
+
+    function renderSnapshotTimeLabel(rows, column, columns, fallbackValue) {
+      let rawValue = fallbackValue;
+      let display = null;
+      if (column) {
+        const snapshotRow = rows.find((row) => {
+          const value = Array.isArray(row) ? row[column.sourceIndex] : null;
+          return value !== undefined && value !== null && String(value).trim() !== "";
+        });
+        if (snapshotRow) {
+          rawValue = snapshotRow[column.sourceIndex];
+          if (String(column.pgType || "").toLowerCase() === "timestamptz") {
+            display = {text: formatBrowserTimestamp(rawValue), title: String(rawValue)};
+          } else {
+            display = displayValue(rawValue, column, snapshotRow, columns);
+          }
+        }
+      }
+      if (rawValue === undefined || rawValue === null || String(rawValue).trim() === "") {
+        return null;
+      }
+      if (!display) {
+        display = {text: formatBrowserTimestamp(rawValue), title: String(rawValue)};
+      }
+      return renderTimeContextLabel("Snapshot time", display.text, display.title);
     }
 
     function buildColumns(columns, rows) {
@@ -4586,17 +4829,56 @@ __HIGHLIGHT_JS__
         return columns.map((column, index) => {
           let rawName;
           let pgType = "";
+          let descriptor = {};
           if (typeof column === "string") {
             rawName = column;
           } else {
             rawName = column && column.name ? column.name : "column_" + (index + 1);
             pgType = column && column.pg_type ? column.pg_type : "";
+            descriptor = column || {};
           }
-          return {name: rawName, sourceIndex: index, pgType};
+          return {
+            name: rawName,
+            label: descriptor.label || rawName,
+            sourceIndex: index,
+            pgType,
+            valueKind: descriptor.value_kind || "text",
+            semanticRole: descriptor.semantic_role || "label",
+            quantity: descriptor.quantity || "",
+            quantityRef: descriptor.quantity_ref || "",
+            unit: descriptor.unit || "",
+            unitRef: descriptor.unit_ref || "",
+            quality: descriptor.quality || "exact",
+            nullable: descriptor.nullable !== false,
+            encoding: descriptor.encoding || "json_string",
+          };
         });
       }
       const width = Array.isArray(rows[0]) ? rows[0].length : 0;
-      return Array.from({length: width}, (_, index) => ({name: "column_" + (index + 1), sourceIndex: index, pgType: ""}));
+      return Array.from({length: width}, (_, index) => ({
+        name: "column_" + (index + 1),
+        label: "Column " + (index + 1),
+        sourceIndex: index,
+        pgType: "",
+        valueKind: "text",
+        semanticRole: "label",
+        quantity: "text",
+        unit: "none",
+        quality: "exact",
+        nullable: true,
+        encoding: "json_string",
+      }));
+    }
+
+    function buildCellStatusMap(statuses) {
+      const result = new Map();
+      for (const entry of statuses || []) {
+        if (!entry || !Number.isInteger(entry.row_index) || !entry.column) {
+          continue;
+        }
+        result.set(entry.row_index + "\u0000" + entry.column, entry);
+      }
+      return result;
     }
 
     function normalizeDefaultSort(item, columns) {
@@ -4614,12 +4896,19 @@ __HIGHLIGHT_JS__
     function refreshTable(state) {
       const localQuery = normalizeQuery(state.filter.value);
       const globalQuery = currentGlobalSearchQuery();
-      const applyGlobalRowFilter = Boolean(globalQuery) && state.rows.some((row) => rowMatches(row, globalQuery, state.columns));
+      const applyGlobalRowFilter = Boolean(globalQuery) && state.rows.some((row) => rowMatches(
+        row,
+        globalQuery,
+        state.columns,
+        state.cellStatuses,
+        state.rowIndexes.get(row)
+      ));
       state.filteredRows = state.rows.filter((row) => {
-        if (localQuery && !rowMatches(row, localQuery, state.columns)) {
+        const originalIndex = state.rowIndexes.get(row);
+        if (localQuery && !rowMatches(row, localQuery, state.columns, state.cellStatuses, originalIndex)) {
           return false;
         }
-        if (applyGlobalRowFilter && !rowMatches(row, globalQuery, state.columns)) {
+        if (applyGlobalRowFilter && !rowMatches(row, globalQuery, state.columns, state.cellStatuses, originalIndex)) {
           return false;
         }
         return true;
@@ -4633,8 +4922,18 @@ __HIGHLIGHT_JS__
       state.tbody.replaceChildren();
       for (const row of pageRows) {
         const tr = document.createElement("tr");
+        const originalIndex = state.rowIndexes.get(row);
         for (const column of state.columns) {
-          tr.appendChild(renderCell(Array.isArray(row) ? row[column.sourceIndex] : undefined, column, row, state.columns));
+          const status = state.cellStatuses.get(originalIndex + "\u0000" + column.name)
+            || state.columnStatuses[column.name]
+            || null;
+          tr.appendChild(renderCell(
+            Array.isArray(row) ? row[column.sourceIndex] : undefined,
+            column,
+            row,
+            state.columns,
+            status
+          ));
         }
         state.tbody.appendChild(tr);
       }
@@ -4671,7 +4970,11 @@ __HIGHLIGHT_JS__
         if ((leftNumber === null) !== (rightNumber === null)) {
           return leftNumber === null ? 1 : -1;
         }
-        return compareValues(leftValue, rightValue, column) * direction;
+        const compared = compareValues(leftValue, rightValue, column);
+        if (compared !== 0) {
+          return compared * direction;
+        }
+        return state.rowIndexes.get(left) - state.rowIndexes.get(right);
       });
     }
 
@@ -4707,10 +5010,27 @@ __HIGHLIGHT_JS__
       }
       const leftNumber = numericValue(left, column);
       const rightNumber = numericValue(right, column);
+      if (column.encoding === "decimal_string" && column.valueKind === "integer") {
+        const leftInteger = parseExactInteger(left);
+        const rightInteger = parseExactInteger(right);
+        if (leftInteger !== null && rightInteger !== null) {
+          return leftInteger < rightInteger ? -1 : leftInteger > rightInteger ? 1 : 0;
+        }
+      }
+      if (column.valueKind === "timestamp") {
+        const leftTime = Date.parse(String(left));
+        const rightTime = Date.parse(String(right));
+        if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) {
+          return leftTime - rightTime;
+        }
+      }
       if (leftNumber !== null && rightNumber !== null) {
         return leftNumber - rightNumber;
       }
-      return stringifyValue(left).localeCompare(stringifyValue(right), undefined, {numeric: true, sensitivity: "base"});
+      if (column.valueKind === "boolean" && typeof left === "boolean" && typeof right === "boolean") {
+        return Number(left) - Number(right);
+      }
+      return reportCollator().compare(stringifyValue(left), stringifyValue(right));
     }
 
     function maxPage(state) {
@@ -4720,16 +5040,19 @@ __HIGHLIGHT_JS__
       return Math.ceil(state.filteredRows.length / state.pageSize) - 1;
     }
 
-    function rowMatches(row, query, columns) {
+    function rowMatches(row, query, columns, cellStatuses, originalIndex) {
       if (!Array.isArray(row)) {
         return false;
       }
-      return columns.some((column) => columnSearchText(row[column.sourceIndex], column, row, columns).includes(query));
+      return columns.some((column) => {
+        const status = cellStatuses.get(originalIndex + "\u0000" + column.name) || null;
+        return columnSearchText(row[column.sourceIndex], column, row, columns, status).includes(query);
+      });
     }
 
-    function renderCell(value, column, row, columns) {
+    function renderCell(value, column, row, columns, status) {
       const td = document.createElement("td");
-      const display = displayValue(value, column, row, columns);
+      const display = displayValue(value, column, row, columns, status);
       const text = display.text;
       const isComplex = display.kind === "complex";
       if (display.kind === "numeric") {
@@ -4773,10 +5096,11 @@ __HIGHLIGHT_JS__
       return button;
     }
 
-    function columnSearchText(value, column, row, columns) {
-      const display = displayValue(value, column, row, columns).text;
+    function columnSearchText(value, column, row, columns, status) {
+      const display = displayValue(value, column, row, columns, status).text;
       const queryText = canOpenQueryText(column, value) ? queryTextForId(value) : "";
-      return (display + " " + queryText).toLowerCase();
+      const statusReason = status && status.reason ? status.reason : "";
+      return (display + " " + statusReason + " " + queryText).toLowerCase();
     }
 
     function canOpenQueryText(column, value) {
@@ -4887,30 +5211,41 @@ __HIGHLIGHT_JS__
       return normalizeQuery(document.getElementById("itemSearch").value);
     }
 
-    function displayValue(value, column, row, columns) {
+    function displayValue(value, column, row, columns, status) {
+      if (status) {
+        return {
+          text: statusLabel(status.status),
+          kind: "empty",
+          title: status.reason || status.status,
+        };
+      }
       if (value === undefined || value === null) {
         return {text: "", kind: "empty"};
       }
-      if (typeof value === "object") {
+      if (column.valueKind === "json" || typeof value === "object") {
         return {text: stringifyValue(value), kind: "complex"};
       }
       if (isTemporalColumn(column)) {
         const formatted = formatTemporalValue(value, column);
-        if (formatted !== null) {
-          return {text: formatted, kind: "text", title: String(value)};
-        }
+        return {text: formatted, kind: "text", title: String(value)};
       }
-      const numberValue = numericValue(value, column);
-      if (numberValue === null) {
+      if (column.valueKind !== "integer" && column.valueKind !== "decimal") {
         return {text: String(value), kind: "text"};
       }
-      const text = formatNumberForColumn(numberValue, column, row, columns);
-      return {text, kind: "numeric", title: String(value)};
+      const unit = unitForRow(column, row, columns);
+      const formatted = formatMeasurement(value, column, unit);
+      return {text: formatted.text, kind: "numeric", title: formatted.title};
+    }
+
+    function statusLabel(value) {
+      return String(value || "unavailable")
+        .split("_")
+        .map((part) => part ? part[0].toUpperCase() + part.slice(1) : part)
+        .join(" ");
     }
 
     function isTemporalColumn(column) {
-      const pgType = String((column || {}).pgType || "").toLowerCase();
-      return pgType === "date" || pgType === "time" || pgType === "timetz" || pgType === "timestamp" || pgType === "timestamptz";
+      return column.valueKind === "timestamp" || column.valueKind === "date" || column.valueKind === "time";
     }
 
     function formatTemporalValue(value, column) {
@@ -4918,124 +5253,258 @@ __HIGHLIGHT_JS__
       if (!text) {
         return "";
       }
-      const pgType = String((column || {}).pgType || "").toLowerCase();
-      if (pgType === "date") {
+      if (column.valueKind === "timestamp") {
+        return formatBrowserTimestamp(text);
+      }
+      if (column.valueKind === "date") {
         const match = /^(\d{4}-\d{2}-\d{2})/.exec(text);
         return match ? match[1] : text;
       }
-      if (pgType === "time" || pgType === "timetz") {
-        const match = /^(\d{2}:\d{2}:\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}(?::?\d{2})?)?$/.exec(text);
-        return match ? match[1] : text;
-      }
-      const match = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}(?::?\d{2})?)?$/.exec(text);
-      return match ? match[1] + " " + match[2] : text;
+      const match = /^(\d{2}:\d{2}:\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}(?::?\d{2})?)?$/.exec(text);
+      return match ? match[1] : text;
     }
 
-    function formatNumberForColumn(value, column, row, columns) {
-      if (!Number.isFinite(value)) {
-        return String(value);
+    function unitForRow(column, row, columns) {
+      if (!column.unitRef) {
+        return column.unit || "none";
       }
-      const normalizedUnit = normalizedUnitForRow(row, columns);
-      if (column.name === "setting_normalized" && normalizedUnit === "bytes") {
-        return value < 0 ? String(value) : formatBytes(value);
-      }
-      if (column.name === "setting_normalized" && normalizedUnit === "seconds") {
-        return value < 0 ? String(value) : value.toFixed(3);
-      }
-      if (isByteColumn(column)) {
-        return formatBytes(value);
-      }
-      if (isMegabyteColumn(column)) {
-        return formatScaled(value, 1000, ["MB", "GB", "TB"]);
-      }
-      if (shouldScaleCount(column, value)) {
-        return formatScaled(value, 1000, ["", "K", "M", "B", "T"]);
-      }
-      if (!Number.isInteger(value)) {
-        return value.toFixed(3);
-      }
-      return String(value);
-    }
-
-    function normalizedUnitForRow(row, columns) {
       if (!Array.isArray(row)) {
-        return "";
+        return "none";
       }
-      const unitColumn = columns.find((candidate) => candidate.name === "unit_normalized");
-      if (!unitColumn) {
-        return "";
+      const unitColumn = columns.find((candidate) => candidate.name === column.unitRef);
+      return unitColumn ? String(row[unitColumn.sourceIndex] || "none") : "none";
+    }
+
+    function formatMeasurement(value, column, unit) {
+      const exactInteger = column.valueKind === "integer" ? parseExactInteger(value) : null;
+      const numeric = exactInteger === null ? numericValue(value, column) : Number(exactInteger);
+      if (exactInteger === null && numeric === null) {
+        return {text: String(value), title: String(value)};
       }
-      return row[unitColumn.sourceIndex] || "";
+      if (unit === "bytes" && exactInteger !== null) {
+        return formatExactBytes(exactInteger, false);
+      }
+      if (unit === "bytes") {
+        return formatAdaptiveBytes(numeric, false);
+      }
+      if (unit === "bytes/s") {
+        return formatAdaptiveBytes(numeric, true);
+      }
+      if (column.semanticRole === "identifier" && unit === "none") {
+        return {text: String(value), title: String(value)};
+      }
+      if ((unit === "count" || unit === "blocks") && exactInteger !== null) {
+        return formatAdaptiveIntegerQuantity(exactInteger, unit);
+      }
+      if (unit === "milliseconds") {
+        return formatAdaptiveMilliseconds(numeric);
+      }
+      if (unit === "hertz" || unit === "bits/s") {
+        return formatAdaptiveSi(numeric, unit === "hertz" ? "Hz" : "bit/s");
+      }
+      const integerText = exactInteger === null ? null : formatGroupedInteger(exactInteger);
+      const decimalText = integerText === null ? formatDecimalValue(numeric, 3) : integerText;
+      const suffixes = {
+        "blocks/s": " blocks/s",
+        "milliseconds/s": " ms/s",
+        "seconds": " s",
+        "percent": "%",
+        "count/s": "/s",
+        "operations/s": " ops/s",
+        "iops": " IOPS",
+        "hertz": " Hz",
+        "bits": " bits",
+        "bits/s": " bits/s",
+      };
+      const text = decimalText + (suffixes[unit] || "");
+      return {text, title: String(value) + (unit === "none" || unit === "count" || unit === "ratio" || unit === "load" ? "" : " " + unit)};
+    }
+
+    function formatAdaptiveIntegerQuantity(value, unit) {
+      const negative = value < 0n;
+      const absolute = negative ? -value : value;
+      const suffixes = ["", "K", "M", "G", "T", "P"];
+      let factor = 1n;
+      let index = 0;
+      while (absolute >= factor * 1000n && index < suffixes.length - 1) {
+        factor *= 1000n;
+        index += 1;
+      }
+      const exactText = formatGroupedInteger(value);
+      if (index === 0) {
+        return {
+          text: exactText,
+          title: "exact: " + exactText + (unit === "blocks" ? " blocks" : ""),
+        };
+      }
+      let thousandths = (absolute * 1000n + factor / 2n) / factor;
+      if (thousandths >= 1000000n && index < suffixes.length - 1) {
+        factor *= 1000n;
+        index += 1;
+        thousandths = (absolute * 1000n + factor / 2n) / factor;
+      }
+      const whole = thousandths / 1000n;
+      const fraction = thousandths % 1000n;
+      const fractionText = fraction === 0n
+        ? ""
+        : "." + String(fraction).padStart(3, "0").replace(/0+$/, "");
+      const sign = negative && thousandths !== 0n ? "-" : "";
+      return {
+        text: sign + formatGroupedInteger(whole) + fractionText + " " + suffixes[index],
+        title: "exact: " + exactText + (unit === "blocks" ? " blocks" : ""),
+      };
+    }
+
+    function formatAdaptiveMilliseconds(value) {
+      if (!Number.isFinite(value)) {
+        return {text: String(value), title: String(value)};
+      }
+      const exactText = formatDecimalValue(value, 3);
+      const sign = value < 0 ? "-" : "";
+      const absolute = Math.abs(value);
+      if (absolute < 1000) {
+        return {text: exactText + " ms", title: "exact: " + exactText + " ms"};
+      }
+      if (absolute < 60000) {
+        return {
+          text: sign + formatDecimalValue(roundHalfAway(absolute / 1000, 3), 3) + " s",
+          title: "exact: " + exactText + " ms",
+        };
+      }
+      const roundedMilliseconds = Math.round(absolute);
+      const hours = Math.floor(roundedMilliseconds / 3600000);
+      const afterHours = roundedMilliseconds % 3600000;
+      const minutes = Math.floor(afterHours / 60000);
+      const seconds = (afterHours % 60000) / 1000;
+      const parts = [];
+      if (hours) {
+        parts.push(formatGroupedInteger(hours) + " h");
+      }
+      if (minutes) {
+        parts.push(String(minutes) + " min");
+      }
+      if (seconds || !parts.length) {
+        parts.push(formatDecimalValue(seconds, 3) + " s");
+      }
+      return {text: sign + parts.join(" "), title: "exact: " + exactText + " ms"};
+    }
+
+    function formatAdaptiveSi(value, suffix) {
+      const prefixes = ["", "k", "M", "G", "T", "P"];
+      let scaled = Math.abs(value);
+      let index = 0;
+      while (scaled >= 1000 && index < prefixes.length - 1) {
+        scaled /= 1000;
+        index += 1;
+      }
+      const signed = roundHalfAway(scaled * (value < 0 ? -1 : 1), 2);
+      return {
+        text: formatDecimalValue(signed, 2) + " " + prefixes[index] + suffix,
+        title: "exact: " + formatDecimalValue(value, 3) + " " + suffix,
+      };
     }
 
     function numericValue(value, column) {
+      if (column && column.valueKind !== "integer" && column.valueKind !== "decimal") {
+        return null;
+      }
       if (typeof value === "number") {
         return Number.isFinite(value) ? value : null;
       }
-      if (!isNumericColumn(column) || typeof value !== "string" || value.trim() === "") {
+      if (typeof value !== "string" || value.trim() === "") {
         return null;
       }
       const parsed = Number(value);
       return Number.isFinite(parsed) ? parsed : null;
     }
 
-    function isNumericColumn(column) {
-      const pgType = (column.pgType || "").toLowerCase();
-      return /^(int|float|numeric|decimal|money)/.test(pgType);
-    }
-
-    function isMegabyteColumn(column) {
-      const name = column.name.toLowerCase();
-      return name.endsWith("_mb") || name.endsWith("_mbytes");
-    }
-
-    function isByteColumn(column) {
-      const name = column.name.toLowerCase();
-      if (isMegabyteColumn(column)) {
-        return false;
+    function parseExactInteger(value) {
+      if (typeof value === "bigint") {
+        return value;
       }
-      return name.endsWith("_bytes") || name.endsWith("_size_b") || name.endsWith("_lag_bytes") || name.endsWith("_location_b") || name.endsWith("_lsn") || name === "temp_bytes";
+      if (typeof value === "number" && Number.isSafeInteger(value)) {
+        return BigInt(value);
+      }
+      if (typeof value !== "string" || !/^-?(?:0|[1-9][0-9]*)$/.test(value)) {
+        return null;
+      }
+      try {
+        return BigInt(value);
+      } catch (error) {
+        return null;
+      }
     }
 
-    function shouldScaleCount(column, value) {
-      if (Math.abs(value) < 1000 || !Number.isInteger(value)) {
-        return false;
-      }
-      const name = column.name.toLowerCase();
-      if (/_id$|^pid$|_pid$|oid$|timeline|sys_id|datid|subid|relid|_tli$|port/.test(name)) {
-        return false;
-      }
-      if (
-        name.endsWith("_s") ||
-        name.endsWith("_ms") ||
-        name.endsWith("_seconds") ||
-        name.startsWith("seconds_") ||
-        name.includes("_seconds_")
-      ) {
-        return false;
-      }
-      return true;
+    function formatGroupedInteger(value) {
+      return new Intl.NumberFormat(numericLocale(), {maximumFractionDigits: 0}).format(value);
     }
 
-    function formatBytes(value) {
-      return formatScaled(value, 1024, ["B", "KB", "MB", "GB", "TB", "PB"]);
+    function formatExactBytes(value, perSecond) {
+      const suffixes = perSecond
+        ? ["B/s", "KiB/s", "MiB/s", "GiB/s", "TiB/s", "PiB/s", "EiB/s"]
+        : ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"];
+      const negative = value < 0n;
+      const absolute = negative ? -value : value;
+      let factor = 1n;
+      let index = 0;
+      while (index < suffixes.length - 1 && absolute >= factor * 1024n) {
+        factor *= 1024n;
+        index += 1;
+      }
+      if (index === 0) {
+        const text = formatGroupedInteger(value) + " " + suffixes[0];
+        return {text, title: "exact: " + formatGroupedInteger(value) + " B" + (perSecond ? "/s" : "")};
+      }
+      let hundredths = (absolute * 100n + factor / 2n) / factor;
+      if (hundredths >= 102400n && index < suffixes.length - 1) {
+        factor *= 1024n;
+        index += 1;
+        hundredths = (absolute * 100n + factor / 2n) / factor;
+      }
+      const whole = hundredths / 100n;
+      const fraction = hundredths % 100n;
+      const fractionText = fraction === 0n ? "" : "." + String(fraction).padStart(2, "0").replace(/0+$/, "");
+      const sign = negative && hundredths !== 0n ? "-" : "";
+      return {
+        text: sign + formatGroupedInteger(whole) + fractionText + " " + suffixes[index],
+        title: "exact: " + formatGroupedInteger(value) + " B" + (perSecond ? "/s" : ""),
+      };
     }
 
-    function formatChartAxisValue(value, unit) {
+    function formatAdaptiveBytes(value, perSecond) {
+      if (!Number.isFinite(value)) {
+        return {text: String(value), title: String(value)};
+      }
+      const suffixes = perSecond
+        ? ["B/s", "KiB/s", "MiB/s", "GiB/s", "TiB/s", "PiB/s", "EiB/s"]
+        : ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"];
+      const sign = value < 0 ? -1 : 1;
+      let scaled = Math.abs(value);
+      let index = 0;
+      while (scaled >= 1024 && index < suffixes.length - 1) {
+        scaled /= 1024;
+        index += 1;
+      }
+      let rounded = roundHalfAway(scaled * sign, 2);
+      if (Math.abs(rounded) >= 1024 && index < suffixes.length - 1) {
+        rounded = roundHalfAway(rounded / 1024, 2);
+        index += 1;
+      }
+      if (Object.is(rounded, -0)) {
+        rounded = 0;
+      }
+      return {
+        text: formatDecimalValue(rounded, index === 0 ? 0 : 2) + " " + suffixes[index],
+        title: "exact: " + formatDecimalValue(value, 3) + " B" + (perSecond ? "/s" : ""),
+      };
+    }
+
+    function formatChartAxisValue(value, unit, scale) {
       if (!Number.isFinite(Number(value))) {
         return "";
       }
-      const numeric = Number(value);
-      if (unit === "bytes" || unit === "bytes/s" || unit === "MB/s") {
-        return formatCompactMetricValue(numeric, 1024);
-      }
-      if (unit === "%") {
-        return formatCompactMetricValue(numeric, 1000);
-      }
-      if (unit === "ratio") {
-        return formatDecimalValue(numeric, 3);
-      }
-      return formatCompactMetricValue(numeric, 1000);
+      const numeric = Number(value) / Number((scale || {}).factor || 1);
+      return formatDecimalValue(numeric, unit === "percent" ? 2 : 3);
     }
 
     function formatChartTooltipValue(value, unit) {
@@ -5043,68 +5512,51 @@ __HIGHLIGHT_JS__
         return "";
       }
       const numeric = Number(value);
-      if (!unit) {
-        return formatCompactMetricValue(numeric, 1000);
+      if (unit === "bytes" || unit === "bytes/s") {
+        return formatAdaptiveBytes(numeric, unit === "bytes/s").text;
       }
-      if (unit === "ratio") {
-        return formatDecimalValue(numeric, 3);
-      }
-      if (unit === "%") {
-        return formatDecimalValue(numeric, 1) + "%";
-      }
-      const base = unit === "bytes" || unit === "bytes/s" || unit === "MB/s" ? 1024 : 1000;
-      return formatCompactMetricValue(numeric, base) + " " + unit;
+      const descriptor = {
+        valueKind: Number.isInteger(numeric) ? "integer" : "decimal",
+        semanticRole: unit && unit.endsWith("/s") ? "rate" : "gauge",
+      };
+      return formatMeasurement(numeric, descriptor, unit || "none").text;
     }
 
     function formatCompactMetricValue(value, base) {
       const sign = value < 0 ? -1 : 1;
       let scaled = Math.abs(value);
-      const suffixes = ["", "K", "M", "G", "T", "P"];
+      const suffixes = ["", "k", "M", "G", "T", "P"];
       let index = 0;
       while (scaled >= base && index < suffixes.length - 1) {
-        scaled = scaled / base;
+        scaled /= base;
         index += 1;
       }
-      return formatCompactDecimal(scaled * sign) + suffixes[index];
-    }
-
-    function formatCompactDecimal(value) {
-      const abs = Math.abs(value);
-      if (Number.isInteger(value) || abs >= 100) {
-        return String(Math.round(value));
-      }
-      if (abs >= 10) {
-        return formatDecimalValue(value, 1);
-      }
-      if (abs >= 1) {
-        return formatDecimalValue(value, 2);
-      }
-      if (abs === 0) {
-        return "0";
-      }
-      return formatDecimalValue(value, 3);
+      return formatDecimalValue(roundHalfAway(scaled * sign, 2), 2) + suffixes[index];
     }
 
     function formatDecimalValue(value, maxDigits) {
-      return value.toLocaleString(undefined, {
+      return new Intl.NumberFormat(numericLocale(), {
         minimumFractionDigits: 0,
         maximumFractionDigits: maxDigits,
-      });
+        useGrouping: true,
+      }).format(value);
     }
 
-    function formatScaled(value, base, units) {
-      const sign = value < 0 ? -1 : 1;
-      let scaled = Math.abs(value);
-      let unitIndex = 0;
-      while (scaled >= base && unitIndex < units.length - 1) {
-        scaled = scaled / base;
-        unitIndex += 1;
+    function roundHalfAway(value, digits) {
+      const factor = 10 ** digits;
+      const rounded = Math.floor(Math.abs(value) * factor + 0.5 + Number.EPSILON) / factor;
+      return value < 0 ? -rounded : rounded;
+    }
+
+    function numericLocale() {
+      return String(((artifact.display || {}).numeric_locale) || "en-US");
+    }
+
+    function reportCollator() {
+      if (!cachedReportCollator) {
+        cachedReportCollator = new Intl.Collator(numericLocale(), {numeric: true, sensitivity: "base"});
       }
-      const signed = scaled * sign;
-      if (unitIndex === 0) {
-        return units[unitIndex] ? String(value) + " " + units[unitIndex] : String(value);
-      }
-      return signed.toFixed(3) + " " + units[unitIndex];
+      return cachedReportCollator;
     }
 
     function stringifyValue(value) {

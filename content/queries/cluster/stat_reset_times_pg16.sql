@@ -50,15 +50,6 @@ select
   object_name,
   stat_reset_time,
   case when stat_reset_time is null then 'not_reported' else 'reported' end as reset_status,
-  seconds_since_reset,
-  case
-    when seconds_since_reset is null then ''
-    else concat_ws(' ',
-      case when seconds_since_reset >= 86400 then (seconds_since_reset / 86400)::text || 'd' end,
-      case when seconds_since_reset >= 3600 then ((seconds_since_reset % 86400) / 3600)::text || 'h' end,
-      case when seconds_since_reset >= 60 then ((seconds_since_reset % 3600) / 60)::text || 'm' end,
-      (seconds_since_reset % 60)::text || 's'
-    )
-  end as time_since_reset
+  seconds_since_reset
 from normalized
 order by seconds_since_reset asc nulls last, source_view asc, object_type asc, object_name asc

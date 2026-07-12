@@ -3,7 +3,7 @@ select
   num_timed,
   num_requested,
   num_done,
-  round(100.0 * num_done / nullif(num_timed + num_requested, 0), 2)
+  (100.0 * num_done / nullif(num_timed + num_requested, 0))
     as checkpoint_completion_pct,
   restartpoints_timed,
   restartpoints_req,

@@ -1,0 +1,536 @@
+queries:
+  metrics.statements_temp_io_delta:
+    title: SQL Temp I/O Delta Source
+    database_scope: current_database
+    group: Metric Sources
+    main_view: pg_stat_statements
+    description: Bounded statement temporary I/O counters used only by SQL Temp I/O Delta.
+    source: pg_diag
+    optional: true
+    display:
+      default_sort:
+        column: temp_io_bytes
+        direction: desc
+    collection: &window_endpoints
+      default: window_endpoints
+      supports: [once, window_endpoints]
+    variants:
+      - id: metrics_statements_temp_io_delta_pg14_pg16
+        min_pg_version: 140000
+        max_pg_version: 169999
+        sql_file: metrics/statements_temp_io_delta.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            user: rolname
+            database_id: dbid
+            user_id: userid
+            query_id: query_id
+            toplevel: toplevel
+            global_stats_reset: global_stats_reset
+          counters: &statement_temp_io_counters
+            temp_blks_read: temp_blks_read
+            temp_blks_written: temp_blks_written
+            temp_io_bytes: temp_io_bytes
+            temp_read_time_ms: temp_read_time_ms
+            temp_write_time_ms: temp_write_time_ms
+      - id: metrics_statements_temp_io_delta_pg17_plus
+        min_pg_version: 170000
+        sql_file: metrics/statements_temp_io_delta_pg17_plus.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            user: rolname
+            database_id: dbid
+            user_id: userid
+            query_id: query_id
+            toplevel: toplevel
+            global_stats_reset: global_stats_reset
+            entry_stats_since: entry_stats_since
+          counters: *statement_temp_io_counters
+
+  metrics.io_activity_delta:
+    title: PostgreSQL I/O Delta Source
+    database_scope: all_databases
+    group: Metric Sources
+    main_view: pg_stat_io
+    description: Cluster I/O counters by backend type, object, and context.
+    source: pg_diag
+    display:
+      default_sort:
+        column: total_bytes
+        direction: desc
+    collection: *window_endpoints
+    requirements:
+      unsupported_versions_reason: pg_stat_io exists in PostgreSQL 16 and newer.
+    variants:
+      - id: metrics_io_activity_delta_pg16_pg17
+        min_pg_version: 160000
+        max_pg_version: 179999
+        sql_file: metrics/io_activity_delta_pg16_pg17.sql
+        semantic_columns: &io_activity_semantics
+          dimensions:
+            backend_type: backend_type
+            object: object
+            context: context
+            stats_reset: stats_reset
+          counters:
+            reads: reads
+            read_bytes: read_bytes
+            read_time_ms: read_time_ms
+            writes: writes
+            write_bytes: write_bytes
+            write_time_ms: write_time_ms
+            writebacks: writebacks
+            writeback_time_ms: writeback_time_ms
+            extends: extends
+            extend_bytes: extend_bytes
+            extend_time_ms: extend_time_ms
+            fsyncs: fsyncs
+            fsync_time_ms: fsync_time_ms
+            hits: hits
+            evictions: evictions
+            reuses: reuses
+            total_bytes: total_bytes
+      - id: metrics_io_activity_delta_pg18_plus
+        min_pg_version: 180000
+        sql_file: metrics/io_activity_delta_pg18_plus.sql
+        semantic_columns: *io_activity_semantics
+
+  metrics.checkpointer_delta:
+    title: Checkpointer Delta Source
+    database_scope: all_databases
+    group: Metric Sources
+    main_view: pg_stat_checkpointer
+    description: Checkpoint and restartpoint counters over the snapshot window.
+    source: pg_diag
+    display:
+      default_sort:
+        column: checkpoints_done
+        direction: desc
+    collection: *window_endpoints
+    variants:
+      - id: metrics_checkpointer_delta_pg14_pg16
+        min_pg_version: 140000
+        max_pg_version: 169999
+        sql_file: metrics/checkpointer_delta_pg14_pg16.sql
+        semantic_columns: &checkpointer_semantics
+          dimensions:
+            scope: scope
+            stats_reset: stats_reset
+          counters:
+            checkpoints_timed: checkpoints_timed
+            checkpoints_requested: checkpoints_requested
+            checkpoints_done: checkpoints_done
+            restartpoints_timed: restartpoints_timed
+            restartpoints_requested: restartpoints_requested
+            restartpoints_done: restartpoints_done
+            write_time_ms: write_time_ms
+            sync_time_ms: sync_time_ms
+            buffers_written: buffers_written
+            slru_written: slru_written
+        column_statuses:
+          restartpoints_timed: {status: unsupported, reason: Restartpoint counters moved into pg_stat_checkpointer in PostgreSQL 17.}
+          restartpoints_requested: {status: unsupported, reason: Restartpoint counters moved into pg_stat_checkpointer in PostgreSQL 17.}
+          restartpoints_done: {status: unsupported, reason: Restartpoint counters moved into pg_stat_checkpointer in PostgreSQL 17.}
+          slru_written: {status: unsupported, reason: The slru_written checkpointer counter is available from PostgreSQL 18.}
+      - id: metrics_checkpointer_delta_pg17
+        min_pg_version: 170000
+        max_pg_version: 179999
+        sql_file: metrics/checkpointer_delta_pg17.sql
+        semantic_columns: *checkpointer_semantics
+        column_statuses:
+          slru_written: {status: unsupported, reason: The slru_written checkpointer counter is available from PostgreSQL 18.}
+      - id: metrics_checkpointer_delta_pg18_plus
+        min_pg_version: 180000
+        sql_file: metrics/checkpointer_delta_pg18_plus.sql
+        semantic_columns: *checkpointer_semantics
+
+  metrics.wal_activity_delta:
+    title: WAL Activity Delta Source
+    database_scope: all_databases
+    group: Metric Sources
+    main_view: pg_stat_wal
+    description: Cluster WAL records, full-page images, bytes, and buffer pressure counters.
+    source: pg_diag
+    display:
+      default_sort:
+        column: wal_bytes
+        direction: desc
+    collection: *window_endpoints
+    variants:
+      - id: metrics_wal_activity_delta_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/wal_activity_delta.sql
+        semantic_columns:
+          dimensions:
+            scope: scope
+            stats_reset: stats_reset
+          counters:
+            wal_records: wal_records
+            wal_fpi: wal_fpi
+            wal_bytes: wal_bytes
+            wal_buffers_full: wal_buffers_full
+
+  metrics.objects_table_maintenance_delta:
+    title: Table Maintenance Delta Source
+    database_scope: current_database
+    group: Metric Sources
+    main_view: pg_stat_all_tables
+    description: Bounded per-table VACUUM and ANALYZE counters and timing.
+    source: pg_diag
+    display:
+      default_sort:
+        column: maintenance_count
+        direction: desc
+    collection: *window_endpoints
+    variants:
+      - id: metrics_objects_table_maintenance_delta_pg14_pg17
+        min_pg_version: 140000
+        max_pg_version: 179999
+        sql_file: metrics/objects_table_maintenance_delta.sql
+        semantic_columns: &table_maintenance_semantics
+          dimensions:
+            database: datname
+            database_id: datid
+            relation_id: relid
+            schema: schemaname
+            table: relname
+            database_stats_reset: database_stats_reset
+          counters:
+            vacuum_count: vacuum_count
+            autovacuum_count: autovacuum_count
+            analyze_count: analyze_count
+            autoanalyze_count: autoanalyze_count
+            maintenance_count: maintenance_count
+            vacuum_time_ms: vacuum_time_ms
+            autovacuum_time_ms: autovacuum_time_ms
+            analyze_time_ms: analyze_time_ms
+            autoanalyze_time_ms: autoanalyze_time_ms
+            maintenance_time_ms: maintenance_time_ms
+        column_statuses:
+          vacuum_time_ms: {status: unsupported, reason: Per-table maintenance timing counters are available from PostgreSQL 18.}
+          autovacuum_time_ms: {status: unsupported, reason: Per-table maintenance timing counters are available from PostgreSQL 18.}
+          analyze_time_ms: {status: unsupported, reason: Per-table maintenance timing counters are available from PostgreSQL 18.}
+          autoanalyze_time_ms: {status: unsupported, reason: Per-table maintenance timing counters are available from PostgreSQL 18.}
+          maintenance_time_ms: {status: unsupported, reason: Per-table maintenance timing counters are available from PostgreSQL 18.}
+      - id: metrics_objects_table_maintenance_delta_pg18_plus
+        min_pg_version: 180000
+        sql_file: metrics/objects_table_maintenance_delta.sql
+        semantic_columns: *table_maintenance_semantics
+
+  metrics.recovery_conflicts_delta:
+    title: Standby Recovery Conflicts Delta Source
+    database_scope: all_databases
+    group: Metric Sources
+    main_view: pg_stat_database_conflicts
+    description: Standby query cancellation counters by database and conflict reason.
+    source: pg_diag
+    display:
+      default_sort:
+        column: conflicts_total
+        direction: desc
+    collection: *window_endpoints
+    variants:
+      - id: metrics_recovery_conflicts_delta_pg14_pg15
+        min_pg_version: 140000
+        max_pg_version: 159999
+        sql_file: metrics/recovery_conflicts_delta.sql
+        semantic_columns: &recovery_conflicts_semantics
+          dimensions:
+            database: datname
+            database_id: datid
+            stats_reset: stats_reset
+            server_role: server_role
+          counters:
+            conflicts_total: conflicts_total
+            confl_tablespace: confl_tablespace
+            confl_lock: confl_lock
+            confl_snapshot: confl_snapshot
+            confl_bufferpin: confl_bufferpin
+            confl_deadlock: confl_deadlock
+            confl_active_logicalslot: confl_active_logicalslot
+        column_statuses:
+          confl_active_logicalslot: {status: unsupported, reason: Active logical-slot recovery conflicts are available from PostgreSQL 16.}
+      - id: metrics_recovery_conflicts_delta_pg16_plus
+        min_pg_version: 160000
+        sql_file: metrics/recovery_conflicts_delta.sql
+        semantic_columns: *recovery_conflicts_semantics
+
+  metrics.database_session_outcomes_delta:
+    title: Database Session Outcomes Delta Source
+    database_scope: all_databases
+    group: Metric Sources
+    main_view: pg_stat_database
+    description: Database session lifecycle and accumulated session-time counters.
+    source: pg_diag
+    display:
+      default_sort:
+        column: sessions
+        direction: desc
+    collection: *window_endpoints
+    variants:
+      - id: metrics_database_session_outcomes_delta_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/database_session_outcomes_delta.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            database_id: datid
+            stats_reset: stats_reset
+          counters:
+            sessions: sessions
+            sessions_abandoned: sessions_abandoned
+            sessions_fatal: sessions_fatal
+            sessions_killed: sessions_killed
+            session_time_ms: session_time_ms
+            active_time_ms: active_time_ms
+            idle_in_transaction_time_ms: idle_in_transaction_time_ms
+
+  metrics.physical_replication_progress_delta:
+    title: Physical Replication Progress Delta Source
+    database_scope: all_databases
+    group: Metric Sources
+    main_view: pg_stat_replication
+    description: Per-WAL-sender LSN movement over the snapshot window.
+    source: pg_diag
+    display:
+      default_sort:
+        column: replay_bytes
+        direction: desc
+    collection: *window_endpoints
+    variants:
+      - id: metrics_physical_replication_progress_delta_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/physical_replication_progress_delta.sql
+        semantic_columns:
+          dimensions:
+            sender_pid: pid
+            sender_start: backend_start
+            application: application_name
+            client_address: client_addr
+            user: usename
+            state: state
+            sync_state: sync_state
+          counters:
+            current_wal_bytes: current_wal_bytes
+            sent_bytes: sent_bytes
+            write_bytes: write_bytes
+            flush_bytes: flush_bytes
+            replay_bytes: replay_bytes
+
+  metrics.statements_planning_delta:
+    title: SQL Planning Delta Source
+    database_scope: current_database
+    group: Metric Sources
+    main_view: pg_stat_statements
+    description: Bounded statement planning counters used only by SQL Planning Delta.
+    source: pg_diag
+    optional: true
+    display:
+      default_sort:
+        column: total_plan_time_ms
+        direction: desc
+    collection: *window_endpoints
+    variants:
+      - id: metrics_statements_planning_delta_pg14_pg16
+        min_pg_version: 140000
+        max_pg_version: 169999
+        sql_file: metrics/statements_planning_delta.sql
+        semantic_columns: &statement_planning_semantics
+          dimensions:
+            database: datname
+            user: rolname
+            database_id: dbid
+            user_id: userid
+            query_id: query_id
+            toplevel: toplevel
+            global_stats_reset: global_stats_reset
+            track_planning: track_planning
+          counters:
+            plans: plans
+            total_plan_time_ms: total_plan_time_ms
+      - id: metrics_statements_planning_delta_pg17_plus
+        min_pg_version: 170000
+        sql_file: metrics/statements_planning_delta_pg17_plus.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            user: rolname
+            database_id: dbid
+            user_id: userid
+            query_id: query_id
+            toplevel: toplevel
+            global_stats_reset: global_stats_reset
+            entry_stats_since: entry_stats_since
+            track_planning: track_planning
+          counters:
+            plans: plans
+            total_plan_time_ms: total_plan_time_ms
+
+  metrics.bgwriter_delta:
+    title: Background Writer Delta Source
+    database_scope: all_databases
+    group: Metric Sources
+    main_view: pg_stat_bgwriter
+    description: Background writer and buffer allocation counters.
+    source: pg_diag
+    display:
+      default_sort:
+        column: buffers_clean
+        direction: desc
+    collection: *window_endpoints
+    variants:
+      - id: metrics_bgwriter_delta_pg14_pg16
+        min_pg_version: 140000
+        max_pg_version: 169999
+        sql_file: metrics/bgwriter_delta_pg14_pg16.sql
+        semantic_columns: &bgwriter_semantics
+          dimensions:
+            scope: scope
+            stats_reset: stats_reset
+          counters:
+            buffers_clean: buffers_clean
+            maxwritten_clean: maxwritten_clean
+            buffers_backend: buffers_backend
+            buffers_backend_fsync: buffers_backend_fsync
+            buffers_alloc: buffers_alloc
+      - id: metrics_bgwriter_delta_pg17_plus
+        min_pg_version: 170000
+        sql_file: metrics/bgwriter_delta_pg17_plus.sql
+        semantic_columns: *bgwriter_semantics
+        column_statuses:
+          buffers_backend: {status: unsupported, reason: Backend buffer-write counters are not exposed by pg_stat_bgwriter from PostgreSQL 17.}
+          buffers_backend_fsync: {status: unsupported, reason: Backend fsync counters are not exposed by pg_stat_bgwriter from PostgreSQL 17.}
+
+  metrics.slru_activity_delta:
+    title: SLRU Activity Delta Source
+    database_scope: all_databases
+    group: Metric Sources
+    main_view: pg_stat_slru
+    description: Per-SLRU block and maintenance counters.
+    source: pg_diag
+    display:
+      default_sort:
+        column: blks_read
+        direction: desc
+    collection: *window_endpoints
+    variants:
+      - id: metrics_slru_activity_delta_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/slru_activity_delta.sql
+        semantic_columns:
+          dimensions:
+            name: name
+            stats_reset: stats_reset
+          counters:
+            blks_zeroed: blks_zeroed
+            blks_hit: blks_hit
+            blks_read: blks_read
+            blks_written: blks_written
+            blks_exists: blks_exists
+            flushes: flushes
+            truncates: truncates
+
+  metrics.wal_archiver_delta:
+    title: WAL Archiver Delta Source
+    database_scope: all_databases
+    group: Metric Sources
+    main_view: pg_stat_archiver
+    description: Successful and failed WAL archive attempts over the snapshot window.
+    source: pg_diag
+    display:
+      default_sort:
+        column: archived_count
+        direction: desc
+    collection: *window_endpoints
+    variants:
+      - id: metrics_wal_archiver_delta_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/wal_archiver_delta.sql
+        semantic_columns:
+          dimensions:
+            scope: scope
+            stats_reset: stats_reset
+            last_archived_wal: last_archived_wal
+            last_failed_wal: last_failed_wal
+          counters:
+            archived_count: archived_count
+            failed_count: failed_count
+
+  metrics.logical_decoding_slot_delta:
+    title: Logical Decoding Slot Delta Source
+    database_scope: all_databases
+    group: Metric Sources
+    main_view: pg_stat_replication_slots
+    description: Logical decoding spill, stream, and output counters per slot.
+    source: pg_diag
+    display:
+      default_sort:
+        column: spill_bytes
+        direction: desc
+    collection: *window_endpoints
+    variants:
+      - id: metrics_logical_decoding_slot_delta_pg14_plus
+        min_pg_version: 140000
+        sql_file: metrics/logical_decoding_slot_delta.sql
+        semantic_columns:
+          dimensions:
+            slot_name: slot_name
+            stats_reset: stats_reset
+          counters:
+            spill_txns: spill_txns
+            spill_count: spill_count
+            spill_bytes: spill_bytes
+            stream_txns: stream_txns
+            stream_count: stream_count
+            stream_bytes: stream_bytes
+            total_txns: total_txns
+            total_bytes: total_bytes
+
+  metrics.subscription_errors_delta:
+    title: Subscription Errors And Conflicts Delta Source
+    database_scope: current_database
+    group: Metric Sources
+    main_view: pg_stat_subscription_stats
+    description: Logical subscription apply, synchronization, and conflict counters.
+    source: pg_diag
+    display:
+      default_sort:
+        column: errors_total
+        direction: desc
+    collection: *window_endpoints
+    requirements:
+      unsupported_versions_reason: pg_stat_subscription_stats exists in PostgreSQL 15 and newer.
+    variants:
+      - id: metrics_subscription_errors_delta_pg15_pg17
+        min_pg_version: 150000
+        max_pg_version: 179999
+        sql_file: metrics/subscription_errors_delta_pg15_pg17.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            subscription_id: subid
+            subscription: subname
+            stats_reset: stats_reset
+          counters:
+            apply_error_count: apply_error_count
+            sync_error_count: sync_error_count
+            conflict_count: conflict_count
+        column_statuses:
+          conflict_count:
+            status: unsupported
+            reason: Logical replication conflict counters are available from PostgreSQL 18.
+      - id: metrics_subscription_errors_delta_pg18_plus
+        min_pg_version: 180000
+        sql_file: metrics/subscription_errors_delta_pg18.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            subscription_id: subid
+            subscription: subname
+            stats_reset: stats_reset
+          counters:
+            apply_error_count: apply_error_count
+            sync_error_count: sync_error_count
+            conflict_count: conflict_count

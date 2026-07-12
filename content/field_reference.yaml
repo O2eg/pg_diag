@@ -21,6 +21,7 @@ field_reference:
     defaults: Report-wide presentation defaults inherited by sections and items.
     defaults/table: Default behavior for rendered result tables.
     defaults/table/page_size: Initial number of table rows shown per page.
+    defaults/numeric_locale: Explicit locale used for numeric grouping, decimal display, and text collation.
     defaults/item: Defaults inherited by every report item unless overridden.
     defaults/item/state: Default item expansion state.
     defaults/item/database_scope: Default database scope label for PostgreSQL items.
@@ -36,6 +37,11 @@ field_reference:
     catalogs: Catalog metadata and defaults used to construct effective source manifests.
     catalogs/*: Metadata for one source catalog.
     catalogs/*/schema_version: Schema version of this source catalog.
+    catalogs/presentation: Content-owned registry used to resolve logical field descriptors and display units.
+    catalogs/presentation/*: One top-level presentation contract group or scalar setting.
+    catalogs/presentation/*/*: One presentation registry entry, rule component, or descriptor property.
+    catalogs/presentation/*/*/*: One nested presentation match, descriptor, unit, type-default, or source-override property.
+    catalogs/presentation/*/*/*/*: One deeply nested source-specific descriptor property or unit definition property.
     catalogs/*/defaults: Values merged into every manifest in this catalog.
     catalogs/queries/sql_root: Relative directory containing SQL source files.
     catalogs/queries/files: Query-manifest files loaded in declaration order.
@@ -108,6 +114,10 @@ field_reference:
     queries/*/variants[]/semantic_columns: Stable semantic references mapped to physical result columns.
     queries/*/variants[]/semantic_columns/*: One semantic namespace such as dimensions, counters, or gauges.
     queries/*/variants[]/semantic_columns/*/*: Mapping from a semantic metric name to an SQL result-column name.
+    queries/*/variants[]/column_statuses: Version-specific statuses for result columns that exist but cannot expose a value.
+    queries/*/variants[]/column_statuses/*: Status descriptor for one version-specific result column.
+    queries/*/variants[]/column_statuses/*/status: Machine-readable reason class for the unavailable column.
+    queries/*/variants[]/column_statuses/*/reason: Human-readable explanation for the unavailable column.
     scripts: Effective shell-source manifests after script-catalog defaults are merged.
     scripts/*: One effective shell source selected by script id.
     scripts/*/title: Human-readable script title inherited by report items.
@@ -207,6 +217,7 @@ field_reference:
     metrics/*/table/columns[]/value_ref: Semantic value used by the column calculation.
     metrics/*/table/columns[]/ref: Direct source field used by a sampler-backed column.
     metrics/*/table/columns[]/transform: Calculation applied to the source value.
+    metrics/*/table/columns[]/optional: Whether a null endpoint leaves only this derived cell null instead of invalidating the row.
     metrics/*/table/columns[]/pg_type: PostgreSQL-like type hint used by table formatting.
     metrics/*/evaluation: Automatic evaluation applied to derived metric rows.
     metrics/*/evaluation/summary_title: Finding-summary title displayed above matching rows.

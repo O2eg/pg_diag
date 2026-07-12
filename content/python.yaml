@@ -1,5 +1,5 @@
 python_catalog:
-  schema_version: 3
+  schema_version: 4
   defaults:
     timeout_ms: 1000
     local_only: false

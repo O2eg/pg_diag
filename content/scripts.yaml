@@ -1,5 +1,5 @@
 script_catalog:
-  schema_version: 3
+  schema_version: 4
   defaults:
     output: plain_text
     local_only: true
@@ -26,13 +26,15 @@ scripts:
 
   os.memory_info:
     title: Memory Information
-    description: Selected /proc/meminfo counters.
+    description: Selected /proc/meminfo counters normalized to exact bytes or counts.
     script_file: os/sys_memory_total.sh
+    output: table_json
 
   os.total_ram:
     title: Total RAM Capacity
-    description: Total host RAM from /proc/meminfo.
+    description: Exact total host RAM bytes from /proc/meminfo.
     script_file: os/total_ram.sh
+    output: table_json
 
   os.cpu_info:
     title: CPU Information
@@ -41,8 +43,9 @@ scripts:
 
   os.disk_usage:
     title: Filesystem Usage
-    description: Local df output.
+    description: Filesystem capacity in exact bytes and raw utilization percent from df.
     script_file: os/df_h.sh
+    output: table_json
 
   os.fstab:
     title: Filesystem Configuration

@@ -15,11 +15,9 @@ select
   tidx_blks_hit::int8 as tidx_blks_hit,
   (heap_blks_read + idx_blks_read + toast_blks_read + tidx_blks_read)::int8 as total_blks_read,
   (heap_blks_hit + idx_blks_hit + toast_blks_hit + tidx_blks_hit)::int8 as total_blks_hit,
-  round(
+  (
     (heap_blks_hit + idx_blks_hit + toast_blks_hit + tidx_blks_hit)::numeric * 100.0
-    / nullif(heap_blks_hit + idx_blks_hit + toast_blks_hit + tidx_blks_hit + heap_blks_read + idx_blks_read + toast_blks_read + tidx_blks_read, 0),
-    3
-  ) as cache_hit_pct
+    / nullif(heap_blks_hit + idx_blks_hit + toast_blks_hit + tidx_blks_hit + heap_blks_read + idx_blks_read + toast_blks_read + tidx_blks_read, 0)) as cache_hit_pct
 from pg_statio_all_tables io
 left join pg_stat_database db on db.datname = current_database()
 where schemaname not in ('pg_catalog', 'information_schema')

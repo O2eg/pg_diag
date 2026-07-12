@@ -4,6 +4,7 @@ This instruction belongs to report item `os.memory_info`. The item is backed by 
 
 ## What this item shows
 - Selected `/proc/meminfo` counters including available memory, swap, buffers, cache, dirty/writeback state, commit accounting, and huge pages.
+- Kernel `kB` values are normalized to exact bytes; unitless HugePages counters remain counts.
 - Current host memory pressure context at collection time.
 
 ## What to watch

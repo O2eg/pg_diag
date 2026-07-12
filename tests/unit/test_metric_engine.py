@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+from pg_diag.content_loader import load_content
 from pg_diag.metric_engine import (
     _metric_source_text,
     build_chart_result,
@@ -8,6 +11,60 @@ from pg_diag.metric_engine import (
     evaluate_metric_table_findings,
 )
 from pg_diag.planner import PlannedItem
+from pg_diag.versioning import select_query_variant
+
+
+NEW_DELTA_METRICS = {
+    "statements.temp_io_delta",
+    "io.activity_delta",
+    "checkpoints.checkpointer_delta",
+    "wal.activity_delta",
+    "objects.table_maintenance_delta",
+    "replication.recovery_conflicts_delta",
+    "database.session_outcomes_delta",
+    "replication.physical_progress_delta",
+    "statements.planning_delta",
+    "checkpoints.bgwriter_delta",
+    "slru.activity_delta",
+    "wal.archiver_delta",
+    "replication.logical_slot_delta",
+    "replication.subscription_errors_delta",
+}
+
+
+def test_new_delta_metric_contracts_resolve_all_columns(content_path: Path) -> None:
+    content = load_content(content_path)
+
+    for metric_id in sorted(NEW_DELTA_METRICS):
+        metric = content.metrics[metric_id]
+        source = content.queries[metric["source_query"]]
+        selected = select_query_variant(source["title"], source, 180000)
+        semantics = selected.variant.get("semantic_columns") or {}
+        first_row = {"snapshot_time": "2026-07-12T00:00:00+00:00"}
+        last_row = {"snapshot_time": "2026-07-12T00:00:10+00:00"}
+
+        for semantic_name, column_name in (semantics.get("dimensions") or {}).items():
+            value = "2026-07-01T00:00:00+00:00" if "reset" in semantic_name or "start" in semantic_name else f"{semantic_name}-1"
+            first_row[column_name] = value
+            last_row[column_name] = value
+        for column_name in (semantics.get("counters") or {}).values():
+            first_row[column_name] = 10
+            last_row[column_name] = 20
+
+        result = build_table_result(
+            metric,
+            [
+                {"timestamp": first_row["snapshot_time"], "rows": [first_row]},
+                {"timestamp": last_row["snapshot_time"], "rows": [last_row]},
+            ],
+            semantics,
+        )
+
+        assert result["row_count"] == 1, metric_id
+        assert result["delta_window"]["duration_seconds"] == 10.0, metric_id
+        assert [column["name"] for column in result["columns"]] == [
+            column["name"] for column in metric["table"]["columns"]
+        ], metric_id
 
 
 def test_delta_table_metric_uses_first_and_last_samples() -> None:
@@ -88,6 +145,95 @@ def test_delta_table_reports_raw_database_counter_delta_and_rate() -> None:
     result = build_table_result(metric, samples, {})
 
     assert result["rows"] == [["db", 10.0, 2.0]]
+
+
+def test_delta_table_preserves_exact_integer_beyond_json_safe_range() -> None:
+    metric = {
+        "table": {
+            "key_refs": ["name"],
+            "columns": [
+                {"name": "name", "role": "key", "key_index": 0},
+                {"name": "value_delta", "value_ref": "value", "transform": "delta"},
+            ],
+        }
+    }
+    samples = [
+        {"timestamp": "2026-07-05T00:00:00+00:00", "rows": [{"name": "x", "value": 9007199254740993}]},
+        {"timestamp": "2026-07-05T00:00:05+00:00", "rows": [{"name": "x", "value": 9007199254740995}]},
+    ]
+
+    result = build_table_result(metric, samples, {})
+
+    assert result["rows"] == [["x", 2]]
+
+
+def test_delta_table_propagates_optional_source_column_status() -> None:
+    metric = {
+        "table": {
+            "drop_zero_rows": False,
+            "key_refs": ["dimensions.subscription_id"],
+            "columns": [
+                {"name": "subid", "role": "key", "key_index": 0},
+                {"name": "apply_delta", "value_ref": "counters.apply", "transform": "delta"},
+                {"name": "conflict_delta", "value_ref": "counters.conflict", "transform": "delta"},
+            ],
+        }
+    }
+    semantics = {
+        "dimensions": {"subscription_id": "subid"},
+        "counters": {"apply": "apply_count", "conflict": "conflict_count"},
+    }
+    samples = [
+        {"timestamp": "2026-07-05T00:00:00+00:00", "rows": [{"subid": 1, "apply_count": 10, "conflict_count": None}]},
+        {"timestamp": "2026-07-05T00:00:05+00:00", "rows": [{"subid": 1, "apply_count": 12, "conflict_count": None}]},
+    ]
+    status = {
+        "conflict_count": {
+            "status": "unsupported",
+            "reason": "Conflict counters are available from PostgreSQL 18",
+        }
+    }
+
+    result = build_table_result(metric, samples, semantics, status)
+
+    assert result["rows"] == [[1, 2, None]]
+    assert result["column_statuses"] == {
+        "conflict_delta": status["conflict_count"]
+    }
+    assert result["interval_coverage"]["counts"] == {"ok": 1}
+
+
+def test_delta_table_keeps_row_when_optional_counter_is_null() -> None:
+    metric = {
+        "table": {
+            "key_refs": ["name"],
+            "columns": [
+                {"name": "name", "role": "key", "key_index": 0},
+                {
+                    "name": "optional_delta",
+                    "value_ref": "optional_value",
+                    "transform": "delta",
+                    "optional": True,
+                },
+                {"name": "required_delta", "value_ref": "required_value", "transform": "delta"},
+            ],
+        }
+    }
+    samples = [
+        {
+            "timestamp": "2026-07-05T00:00:00+00:00",
+            "rows": [{"name": "x", "optional_value": None, "required_value": 10}],
+        },
+        {
+            "timestamp": "2026-07-05T00:00:05+00:00",
+            "rows": [{"name": "x", "optional_value": None, "required_value": 12}],
+        },
+    ]
+
+    result = build_table_result(metric, samples, {})
+
+    assert result["rows"] == [["x", None, 2]]
+    assert result["interval_coverage"]["counts"] == {"ok": 1}
 
 
 def test_chart_rate_uses_raw_database_counter_delta() -> None:
@@ -241,6 +387,11 @@ def test_delta_table_omits_unknown_deltas_and_reports_compact_coverage() -> None
             "counter_decrease": 1,
         },
     }
+    assert result["delta_window"] == {
+        "start_time": "2026-07-05T00:00:00+00:00",
+        "finish_time": "2026-07-05T00:00:05+00:00",
+        "duration_seconds": 5.0,
+    }
 
 
 def test_sample_sum_table_metric_aggregates_all_samples() -> None:
@@ -265,6 +416,33 @@ def test_sample_sum_table_metric_aggregates_all_samples() -> None:
     result = build_table_result(metric, samples, {})
 
     assert result["rows"] == [["CPU", 2, 5.0, 3.0]]
+
+
+def test_sample_sum_table_preserves_unknown_aggregates_as_null() -> None:
+    metric = {
+        "table": {
+            "mode": "sample_sum",
+            "key_refs": ["pid"],
+            "drop_zero_rows": False,
+            "columns": [
+                {"name": "pid", "role": "key", "key_index": 0},
+                {"name": "io_access", "ref": "io_access", "transform": "last"},
+                {"name": "avg_read", "value_ref": "read", "transform": "avg"},
+                {"name": "sum_read", "value_ref": "read", "transform": "sum"},
+                {"name": "max_read", "value_ref": "read", "transform": "max"},
+            ],
+        }
+    }
+    samples = [
+        {
+            "timestamp": "2026-07-05T00:00:00+00:00",
+            "rows": [{"pid": 101, "io_access": False, "read": None}],
+        }
+    ]
+
+    result = build_table_result(metric, samples, {})
+
+    assert result["rows"] == [[101, False, None, None, None]]
 
 
 def test_top_n_interval_chart_joins_adjacent_snapshots_in_memory() -> None:

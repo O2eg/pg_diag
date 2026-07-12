@@ -457,6 +457,7 @@ def _query_source_metadata(
         "evaluation": manifest.get("evaluation") or {},
         "database_scope": manifest.get("database_scope"),
         "semantic_columns": variant.get("semantic_columns") or {},
+        "column_statuses": variant.get("column_statuses") or {},
         **usage,
     }
 

@@ -119,7 +119,9 @@ def test_render_from_json_cli(repo_root: Path, tmp_path: Path) -> None:
                 "runtime_policy": {},
                 "defaults": {"table": {"page_size": 25}},
                 "sections": {},
-                "catalogs": {},
+                "catalogs": {
+                    "presentation": {"units": {"none": {}}},
+                },
                 "queries": {},
                 "scripts": {},
                 "metrics": {},
@@ -160,7 +162,19 @@ def test_render_from_json_cli(repo_root: Path, tmp_path: Path) -> None:
                 "reason": None,
                 "result": {
                     "kind": "table",
-                    "columns": [{"name": "value"}],
+                    "columns": [
+                        {
+                            "name": "value",
+                            "label": "Value",
+                            "value_kind": "text",
+                            "semantic_role": "label",
+                            "quantity": "text",
+                            "unit": "none",
+                            "quality": "exact",
+                            "nullable": True,
+                            "encoding": "json_string",
+                        }
+                    ],
                     "rows": [["</script><script>alert(1)</script>"]],
                     "row_count": 1,
                 },

@@ -36,8 +36,32 @@ def columns_from_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if name in seen:
                 continue
             seen.add(name)
-            columns.append({"name": name, "pg_type": "json", "pg_type_oid": None})
+            values = [record.get(name) for record in records if record.get(name) is not None]
+            columns.append(
+                {
+                    "name": name,
+                    "pg_type": _inferred_pg_type(values),
+                    "pg_type_oid": None,
+                }
+            )
     return columns
+
+
+def _inferred_pg_type(values: list[Any]) -> str:
+    if not values:
+        return "json"
+    if all(isinstance(value, bool) for value in values):
+        return "bool"
+    if all(isinstance(value, int) and not isinstance(value, bool) for value in values):
+        return "int8"
+    if all(
+        isinstance(value, (int, float)) and not isinstance(value, bool)
+        for value in values
+    ):
+        return "float8"
+    if all(isinstance(value, str) for value in values):
+        return "text"
+    return "json"
 
 
 def row_from_record(columns: list[dict[str, Any]], record: dict[str, Any]) -> list[Any]:

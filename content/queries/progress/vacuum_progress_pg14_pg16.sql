@@ -18,11 +18,11 @@ select
   p.phase,
   case
     when p.heap_blks_total = 0 then null
-    else round(p.heap_blks_scanned::numeric * 100 / p.heap_blks_total, 3)
+    else (p.heap_blks_scanned::numeric * 100 / p.heap_blks_total)
   end as heap_scanned_pct,
   case
     when p.heap_blks_total = 0 then null
-    else round(p.heap_blks_vacuumed::numeric * 100 / p.heap_blks_total, 3)
+    else (p.heap_blks_vacuumed::numeric * 100 / p.heap_blks_total)
   end as heap_vacuumed_pct,
   p.heap_blks_total,
   p.heap_blks_scanned,
@@ -30,7 +30,7 @@ select
   p.index_vacuum_count,
   p.max_dead_tuples,
   p.num_dead_tuples,
-  extract(epoch from clock_timestamp() - a.query_start)::numeric(20, 3) as query_age_seconds,
+  extract(epoch from clock_timestamp() - a.query_start)::numeric as query_age_seconds,
   case
     when a.backend_type <> 'autovacuum worker' then false
     when a.query is null or a.query like '<%' then null

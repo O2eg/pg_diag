@@ -37,7 +37,17 @@ emit_lsblk_rows() {
       closed = 1
       exit
     }
-    { print }
+    {
+      line = $0
+      if (line ~ /"fsuse%"/) {
+        sub(/"fsuse%"/, "\"fsuse_pct\"", line)
+        if (match(line, /"[0-9]+([.][0-9]+)?%"/)) {
+          numeric = substr(line, RSTART + 1, RLENGTH - 3)
+          sub(/"[0-9]+([.][0-9]+)?%"/, numeric, line)
+        }
+      }
+      print line
+    }
     END { if (!in_rows || !closed) exit 1 }
   '
 }

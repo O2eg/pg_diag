@@ -31,7 +31,7 @@ select
   db.stats_reset,
   pg_relation_size(c.indrelid)::int8 as table_size_bytes,
   pg_relation_size(c.indexrelid)::int8 as index_size_bytes,
-  round(pg_relation_size(c.indexrelid)::numeric * 100 / nullif(pg_relation_size(c.indrelid), 0), 3) as index_to_table_pct,
+  (pg_relation_size(c.indexrelid)::numeric * 100 / nullif(pg_relation_size(c.indrelid), 0)) as index_to_table_pct,
   c.idx_scan,
   c.idx_tup_read,
   c.idx_tup_fetch

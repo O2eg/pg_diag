@@ -13,14 +13,14 @@ select
     when backend_xid is null and backend_xmin is null then null
     else greatest(coalesce(age(backend_xid), 0), coalesce(age(backend_xmin), 0))::int8
   end as xid_age,
-  extract(epoch from clock_timestamp() - state_change)::numeric(20, 3) as state_age_seconds,
+  extract(epoch from clock_timestamp() - state_change)::numeric as state_age_seconds,
   case
     when xact_start is null then null
-    else extract(epoch from clock_timestamp() - xact_start)::numeric(20, 3)
+    else extract(epoch from clock_timestamp() - xact_start)::numeric
   end as xact_age_seconds,
   case
     when query_start is null then null
-    else extract(epoch from clock_timestamp() - query_start)::numeric(20, 3)
+    else extract(epoch from clock_timestamp() - query_start)::numeric
   end as query_age_seconds,
   query_id::text as query_id,
   left(regexp_replace(coalesce(query, ''), '\s+', ' ', 'g'), 500) as query,

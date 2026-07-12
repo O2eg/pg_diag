@@ -1,5 +1,10 @@
 # Extending The Report
 
+All new items and charts must comply with
+[`ITEM_DEVELOPMENT_SPEC.md`](ITEM_DEVELOPMENT_SPEC.md). In particular, sources
+return canonical raw values, every displayed numeric or temporal field declares
+an explicit unit, and sorting uses raw typed data rather than formatted text.
+
 This guide describes how to add new report items to the bundled `pg_diag`
 content pack.
 
@@ -21,6 +26,10 @@ and derived snapshot tables.
   in `queries.yaml` under `query_catalog.files`.
 - SQL used by metrics should expose stable `semantic_columns` so metrics do not
   depend on physical column names.
+- Every metric table column declares `pg_type`, including keys and text fields,
+  so an empty result has the same schema as a populated result.
+- Reuse `presentation.yaml` only for unambiguous global rules. Ambiguous fields
+  require a source override or an explicit descriptor in their source manifest.
 - SQL used by charts must return `statement_timestamp() as snapshot_time`.
 - Every database connection is opened with
   `default_transaction_read_only=on` and fails closed if PostgreSQL does not

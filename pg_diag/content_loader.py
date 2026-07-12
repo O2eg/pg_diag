@@ -52,6 +52,7 @@ class ContentPack:
     metric_catalog: dict[str, Any]
     python_catalog: dict[str, Any]
     field_reference_catalog: dict[str, Any]
+    presentation_catalog: dict[str, Any]
     instructions: dict[str, dict[str, str]]
     queries: dict[str, dict[str, Any]]
     scripts: dict[str, dict[str, Any]]
@@ -161,6 +162,7 @@ def _build_content_document(
     metric_catalog: dict[str, Any],
     python_catalog: dict[str, Any],
     field_reference_catalog: dict[str, Any],
+    presentation_catalog: dict[str, Any],
     queries: dict[str, dict[str, Any]],
     scripts: dict[str, dict[str, Any]],
     metrics: dict[str, dict[str, Any]],
@@ -196,6 +198,12 @@ def _build_content_document(
             "python": deepcopy(
                 _mapping(python_catalog.get("python_catalog"), "python.yaml:python_catalog")
             ),
+            "presentation": deepcopy(
+                _mapping(
+                    presentation_catalog.get("presentation_catalog"),
+                    "presentation.yaml:presentation_catalog",
+                )
+            ),
         },
         "queries": deepcopy(queries),
         "scripts": deepcopy(scripts),
@@ -218,6 +226,7 @@ def _build_content_provenance(
     metric_path: Path,
     python_path: Path,
     field_reference_path: Path,
+    presentation_path: Path,
     query_source_files: dict[str, Path],
     queries: dict[str, dict[str, Any]],
     scripts: dict[str, dict[str, Any]],
@@ -237,6 +246,7 @@ def _build_content_provenance(
         "catalogs/scripts": [_relative_content_path(root, script_path)],
         "catalogs/metrics": [_relative_content_path(root, metric_path)],
         "catalogs/python": [_relative_content_path(root, python_path)],
+        "catalogs/presentation": [_relative_content_path(root, presentation_path)],
     }
     provenance["field_reference"] = [_relative_content_path(root, field_reference_path)]
     for query_id in queries:
@@ -301,6 +311,11 @@ def load_content(content_path: str | Path) -> ContentPack:
         catalogs.get("field_reference"),
         "Field reference path",
     )
+    presentation_path = resolve_under(
+        root,
+        catalogs.get("presentation"),
+        "Presentation catalog path",
+    )
     instructions_root = catalogs.get("instructions")
     instructions_dir = resolve_under(root, instructions_root, "Instructions root")
     if not instructions_dir.is_dir():
@@ -311,6 +326,7 @@ def load_content(content_path: str | Path) -> ContentPack:
     metric_catalog = load_yaml_file(metric_path)
     python_catalog = load_yaml_file(python_path)
     field_reference_catalog = load_yaml_file(field_reference_path)
+    presentation_catalog = load_yaml_file(presentation_path)
 
     query_catalog = query_index.get("query_catalog")
     if not isinstance(query_catalog, dict):
@@ -414,6 +430,7 @@ def load_content(content_path: str | Path) -> ContentPack:
         metric_path,
         python_path,
         field_reference_path,
+        presentation_path,
         *catalog_files,
         *(sorted(sql_root_path.rglob("*.sql")) if sql_root_path.exists() else []),
         *(sorted(scripts_root_path.rglob("*")) if scripts_root_path.exists() else []),
@@ -429,6 +446,7 @@ def load_content(content_path: str | Path) -> ContentPack:
         metric_catalog=metric_catalog,
         python_catalog=python_catalog,
         field_reference_catalog=field_reference_catalog,
+        presentation_catalog=presentation_catalog,
         queries=queries,
         scripts=scripts,
         metrics=metrics,
@@ -444,6 +462,7 @@ def load_content(content_path: str | Path) -> ContentPack:
         metric_path=metric_path,
         python_path=python_path,
         field_reference_path=field_reference_path,
+        presentation_path=presentation_path,
         query_source_files=query_source_files,
         queries=queries,
         scripts=scripts,
@@ -461,6 +480,7 @@ def load_content(content_path: str | Path) -> ContentPack:
         metric_catalog=metric_catalog,
         python_catalog=python_catalog,
         field_reference_catalog=field_reference_catalog,
+        presentation_catalog=presentation_catalog,
         instructions=instructions,
         queries=queries,
         scripts=scripts,

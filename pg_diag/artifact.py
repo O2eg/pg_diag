@@ -31,7 +31,7 @@ COLLECTION_ERROR_STATUSES = {"error"}
 
 
 def utc_now() -> str:
-    return datetime.now(UTC).isoformat()
+    return datetime.now(UTC).isoformat().removesuffix("+00:00") + "Z"
 
 
 def create_artifact(

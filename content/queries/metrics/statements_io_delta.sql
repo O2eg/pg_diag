@@ -9,8 +9,8 @@ select
   s.queryid::text as query_id,
   s.shared_blks_read::int8 as shared_blks_read,
   s.shared_blks_written::int8 as shared_blks_written,
-  round(s.blk_read_time::numeric, 3) as blk_read_time_ms,
-  round(s.blk_write_time::numeric, 3) as blk_write_time_ms,
+  (s.blk_read_time::numeric) as blk_read_time_ms,
+  (s.blk_write_time::numeric) as blk_write_time_ms,
   ''::text as query
 from pg_stat_statements s
 join pg_database d on d.oid = s.dbid

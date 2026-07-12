@@ -13,17 +13,17 @@ select
   p.current_locker_pid,
   p.lockers_total,
   p.lockers_done,
-  round(p.lockers_done::numeric * 100 / nullif(p.lockers_total, 0), 3) as lockers_done_pct,
+  (p.lockers_done::numeric * 100 / nullif(p.lockers_total, 0)) as lockers_done_pct,
   p.blocks_total * current_setting('block_size')::int8 as total_bytes,
   p.blocks_done * current_setting('block_size')::int8 as done_bytes,
-  round(p.blocks_done::numeric * 100 / nullif(p.blocks_total, 0), 3) as blocks_done_pct,
+  (p.blocks_done::numeric * 100 / nullif(p.blocks_total, 0)) as blocks_done_pct,
   p.tuples_total,
   p.tuples_done,
-  round(p.tuples_done::numeric * 100 / nullif(p.tuples_total, 0), 3) as tuples_done_pct,
+  (p.tuples_done::numeric * 100 / nullif(p.tuples_total, 0)) as tuples_done_pct,
   p.partitions_total,
   p.partitions_done,
-  round(p.partitions_done::numeric * 100 / nullif(p.partitions_total, 0), 3) as partitions_done_pct,
-  extract(epoch from clock_timestamp() - a.query_start)::numeric(20, 3) as query_age_seconds,
+  (p.partitions_done::numeric * 100 / nullif(p.partitions_total, 0)) as partitions_done_pct,
+  extract(epoch from clock_timestamp() - a.query_start)::numeric as query_age_seconds,
   left(regexp_replace(coalesce(a.query, ''), '\s+', ' ', 'g'), 500) as query
 from pg_catalog.pg_stat_progress_create_index p
 join pg_catalog.pg_stat_activity a on p.pid = a.pid

@@ -4,7 +4,7 @@ This instruction belongs to report item `replication.replication_slots`. The ite
 
 ## What this item shows
 - Cluster-wide physical and logical slots, activity/PID, restart and confirmed-flush LSNs, retained WAL bytes, and xmin horizons.
-- Version-dependent slot state exposed safely through optional fields such as `wal_status`, `safe_wal_size_bytes`, invalidation, failover, synchronization, and conflict state.
+- Version-dependent slot state exposed through explicit SQL variants: conflict state from PostgreSQL 16, and inactive time, invalidation reason, failover, and synchronization state from PostgreSQL 17.
 - Retained bytes relative to the local write LSN on a primary or replay LSN on a standby.
 
 ## What to watch
@@ -15,6 +15,7 @@ This instruction belongs to report item `replication.replication_slots`. The ite
 ## Automatic evaluation
 - `high`: PostgreSQL reports that required WAL is lost or the slot is invalidated.
 - Inactivity, retained size, and xmin age remain contextual and do not assign severity by themselves.
+- A field unavailable on the connected major version is `Unsupported`, never zero or an empty compatibility placeholder.
 
 ## Common fault causes
 - Abandoned replica, stopped logical consumer, disabled subscription, network outage, or insufficient slot WAL retention.

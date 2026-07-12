@@ -9,7 +9,7 @@ This instruction belongs to report item `backend_os.backend_proc_io`. The item i
 
 ## What to watch
 - One backend producing most reads or writes over the full window.
-- Zero values with io_access=false.
+- Null rates with `io_access=false`; these mean that the counters were not readable, not that I/O was zero.
 - Missing short-lived backends that started or exited inside the window.
 
 ## Common fault causes
@@ -24,7 +24,7 @@ This instruction belongs to report item `backend_os.backend_proc_io`. The item i
 - PID reuse is rejected by matching process start time.
 
 ## Checklist
-- Check io_access before trusting zeros.
+- Check `io_access` before interpreting the rates.
 - Use the PID and command to correlate with Backend Activity and SQL text.
 - Treat the rates as window averages, not peak measurements.
 - Compare with pg_stat_io and OS disk charts.

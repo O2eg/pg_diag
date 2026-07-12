@@ -94,7 +94,7 @@ select
   values_consumed,
   case
     when cycle or values_consumed is null then null
-    else round(values_consumed * 100 / nullif(total_values, 0), 3)
+    else (values_consumed * 100 / nullif(total_values, 0))
   end as percent,
   case
     when cycle or values_consumed is null then null

@@ -17,7 +17,7 @@ select
   temp_files::int8 as temp_files,
   temp_bytes::int8 as temp_bytes,
   deadlocks::int8 as deadlocks,
-  round(blk_read_time::numeric, 3) as blk_read_time_ms,
-  round(blk_write_time::numeric, 3) as blk_write_time_ms
+  (blk_read_time::numeric) as blk_read_time_ms,
+  (blk_write_time::numeric) as blk_write_time_ms
 from pg_stat_database
 where datname is not null

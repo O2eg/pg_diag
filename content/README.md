@@ -23,12 +23,16 @@ JSON/HTML report.
   timeouts, and local-only behavior.
 - `field_reference.yaml` - wildcard-aware help text for every declarative field
   shown as comments in the Raw metadata view.
+- `presentation.yaml` - canonical units, logical descriptor defaults, ordered
+  content rules, and source-specific presentation overrides.
 - `instructions/` - Markdown instructions embedded into report items and shown
   through the `Show Instruction` button.
 - `queries/` - SQL files referenced by query variants.
 - `scripts/` - local shell scripts referenced by `scripts.yaml`.
 - `python/` - trusted Python source files referenced by `python.yaml`.
 - `EXTENDING.md` - examples for adding new report items.
+- `ITEM_DEVELOPMENT_SPEC.md` - normative units, timestamps, tables, charts,
+  sorting, Delta, and rendering contract for all report content.
 
 `catalog/*.yaml` is not loaded by glob. A new catalog file must be listed in
 `queries.yaml` under `query_catalog.files`; otherwise it is ignored.
@@ -43,6 +47,7 @@ defaults are already merged into manifests under these canonical paths:
 - `scripts/<script_id>`
 - `metrics/<metric_id>`
 - `python_sources/<python_id>`
+- `presentation`
 - `instructions/<section_id.item_key>`
 
 The same loader records the source files contributing to each path. The report
@@ -54,7 +59,7 @@ identity, tag-taxonomy, catalog-index, and unrelated catalog-file lists are not
 shown. Runtime policy, defaults, database-scope presentation, query variants,
 and sampler outputs are reduced to the values that apply to the selected item.
 
-Content schema version 3 is strict. `report.catalogs` must name every catalog,
+Content schema version 4 is strict. `report.catalogs` must name every catalog,
 `defaults.item.state` and `defaults.section.state` must both be declared, and
 the field reference must cover every effective document path. Missing fields,
 catalogs, instructions, or help entries stop validation instead of selecting an

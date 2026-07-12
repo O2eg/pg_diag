@@ -4,7 +4,7 @@ select
   blks_hit,
   blks_read,
   (blks_hit + blks_read)::int8 as block_accesses,
-  round(100.0 * blks_hit / nullif(blks_hit + blks_read, 0), 2) as hit_pct,
+  (100.0 * blks_hit / nullif(blks_hit + blks_read, 0)) as hit_pct,
   blks_written,
   blks_exists,
   flushes,

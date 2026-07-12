@@ -14,11 +14,11 @@ select
   p.phase,
   p.heap_blks_total * current_setting('block_size')::int8 as total_bytes,
   p.heap_blks_scanned * current_setting('block_size')::int8 as scanned_bytes,
-  round(p.heap_blks_scanned::numeric * 100 / nullif(p.heap_blks_total, 0), 3) as scanned_pct,
+  (p.heap_blks_scanned::numeric * 100 / nullif(p.heap_blks_total, 0)) as scanned_pct,
   p.heap_tuples_scanned as tuples_scanned,
   p.heap_tuples_written as tuples_written,
   p.index_rebuild_count,
-  extract(epoch from clock_timestamp() - a.query_start)::numeric(20, 3) as query_age_seconds,
+  extract(epoch from clock_timestamp() - a.query_start)::numeric as query_age_seconds,
   left(regexp_replace(coalesce(a.query, ''), '\s+', ' ', 'g'), 500) as query
 from pg_catalog.pg_stat_progress_cluster p
 join pg_catalog.pg_stat_activity a on p.pid = a.pid

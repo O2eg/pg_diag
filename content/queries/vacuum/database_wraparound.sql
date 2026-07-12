@@ -9,14 +9,14 @@ select
   d.oid as datid,
   d.datname,
   age(d.datfrozenxid)::int8 as xid_age,
-  round(age(d.datfrozenxid)::numeric * 100 / nullif(s.freeze_max_age, 0), 3)
+  (age(d.datfrozenxid)::numeric * 100 / nullif(s.freeze_max_age, 0))
     as xid_freeze_trigger_pct,
-  round(age(d.datfrozenxid)::numeric * 100 / nullif(s.failsafe_age, 0), 3)
+  (age(d.datfrozenxid)::numeric * 100 / nullif(s.failsafe_age, 0))
     as xid_failsafe_pct,
   mxid_age(d.datminmxid)::int8 as multixact_age,
-  round(mxid_age(d.datminmxid)::numeric * 100 / nullif(s.multixact_freeze_max_age, 0), 3)
+  (mxid_age(d.datminmxid)::numeric * 100 / nullif(s.multixact_freeze_max_age, 0))
     as multixact_freeze_trigger_pct,
-  round(mxid_age(d.datminmxid)::numeric * 100 / nullif(s.multixact_failsafe_age, 0), 3)
+  (mxid_age(d.datminmxid)::numeric * 100 / nullif(s.multixact_failsafe_age, 0))
     as multixact_failsafe_pct,
   d.datfrozenxid::text as datfrozenxid,
   d.datminmxid::text as datminmxid,

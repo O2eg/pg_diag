@@ -3,7 +3,8 @@
 This instruction belongs to report item `os.disk_usage`. The item is backed by `os.disk_usage` (local host script).
 
 ## What this item shows
-- Filesystem capacity and used/free space from `df`
+- Filesystem capacity, used/free bytes, and utilization percentage from `df`.
+- The artifact stores exact bytes and a raw percentage; the table applies adaptive IEC display units.
 - Which mount points are close to full at collection time.
 
 ## What to watch
@@ -20,7 +21,7 @@ This instruction belongs to report item `os.disk_usage`. The item is backed by `
 
 ## Automatic evaluation
 - No fixed utilization threshold is assigned automatically because reserved blocks, growth rate, filesystem size, and operational headroom differ by environment.
-- This item uses byte capacity from `df -hP`; inode exhaustion must be checked separately.
+- This item uses byte capacity from `df -P -B1`; inode exhaustion must be checked separately.
 
 ## Checklist
 - Identify mount points that contain PGDATA, WAL, logs, archives, and backups.

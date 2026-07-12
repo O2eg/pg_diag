@@ -9,7 +9,7 @@ select
   s.stats_since as entry_stats_since,
   s.queryid::text as query_id,
   s.calls::int8 as calls,
-  round(s.total_exec_time::numeric, 3) as total_exec_time_ms,
+  (s.total_exec_time::numeric) as total_exec_time_ms,
   s.rows::int8 as rows,
   ''::text as query
 from pg_stat_statements s

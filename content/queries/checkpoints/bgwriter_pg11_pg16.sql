@@ -3,10 +3,8 @@ select
   checkpoints_timed,
   checkpoints_req,
   (checkpoints_timed + checkpoints_req)::int8 as checkpoints_total,
-  round(
-    100.0 * checkpoints_req / nullif(checkpoints_timed + checkpoints_req, 0),
-    2
-  ) as requested_checkpoint_pct,
+  (
+    100.0 * checkpoints_req / nullif(checkpoints_timed + checkpoints_req, 0)) as requested_checkpoint_pct,
   checkpoint_write_time,
   checkpoint_sync_time,
   buffers_checkpoint,

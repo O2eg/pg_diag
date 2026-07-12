@@ -1,5 +1,5 @@
 metric_catalog:
-  schema_version: 3
+  schema_version: 4
   defaults:
     mode: snapshots
     x: snapshot_time
@@ -836,6 +836,7 @@ metrics:
         - name: datid
           role: key
           key_index: 0
+          pg_type: oid
         - name: commit_delta
           value_ref: counters.xact_commit
           transform: delta
@@ -942,15 +943,19 @@ metrics:
         - name: dbid
           role: key
           key_index: 0
+          pg_type: oid
         - name: userid
           role: key
           key_index: 1
+          pg_type: oid
         - name: query_id
           role: key
           key_index: 2
+          pg_type: int8
         - name: toplevel
           role: key
           key_index: 3
+          pg_type: bool
         - name: calls_delta
           value_ref: counters.calls
           transform: delta
@@ -1001,15 +1006,19 @@ metrics:
         - name: dbid
           role: key
           key_index: 0
+          pg_type: oid
         - name: userid
           role: key
           key_index: 1
+          pg_type: oid
         - name: query_id
           role: key
           key_index: 2
+          pg_type: int8
         - name: toplevel
           role: key
           key_index: 3
+          pg_type: bool
         - name: shared_read_blks_delta
           value_ref: counters.shared_blks_read
           transform: delta
@@ -1064,15 +1073,19 @@ metrics:
         - name: dbid
           role: key
           key_index: 0
+          pg_type: oid
         - name: userid
           role: key
           key_index: 1
+          pg_type: oid
         - name: query_id
           role: key
           key_index: 2
+          pg_type: int8
         - name: toplevel
           role: key
           key_index: 3
+          pg_type: bool
         - name: wal_bytes_delta
           value_ref: counters.wal_bytes
           transform: delta
@@ -1123,9 +1136,11 @@ metrics:
         - name: datid
           role: key
           key_index: 0
+          pg_type: oid
         - name: relid
           role: key
           key_index: 1
+          pg_type: oid
         - name: inserts_delta
           value_ref: counters.n_tup_ins
           transform: delta
@@ -1197,9 +1212,11 @@ metrics:
         - name: datid
           role: key
           key_index: 0
+          pg_type: oid
         - name: relid
           role: key
           key_index: 1
+          pg_type: oid
         - name: seq_scan_delta
           value_ref: counters.seq_scan
           transform: delta
@@ -1258,9 +1275,11 @@ metrics:
         - name: datid
           role: key
           key_index: 0
+          pg_type: oid
         - name: relid
           role: key
           key_index: 1
+          pg_type: oid
         - name: heap_blks_read_delta
           value_ref: counters.heap_blks_read
           transform: delta
@@ -1319,9 +1338,11 @@ metrics:
         - name: datid
           role: key
           key_index: 0
+          pg_type: oid
         - name: indexrelid
           role: key
           key_index: 1
+          pg_type: oid
         - name: idx_scan_delta
           value_ref: counters.idx_scan
           transform: delta
@@ -1380,9 +1401,11 @@ metrics:
         - name: datid
           role: key
           key_index: 0
+          pg_type: oid
         - name: funcid
           role: key
           key_index: 1
+          pg_type: oid
         - name: calls_delta
           value_ref: counters.calls
           transform: delta
@@ -1441,6 +1464,7 @@ metrics:
         - name: pid
           role: key
           key_index: 0
+          pg_type: int4
         - name: avg_cpu_pct
           value_ref: cpu_pct
           transform: avg
@@ -1452,9 +1476,11 @@ metrics:
         - name: process
           ref: process
           transform: last
+          pg_type: text
         - name: command
           ref: command
           transform: last
+          pg_type: text
 
   backend.proc_io_top:
     title: PostgreSQL Backend /proc I/O
@@ -1468,6 +1494,7 @@ metrics:
     table:
       mode: sample_sum
       key_refs: [pid]
+      drop_zero_rows: false
       limit: 50
       sort:
         column: avg_read_bytes_per_sec
@@ -1476,9 +1503,11 @@ metrics:
         - name: pid
           role: key
           key_index: 0
+          pg_type: int4
         - name: io_access
           ref: io_access
           transform: last
+          pg_type: bool
         - name: avg_read_bytes_per_sec
           value_ref: read_bytes_per_sec
           transform: avg
@@ -1490,6 +1519,405 @@ metrics:
         - name: process
           ref: process
           transform: last
+          pg_type: text
         - name: command
           ref: command
           transform: last
+          pg_type: text
+
+  statements.temp_io_delta:
+    title: SQL Temp I/O Delta
+    database_scope: current_database
+    source_query: metrics.statements_temp_io_delta
+    requires_collection: window_endpoints
+    result: table
+    display:
+      default_sort: {column: temp_io_bytes_delta, direction: desc}
+    table:
+      key_refs: [dimensions.database_id, dimensions.user_id, dimensions.query_id, dimensions.toplevel]
+      epoch_refs: [dimensions.global_stats_reset, dimensions.entry_stats_since]
+      limit: 50
+      sort: {column: temp_io_bytes_delta, direction: desc}
+      columns:
+        - {name: datname, value_ref: dimensions.database, transform: last, pg_type: text}
+        - {name: rolname, value_ref: dimensions.user, transform: last, pg_type: text}
+        - {name: dbid, role: key, key_index: 0, pg_type: oid}
+        - {name: userid, role: key, key_index: 1, pg_type: oid}
+        - {name: query_id, role: key, key_index: 2, pg_type: int8}
+        - {name: toplevel, role: key, key_index: 3, pg_type: bool}
+        - {name: temp_blks_read_delta, value_ref: counters.temp_blks_read, transform: delta, pg_type: float8}
+        - {name: temp_blks_written_delta, value_ref: counters.temp_blks_written, transform: delta, pg_type: float8}
+        - {name: temp_io_bytes_delta, value_ref: counters.temp_io_bytes, transform: delta, pg_type: float8}
+        - {name: temp_io_bytes_per_sec, value_ref: counters.temp_io_bytes, transform: rate, pg_type: float8}
+        - {name: temp_read_time_ms_delta, value_ref: counters.temp_read_time_ms, transform: delta, pg_type: float8}
+        - {name: temp_write_time_ms_delta, value_ref: counters.temp_write_time_ms, transform: delta, pg_type: float8}
+
+  io.activity_delta:
+    title: PostgreSQL I/O Delta
+    database_scope: all_databases
+    source_query: metrics.io_activity_delta
+    requires_collection: window_endpoints
+    result: table
+    display:
+      default_sort: {column: total_bytes_delta, direction: desc}
+    table:
+      key_refs: [dimensions.backend_type, dimensions.object, dimensions.context]
+      epoch_refs: [dimensions.stats_reset]
+      sort: {column: total_bytes_delta, direction: desc}
+      columns:
+        - {name: backend_type, role: key, key_index: 0, pg_type: text}
+        - {name: object, role: key, key_index: 1, pg_type: text}
+        - {name: context, role: key, key_index: 2, pg_type: text}
+        - {name: reads_delta, value_ref: counters.reads, transform: delta, optional: true, pg_type: float8}
+        - {name: read_bytes_delta, value_ref: counters.read_bytes, transform: delta, optional: true, pg_type: float8}
+        - {name: read_bytes_per_sec, value_ref: counters.read_bytes, transform: rate, optional: true, pg_type: float8}
+        - {name: read_time_ms_delta, value_ref: counters.read_time_ms, transform: delta, optional: true, pg_type: float8}
+        - {name: writes_delta, value_ref: counters.writes, transform: delta, optional: true, pg_type: float8}
+        - {name: write_bytes_delta, value_ref: counters.write_bytes, transform: delta, optional: true, pg_type: float8}
+        - {name: write_bytes_per_sec, value_ref: counters.write_bytes, transform: rate, optional: true, pg_type: float8}
+        - {name: write_time_ms_delta, value_ref: counters.write_time_ms, transform: delta, optional: true, pg_type: float8}
+        - {name: writebacks_delta, value_ref: counters.writebacks, transform: delta, optional: true, pg_type: float8}
+        - {name: writeback_time_ms_delta, value_ref: counters.writeback_time_ms, transform: delta, optional: true, pg_type: float8}
+        - {name: extends_delta, value_ref: counters.extends, transform: delta, optional: true, pg_type: float8}
+        - {name: extend_bytes_delta, value_ref: counters.extend_bytes, transform: delta, optional: true, pg_type: float8}
+        - {name: extend_time_ms_delta, value_ref: counters.extend_time_ms, transform: delta, optional: true, pg_type: float8}
+        - {name: fsyncs_delta, value_ref: counters.fsyncs, transform: delta, optional: true, pg_type: float8}
+        - {name: fsync_time_ms_delta, value_ref: counters.fsync_time_ms, transform: delta, optional: true, pg_type: float8}
+        - {name: hits_delta, value_ref: counters.hits, transform: delta, optional: true, pg_type: float8}
+        - {name: evictions_delta, value_ref: counters.evictions, transform: delta, optional: true, pg_type: float8}
+        - {name: reuses_delta, value_ref: counters.reuses, transform: delta, optional: true, pg_type: float8}
+        - {name: total_bytes_delta, value_ref: counters.total_bytes, transform: delta, optional: true, pg_type: float8}
+
+  checkpoints.checkpointer_delta:
+    title: Checkpointer Delta
+    database_scope: all_databases
+    source_query: metrics.checkpointer_delta
+    requires_collection: window_endpoints
+    result: table
+    display:
+      default_sort: {column: checkpoints_done_delta, direction: desc}
+    table:
+      key_refs: [dimensions.scope]
+      epoch_refs: [dimensions.stats_reset]
+      drop_zero_rows: false
+      sort: {column: checkpoints_done_delta, direction: desc}
+      columns:
+        - {name: scope, role: key, key_index: 0, pg_type: text}
+        - {name: checkpoints_timed_delta, value_ref: counters.checkpoints_timed, transform: delta, pg_type: float8}
+        - {name: checkpoints_requested_delta, value_ref: counters.checkpoints_requested, transform: delta, pg_type: float8}
+        - {name: checkpoints_done_delta, value_ref: counters.checkpoints_done, transform: delta, pg_type: float8}
+        - {name: restartpoints_timed_delta, value_ref: counters.restartpoints_timed, transform: delta, pg_type: float8}
+        - {name: restartpoints_requested_delta, value_ref: counters.restartpoints_requested, transform: delta, pg_type: float8}
+        - {name: restartpoints_done_delta, value_ref: counters.restartpoints_done, transform: delta, pg_type: float8}
+        - {name: write_time_ms_delta, value_ref: counters.write_time_ms, transform: delta, pg_type: float8}
+        - {name: sync_time_ms_delta, value_ref: counters.sync_time_ms, transform: delta, pg_type: float8}
+        - {name: buffers_written_delta, value_ref: counters.buffers_written, transform: delta, pg_type: float8}
+        - {name: slru_written_delta, value_ref: counters.slru_written, transform: delta, pg_type: float8}
+
+  wal.activity_delta:
+    title: WAL Activity Delta
+    database_scope: all_databases
+    source_query: metrics.wal_activity_delta
+    requires_collection: window_endpoints
+    result: table
+    display:
+      default_sort: {column: wal_bytes_delta, direction: desc}
+    table:
+      key_refs: [dimensions.scope]
+      epoch_refs: [dimensions.stats_reset]
+      drop_zero_rows: false
+      sort: {column: wal_bytes_delta, direction: desc}
+      columns:
+        - {name: scope, role: key, key_index: 0, pg_type: text}
+        - {name: wal_records_delta, value_ref: counters.wal_records, transform: delta, pg_type: float8}
+        - {name: wal_fpi_delta, value_ref: counters.wal_fpi, transform: delta, pg_type: float8}
+        - {name: wal_bytes_delta, value_ref: counters.wal_bytes, transform: delta, pg_type: float8}
+        - {name: wal_bytes_per_sec, value_ref: counters.wal_bytes, transform: rate, pg_type: float8}
+        - {name: wal_buffers_full_delta, value_ref: counters.wal_buffers_full, transform: delta, pg_type: float8}
+
+  objects.table_maintenance_delta:
+    title: Table Maintenance Delta
+    database_scope: current_database
+    source_query: metrics.objects_table_maintenance_delta
+    requires_collection: window_endpoints
+    result: table
+    display:
+      default_sort: {column: maintenance_count_delta, direction: desc}
+    table:
+      key_refs: [dimensions.database_id, dimensions.relation_id]
+      epoch_refs: [dimensions.database_stats_reset]
+      limit: 50
+      sort: {column: maintenance_count_delta, direction: desc}
+      columns:
+        - {name: datname, value_ref: dimensions.database, transform: last, pg_type: text}
+        - {name: schemaname, value_ref: dimensions.schema, transform: last, pg_type: text}
+        - {name: relname, value_ref: dimensions.table, transform: last, pg_type: text}
+        - {name: datid, role: key, key_index: 0, pg_type: oid}
+        - {name: relid, role: key, key_index: 1, pg_type: oid}
+        - {name: vacuum_count_delta, value_ref: counters.vacuum_count, transform: delta, pg_type: float8}
+        - {name: autovacuum_count_delta, value_ref: counters.autovacuum_count, transform: delta, pg_type: float8}
+        - {name: analyze_count_delta, value_ref: counters.analyze_count, transform: delta, pg_type: float8}
+        - {name: autoanalyze_count_delta, value_ref: counters.autoanalyze_count, transform: delta, pg_type: float8}
+        - {name: maintenance_count_delta, value_ref: counters.maintenance_count, transform: delta, pg_type: float8}
+        - {name: vacuum_time_ms_delta, value_ref: counters.vacuum_time_ms, transform: delta, pg_type: float8}
+        - {name: autovacuum_time_ms_delta, value_ref: counters.autovacuum_time_ms, transform: delta, pg_type: float8}
+        - {name: analyze_time_ms_delta, value_ref: counters.analyze_time_ms, transform: delta, pg_type: float8}
+        - {name: autoanalyze_time_ms_delta, value_ref: counters.autoanalyze_time_ms, transform: delta, pg_type: float8}
+        - {name: maintenance_time_ms_delta, value_ref: counters.maintenance_time_ms, transform: delta, pg_type: float8}
+
+  replication.recovery_conflicts_delta:
+    title: Standby Recovery Conflicts Delta
+    database_scope: all_databases
+    source_query: metrics.recovery_conflicts_delta
+    requires_collection: window_endpoints
+    result: table
+    display:
+      default_sort: {column: conflicts_total_delta, direction: desc}
+    evaluation:
+      summary_title: Standby queries were cancelled by recovery conflicts
+      recommendation: Correlate the conflict reason with standby logs and workload before changing recovery-delay or feedback settings.
+      rules:
+        - severity: medium
+          reason: One or more standby queries were cancelled during the snapshot window
+          all: [{column: conflicts_total_delta, operator: gt, value: 0}]
+    table:
+      key_refs: [dimensions.database_id]
+      epoch_refs: [dimensions.stats_reset]
+      drop_zero_rows: false
+      sort: {column: conflicts_total_delta, direction: desc}
+      columns:
+        - {name: server_role, value_ref: dimensions.server_role, transform: last, pg_type: text}
+        - {name: datname, value_ref: dimensions.database, transform: last, pg_type: text}
+        - {name: datid, role: key, key_index: 0, pg_type: oid}
+        - {name: conflicts_total_delta, value_ref: counters.conflicts_total, transform: delta, pg_type: float8}
+        - {name: confl_tablespace_delta, value_ref: counters.confl_tablespace, transform: delta, pg_type: float8}
+        - {name: confl_lock_delta, value_ref: counters.confl_lock, transform: delta, pg_type: float8}
+        - {name: confl_snapshot_delta, value_ref: counters.confl_snapshot, transform: delta, pg_type: float8}
+        - {name: confl_bufferpin_delta, value_ref: counters.confl_bufferpin, transform: delta, pg_type: float8}
+        - {name: confl_deadlock_delta, value_ref: counters.confl_deadlock, transform: delta, pg_type: float8}
+        - {name: confl_active_logicalslot_delta, value_ref: counters.confl_active_logicalslot, transform: delta, pg_type: float8}
+
+  database.session_outcomes_delta:
+    title: Database Session Outcomes Delta
+    database_scope: all_databases
+    source_query: metrics.database_session_outcomes_delta
+    requires_collection: window_endpoints
+    result: table
+    display:
+      default_sort: {column: sessions_delta, direction: desc}
+    evaluation:
+      summary_title: Database sessions ended abnormally
+      recommendation: Correlate abandoned and fatal sessions with PostgreSQL and client logs; verify network and process stability.
+      rules:
+        - severity: medium
+          reason: Client sessions were abandoned during the snapshot window
+          all: [{column: sessions_abandoned_delta, operator: gt, value: 0}]
+        - severity: medium
+          reason: Client sessions ended with fatal errors during the snapshot window
+          all: [{column: sessions_fatal_delta, operator: gt, value: 0}]
+    table:
+      key_refs: [dimensions.database_id]
+      epoch_refs: [dimensions.stats_reset]
+      drop_zero_rows: false
+      sort: {column: sessions_delta, direction: desc}
+      columns:
+        - {name: datname, value_ref: dimensions.database, transform: last, pg_type: text}
+        - {name: datid, role: key, key_index: 0, pg_type: oid}
+        - {name: sessions_delta, value_ref: counters.sessions, transform: delta, pg_type: float8}
+        - {name: sessions_abandoned_delta, value_ref: counters.sessions_abandoned, transform: delta, pg_type: float8}
+        - {name: sessions_fatal_delta, value_ref: counters.sessions_fatal, transform: delta, pg_type: float8}
+        - {name: sessions_killed_delta, value_ref: counters.sessions_killed, transform: delta, pg_type: float8}
+        - {name: session_time_ms_delta, value_ref: counters.session_time_ms, transform: delta, pg_type: float8}
+        - {name: active_time_ms_delta, value_ref: counters.active_time_ms, transform: delta, pg_type: float8}
+        - {name: idle_in_transaction_time_ms_delta, value_ref: counters.idle_in_transaction_time_ms, transform: delta, pg_type: float8}
+
+  replication.physical_progress_delta:
+    title: Physical Replication Progress Delta
+    database_scope: all_databases
+    source_query: metrics.physical_replication_progress_delta
+    requires_collection: window_endpoints
+    result: table
+    display:
+      default_sort: {column: replay_bytes_delta, direction: desc}
+    table:
+      key_refs: [dimensions.sender_pid]
+      epoch_refs: [dimensions.sender_start]
+      limit: 50
+      sort: {column: replay_bytes_delta, direction: desc}
+      columns:
+        - {name: pid, role: key, key_index: 0, pg_type: int4}
+        - {name: application_name, value_ref: dimensions.application, transform: last, pg_type: text}
+        - {name: client_addr, value_ref: dimensions.client_address, transform: last, pg_type: text}
+        - {name: usename, value_ref: dimensions.user, transform: last, pg_type: text}
+        - {name: state, value_ref: dimensions.state, transform: last, pg_type: text}
+        - {name: sync_state, value_ref: dimensions.sync_state, transform: last, pg_type: text}
+        - {name: generated_bytes_delta, value_ref: counters.current_wal_bytes, transform: delta, pg_type: float8}
+        - {name: sent_bytes_delta, value_ref: counters.sent_bytes, transform: delta, pg_type: float8}
+        - {name: sent_bytes_per_sec, value_ref: counters.sent_bytes, transform: rate, pg_type: float8}
+        - {name: write_bytes_delta, value_ref: counters.write_bytes, transform: delta, pg_type: float8}
+        - {name: flush_bytes_delta, value_ref: counters.flush_bytes, transform: delta, pg_type: float8}
+        - {name: replay_bytes_delta, value_ref: counters.replay_bytes, transform: delta, pg_type: float8}
+        - {name: replay_bytes_per_sec, value_ref: counters.replay_bytes, transform: rate, pg_type: float8}
+
+  statements.planning_delta:
+    title: SQL Planning Delta
+    database_scope: current_database
+    source_query: metrics.statements_planning_delta
+    requires_collection: window_endpoints
+    result: table
+    display:
+      default_sort: {column: total_plan_time_ms_delta, direction: desc}
+    table:
+      key_refs: [dimensions.database_id, dimensions.user_id, dimensions.query_id, dimensions.toplevel]
+      epoch_refs: [dimensions.global_stats_reset, dimensions.entry_stats_since]
+      limit: 50
+      sort: {column: total_plan_time_ms_delta, direction: desc}
+      columns:
+        - {name: datname, value_ref: dimensions.database, transform: last, pg_type: text}
+        - {name: rolname, value_ref: dimensions.user, transform: last, pg_type: text}
+        - {name: track_planning, value_ref: dimensions.track_planning, transform: last, pg_type: text}
+        - {name: dbid, role: key, key_index: 0, pg_type: oid}
+        - {name: userid, role: key, key_index: 1, pg_type: oid}
+        - {name: query_id, role: key, key_index: 2, pg_type: int8}
+        - {name: toplevel, role: key, key_index: 3, pg_type: bool}
+        - {name: plans_delta, value_ref: counters.plans, transform: delta, pg_type: float8}
+        - {name: plans_per_sec, value_ref: counters.plans, transform: rate, pg_type: float8}
+        - {name: total_plan_time_ms_delta, value_ref: counters.total_plan_time_ms, transform: delta, pg_type: float8}
+        - {name: plan_time_ms_per_sec, value_ref: counters.total_plan_time_ms, transform: rate, pg_type: float8}
+
+  checkpoints.bgwriter_delta:
+    title: Background Writer Delta
+    database_scope: all_databases
+    source_query: metrics.bgwriter_delta
+    requires_collection: window_endpoints
+    result: table
+    display:
+      default_sort: {column: buffers_clean_delta, direction: desc}
+    evaluation:
+      summary_title: Client backends performed fsync operations
+      recommendation: Review checkpoint and storage behavior before changing buffer or writer settings.
+      rules:
+        - severity: medium
+          reason: Client backends performed their own fsync operations during the snapshot window
+          all: [{column: buffers_backend_fsync_delta, operator: gt, value: 0}]
+    table:
+      key_refs: [dimensions.scope]
+      epoch_refs: [dimensions.stats_reset]
+      drop_zero_rows: false
+      sort: {column: buffers_clean_delta, direction: desc}
+      columns:
+        - {name: scope, role: key, key_index: 0, pg_type: text}
+        - {name: buffers_clean_delta, value_ref: counters.buffers_clean, transform: delta, pg_type: float8}
+        - {name: maxwritten_clean_delta, value_ref: counters.maxwritten_clean, transform: delta, pg_type: float8}
+        - {name: buffers_backend_delta, value_ref: counters.buffers_backend, transform: delta, pg_type: float8}
+        - {name: buffers_backend_fsync_delta, value_ref: counters.buffers_backend_fsync, transform: delta, pg_type: float8}
+        - {name: buffers_alloc_delta, value_ref: counters.buffers_alloc, transform: delta, pg_type: float8}
+
+  slru.activity_delta:
+    title: SLRU Activity Delta
+    database_scope: all_databases
+    source_query: metrics.slru_activity_delta
+    requires_collection: window_endpoints
+    result: table
+    display:
+      default_sort: {column: blks_read_delta, direction: desc}
+    table:
+      key_refs: [dimensions.name]
+      epoch_refs: [dimensions.stats_reset]
+      sort: {column: blks_read_delta, direction: desc}
+      columns:
+        - {name: name, role: key, key_index: 0, pg_type: text}
+        - {name: blks_zeroed_delta, value_ref: counters.blks_zeroed, transform: delta, pg_type: float8}
+        - {name: blks_hit_delta, value_ref: counters.blks_hit, transform: delta, pg_type: float8}
+        - {name: blks_read_delta, value_ref: counters.blks_read, transform: delta, pg_type: float8}
+        - {name: blks_written_delta, value_ref: counters.blks_written, transform: delta, pg_type: float8}
+        - {name: blks_exists_delta, value_ref: counters.blks_exists, transform: delta, pg_type: float8}
+        - {name: flushes_delta, value_ref: counters.flushes, transform: delta, pg_type: float8}
+        - {name: truncates_delta, value_ref: counters.truncates, transform: delta, pg_type: float8}
+
+  wal.archiver_delta:
+    title: WAL Archiver Delta
+    database_scope: all_databases
+    source_query: metrics.wal_archiver_delta
+    requires_collection: window_endpoints
+    result: table
+    display:
+      default_sort: {column: archived_count_delta, direction: desc}
+    evaluation:
+      summary_title: WAL archive attempts failed during the snapshot window
+      recommendation: Inspect PostgreSQL archiver logs and archive target health before retrying or changing archive configuration.
+      rules:
+        - severity: medium
+          reason: One or more WAL archive attempts failed during the snapshot window
+          all: [{column: failed_count_delta, operator: gt, value: 0}]
+    table:
+      key_refs: [dimensions.scope]
+      epoch_refs: [dimensions.stats_reset]
+      drop_zero_rows: false
+      sort: {column: archived_count_delta, direction: desc}
+      columns:
+        - {name: scope, role: key, key_index: 0, pg_type: text}
+        - {name: archived_count_delta, value_ref: counters.archived_count, transform: delta, pg_type: float8}
+        - {name: archived_per_sec, value_ref: counters.archived_count, transform: rate, pg_type: float8}
+        - {name: failed_count_delta, value_ref: counters.failed_count, transform: delta, pg_type: float8}
+        - {name: last_archived_wal, value_ref: dimensions.last_archived_wal, transform: last, pg_type: text}
+        - {name: last_failed_wal, value_ref: dimensions.last_failed_wal, transform: last, pg_type: text}
+
+  replication.logical_slot_delta:
+    title: Logical Decoding Slot Delta
+    database_scope: all_databases
+    source_query: metrics.logical_decoding_slot_delta
+    requires_collection: window_endpoints
+    result: table
+    display:
+      default_sort: {column: spill_bytes_delta, direction: desc}
+    table:
+      key_refs: [dimensions.slot_name]
+      epoch_refs: [dimensions.stats_reset]
+      limit: 50
+      sort: {column: spill_bytes_delta, direction: desc}
+      columns:
+        - {name: slot_name, role: key, key_index: 0, pg_type: text}
+        - {name: spill_txns_delta, value_ref: counters.spill_txns, transform: delta, pg_type: float8}
+        - {name: spill_count_delta, value_ref: counters.spill_count, transform: delta, pg_type: float8}
+        - {name: spill_bytes_delta, value_ref: counters.spill_bytes, transform: delta, pg_type: float8}
+        - {name: spill_bytes_per_sec, value_ref: counters.spill_bytes, transform: rate, pg_type: float8}
+        - {name: stream_txns_delta, value_ref: counters.stream_txns, transform: delta, pg_type: float8}
+        - {name: stream_count_delta, value_ref: counters.stream_count, transform: delta, pg_type: float8}
+        - {name: stream_bytes_delta, value_ref: counters.stream_bytes, transform: delta, pg_type: float8}
+        - {name: total_txns_delta, value_ref: counters.total_txns, transform: delta, pg_type: float8}
+        - {name: total_bytes_delta, value_ref: counters.total_bytes, transform: delta, pg_type: float8}
+
+  replication.subscription_errors_delta:
+    title: Subscription Errors And Conflicts Delta
+    database_scope: current_database
+    source_query: metrics.subscription_errors_delta
+    requires_collection: window_endpoints
+    result: table
+    display:
+      default_sort: {column: apply_error_count_delta, direction: desc}
+    evaluation:
+      summary_title: Logical subscription errors or conflicts occurred
+      recommendation: Inspect subscriber logs and the affected subscription before changing conflict handling or restarting workers.
+      rules:
+        - severity: medium
+          reason: Logical subscription apply errors increased
+          all: [{column: apply_error_count_delta, operator: gt, value: 0}]
+        - severity: medium
+          reason: Logical subscription synchronization errors increased
+          all: [{column: sync_error_count_delta, operator: gt, value: 0}]
+        - severity: medium
+          reason: Logical subscription conflicts increased
+          all: [{column: conflict_count_delta, operator: gt, value: 0}]
+    table:
+      key_refs: [dimensions.subscription_id]
+      epoch_refs: [dimensions.stats_reset]
+      limit: 50
+      sort: {column: apply_error_count_delta, direction: desc}
+      columns:
+        - {name: datname, value_ref: dimensions.database, transform: last, pg_type: text}
+        - {name: subname, value_ref: dimensions.subscription, transform: last, pg_type: text}
+        - {name: subid, role: key, key_index: 0, pg_type: oid}
+        - {name: apply_error_count_delta, value_ref: counters.apply_error_count, transform: delta, pg_type: float8}
+        - {name: sync_error_count_delta, value_ref: counters.sync_error_count, transform: delta, pg_type: float8}
+        - {name: conflict_count_delta, value_ref: counters.conflict_count, transform: delta, pg_type: float8}

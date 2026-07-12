@@ -34,14 +34,11 @@ select
   pg_catalog.pg_wal_lsn_diff(flush_lsn, replay_lsn)::int8 as flush_to_replay_lag_bytes,
   pg_catalog.pg_wal_lsn_diff(local_wal_lsn, replay_lsn)::int8
     as current_to_replay_lag_bytes,
-  write_lag,
-  flush_lag,
-  replay_lag,
-  round(extract(epoch from write_lag)::numeric, 3) as write_lag_seconds,
-  round(extract(epoch from flush_lag)::numeric, 3) as flush_lag_seconds,
-  round(extract(epoch from replay_lag)::numeric, 3) as replay_lag_seconds,
+  (extract(epoch from write_lag)::numeric) as write_lag_seconds,
+  (extract(epoch from flush_lag)::numeric) as flush_lag_seconds,
+  (extract(epoch from replay_lag)::numeric) as replay_lag_seconds,
   reply_time,
-  round(extract(epoch from pg_catalog.clock_timestamp() - reply_time)::numeric, 3)
+  (extract(epoch from pg_catalog.clock_timestamp() - reply_time)::numeric)
     as seconds_since_reply,
   case when state = 'streaming' then 'ok' else 'medium' end
     as pg_diag_internal_severity,

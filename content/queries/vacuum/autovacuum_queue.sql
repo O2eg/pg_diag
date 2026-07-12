@@ -82,12 +82,12 @@ scored as (
       as insert_vacuum_due,
     e.xid_age >= e.freeze_max_age or e.mxid_age >= e.mx_freeze_max_age
       as wraparound_vacuum_due,
-    round(e.n_dead_tup::numeric / nullif(e.vacuum_threshold, 0), 3)
+    (e.n_dead_tup::numeric / nullif(e.vacuum_threshold, 0))
       as dead_tuple_overdue_factor,
-    round(e.n_ins_since_vacuum::numeric / nullif(e.insert_threshold, 0), 3)
+    (e.n_ins_since_vacuum::numeric / nullif(e.insert_threshold, 0))
       as insert_overdue_factor,
-    round(e.xid_age::numeric / nullif(e.freeze_max_age, 0), 3) as xid_overdue_factor,
-    round(e.mxid_age::numeric / nullif(e.mx_freeze_max_age, 0), 3) as mxid_overdue_factor
+    (e.xid_age::numeric / nullif(e.freeze_max_age, 0)) as xid_overdue_factor,
+    (e.mxid_age::numeric / nullif(e.mx_freeze_max_age, 0)) as mxid_overdue_factor
   from eligibility e
 )
 select

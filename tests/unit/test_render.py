@@ -4,6 +4,29 @@ from pg_diag import runtime_config
 from pg_diag.render.html import render_html
 
 
+def test_report_collator_is_initialized_before_initial_render(repo_root) -> None:
+    template = (repo_root / "pg_diag/render/templates/report.html").read_text(encoding="utf-8")
+
+    assert template.index("let cachedReportCollator = null;") < template.index("renderSections();")
+    assert template.count("let cachedReportCollator = null;") == 1
+
+
+def _column(name: str, value_kind: str, encoding: str, **extra) -> dict:
+    descriptor = {
+        "name": name,
+        "label": name,
+        "value_kind": value_kind,
+        "semantic_role": "identifier" if name == "query_id" else "state" if value_kind == "timestamp" else "label",
+        "quantity": "identifier" if name == "query_id" else "timestamp" if value_kind == "timestamp" else "text",
+        "unit": "none",
+        "quality": "exact",
+        "nullable": True,
+        "encoding": encoding,
+    }
+    descriptor.update(extra)
+    return descriptor
+
+
 def _without_vendor_bundles(html: str) -> str:
     blocks = [
         ('<script id="pg-diag-third-party-licenses"', "</script>"),
@@ -44,7 +67,10 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
                         },
                     },
                 },
-                "catalogs": {"queries": {"defaults": {"cost": "low"}}},
+                "catalogs": {
+                    "queries": {"defaults": {"cost": "low"}},
+                    "presentation": {"units": {"none": {}}},
+                },
                 "queries": {
                     "test.query": {
                         "title": "Item",
@@ -113,10 +139,10 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
                 "result": {
                     "kind": "table",
                     "columns": [
-                        {"name": "value"},
-                        {"name": "query_id", "pg_type": "int8"},
-                        {"name": "snapshot_time", "pg_type": "timestamptz"},
-                        {"name": "captured_at", "pg_type": "timestamptz"},
+                        _column("value", "text", "json_string"),
+                        _column("query_id", "integer", "decimal_string", pg_type="int8"),
+                        _column("snapshot_time", "timestamp", "json_string", pg_type="timestamptz"),
+                        _column("captured_at", "timestamp", "json_string", pg_type="timestamptz"),
                     ],
                     "rows": [[
                         "</script><script>alert(1)</script>",
@@ -161,10 +187,27 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert '"15", "50"' not in app_html
     assert "const showFilter = rows.length > 1" in app_html
     assert "const showPaginationControls = rows.length > 25" in app_html
+    assert 'const collectedAt = item.source_kind === "metric" ? null : item.collected_at' in app_html
+    assert "formatBrowserTimestamp(rawValue)" in app_html
+    assert 'String(column.pgType || "").toLowerCase() === "timestamptz"' in app_html
+    assert "container.appendChild(empty)" in app_html
+    assert '"Snapshot start time"' in app_html
+    assert '"Snapshot finish"' in app_html
+    assert '"Delta duration"' in app_html
+    assert 'labels.className = "delta-window-labels"' in app_html
     assert "if (showFilter)" in app_html
     assert "if (showPaginationControls)" in app_html
     assert ".table-toolbar.no-pagination" in app_html
     assert ".table-toolbar.single-row" in app_html
+    assert '--code-panel-bg: #f6f8fa' in app_html
+    assert 'html[data-theme="light"] .scroll-jump' in app_html
+    assert 'background: #ffffff' in app_html
+    assert 'html[data-theme="light"] .source-code-shell .hljs' in app_html
+    assert 'html[data-theme="light"] .meta-raw-shell .hljs' in app_html
+    assert 'html[data-theme="light"] .hljs-keyword' in app_html
+    assert 'html[data-theme="light"] .hljs-string' in app_html
+    assert 'html[data-theme="light"] .hljs-comment' in app_html
+    assert 'html[data-theme="light"] .hljs-subst' in app_html
     assert 'id="itemTypeFilter"' in html
     assert 'id="tagFilter"' in html
     assert html.index('id="tagFilter"') < html.index('id="itemTypeFilter"') < html.index('id="collectionStatusFilter"') < html.index('id="severityLevelFilter"')
@@ -267,7 +310,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert 'column.name === "snapshot_time"' in html
     assert 'container.className = "snapshot-table-result"' in html
     assert 'label.className = "snapshot-time-label"' in html
-    assert 'setHighlightableText(label, "Snapshot time: " + display.text)' in html
+    assert 'return renderTimeContextLabel("Snapshot time", display.text, display.title)' in html
     assert ".snapshot-time-label" in html
     assert "renderChart(result, item)" in html
     assert "ApexCharts v5.16.0" in html
@@ -307,7 +350,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "zoom: {" in html
     assert "enabled: true" in html
     assert 'type: "x"' in html
-    assert "autoScaleYaxis: unit !== \"%\"" in html
+    assert "autoScaleYaxis: unit !== \"percent\"" in html
     assert "allowMouseWheelZoom: false" in html
     assert "toolbar: {" in html
     assert "selection: true" in html
@@ -319,16 +362,17 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert ".apexcharts-toolbar .apexcharts-selected svg" in html
     assert "fill: none !important;\n      stroke: currentColor !important;" in html
     assert "fill: var(--muted) !important;" not in html
-    assert "chartTitle(item.title || \"\", unit)" in html
+    assert "chartTitle(item.title || \"\", axisScale.label)" in html
     assert "title: {text: \"\"}" in html
-    assert "formatChartAxisValue(value, unit)" in html
+    assert "formatChartAxisValue(value, unit, axisScale)" in html
     assert "formatChartTooltipValue(value, unit)" in html
     assert "formatChartSeriesLabel(seriesName)" in html
     assert 'const queryIdMatch = /^(.*)\\.(-?\\d+)$/.exec(rawName)' in html
     assert 'baseLabel + " / SQL: " + shortQuery' in html
     assert 'title: {formatter: (seriesName) => formatChartSeriesLabel(seriesName)}' in html
     assert ".replace(/</g, \"&lt;\")" in html
-    assert "formatCompactMetricValue(numeric, 1000)" in html
+    assert "chartAxisScale(series, unit" in html
+    assert "formatAdaptiveBytes(numeric, unit === \"bytes/s\")" in html
     assert "Highlight.js v11.11.1" in html
     assert 'id="sourceModal"' in html
     assert "html.report-modal-open,\n    body.report-modal-open" in html
@@ -398,15 +442,22 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "copyCurrentSource" in html
     assert "highlightElement" in html
     assert '"source_text":"select 1"' in html
-    assert "formatNumberForColumn" in html
+    assert "formatMeasurement(value, column, unit)" in html
+    assert "formatAdaptiveIntegerQuantity(exactInteger, unit)" in html
+    assert "formatAdaptiveMilliseconds(numeric)" in html
+    assert "setHighlightableText(label, tableColumnLabel(column))" in html
+    assert 'column.unit !== "milliseconds"' in html
+    assert 'text: sign + formatGroupedInteger(whole) + fractionText + " " + suffixes[index]' in html
+    assert 'parts.push(String(minutes) + " min")' in html
     assert "isTemporalColumn(column)" in html
     assert "formatTemporalValue(value, column)" in html
-    assert 'pgType === "timestamp" || pgType === "timestamptz"' in html
-    assert 'match[1] + " " + match[2]' in html
-    assert "toFixed(3)" in html
-    assert 'name.startsWith("seconds_")' in html
-    assert 'name.includes("_seconds_")' in html
-    assert '"captured_at","pg_type":"timestamptz"' in html
+    assert 'column.valueKind === "timestamp"' in html
+    assert "formatBrowserTimestamp(text)" in html
+    assert "roundHalfAway" in html
+    assert "parseExactInteger" in html
+    assert "formatExactBytes" in html
+    assert '"name":"captured_at"' in html
+    assert '"pg_type":"timestamptz"' in html
     assert "2026-05-29T21:27:18.283630+00:00" in html
     assert '<html lang="en" data-theme="dark">' in html
     assert 'id="themeToggle"' in html
@@ -502,7 +553,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "ERROR_ITEM_STATUSES" in html
     assert 'new Set(["error"])' in html
     assert '"permission_denied"' not in app_html
-    assert '"unavailable"' not in app_html
+    assert "statusLabel(status.status)" in html
     assert "renderItemError(item)" in html
     assert "itemErrorDetailsText(item)" in html
     assert "traceback" in html

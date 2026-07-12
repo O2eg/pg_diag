@@ -5,6 +5,7 @@ This instruction belongs to report item `os.lshw_volume`. The item is backed by 
 ## What this item shows
 - Partition and volume inventory from lshw, with normalized `lsblk --json` fallback when lshw has no usable volume rows.
 - Volume layout below mounted filesystems.
+- Size and available capacity are exact bytes; filesystem use is a numeric percentage.
 
 ## What to watch
 - Unexpected partition size or layout.

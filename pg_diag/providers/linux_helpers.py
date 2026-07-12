@@ -102,17 +102,17 @@ def _cpu_row(previous: dict[str, int], current: dict[str, int], elapsed: float) 
     def pct(*names: str) -> float:
         if total <= 0:
             return 0.0
-        return round(sum(max(deltas.get(name, 0), 0) for name in names) * 100.0 / total, 3)
+        return sum(max(deltas.get(name, 0), 0) for name in names) * 100.0 / total
 
     return {
         "cpu": "total",
-        "util_pct": round(busy * 100.0 / total, 3) if total > 0 else 0.0,
+        "util_pct": busy * 100.0 / total if total > 0 else 0.0,
         "user_pct": pct("user", "nice"),
         "system_pct": pct("system", "irq", "softirq"),
         "idle_pct": pct("idle"),
         "iowait_pct": pct("iowait"),
         "steal_pct": pct("steal"),
-        "elapsed_seconds": round(elapsed, 3),
+        "elapsed_seconds": elapsed,
     }
 
 
@@ -152,7 +152,7 @@ def _memory_row_from_values(values: dict[str, int]) -> dict[str, Any]:
         "free_bytes": free,
         "available_bytes": available,
         "used_bytes": used,
-        "used_pct": round(used * 100.0 / total, 3) if total else 0.0,
+        "used_pct": used * 100.0 / total if total else 0.0,
         "application_bytes": application,
         "buffers_bytes": buffers,
         "cached_bytes": page_cache,
@@ -178,7 +178,7 @@ def _memory_row_from_values(values: dict[str, int]) -> dict[str, Any]:
         "vmalloc_used_bytes": values.get("VmallocUsed", 0),
         "swap_total_bytes": swap_total,
         "swap_used_bytes": swap_used,
-        "swap_used_pct": round(swap_used * 100.0 / swap_total, 3) if swap_total else 0.0,
+        "swap_used_pct": swap_used * 100.0 / swap_total if swap_total else 0.0,
     }
 
 
@@ -223,7 +223,7 @@ def _backend_proc_rows(
         if not prev or prev.get("starttime") != cur.get("starttime"):
             continue
         cpu_ticks = max((cur["utime"] + cur["stime"]) - (prev["utime"] + prev["stime"]), 0)
-        cpu_pct = round((cpu_ticks / clock_ticks) * 100.0 / seconds, 3) if clock_ticks else 0.0
+        cpu_pct = (cpu_ticks / clock_ticks) * 100.0 / seconds if clock_ticks else 0.0
         io_access = bool(prev.get("io_access")) and bool(cur.get("io_access"))
         rows.append(
             {
@@ -262,7 +262,7 @@ def _backend_proc_rows(
 def _counter_rate(previous: int, current: int, seconds: float) -> float | None:
     if current < previous:
         return None
-    return round((current - previous) / seconds, 3)
+    return (current - previous) / seconds
 
 
 def _is_interesting_disk(device: str) -> bool:
@@ -271,9 +271,9 @@ def _is_interesting_disk(device: str) -> bool:
 
 def _throughput_bytes(kb_value: float | None, mb_value: float | None) -> float | None:
     if mb_value is not None:
-        return round(mb_value * 1024 * 1024, 3)
+        return mb_value * 1024 * 1024
     if kb_value is not None:
-        return round(kb_value * 1024, 3)
+        return kb_value * 1024
     return None
 
 

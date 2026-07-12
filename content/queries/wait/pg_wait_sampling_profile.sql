@@ -15,7 +15,7 @@ select
   queryid::text as query_id,
   ''::text as query,
   samples,
-  round(samples::numeric * 100 / nullif(total_samples, 0), 3) as sample_share_pct
+  (samples::numeric * 100 / nullif(total_samples, 0)) as sample_share_pct
 from profile
 order by samples desc nulls last, event_type, event
 limit 100

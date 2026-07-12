@@ -19,7 +19,7 @@ semantic_profiles:
       blk_write_time: blk_write_time
     gauges:
       numbackends: numbackends
-      in_recovery: in_recovery_int
+      in_recovery: in_recovery
 
 queries:
   database.database_stats:

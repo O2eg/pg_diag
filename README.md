@@ -478,7 +478,7 @@ permissions, collection mode, and local host permissions.
 Repeated table samples store their column schema once in `snapshot_schemas` and
 keep only status, rows, and an optional failure reason in each snapshot point.
 Raw snapshot points are not duplicated into the self-contained HTML after
-derived metric items have been built. Reports use artifact schema version 3.
+derived metric items have been built. Reports use artifact schema version 4.
 The renderer accepts that version only and requires the complete unified
 content document and source provenance stored by the collector.
 

@@ -70,6 +70,7 @@ def validate_content(content: ContentPack) -> list[ValidationIssue]:
     _validate_schema_versions(content, issues)
     _validate_unified_document(content, issues)
     _validate_field_reference(content, issues)
+    _validate_presentation_catalog(content, issues)
     _validate_report_contract(content, issues)
     _validate_report_items(content, issues)
     _validate_query_manifests(content, issues)
@@ -101,6 +102,7 @@ def _validate_content_shapes(content: ContentPack, issues: list[ValidationIssue]
         "metric_catalog": content.metric_catalog,
         "python_catalog": content.python_catalog,
         "field_reference_catalog": content.field_reference_catalog,
+        "presentation_catalog": content.presentation_catalog,
         "queries": content.queries,
         "scripts": content.scripts,
         "metrics": content.metrics,
@@ -304,6 +306,100 @@ def _field_reference_pattern_matches(pattern: list[str], path: list[str]) -> boo
     )
 
 
+def _validate_presentation_catalog(
+    content: ContentPack,
+    issues: list[ValidationIssue],
+) -> None:
+    catalog = content.presentation_catalog.get("presentation_catalog") or {}
+    location = "presentation.yaml:presentation_catalog"
+    required_lists = (
+        "descriptor_fields",
+        "value_kinds",
+        "semantic_roles",
+        "qualities",
+        "encodings",
+        "cell_statuses",
+        "rules",
+    )
+    required_mappings = (
+        "units",
+        "unit_aliases",
+        "quantity_aliases",
+        "unit_values",
+        "label_terms",
+        "type_defaults",
+        "source_overrides",
+    )
+    for key in required_lists:
+        value = catalog.get(key)
+        if not isinstance(value, list) or (key != "rules" and not value):
+            _issue(
+                issues,
+                "presentation",
+                f"presentation_catalog.{key} must be a non-empty list",
+                location,
+            )
+    for key in required_mappings:
+        value = catalog.get(key)
+        if not isinstance(value, dict) or (key not in {"source_overrides"} and not value):
+            _issue(
+                issues,
+                "presentation",
+                f"presentation_catalog.{key} must be a mapping",
+                location,
+            )
+
+    units = catalog.get("units") or {}
+    for alias, canonical in (catalog.get("unit_aliases") or {}).items():
+        if canonical not in units:
+            _issue(
+                issues,
+                "presentation_unit",
+                f"Unit alias {alias!r} references unknown unit {canonical!r}",
+                location,
+            )
+    for index, rule in enumerate(catalog.get("rules") or []):
+        if not isinstance(rule, dict) or not isinstance(rule.get("match"), dict) or not isinstance(rule.get("descriptor"), dict):
+            _issue(
+                issues,
+                "presentation_rule",
+                "Each presentation rule must define match and descriptor mappings",
+                f"{location}.rules[{index}]",
+            )
+            continue
+        for key, pattern in rule["match"].items():
+            if not str(key).endswith("_regex"):
+                continue
+            try:
+                re.compile(str(pattern))
+            except re.error as exc:
+                _issue(
+                    issues,
+                    "presentation_rule",
+                    f"Invalid regular expression: {exc}",
+                    f"{location}.rules[{index}].match.{key}",
+                )
+
+    required_descriptor_fields = set(catalog.get("descriptor_fields") or []) - {"label"}
+    for pg_type, descriptor in (catalog.get("type_defaults") or {}).items():
+        if not isinstance(descriptor, dict):
+            _issue(
+                issues,
+                "presentation_descriptor",
+                f"Type default {pg_type!r} must be a mapping",
+                location,
+            )
+            continue
+        missing = required_descriptor_fields.difference(descriptor)
+        if missing:
+            _issue(
+                issues,
+                "presentation_descriptor",
+                f"Type default {pg_type!r} misses {sorted(missing)!r}",
+                location,
+            )
+
+
 def _unified_document_paths(document: dict[str, Any]) -> set[str]:
     paths: set[str] = set()
 
@@ -365,7 +461,15 @@ def _validate_report_contract(content: ContentPack, issues: list[ValidationIssue
 
     catalogs = report.get("catalogs")
     if isinstance(catalogs, dict):
-        for key in ("queries", "scripts", "metrics", "python", "instructions", "field_reference"):
+        for key in (
+            "queries",
+            "scripts",
+            "metrics",
+            "python",
+            "instructions",
+            "field_reference",
+            "presentation",
+        ):
             value = catalogs.get(key)
             if not isinstance(value, str) or not value.strip():
                 _issue(
@@ -576,6 +680,17 @@ def _validate_schema_versions(content: ContentPack, issues: list[ValidationIssue
     if python_schema != runtime_config.SUPPORTED_CONTENT_SCHEMA_VERSION:
         _issue(issues, "schema_version", "Unsupported python catalog schema version", "python.yaml")
 
+    presentation_schema = (
+        content.presentation_catalog.get("presentation_catalog") or {}
+    ).get("schema_version")
+    if presentation_schema != 1:
+        _issue(
+            issues,
+            "schema_version",
+            "Unsupported presentation catalog schema version",
+            "presentation.yaml",
+        )
+
     for key in content.report:
         if key not in {"report", "runtime_policy", "defaults", "sections"}:
             _issue(issues, "unknown_key", f"Unknown report top-level key {key!r}", "report.yaml")
@@ -783,6 +898,32 @@ def _validate_query_manifests(content: ContentPack, issues: list[ValidationIssue
                             issues,
                             "semantic_columns",
                             "semantic_columns groups must be named mappings",
+                            variant_location,
+                        )
+
+            column_statuses = variant.get("column_statuses") or {}
+            if not isinstance(column_statuses, dict):
+                _issue(
+                    issues,
+                    "column_statuses",
+                    "column_statuses must be a mapping",
+                    variant_location,
+                )
+            else:
+                for column_name, status in column_statuses.items():
+                    if (
+                        not isinstance(column_name, str)
+                        or not column_name
+                        or not isinstance(status, dict)
+                        or status.get("status")
+                        not in {"timeout", "error", "permission_denied", "unavailable", "unsupported"}
+                        or not isinstance(status.get("reason"), str)
+                        or not status["reason"].strip()
+                    ):
+                        _issue(
+                            issues,
+                            "column_statuses",
+                            "Each column status must define a column, supported status, and reason",
                             variant_location,
                         )
                         continue
@@ -1324,6 +1465,33 @@ def _validate_metric_result_shape(
         value = metric.get(key)
         if value is not None and not isinstance(value, dict):
             _issue(issues, "metric_result", f"Metric {key} must be a mapping", location)
+    table = metric.get("table")
+    if isinstance(table, dict):
+        columns = table.get("columns") or []
+        if not isinstance(columns, list):
+            _issue(issues, "metric_result", "Metric table.columns must be a list", location)
+        else:
+            for index, column in enumerate(columns):
+                column_location = f"{location}.table.columns[{index}]"
+                if not isinstance(column, dict):
+                    _issue(issues, "metric_result", "Metric table column must be a mapping", column_location)
+                    continue
+                if not isinstance(column.get("name"), str) or not column["name"]:
+                    _issue(issues, "metric_result", "Metric table column must define name", column_location)
+                if not isinstance(column.get("pg_type"), str) or not column["pg_type"]:
+                    _issue(
+                        issues,
+                        "metric_result",
+                        "Metric table column must define its output pg_type",
+                        column_location,
+                    )
+                if "optional" in column and not isinstance(column["optional"], bool):
+                    _issue(
+                        issues,
+                        "metric_result",
+                        "Metric table column optional must be boolean",
+                        column_location,
+                    )
     evaluation = metric.get("evaluation")
     if evaluation is None:
         return

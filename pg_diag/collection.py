@@ -31,6 +31,7 @@ from .executors.shell import execute_remote_shell_item, execute_shell_item
 from .executors.sql import DatabaseConnector, connect, detect_runtime_context, execute_query_item
 from .host_access import LocalHostAccess
 from .planner import ExecutionPlan, PlannedItem, build_plan
+from .presentation import apply_presentation_contract
 from .render.html import render_html
 from .ssh_transport import (
     SshConfig,
@@ -274,6 +275,7 @@ async def execute_and_record_report_item(
     run: CollectionRun,
     planned: PlannedItem,
 ) -> dict[str, Any]:
+    collected_at = utc_now()
     try:
         item = await execute_report_item(
             run.content,
@@ -282,6 +284,7 @@ async def execute_and_record_report_item(
             run.ssh,
             run.database_connector,
         )
+        item["collected_at"] = collected_at
         extract_item_query_texts(
             item,
             run.artifact["query_texts"],
@@ -294,6 +297,7 @@ async def execute_and_record_report_item(
         if isinstance(exc, PgDiagError):
             raise
         item = item_error_from_exception(planned, exc)
+        item["collected_at"] = collected_at
         run.artifact["items"][planned.item_id] = item
         raise_if_fail_fast(run.fail_fast, item, cause=exc)
         return item
@@ -325,6 +329,7 @@ def finish_collection(
         run.artifact["runtime"].update(runtime_updates)
     run.artifact["runtime"]["finished_at"] = utc_now()
     apply_database_scope_presentation(run.artifact)
+    apply_presentation_contract(run.content, run.artifact)
     validate_artifact(run.artifact)
     html_text = render_html(run.artifact, validate=False)
     write_text_secure(run.html_path, html_text)

@@ -12,14 +12,10 @@ select
   last_msg_send_time,
   last_msg_receipt_time,
   latest_end_time,
-  round(
-    extract(epoch from pg_catalog.clock_timestamp() - last_msg_receipt_time)::numeric,
-    3
-  ) as seconds_since_last_message,
-  round(
-    extract(epoch from pg_catalog.clock_timestamp() - latest_end_time)::numeric,
-    3
-  ) as seconds_since_latest_end,
+  (
+    extract(epoch from pg_catalog.clock_timestamp() - last_msg_receipt_time)::numeric) as seconds_since_last_message,
+  (
+    extract(epoch from pg_catalog.clock_timestamp() - latest_end_time)::numeric) as seconds_since_latest_end,
   sender_host,
   sender_port,
   slot_name,

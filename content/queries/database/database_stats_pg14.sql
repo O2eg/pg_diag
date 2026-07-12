@@ -24,7 +24,7 @@ select
   extract(epoch from (now() - pg_backup_start_time()))::int8 as backup_duration_s,
   checksum_failures,
   extract(epoch from (now() - checksum_last_failure))::int8 as checksum_last_failure_s,
-  case when pg_is_in_recovery() then 1 else 0 end as in_recovery_int,
+  pg_is_in_recovery() as in_recovery,
   session_time::int8,
   active_time::int8,
   idle_in_transaction_time::int8,
