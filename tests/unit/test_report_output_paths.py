@@ -355,7 +355,9 @@ def test_collect_snapshots_runs_static_items_before_chart_window(tmp_path, monke
             "capabilities": {},
         }
 
-    async def execute_once_stub(content, conn, planned):
+    async def execute_once_stub(content, conn, planned, ssh, database_connector):
+        assert ssh is None
+        assert database_connector.connection_kwargs == {}
         call_order.append(f"once:{planned.item_id}")
         return item_from_plan(planned, collection_status="ok", result={"kind": "none"})
 
@@ -559,7 +561,12 @@ def test_collect_snapshot_rejects_unsupported_server_before_writing(tmp_path, mo
         return FakeConn()
 
     async def detect_runtime_context_stub(conn):
-        return {"server_version_num": 130000}
+        return {
+            "server_version_num": 130000,
+            "current_database": "testdb",
+            "in_recovery": False,
+            "database_host_ip": "127.0.0.1",
+        }
 
     unsupported_plan = fake_plan(runtime_config.SNAPSHOT_MODE, runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE)
     unsupported_plan.supported_server_version = False
@@ -608,7 +615,12 @@ def test_collect_snapshot_honors_fail_fast_policy(tmp_path, monkeypatch) -> None
         return FakeConn()
 
     async def detect_runtime_context_stub(conn):
-        return {"server_version_num": 180000}
+        return {
+            "server_version_num": 180000,
+            "current_database": "testdb",
+            "in_recovery": False,
+            "database_host_ip": "127.0.0.1",
+        }
 
     async def execute_query_stub(content, conn, item):
         return item_from_plan(

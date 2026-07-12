@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 import shlex
+import socket
 import stat
 from typing import Any
 
@@ -76,6 +77,14 @@ class HostAccess:
     async def environ(self) -> dict[str, str]:
         raise NotImplementedError
 
+    async def hostname(self) -> str:
+        result = await self.run(("hostname",))
+        hostname = result.stdout.strip()
+        if result.returncode != 0 or not hostname or "\n" in hostname:
+            message = result.stderr.strip() or "hostname command returned no host name"
+            raise OSError(message)
+        return hostname
+
     async def run(
         self,
         arguments: tuple[str, ...],
@@ -114,6 +123,9 @@ class HostAccess:
 
 
 class LocalHostAccess(HostAccess):
+    async def hostname(self) -> str:
+        return socket.gethostname()
+
     async def stat(self, path: str | Path, *, follow_symlinks: bool = True) -> HostStat:
         def inspect() -> HostStat:
             value = Path(path)

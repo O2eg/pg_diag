@@ -20,23 +20,22 @@ semantic_profiles:
     gauges:
       numbackends: numbackends
       in_recovery: in_recovery_int
-      invalid_indexes: invalid_indexes
 
 queries:
   database.database_stats:
-    title: Current Database Statistics
-    database_scope: current_database
+    title: Database Statistics
+    database_scope: all_databases
     group: Database Workload
     main_view: pg_stat_database
-    description: Per-current-database cumulative workload counters.
+    description: Cluster-wide per-database cumulative workload counters.
     source: postgresai
     display:
       default_sort:
         column: xact_commit
         direction: desc
     evaluation:
-      summary_title: Current database statistics contain operational findings
-      recommendation: Investigate checksum failures immediately; validate invalid indexes and deadlocks with their dedicated report items before remediation.
+      summary_title: Database statistics contain operational findings
+      recommendation: Investigate checksum failures immediately; investigate deadlocks with the dedicated Activity & Locks and SQL Workload items.
     collection:
       default: once
       supports: [once, every_snapshot]

@@ -8,6 +8,12 @@ script_catalog:
       message_ref: runtime_policy.remote_db_only_shell_message
 
 scripts:
+  cluster.pg_config:
+    title: PostgreSQL pg_config
+    description: Build-time paths, compiler flags, configuration options, and version reported by the pg_config binary.
+    script_file: cluster/pg_config.sh
+    output: table_json
+
   os.kernel_version:
     title: Kernel And Architecture
     description: Local uname output.

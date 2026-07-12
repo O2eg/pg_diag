@@ -1018,6 +1018,7 @@ def _validate_python_sources(content: ContentPack, issues: list[ValidationIssue]
                 f"local_only timeout_ms must not exceed {max_host_timeout_ms:g}",
                 location,
             )
+        _validate_display_options(python_source, issues, location)
 
 
 def _validate_sampler_providers(

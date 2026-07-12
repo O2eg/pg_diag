@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -84,6 +85,144 @@ class FakeLocalSettingsConn:
         if "where name = $1" in sql:
             return self.settings.get(str(args[0]))
         raise AssertionError((sql, args))
+
+
+class FakeReadOnlyTransaction:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+
+class DatabaseVolumeMainConn:
+    def transaction(self, *, readonly: bool):
+        assert readonly is True
+        return FakeReadOnlyTransaction()
+
+    async def fetch(self, sql: str) -> list[dict[str, Any]]:
+        assert "from pg_catalog.pg_database" in sql
+        return [
+            {
+                "database_oid": 100,
+                "database_name": "large_db",
+                "allows_connections": True,
+                "can_connect": True,
+            },
+            {
+                "database_oid": 101,
+                "database_name": "timeout_db",
+                "allows_connections": True,
+                "can_connect": True,
+            },
+        ]
+
+
+class DatabaseVolumeConn:
+    def __init__(self, size: int | None) -> None:
+        self.size = size
+
+    def transaction(self, *, readonly: bool):
+        assert readonly is True
+        return FakeReadOnlyTransaction()
+
+    async def fetchval(self, sql: str, *args: Any) -> int:
+        assert "pg_catalog.pg_database_size" in sql
+        if self.size is None:
+            raise TimeoutError
+        return self.size
+
+    async def fetchrow(self, sql: str) -> dict[str, int]:
+        assert "relation_counts" in sql
+        return {
+            "schemas": 2,
+            "tables": 10,
+            "partitioned_tables": 1,
+            "partitions": 20,
+            "indexes": 15,
+            "partitioned_indexes": 1,
+            "index_partitions": 30,
+            "views": 3,
+            "materialized_views": 2,
+            "sequences": 4,
+            "foreign_tables": 0,
+            "composite_types": 1,
+            "functions": 5,
+            "procedures": 1,
+            "aggregates": 0,
+            "window_functions": 0,
+            "triggers": 6,
+            "constraints": 12,
+            "enum_types": 2,
+            "range_types": 0,
+            "domains": 1,
+            "row_security_policies": 2,
+            "rules": 0,
+            "extensions": 3,
+            "event_triggers": 0,
+            "publications": 1,
+            "subscriptions": 0,
+            "foreign_data_wrappers": 1,
+            "foreign_servers": 1,
+            "collations": 1,
+            "conversions": 0,
+            "extended_statistics": 2,
+            "large_objects": 3,
+        }
+
+
+class DatabaseVolumeConnector:
+    def __init__(self) -> None:
+        self.order: list[str] = []
+        self.active = 0
+        self.max_active = 0
+
+    @asynccontextmanager
+    async def connect(self, database_name: str, *, timeout_seconds: float | None = None):
+        assert timeout_seconds == 10.0
+        self.order.append(database_name)
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        try:
+            yield DatabaseVolumeConn(1024 if database_name == "large_db" else None)
+        finally:
+            self.active -= 1
+
+
+def test_database_volume_collects_databases_sequentially_and_preserves_size_timeout(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    plan = build_plan(content, 180000, collection_mode=LOCAL_COLLECTION_MODE)
+    planned = {item.item_id: item for item in plan.items}["overview.database_volume"]
+    connector = DatabaseVolumeConnector()
+
+    item = asyncio.run(
+        execute_python_item(
+            content,
+            DatabaseVolumeMainConn(),
+            planned,
+            database_connector=connector,
+        )
+    )
+
+    assert item["collection_status"] == "ok"
+    assert item["severity_level"] == "unknown"
+    assert connector.order == ["large_db", "timeout_db"]
+    assert connector.max_active == 1
+    columns = [column["name"] for column in item["result"]["columns"]]
+    rows = item["result"]["rows"]
+    assert rows[0][columns.index("database_name")] == "large_db"
+    assert rows[0][columns.index("database_size_bytes")] == 1024
+    assert rows[0][columns.index("tables")] == 10
+    assert rows[0][columns.index("partitions")] == 20
+    assert rows[0][columns.index("index_partitions")] == 30
+    assert rows[1][columns.index("database_name")] == "timeout_db"
+    assert rows[1][columns.index("database_size_bytes")] == (
+        "превышен таймаут на вычисление размера БД"
+    )
+    assert rows[1][columns.index("tables")] == 10
+    assert rows[1][columns.index("collection_status")] == "database size timed out"
 
     async def fetch(self, sql: str, *args: Any) -> list[dict[str, Any]]:
         if "from pg_tablespace" in sql:

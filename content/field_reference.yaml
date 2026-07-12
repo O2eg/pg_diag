@@ -127,6 +127,10 @@ field_reference:
     python_sources/*/function: Trusted callable invoked from the Python module.
     python_sources/*/local_only: Whether the Python source must run on the database host.
     python_sources/*/timeout_ms: Python source timeout in milliseconds; local-only sources are capped at 1000.
+    python_sources/*/display: Optional presentation settings for a Python-source result.
+    python_sources/*/display/default_sort: Initial table sort applied by the report renderer.
+    python_sources/*/display/default_sort/column: Result column used for initial sorting.
+    python_sources/*/display/default_sort/direction: Initial sort direction, either asc or desc.
     sampler_providers: Effective sampler-provider manifests loaded from the metric catalog.
     sampler_providers/*: One effective provider manifest selected by provider id.
     sampler_providers/*/module: Importable implementation-layer module called by the generic sampler runtime.

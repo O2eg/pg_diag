@@ -76,6 +76,14 @@ sections:
       server_version:
         query: cluster.server_version
         tags: [Configuration]
+      database_volume:
+        python: database.database_volume
+        tags: [Databases]
+        state: collapsed
+      pg_config:
+        script: cluster.pg_config
+        tags: [Configuration]
+        state: collapsed
       pg_settings:
         query: cluster.settings
         tags: [Configuration]

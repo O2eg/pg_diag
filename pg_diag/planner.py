@@ -541,6 +541,7 @@ def _plan_python_item(
                 "python_id": python_id,
                 "python_file": python_source.get("python_file"),
                 "function": python_source.get("function"),
+                "display": python_source.get("display") or {},
                 "remote_message": message,
             }),
         )
@@ -549,6 +550,7 @@ def _plan_python_item(
         "python_id": python_id,
         "python_file": python_source.get("python_file"),
         "function": python_source.get("function"),
+        "display": python_source.get("display") or {},
     })
     return PlannedItem(
         item_id=item_id,

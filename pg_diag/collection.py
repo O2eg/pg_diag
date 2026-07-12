@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
+import ipaddress
 from pathlib import Path
+import socket
 from typing import Any
 
 from . import runtime_config
@@ -25,12 +28,14 @@ from .executors.common import read_source_text
 from .executors.python import execute_python_item
 from .executors.remote_disabled_shell import skipped_python_item, skipped_shell_item
 from .executors.shell import execute_remote_shell_item, execute_shell_item
-from .executors.sql import connect, detect_runtime_context, execute_query_item
+from .executors.sql import DatabaseConnector, connect, detect_runtime_context, execute_query_item
+from .host_access import LocalHostAccess
 from .planner import ExecutionPlan, PlannedItem, build_plan
 from .render.html import render_html
 from .ssh_transport import (
     SshConfig,
     SshTransport,
+    database_connection_host,
     remote_database_endpoint,
     tunneled_connection_kwargs,
 )
@@ -46,6 +51,7 @@ class CollectionRun:
     fail_fast: bool
     json_path: Path
     html_path: Path
+    database_connector: DatabaseConnector
     ssh: SshTransport | None = None
 
 
@@ -96,7 +102,15 @@ async def start_collection(
             raise ValueError("SSH configuration is only valid in remote collection mode")
 
         conn = await connect(dsn=dsn, **effective_connection_kwargs)
+        database_connector = DatabaseConnector(dsn, effective_connection_kwargs)
         runtime_context = await detect_runtime_context(conn)
+        await _populate_database_identity(
+            runtime_context,
+            collection_mode=collection_mode,
+            dsn=dsn,
+            connection_kwargs=connection_kwargs,
+            ssh=ssh,
+        )
         if ssh is not None and remote_endpoint is not None:
             runtime_context.update(
                 {
@@ -126,6 +140,7 @@ async def start_collection(
             fail_fast=fail_fast,
             json_path=json_path,
             html_path=html_path,
+            database_connector=database_connector,
             ssh=ssh,
         )
     except BaseException:
@@ -136,11 +151,62 @@ async def start_collection(
         raise
 
 
+async def _populate_database_identity(
+    runtime_context: dict[str, Any],
+    *,
+    collection_mode: str,
+    dsn: str | None,
+    connection_kwargs: dict[str, Any],
+    ssh: SshTransport | None,
+) -> None:
+    database_name = runtime_context["current_database"]
+    in_recovery = bool(runtime_context["in_recovery"])
+    runtime_context["database_name"] = database_name
+    runtime_context["database_role"] = "Secondary" if in_recovery else "Primary"
+
+    if collection_mode == runtime_config.REMOTE_COLLECTION_MODE:
+        if ssh is None:
+            raise PgDiagError("remote collection has no SSH transport for database identity")
+        runtime_context["database_host_ip"] = ssh.peer_ip
+        runtime_context["database_hostname"] = await ssh.host_access.hostname()
+        return
+
+    if collection_mode == runtime_config.LOCAL_COLLECTION_MODE:
+        runtime_context["database_hostname"] = await LocalHostAccess().hostname()
+    else:
+        endpoint = database_connection_host(dsn, connection_kwargs)
+        runtime_context["database_hostname"] = await _endpoint_hostname(
+            endpoint or runtime_context.get("database_host_ip")
+        )
+
+    if not runtime_context.get("database_host_ip"):
+        runtime_context["database_host_ip"] = "local socket"
+
+
+async def _endpoint_hostname(value: Any) -> str:
+    endpoint = str(value or "").strip()
+    if not endpoint:
+        return "unknown"
+    try:
+        ipaddress.ip_address(endpoint.strip("[]"))
+    except ValueError:
+        return endpoint
+    try:
+        hostname = await asyncio.wait_for(
+            asyncio.to_thread(socket.getfqdn, endpoint),
+            timeout=runtime_config.HOST_COMMAND_TIMEOUT_SECONDS,
+        )
+    except (OSError, TimeoutError):
+        return endpoint
+    return hostname or endpoint
+
+
 async def execute_report_item(
     content: ContentPack,
     conn: Any,
     planned: PlannedItem,
     ssh: SshTransport | None = None,
+    database_connector: DatabaseConnector | None = None,
 ) -> dict[str, Any]:
     if planned.status == "unsupported":
         return item_from_plan(
@@ -182,7 +248,13 @@ async def execute_report_item(
             return await execute_remote_shell_item(content, planned, ssh)
         return execute_shell_item(content, planned)
     if planned.source_kind == "python":
-        return await execute_python_item(content, conn, planned, ssh)
+        return await execute_python_item(
+            content,
+            conn,
+            planned,
+            ssh,
+            database_connector,
+        )
     if planned.source_kind == "metric":
         return item_from_plan(
             planned,
@@ -203,10 +275,13 @@ async def execute_and_record_report_item(
     planned: PlannedItem,
 ) -> dict[str, Any]:
     try:
-        if run.ssh is None:
-            item = await execute_report_item(run.content, run.conn, planned)
-        else:
-            item = await execute_report_item(run.content, run.conn, planned, run.ssh)
+        item = await execute_report_item(
+            run.content,
+            run.conn,
+            planned,
+            run.ssh,
+            run.database_connector,
+        )
         extract_item_query_texts(
             item,
             run.artifact["query_texts"],

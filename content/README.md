@@ -49,7 +49,10 @@ The same loader records the source files contributing to each path. The report
 artifact stores the document and provenance once; it does not duplicate a raw
 configuration object in every item. The `Raw` tab in `Show meta` selects the
 branches related to the current item and generates valid YAML whose comments
-come from `field_reference.yaml` and name the contributing files.
+come from `field_reference.yaml` and name the contributing files. Report-wide
+identity, tag-taxonomy, catalog-index, and unrelated catalog-file lists are not
+shown. Runtime policy, defaults, database-scope presentation, query variants,
+and sampler outputs are reduced to the values that apply to the selected item.
 
 Content schema version 3 is strict. `report.catalogs` must name every catalog,
 `defaults.item.state` and `defaults.section.state` must both be declared, and
@@ -256,9 +259,12 @@ local implementation reads the collector host in `local` mode, while its SSH
 implementation uses the existing AsyncSSH connection in `remote` mode.
 Database calls through `PythonSourceContext.conn` use the collector's explicit
 read-only asyncpg connection; in `remote` mode that connection targets a
-dynamic local SSH forward. No Python code, dependencies, credentials, or
-temporary agent directory are copied to the target. These sources are skipped
-in `remote-db-only` mode.
+dynamic local SSH forward. A database-wide source can use
+`PythonSourceContext.connect_database(name, timeout_seconds=...)` as an async
+context manager to open another verified read-only connection through the same
+direct endpoint or SSH tunnel. No Python code, dependencies, credentials, or
+temporary agent directory are copied to the target. Local-only sources are
+skipped in `remote-db-only` mode; database-only Python sources remain available.
 
 `timeout_ms` bounds module loading, local evaluation, database calls, and host
 operations. Synchronous local sources run in a killable child process. SSH

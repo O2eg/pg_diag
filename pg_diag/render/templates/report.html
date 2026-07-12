@@ -159,10 +159,18 @@ __APEXCHARTS_JS__
     }
 
     h1 {
-      margin: 0 0 6px;
+      margin: 0 0 2px;
       font-size: 25px;
       line-height: 1.2;
       letter-spacing: 0;
+    }
+
+    .report-title-context {
+      margin: 0 0 6px;
+      color: var(--header-muted);
+      font-size: 18px;
+      font-weight: 600;
+      line-height: 1.35;
     }
 
     .runtime {
@@ -1686,6 +1694,18 @@ __APEXCHARTS_JS__
       min-width: 0;
     }
 
+    .table-toolbar.no-pagination {
+      grid-template-columns: minmax(180px, 1fr) max-content;
+    }
+
+    .table-toolbar.single-row {
+      grid-template-columns: 1fr;
+    }
+
+    .table-toolbar.single-row .row-counter {
+      justify-self: end;
+    }
+
     .row-counter {
       color: var(--muted);
       font-size: 13px;
@@ -1952,7 +1972,8 @@ __APEXCHARTS_JS__
   </aside>
   <header class="app-header">
     <div class="shell">
-      <h1>__TITLE__</h1>
+      <h1 id="reportTitle">__TITLE__</h1>
+      <div id="reportTitleContext" class="report-title-context"></div>
       <div id="generatorInfo" class="runtime"></div>
       <div class="runtime project-links" aria-label="Project links">
         <a class="project-link" href="https://github.com/O2eg/pg_diag" target="_blank" rel="noopener noreferrer">
@@ -2168,6 +2189,9 @@ __HIGHLIGHT_JS__
 
     function hydrateHeader() {
       const generator = artifact.generator || {};
+      const titleContext = document.getElementById("reportTitleContext");
+      titleContext.textContent = reportExtendedTitle();
+      titleContext.hidden = !titleContext.textContent;
       const generatorName = generator.name || "pg_diag";
       const generatorVersion = generator.version;
       const generatorInfo = document.getElementById("generatorInfo");
@@ -2242,6 +2266,16 @@ __HIGHLIGHT_JS__
         badge.appendChild(document.createTextNode(severityLevelLabel(level) + ": " + (counts[level] || 0)));
         severitySummary.appendChild(badge);
       }
+    }
+
+    function reportExtendedTitle() {
+      const context = [
+        ["IP", runtime.database_host_ip],
+        ["Host", runtime.database_hostname],
+        ["DB", runtime.database_name],
+        ["Role", runtime.database_role],
+      ].filter((entry) => entry[1] !== undefined && entry[1] !== null && entry[1] !== "");
+      return context.map((entry) => entry[0] + ": " + String(entry[1])).join(" | ");
     }
 
     function formatRuntimeValue(key, value) {
@@ -3303,21 +3337,25 @@ __HIGHLIGHT_JS__
         metric: "metrics",
         python: "python_sources",
       }[sourceKind];
-      const catalogRoot = {
-        query: "queries",
-        script: "scripts",
-        metric: "metrics",
-        python: "python",
-      }[sourceKind];
-      if (!sourceRoot || !catalogRoot || !sourceId) {
+      if (!sourceRoot || !sourceId) {
         throw new Error("Incomplete source contract for item " + itemId);
       }
+      const sourceManifest = contentDocument[sourceRoot][sourceId];
+      if (!sourceManifest) {
+        throw new Error("Missing source manifest for item " + itemId);
+      }
       const document = {};
-      copyRawRoot(document, "report");
-      copyRawRoot(document, "runtime_policy");
-      copyRawRoot(document, "defaults");
-
-      const relatedPaths = ["report", "runtime_policy", "defaults"];
+      const relatedPaths = [];
+      const runtimePolicy = relevantRawRuntimePolicy(item, sourceKind, sourceManifest);
+      if (Object.keys(runtimePolicy).length) {
+        document.runtime_policy = runtimePolicy;
+        relatedPaths.push("runtime_policy");
+      }
+      const defaults = relevantRawDefaults(item, section, itemDefinition, sourceManifest);
+      if (Object.keys(defaults).length) {
+        document.defaults = defaults;
+        relatedPaths.push("defaults");
+      }
       const sectionDefinition = {};
       for (const [key, value] of Object.entries(section)) {
         if (key !== "items") {
@@ -3328,28 +3366,39 @@ __HIGHLIGHT_JS__
       document.sections = {[sectionId]: sectionDefinition};
       relatedPaths.push("sections/" + sectionId + "/items/" + itemKey);
 
-      const selectedCatalogs = {
-        [catalogRoot]: contentDocument.catalogs[catalogRoot],
+      document[sourceRoot] = {
+        [sourceId]: projectedRawSourceManifest(sourceKind, sourceManifest, item.source_metadata),
       };
-      document[sourceRoot] = {[sourceId]: contentDocument[sourceRoot][sourceId]};
       relatedPaths.push(sourceRoot + "/" + sourceId);
 
       if (sourceKind === "metric") {
-        const metric = contentDocument.metrics[sourceId];
-        const sourceQuery = metric.source_query;
+        const sourceQuery = sourceManifest.source_query;
         if (sourceQuery) {
-          selectedCatalogs.queries = contentDocument.catalogs.queries;
-          document.queries = {[sourceQuery]: contentDocument.queries[sourceQuery]};
+          const queryManifest = contentDocument.queries[sourceQuery];
+          if (!queryManifest) {
+            throw new Error("Missing metric query dependency " + sourceQuery);
+          }
+          document.queries = {
+            [sourceQuery]: projectedRawQueryManifest(queryManifest, null),
+          };
           relatedPaths.push("queries/" + sourceQuery);
         }
-      }
-      document.catalogs = selectedCatalogs;
-      for (const key of Object.keys(selectedCatalogs)) {
-        relatedPaths.push("catalogs/" + key);
+        const sourceSampler = sourceManifest.source_sampler;
+        if (sourceSampler) {
+          const providerEntry = samplerProviderForOutput(sourceSampler);
+          document.sampler_providers = {[providerEntry.id]: providerEntry.manifest};
+          relatedPaths.push("sampler_providers/" + providerEntry.id);
+          relatedPaths.push(
+            "sampler_providers/" + providerEntry.id + "/outputs/" + sourceSampler,
+          );
+        }
       }
 
-      document.instructions = {[itemId]: contentDocument.instructions[itemId]};
-      relatedPaths.push("instructions/" + itemId);
+      const instruction = contentDocument.instructions[itemId];
+      if (instruction) {
+        document.instructions = {[itemId]: instruction};
+        relatedPaths.push("instructions/" + itemId);
+      }
       document.resolved = resolvedRawItemConfiguration(
         item,
         itemDefinition,
@@ -3358,16 +3407,7 @@ __HIGHLIGHT_JS__
         sourceRoot,
       );
 
-      const provenance = {...contentProvenance};
-      for (const root of ["queries", "scripts", "metrics", "python_sources", "instructions", "catalogs"]) {
-        if (!document[root]) {
-          continue;
-        }
-        const sources = uniqueSourcesForPaths(relatedPaths.filter((path) => path === root || path.startsWith(root + "/")));
-        if (sources.length) {
-          provenance[root] = sources;
-        }
-      }
+      const provenance = projectedRawProvenance(document, relatedPaths);
       const resolvedSources = uniqueSourcesForPaths(relatedPaths);
       if (!resolvedSources.length) {
         throw new Error("Missing provenance for item " + itemId);
@@ -3376,8 +3416,135 @@ __HIGHLIGHT_JS__
       return {document, provenance};
     }
 
-    function copyRawRoot(target, root) {
-      target[root] = contentDocument[root];
+    function relevantRawRuntimePolicy(item, sourceKind, sourceManifest) {
+      const policy = contentDocument.runtime_policy;
+      const selected = {fail_fast: policy.fail_fast};
+      if (sourceKind === "query" || (sourceKind === "metric" && sourceManifest.source_query)) {
+        selected.default_sql_timeout_ms = policy.default_sql_timeout_ms;
+      }
+      if (sourceKind === "script" && sourceManifest.timeout_ms === undefined) {
+        selected.default_shell_timeout_ms = policy.default_shell_timeout_ms;
+      }
+      if (
+        sourceKind === "script"
+        && sourceManifest.local_only
+        && runtime.collection_mode === "remote-db-only"
+      ) {
+        selected.remote_db_only_shell_message = policy.remote_db_only_shell_message;
+      }
+      if ((item.result || {}).kind === "table") {
+        selected.table_columns = policy.table_columns;
+        const queryTextRules = policy.query_text_catalog;
+        const idSuffix = String(queryTextRules.id_column_suffix);
+        const columns = Array.isArray(item.result.columns) ? item.result.columns : [];
+        if (columns.some((column) => String(column.name || "").endsWith(idSuffix))) {
+          selected.query_text_catalog = queryTextRules;
+        }
+      }
+      return selected;
+    }
+
+    function relevantRawDefaults(item, section, itemDefinition, sourceManifest) {
+      const defaults = contentDocument.defaults;
+      const selected = {};
+      if ((item.result || {}).kind === "table") {
+        selected.table = defaults.table;
+      }
+      const itemDefaults = {};
+      if (itemDefinition.state === undefined) {
+        itemDefaults.state = defaults.item.state;
+      }
+      const resolvedScope = (item.source_metadata || {}).database_scope;
+      if (
+        itemDefinition.database_scope === undefined
+        && sourceManifest.database_scope === undefined
+        && resolvedScope === defaults.item.database_scope
+      ) {
+        itemDefaults.database_scope = defaults.item.database_scope;
+      }
+      if (Object.keys(itemDefaults).length) {
+        selected.item = itemDefaults;
+      }
+      if (section.state === undefined) {
+        selected.section = {state: defaults.section.state};
+      }
+      const scope = resolvedScope;
+      if (section.show_database_scope !== false && scope) {
+        const presentation = defaults.database_scope_presentation;
+        const scopeRule = presentation.values[scope];
+        if (!scopeRule) {
+          throw new Error("Missing database scope presentation for " + scope);
+        }
+        selected.database_scope_presentation = {
+          metadata_field: presentation.metadata_field,
+          values: {[scope]: scopeRule},
+        };
+      }
+      return selected;
+    }
+
+    function projectedRawSourceManifest(sourceKind, sourceManifest, metadata) {
+      if (sourceKind !== "query") {
+        return sourceManifest;
+      }
+      return projectedRawQueryManifest(sourceManifest, metadata.variant_id || null);
+    }
+
+    function projectedRawQueryManifest(queryManifest, selectedVariantId) {
+      const variants = Array.isArray(queryManifest.variants) ? queryManifest.variants : [];
+      let selectedVariant = null;
+      if (selectedVariantId) {
+        selectedVariant = variants.find((variant) => variant.id === selectedVariantId) || null;
+      } else {
+        const version = Number(runtime.server_version_num);
+        const matching = variants.filter((variant) => (
+          Number(variant.min_pg_version) <= version
+          && (variant.max_pg_version === undefined || version <= Number(variant.max_pg_version))
+        ));
+        if (matching.length === 1) {
+          selectedVariant = matching[0];
+        }
+      }
+      return selectedVariant ? {...queryManifest, variants: [selectedVariant]} : queryManifest;
+    }
+
+    function samplerProviderForOutput(outputId) {
+      const matches = [];
+      for (const [providerId, manifest] of Object.entries(contentDocument.sampler_providers)) {
+        if (manifest.outputs && manifest.outputs[outputId]) {
+          matches.push({
+            id: providerId,
+            manifest: {...manifest, outputs: {[outputId]: manifest.outputs[outputId]}},
+          });
+        }
+      }
+      if (matches.length !== 1) {
+        throw new Error("Expected one sampler provider for output " + outputId);
+      }
+      return matches[0];
+    }
+
+    function projectedRawProvenance(document, relatedPaths) {
+      const provenance = {};
+      for (const root of Object.keys(document)) {
+        if (root === "resolved") {
+          continue;
+        }
+        const paths = relatedPaths.filter(
+          (path) => path === root || path.startsWith(root + "/"),
+        );
+        const sources = uniqueSourcesForPaths(paths);
+        if (sources.length) {
+          provenance[root] = sources;
+        }
+        for (const path of paths) {
+          const pathSources = sourceFilesForPath(path.split("/"), contentProvenance);
+          if (pathSources.length) {
+            provenance[path] = pathSources;
+          }
+        }
+      }
+      return provenance;
     }
 
     function resolvedRawItemConfiguration(item, itemDefinition, sourceKind, sourceId, sourceRoot) {
@@ -4253,6 +4420,14 @@ __HIGHLIGHT_JS__
 
       const toolbar = document.createElement("div");
       toolbar.className = "table-toolbar";
+      const showFilter = rows.length > 1;
+      const showPaginationControls = rows.length > 25;
+      if (!showPaginationControls) {
+        toolbar.classList.add("no-pagination");
+      }
+      if (!showFilter) {
+        toolbar.classList.add("single-row");
+      }
 
       const filter = document.createElement("input");
       filter.className = "input";
@@ -4261,10 +4436,10 @@ __HIGHLIGHT_JS__
 
       const pageSize = document.createElement("select");
       pageSize.className = "select";
-      const configuredPageSize = Number((((artifact.display || {}).table || {}).page_size) || 15);
-      const pageSizeValues = Array.from(new Set([
-        String(configuredPageSize), "15", "50", "100", "500", "all"
-      ]));
+      const requestedPageSize = Number((((artifact.display || {}).table || {}).page_size) || 25);
+      const supportedPageSizes = [25, 50, 100, 500];
+      const configuredPageSize = supportedPageSizes.includes(requestedPageSize) ? requestedPageSize : 25;
+      const pageSizeValues = ["25", "50", "100", "500", "all"];
       for (const value of pageSizeValues) {
         const option = document.createElement("option");
         option.value = value;
@@ -4285,10 +4460,14 @@ __HIGHLIGHT_JS__
       const counter = document.createElement("div");
       counter.className = "row-counter";
 
-      toolbar.appendChild(filter);
-      toolbar.appendChild(pageSize);
-      toolbar.appendChild(previous);
-      toolbar.appendChild(next);
+      if (showFilter) {
+        toolbar.appendChild(filter);
+      }
+      if (showPaginationControls) {
+        toolbar.appendChild(pageSize);
+        toolbar.appendChild(previous);
+        toolbar.appendChild(next);
+      }
       toolbar.appendChild(counter);
       shell.appendChild(toolbar);
 
@@ -4480,11 +4659,19 @@ __HIGHLIGHT_JS__
       }
       const direction = state.sort.direction === "desc" ? -1 : 1;
       state.filteredRows = state.filteredRows.slice().sort((left, right) => {
-        return compareValues(
-          Array.isArray(left) ? left[column.sourceIndex] : undefined,
-          Array.isArray(right) ? right[column.sourceIndex] : undefined,
-          column
-        ) * direction;
+        const leftValue = Array.isArray(left) ? left[column.sourceIndex] : undefined;
+        const rightValue = Array.isArray(right) ? right[column.sourceIndex] : undefined;
+        const leftEmpty = leftValue === undefined || leftValue === null || leftValue === "";
+        const rightEmpty = rightValue === undefined || rightValue === null || rightValue === "";
+        if (leftEmpty !== rightEmpty) {
+          return leftEmpty ? 1 : -1;
+        }
+        const leftNumber = numericValue(leftValue, column);
+        const rightNumber = numericValue(rightValue, column);
+        if ((leftNumber === null) !== (rightNumber === null)) {
+          return leftNumber === null ? 1 : -1;
+        }
+        return compareValues(leftValue, rightValue, column) * direction;
       });
     }
 

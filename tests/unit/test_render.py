@@ -84,6 +84,10 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
             "collector_host": "collector-1",
             "collector_user": "oleg",
             "current_database": "pg_diag",
+            "database_host_ip": "192.0.2.10",
+            "database_hostname": "db-primary.example",
+            "database_name": "pg_diag",
+            "database_role": "Primary",
             "current_user": "app",
             "server_version": "PostgreSQL 18.4 (Ubuntu 18.4-1.pgdg24.04+1) on x86_64-pc-linux-gnu",
             "duration_seconds": 30,
@@ -153,6 +157,14 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "<script>alert(1)</script>" not in html
     assert "Filter rows" in html
     assert "All rows" in html
+    assert 'const pageSizeValues = ["25", "50", "100", "500", "all"]' in app_html
+    assert '"15", "50"' not in app_html
+    assert "const showFilter = rows.length > 1" in app_html
+    assert "const showPaginationControls = rows.length > 25" in app_html
+    assert "if (showFilter)" in app_html
+    assert "if (showPaginationControls)" in app_html
+    assert ".table-toolbar.no-pagination" in app_html
+    assert ".table-toolbar.single-row" in app_html
     assert 'id="itemTypeFilter"' in html
     assert 'id="tagFilter"' in html
     assert html.index('id="tagFilter"') < html.index('id="itemTypeFilter"') < html.index('id="collectionStatusFilter"') < html.index('id="severityLevelFilter"')
@@ -178,6 +190,8 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
         "buttons.appendChild(instructionButton)"
     ) < html.index("buttons.appendChild(renderMetaButton(item))")
     assert "const tag = document.getElementById(\"tagFilter\").value" in html
+    assert "if (leftEmpty !== rightEmpty)" in html
+    assert "if ((leftNumber === null) !== (rightNumber === null))" in html
     assert "const matchesTag = !tag || (item.__tags || []).includes(tag)" in html
     assert "updateFilteredTagHighlights(tag)" in html
     assert 'badge.classList.toggle("filter-match", matches)' in html
@@ -234,6 +248,13 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "timeZoneName: \"short\"" in html
     assert 'id="runtimeDetails"' in html
     assert "collector_host" in html
+    assert '<h1 id="reportTitle">Test</h1>' in html
+    assert '<div id="reportTitleContext" class="report-title-context"></div>' in html
+    assert "reportExtendedTitle()" in html
+    assert '["IP", runtime.database_host_ip]' in html
+    assert '["Host", runtime.database_hostname]' in html
+    assert '["DB", runtime.database_name]' in html
+    assert '["Role", runtime.database_role]' in html
     assert "collector_user" in html
     assert "shortServerVersion(runtime.server_version)" in html
     assert "formatSeconds(runtime.duration_seconds)" in html
@@ -334,6 +355,13 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert 'selectMetaTab("raw")' in html
     assert "buildRawItemConfiguration(currentMetaItem)" in html
     assert "renderAnnotatedYaml(raw.document, raw.provenance)" in html
+    assert 'copyRawRoot(document, "report")' not in html
+    assert "document.catalogs = selectedCatalogs" not in html
+    assert "relevantRawRuntimePolicy(item, sourceKind, sourceManifest)" in html
+    assert "relevantRawDefaults(item, section, itemDefinition, sourceManifest)" in html
+    assert "projectedRawQueryManifest(queryManifest, null)" in html
+    assert "samplerProviderForOutput(sourceSampler)" in html
+    assert "projectedRawProvenance(document, relatedPaths)" in html
     assert 'code.className = "language-yaml"' in html
     assert '" Source" + (sources.length > 1 ? "s" : "")' in html
     assert "const contentDocument = contentConfig.document;" in html

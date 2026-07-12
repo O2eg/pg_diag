@@ -465,6 +465,13 @@ PostgreSQL configuration files. Read host state only through async
 full SSH `remote` modes; direct `Path.read_*`, `Path.stat`, `subprocess`, and
 collector-local environment access are incorrect for a local-only source.
 
+For a cluster-wide database inventory, list databases through `ctx.conn` and
+open each target sequentially with
+`async with ctx.connect_database(database_name, timeout_seconds=...) as conn`.
+The additional connection reuses the configured database endpoint or SSH
+tunnel, enforces read-only startup settings, verifies read-only state, and is
+closed when its context exits.
+
 4. Add `instructions/items/<section>/<item>.md` for the item.
 
 ## Add SQL Result Evaluation

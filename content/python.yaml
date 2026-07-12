@@ -5,6 +5,16 @@ python_catalog:
     local_only: false
 
 python_sources:
+  database.database_volume:
+    title: Database Volume
+    description: Collect database sizes and user-object counts by connecting sequentially to every database.
+    python_file: database/database_volume.py
+    function: collect
+    timeout_ms: 300000
+    display:
+      default_sort:
+        column: database_size_bytes
+        direction: desc
   security.remote_superuser_access:
     title: Remote Superuser Access
     description: Detect and classify pg_hba.conf host rules that allow login superusers over loopback or non-loopback TCP.

@@ -222,7 +222,7 @@ def test_overview_instructions_have_interpretation_sections(content_path: Path) 
         for section_id, _item_key, item_id, _item in iter_report_items(content)
         if section_id == "overview"
     ]
-    assert len(overview_item_ids) == 11
+    assert len(overview_item_ids) == 13
     for item_id in overview_item_ids:
         text = content.instructions[item_id]["text"]
         assert "## What to watch" in text, item_id
@@ -561,6 +561,7 @@ def test_database_scope_contract_matches_queries_and_actual_sql(content_path: Pa
         assert source.get("database_scope") == metric["database_scope"], metric_id
 
     all_database_sources = {
+        "database.database_stats",
         "metrics.database_transaction_rate",
         "metrics.database_tuple_dml_rate",
         "metrics.database_tuple_access_rate",
@@ -581,6 +582,19 @@ def test_database_scope_contract_matches_queries_and_actual_sql(content_path: Pa
             ).lower()
             assert "where datname is not null" in sql, source_id
             assert "where datname = current_database()" not in sql, source_id
+
+    database_stats_source = content.queries["database.database_stats"]
+    assert database_stats_source["title"] == "Database Statistics"
+    for variant in database_stats_source["variants"]:
+        sql = (content.path / "queries" / variant["sql_file"]).read_text(
+            encoding="utf-8"
+        ).lower()
+        assert "current_database()" not in sql
+        assert "from pg_index" not in sql
+        assert "datid" in sql
+        assert "stats_reset" in sql
+        assert "sys_id" not in sql
+        assert "pg_control_system" not in sql
 
     assert content.metrics["database.workload_delta"]["database_scope"] == "all_databases"
     assert content.metrics["statements.total_time_delta"]["database_scope"] == (
@@ -622,6 +636,9 @@ def test_validator_rejects_invalid_or_mismatched_database_scope(content_path: Pa
 
 def test_every_non_os_item_resolves_database_scope(content_path: Path) -> None:
     content = load_content(content_path)
+    overview_items = list(content.report["sections"]["overview"]["items"])
+    assert overview_items.index("database_volume") == overview_items.index("server_version") + 1
+    assert overview_items.index("pg_config") == overview_items.index("database_volume") + 1
     plan = build_plan(
         content,
         180000,
@@ -644,6 +661,10 @@ def test_every_non_os_item_resolves_database_scope(content_path: Path) -> None:
     assert by_id["activity_locks.connection_pressure"].source_metadata[
         "database_scope"
     ] == "all_databases"
+    assert by_id["overview.pg_config"].source_metadata["database_scope"] == "all_databases"
+    assert by_id["overview.pg_config"].source_kind == "script"
+    assert by_id["overview.database_volume"].source_metadata["database_scope"] == "all_databases"
+    assert by_id["overview.database_volume"].source_kind == "python"
     assert all(
         item.source_metadata["database_scope"] == "current_database"
         for item in plan.items
@@ -1344,6 +1365,10 @@ def test_plan_exposes_query_default_sort(content_path: Path) -> None:
     assert by_id["overview.pg_settings"].source_metadata["display"]["default_sort"] == {
         "column": "setting_name",
         "direction": "asc",
+    }
+    assert by_id["overview.database_volume"].source_metadata["display"]["default_sort"] == {
+        "column": "database_size_bytes",
+        "direction": "desc",
     }
     assert by_id["overview.pg_settings"].source_metadata["evaluation"] == {
         "summary_title": "PostgreSQL settings require review",

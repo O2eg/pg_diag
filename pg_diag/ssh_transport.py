@@ -120,23 +120,27 @@ def remote_database_endpoint(
     connection_kwargs: dict[str, Any],
 ) -> tuple[str, int]:
     """Resolve the DB endpoint as it is reachable from the SSH server."""
-    explicit_host = connection_kwargs.get("host")
-    explicit_port = connection_kwargs.get("port")
-    if explicit_host:
-        host = _single_tcp_host(str(explicit_host))
-        return host, _valid_port(explicit_port or DEFAULT_DB_PORT, "PostgreSQL")
-
-    if dsn:
-        parsed = urlsplit(dsn)
-        if parsed.scheme in {"postgres", "postgresql"} and parsed.hostname:
-            return _single_tcp_host(parsed.hostname), _valid_port(
-                parsed.port or DEFAULT_DB_PORT,
-                "PostgreSQL",
-            )
+    host = database_connection_host(dsn, connection_kwargs)
+    dsn_fields = _dsn_fields(dsn)
+    port = connection_kwargs.get("port") or dsn_fields.get("port") or DEFAULT_DB_PORT
+    if host:
+        return _single_tcp_host(host), _valid_port(port, "PostgreSQL")
 
     raise SshTransportError(
         "remote collection requires a TCP PostgreSQL endpoint in --host or a postgresql:// DSN"
     )
+
+
+def database_connection_host(
+    dsn: str | None,
+    connection_kwargs: dict[str, Any],
+) -> str | None:
+    """Return the original PostgreSQL host before any SSH tunnel rewrite."""
+    explicit_host = connection_kwargs.get("host")
+    if explicit_host:
+        return str(explicit_host).strip() or None
+    dsn_fields = _dsn_fields(dsn)
+    return dsn_fields.get("host") or dsn_fields.get("hostaddr")
 
 
 def tunneled_connection_kwargs(
@@ -202,6 +206,8 @@ def _dsn_fields(dsn: str | None) -> dict[str, str]:
 
     database = unquote(parsed.path[1:]) if parsed.path.startswith("/") else unquote(parsed.path)
     values = {
+        "host": parsed.hostname,
+        "port": str(parsed.port) if parsed.port is not None else None,
         "user": unquote(parsed.username or "") or query_value("user"),
         "password": unquote(parsed.password or "") or query_value("password"),
         "database": database or query_value("database", "dbname"),
@@ -222,7 +228,16 @@ def _keyword_dsn_fields(dsn: str) -> dict[str, str]:
             continue
         key, value = token.split("=", 1)
         normalized = "database" if key.strip().lower() == "dbname" else key.strip().lower()
-        if normalized in {"user", "password", "database", "passfile", "sslmode"}:
+        if normalized in {
+            "host",
+            "hostaddr",
+            "port",
+            "user",
+            "password",
+            "database",
+            "passfile",
+            "sslmode",
+        }:
             values[normalized] = value
     return values
 
@@ -377,6 +392,13 @@ class SshTransport:
         self._sftp: Any | None = None
         self._host_access: Any | None = None
         self._closed = False
+
+    @property
+    def peer_ip(self) -> str:
+        peername = self._connection.get_extra_info("peername")
+        if not isinstance(peername, tuple) or not peername or not peername[0]:
+            raise SshTransportError("SSH connection did not expose its peer IP address")
+        return str(peername[0])
 
     @classmethod
     async def connect(cls, config: SshConfig) -> SshTransport:

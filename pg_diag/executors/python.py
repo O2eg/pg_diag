@@ -26,6 +26,7 @@ from pg_diag.host_access import HostAccess, LocalHostAccess
 from pg_diag.planner import PlannedItem
 
 if TYPE_CHECKING:
+    from pg_diag.executors.sql import DatabaseConnector
     from pg_diag.ssh_transport import SshTransport
 
 
@@ -41,6 +42,20 @@ class PythonSourceContext:
     source: dict[str, Any]
     source_path: Path
     host: HostAccess
+    database_connector: DatabaseConnector | None = None
+
+    def connect_database(
+        self,
+        database_name: str,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> Any:
+        if self.database_connector is None:
+            raise RuntimeError("Python source database connector is unavailable")
+        return self.database_connector.connect(
+            database_name,
+            timeout_seconds=timeout_seconds,
+        )
 
 
 @dataclass
@@ -58,6 +73,7 @@ async def execute_python_item(
     conn: Any,
     planned: PlannedItem,
     ssh_transport: SshTransport | None = None,
+    database_connector: DatabaseConnector | None = None,
 ) -> dict[str, Any]:
     started = time.perf_counter()
     source_id = planned.source_id or ""
@@ -85,6 +101,7 @@ async def execute_python_item(
             source=source,
             source_path=source_path,
             host=host,
+            database_connector=database_connector,
         )
         raw_result = await asyncio.wait_for(
             _load_and_call_source(

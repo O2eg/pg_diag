@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+import math
 import time
 from pathlib import Path
 from typing import Any
@@ -60,6 +63,38 @@ async def connect(dsn: str | None = None, **kwargs: Any):
     return conn
 
 
+@dataclass(frozen=True)
+class DatabaseConnector:
+    """Open verified read-only connections using the collector endpoint."""
+
+    dsn: str | None
+    connection_kwargs: Mapping[str, Any]
+
+    @asynccontextmanager
+    async def connect(
+        self,
+        database_name: str,
+        *,
+        timeout_seconds: float | None = None,
+    ):
+        if not isinstance(database_name, str) or not database_name.strip():
+            raise ValueError("database_name must be a non-empty string")
+        if timeout_seconds is not None and (
+            not math.isfinite(timeout_seconds) or timeout_seconds <= 0
+        ):
+            raise ValueError("timeout_seconds must be a positive finite number")
+
+        connection_kwargs = dict(self.connection_kwargs)
+        connection_kwargs["database"] = database_name
+        if timeout_seconds is not None:
+            connection_kwargs["timeout"] = timeout_seconds
+        conn = await connect(dsn=self.dsn, **connection_kwargs)
+        try:
+            yield conn
+        finally:
+            await conn.close()
+
+
 def _read_only_server_settings(settings: Any) -> dict[str, str]:
     if settings is None:
         result: dict[str, str] = {}
@@ -94,17 +129,26 @@ async def _verify_read_only_connection(conn: Any) -> None:
 
 
 async def detect_runtime_context(conn: Any) -> dict[str, Any]:
-    server_version_num = int(await conn.fetchval("select current_setting('server_version_num')::int"))
-    server_version = await conn.fetchval("select version()")
-    current_database = await conn.fetchval("select current_database()")
-    current_user = await conn.fetchval("select current_user")
-    in_recovery = await conn.fetchval("select pg_is_in_recovery()")
+    row = await conn.fetchrow(
+        "select pg_catalog.current_setting('server_version_num')::int as server_version_num, "
+        "pg_catalog.version() as server_version, "
+        "pg_catalog.current_database() as database_name, "
+        "current_user::text as database_user, "
+        "pg_catalog.pg_is_in_recovery() as in_recovery, "
+        "pg_catalog.host(pg_catalog.inet_server_addr()) as database_host_ip"
+    )
+    server_version_num = int(row["server_version_num"])
+    current_database = json_safe(row["database_name"])
+    in_recovery = bool(row["in_recovery"])
     return {
         "server_version_num": server_version_num,
-        "server_version": json_safe(server_version),
-        "current_database": json_safe(current_database),
-        "current_user": json_safe(current_user),
-        "in_recovery": bool(in_recovery),
+        "server_version": json_safe(row["server_version"]),
+        "current_database": current_database,
+        "current_user": json_safe(row["database_user"]),
+        "in_recovery": in_recovery,
+        "database_host_ip": json_safe(row["database_host_ip"]),
+        "database_name": current_database,
+        "database_role": "Secondary" if in_recovery else "Primary",
         "capabilities": {},
     }
 

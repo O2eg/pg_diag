@@ -104,9 +104,13 @@ def test_remote_database_endpoint_uses_explicit_host_or_uri_dsn() -> None:
         "postgresql://app:secret@db.internal:6432/appdb",
         {},
     ) == ("db.internal", 6432)
+    assert remote_database_endpoint(
+        "host=db.internal port=6432 dbname=appdb user=app",
+        {},
+    ) == ("db.internal", 6432)
 
-    with pytest.raises(SshTransportError, match="TCP PostgreSQL endpoint"):
-        remote_database_endpoint("host=db.internal dbname=appdb", {})
+    with pytest.raises(SshTransportError, match="TCP PostgreSQL"):
+        remote_database_endpoint("host=/var/run/postgresql dbname=appdb", {})
     with pytest.raises(SshTransportError, match="exactly one"):
         remote_database_endpoint(None, {"host": "db1,db2"})
     with pytest.raises(SshTransportError, match="exactly one"):
@@ -558,6 +562,11 @@ def test_remote_collection_tunnels_dsn_and_closes_ssh_after_db(
     class FakeTransport:
         def __init__(self) -> None:
             self.config = config
+            self.peer_ip = "192.0.2.20"
+            self.host_access = SimpleNamespace(hostname=self._hostname)
+
+        async def _hostname(self) -> str:
+            return "db-primary.example"
 
         async def open_database_tunnel(self, host: str, port: int) -> tuple[str, int]:
             assert (host, port) == ("db.internal", 6432)
@@ -626,6 +635,10 @@ def test_remote_collection_tunnels_dsn_and_closes_ssh_after_db(
     assert sql_connect_kwargs["port"] == 49152
     assert artifact["runtime"]["remote_host"] == "db.example"
     assert artifact["runtime"]["remote_database_host"] == "db.internal"
+    assert artifact["runtime"]["database_host_ip"] == "192.0.2.20"
+    assert artifact["runtime"]["database_hostname"] == "db-primary.example"
+    assert artifact["runtime"]["database_name"] == "appdb"
+    assert artifact["runtime"]["database_role"] == "Primary"
     assert calls == [
         "ssh.connect",
         "ssh.tunnel",
@@ -801,6 +814,7 @@ def test_asyncssh_end_to_end_forward_shell_sftp_and_local_python_evaluation(
                     known_hosts=known_hosts,
                 )
             )
+            assert transport.peer_ip == "127.0.0.1"
             host, port = await transport.open_database_tunnel("127.0.0.1", echo_port)
             reader, writer = await asyncio.open_connection(host, port)
             writer.write(b"tunnel")
@@ -817,6 +831,7 @@ def test_asyncssh_end_to_end_forward_shell_sftp_and_local_python_evaluation(
             assert shell.stdout.strip()
 
             host_access = SshHostAccess(transport)
+            assert await host_access.hostname()
             pgdata_stat = await host_access.stat(pgdata)
             assert pgdata_stat.is_dir
 

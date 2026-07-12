@@ -6,7 +6,12 @@ from types import SimpleNamespace
 import pytest
 
 from pg_diag.errors import PgDiagError
-from pg_diag.executors.sql import connect, execute_query_item
+from pg_diag.executors.sql import (
+    DatabaseConnector,
+    connect,
+    detect_runtime_context,
+    execute_query_item,
+)
 from pg_diag.planner import PlannedItem
 
 
@@ -114,6 +119,79 @@ class AsyncpgConnectStub:
     async def connect(self, **kwargs):
         self.calls.append(kwargs)
         return self.conn
+
+
+class RuntimeContextConn:
+    def __init__(self, *, in_recovery: bool) -> None:
+        self.in_recovery = in_recovery
+        self.sql = ""
+
+    async def fetchrow(self, sql: str):
+        self.sql = sql
+        return {
+            "server_version_num": 180004,
+            "server_version": "PostgreSQL 18.4",
+            "database_name": "appdb",
+            "database_user": "app",
+            "in_recovery": self.in_recovery,
+            "database_host_ip": "192.0.2.10",
+        }
+
+
+def test_database_connector_opens_named_database_and_closes_connection(monkeypatch) -> None:
+    conn = ConnectTestConn()
+    calls = []
+
+    async def fake_connect(dsn=None, **kwargs):
+        calls.append((dsn, kwargs))
+        return conn
+
+    monkeypatch.setattr("pg_diag.executors.sql.connect", fake_connect)
+    connector = DatabaseConnector(
+        "postgresql://app@127.0.0.1/original",
+        {"host": "127.0.0.1", "port": 15432, "user": "app"},
+    )
+
+    async def run() -> None:
+        async with connector.connect("inventory", timeout_seconds=10.0) as opened:
+            assert opened is conn
+            assert conn.closed is False
+
+    asyncio.run(run())
+
+    assert calls == [
+        (
+            "postgresql://app@127.0.0.1/original",
+            {
+                "host": "127.0.0.1",
+                "port": 15432,
+                "user": "app",
+                "database": "inventory",
+                "timeout": 10.0,
+            },
+        )
+    ]
+    assert conn.closed is True
+
+
+@pytest.mark.parametrize(
+    ("in_recovery", "database_role"),
+    [(False, "Primary"), (True, "Secondary")],
+)
+def test_runtime_context_collects_database_header_identity(
+    in_recovery: bool,
+    database_role: str,
+) -> None:
+    conn = RuntimeContextConn(in_recovery=in_recovery)
+
+    context = asyncio.run(detect_runtime_context(conn))
+
+    assert context["database_host_ip"] == "192.0.2.10"
+    assert context["database_name"] == "appdb"
+    assert context["database_role"] == database_role
+    assert context["in_recovery"] is in_recovery
+    assert "pg_catalog.host(pg_catalog.inet_server_addr())" in conn.sql
+    assert "pg_catalog.pg_is_in_recovery()" in conn.sql
 
 
 def test_connect_dsn_enforces_read_only_startup_setting_and_allows_endpoint_override(
