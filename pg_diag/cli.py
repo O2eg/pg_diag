@@ -79,6 +79,10 @@ def build_parser() -> argparse.ArgumentParser:
         choices=runtime_config.COLLECTION_MODES,
         default=runtime_config.DEFAULT_COLLECTION_MODE,
     )
+    snapshot_parser.add_argument(
+        "--item-id",
+        help="Collect only the specified report item (section.item)",
+    )
     snapshot_parser.set_defaults(func=cmd_snapshot)
 
     render_parser = subparsers.add_parser("render", help="Render HTML from report JSON")
@@ -106,6 +110,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--collection-mode",
         choices=runtime_config.COLLECTION_MODES,
         default=runtime_config.LOCAL_COLLECTION_MODE,
+    )
+    snapshots_parser.add_argument(
+        "--item-id",
+        help="Collect only the specified report item (section.item)",
     )
     snapshots_parser.set_defaults(func=cmd_snapshots)
 
@@ -299,6 +307,7 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
                 html_out=args.html_out,
                 content_validated=True,
                 ssh_config=ssh_config,
+                item_id=args.item_id,
             )
         )
     except Exception as exc:
@@ -349,6 +358,7 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
                 html_out=args.html_out,
                 content_validated=True,
                 ssh_config=ssh_config,
+                item_id=args.item_id,
             )
         )
     except Exception as exc:

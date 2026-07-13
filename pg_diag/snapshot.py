@@ -26,6 +26,7 @@ async def collect_snapshot(
     html_out: str | Path | None = None,
     content_validated: bool = False,
     ssh_config: SshConfig | None = None,
+    item_id: str | None = None,
 ) -> dict[str, Any]:
     run = await start_collection(
         content=content,
@@ -38,6 +39,7 @@ async def collect_snapshot(
         html_out=html_out,
         content_validated=content_validated,
         ssh_config=ssh_config,
+        item_id=item_id,
     )
     try:
         for planned in run.plan.items:

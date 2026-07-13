@@ -28,7 +28,7 @@ from .executors.common import read_source_text
 from .executors.python import execute_python_item
 from .executors.remote_disabled_shell import skipped_python_item, skipped_shell_item
 from .executors.shell import execute_remote_shell_item, execute_shell_item
-from .executors.sql import DatabaseConnector, connect, detect_runtime_context, execute_query_item
+from .executors.sql import DatabaseConnector, connect, detect_runtime_context, execute_query_item, runtime_guard_server_settings
 from .host_access import LocalHostAccess
 from .planner import ExecutionPlan, PlannedItem, build_plan
 from .presentation import apply_presentation_contract
@@ -68,6 +68,7 @@ async def start_collection(
     html_out: str | Path | None,
     content_validated: bool,
     ssh_config: SshConfig | None = None,
+    item_id: str | None = None,
 ) -> CollectionRun:
     if collection_mode not in runtime_config.COLLECTION_MODES:
         raise ValueError(f"unsupported collection mode {collection_mode!r}")
@@ -102,6 +103,12 @@ async def start_collection(
         elif ssh_config is not None:
             raise ValueError("SSH configuration is only valid in remote collection mode")
 
+        guard_settings = runtime_guard_server_settings(content)
+        existing_server_settings = effective_connection_kwargs.get("server_settings")
+        if isinstance(existing_server_settings, dict):
+            guard_settings = {**guard_settings, **existing_server_settings}
+        effective_connection_kwargs["server_settings"] = guard_settings
+
         conn = await connect(dsn=dsn, **effective_connection_kwargs)
         database_connector = DatabaseConnector(dsn, effective_connection_kwargs)
         runtime_context = await detect_runtime_context(conn)
@@ -128,6 +135,7 @@ async def start_collection(
             server_version_num,
             mode=mode,
             collection_mode=collection_mode,
+            item_id=item_id,
         )
         if not plan.supported_server_version:
             raise UnsupportedServerVersion(plan.reason or "Unsupported PostgreSQL server version")

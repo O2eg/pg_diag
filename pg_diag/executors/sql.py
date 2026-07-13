@@ -157,8 +157,6 @@ async def execute_query_item(
     content: ContentPack,
     conn: Any,
     planned: PlannedEntry,
-    *,
-    runtime_guards_set: bool = False,
 ) -> dict[str, Any]:
     started = time.perf_counter()
     sql_file = planned.sql_file
@@ -177,8 +175,6 @@ async def execute_query_item(
     try:
         sql_text = Path(sql_path).read_text(encoding="utf-8")
         async with conn.transaction(readonly=True):
-            if not runtime_guards_set:
-                await set_local_runtime_guards(content, conn)
             prepared = await conn.prepare(sql_text)
             raw_columns = _columns_from_prepared(prepared)
             records = await prepared.fetch()
@@ -229,13 +225,15 @@ async def execute_query_item(
     )
 
 
-async def set_local_runtime_guards(content: ContentPack, conn: Any) -> None:
+def runtime_guard_server_settings(content: ContentPack) -> dict[str, str]:
+    """Return session-level guard settings applied at connection startup."""
     policy = content.report.get("runtime_policy") or {}
-    statement_timeout = str(policy.get("default_sql_timeout_ms", 10000))
-    await conn.execute("select set_config('statement_timeout', $1, true)", statement_timeout)
-    await conn.execute("select set_config('lock_timeout', $1, true)", "1000")
-    await conn.execute("select set_config('idle_in_transaction_session_timeout', $1, true)", "10000")
-    await conn.execute("select set_config('search_path', $1, true)", "pg_catalog, public")
+    return {
+        "statement_timeout": str(policy.get("default_sql_timeout_ms", 10000)),
+        "lock_timeout": "1000",
+        "idle_in_transaction_session_timeout": "10000",
+        "search_path": "pg_catalog, public",
+    }
 
 
 def _columns_from_prepared(prepared: Any) -> list[dict[str, Any]]:

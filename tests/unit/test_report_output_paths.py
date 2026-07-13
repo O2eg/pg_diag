@@ -187,7 +187,7 @@ def test_collect_snapshot_writes_exact_output_files(tmp_path, monkeypatch) -> No
     monkeypatch.setattr(
         collection_module,
         "build_plan",
-        lambda content, server_version_num, mode, collection_mode: fake_plan(mode, collection_mode),
+        lambda *args, **kwargs: fake_plan(kwargs.get("mode"), kwargs.get("collection_mode")),
     )
     monkeypatch.setattr(collection_module, "render_html", lambda artifact, **kwargs: "<html>snapshot</html>")
 
@@ -242,7 +242,7 @@ def test_collect_snapshots_writes_exact_output_files(tmp_path, monkeypatch) -> N
     monkeypatch.setattr(
         collection_module,
         "build_plan",
-        lambda content, server_version_num, mode, collection_mode: fake_plan(mode, collection_mode),
+        lambda *args, **kwargs: fake_plan(kwargs.get("mode"), kwargs.get("collection_mode")),
     )
     monkeypatch.setattr(collection_module, "render_html", lambda artifact, **kwargs: "<html>snapshots</html>")
 
@@ -306,9 +306,9 @@ def test_collect_snapshots_formats_remote_skipped_once_items(tmp_path, monkeypat
     monkeypatch.setattr(
         collection_module,
         "build_plan",
-        lambda content, server_version_num, mode, collection_mode: fake_plan_with_items(
-            mode,
-            collection_mode,
+        lambda *args, **kwargs: fake_plan_with_items(
+            kwargs.get("mode"),
+            kwargs.get("collection_mode"),
             [planned],
         ),
     )
@@ -395,7 +395,14 @@ def test_collect_snapshots_runs_static_items_before_chart_window(tmp_path, monke
 
     async def execute_once_stub(content, conn, planned, ssh, database_connector):
         assert ssh is None
-        assert database_connector.connection_kwargs == {}
+        assert database_connector.connection_kwargs == {
+            "server_settings": {
+                "statement_timeout": "10000",
+                "lock_timeout": "1000",
+                "idle_in_transaction_session_timeout": "10000",
+                "search_path": "pg_catalog, public",
+            }
+        }
         call_order.append(f"once:{planned.item_id}")
         return item_from_plan(planned, collection_status="ok", result={"kind": "none"})
 

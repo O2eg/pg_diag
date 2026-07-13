@@ -256,8 +256,7 @@ def test_db_snapshots_store_only_varying_table_data(monkeypatch: pytest.MonkeyPa
     query_texts: dict[str, str] = {}
     snapshot_schemas: dict[str, dict] = {}
 
-    async def execute_stub(content, conn, item, *, runtime_guards_set=False):
-        assert runtime_guards_set is True
+    async def execute_stub(content, conn, item):
         return item_from_plan(
             item,
             collection_status="ok",
@@ -321,9 +320,8 @@ def test_db_snapshots_store_only_varying_table_data(monkeypatch: pytest.MonkeyPa
 def test_db_sampler_does_not_start_stale_final_sample(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = 0
 
-    async def execute_stub(content, conn, item, *, runtime_guards_set=False):
+    async def execute_stub(content, conn, item):
         nonlocal calls
-        assert runtime_guards_set is True
         calls += 1
         await asyncio.sleep(0.16)
         return item_from_plan(
@@ -351,8 +349,7 @@ def test_window_endpoint_queries_share_one_read_only_transaction(
 ) -> None:
     calls: list[str] = []
 
-    async def execute_stub(content, conn, item, *, runtime_guards_set=False):
-        assert runtime_guards_set is True
+    async def execute_stub(content, conn, item):
         calls.append(item.item_id)
         return item_from_plan(
             item,
@@ -373,7 +370,7 @@ def test_window_endpoint_queries_share_one_read_only_transaction(
     assert set(items) == {"s.q", "s.q2"}
     assert not error_counts
     assert conn.readonly_transactions == 1
-    assert len(conn.executed) == 4
+    assert len(conn.executed) == 0
 
 
 def test_python_source_timeout_does_not_block_event_loop(tmp_path: Path) -> None:

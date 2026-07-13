@@ -25,7 +25,6 @@ from .collection import (
 from .content_loader import ContentPack
 from .executors.sql import (
     execute_query_item,
-    set_local_runtime_guards,
 )
 from .errors import PgDiagError
 from .host_access import HostAccess, LocalHostAccess
@@ -53,6 +52,7 @@ async def collect_snapshots(
     html_out: str | Path | None = None,
     content_validated: bool = False,
     ssh_config: SshConfig | None = None,
+    item_id: str | None = None,
 ) -> dict[str, Any]:
     window_error = runtime_config.validate_snapshots_window(duration_seconds, interval_seconds)
     if window_error:
@@ -69,6 +69,7 @@ async def collect_snapshots(
         html_out=html_out,
         content_validated=content_validated,
         ssh_config=ssh_config,
+        item_id=item_id,
     )
     conn = run.conn
     plan = run.plan
@@ -420,14 +421,12 @@ async def _execute_query_batch(
     items: dict[str, dict[str, Any]] = {}
     error_counts: Counter[str] = Counter()
     async with conn.transaction(readonly=True):
-        await set_local_runtime_guards(content, conn)
         for planned in queries:
             try:
                 item = await execute_query_item(
                     content,
                     conn,
                     planned,
-                    runtime_guards_set=True,
                 )
             except Exception as exc:
                 item = item_error_from_exception(planned, exc)

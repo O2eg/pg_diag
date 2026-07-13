@@ -287,7 +287,6 @@ def test_sql_timeout_exception_is_recorded_in_item(tmp_path) -> None:
 
     item = asyncio.run(execute_query_item(content, conn, planned))
 
-    assert ("select set_config('statement_timeout', $1, true)", "3000") in conn.executed
     assert item["item_id"] == "test.slow"
     assert item["collection_status"] == "error"
     assert item["severity_level"] == "unknown"
@@ -300,7 +299,7 @@ def test_sql_timeout_exception_is_recorded_in_item(tmp_path) -> None:
     assert "QueryCanceledError" in item["diagnostics"][0]["traceback"]
 
 
-def test_sql_batch_query_reuses_outer_runtime_guards(tmp_path) -> None:
+def test_sql_query_does_not_set_runtime_guards(tmp_path) -> None:
     queries = tmp_path / "queries"
     queries.mkdir()
     (queries / "sample.sql").write_text("select 1", encoding="utf-8")
@@ -322,9 +321,7 @@ def test_sql_batch_query_reuses_outer_runtime_guards(tmp_path) -> None:
     )
     conn = TimeoutConn(RowsPrepared(["value"], [[1]]))
 
-    item = asyncio.run(
-        execute_query_item(content, conn, planned, runtime_guards_set=True)
-    )
+    item = asyncio.run(execute_query_item(content, conn, planned))
 
     assert item["collection_status"] == "ok"
     assert conn.executed == []

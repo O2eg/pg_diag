@@ -115,20 +115,24 @@ def build_plan(
     server_version_num: int,
     mode: str = runtime_config.SNAPSHOT_MODE,
     collection_mode: str = runtime_config.DEFAULT_COLLECTION_MODE,
+    item_id: str | None = None,
 ) -> ExecutionPlan:
     unsupported_reason = supported_version_reason(server_version_num)
-    metric_dependencies = _metric_dependencies(content) if mode == runtime_config.SNAPSHOTS_MODE else {}
+    metric_dependencies = _metric_dependencies(content, item_id=item_id) if mode == runtime_config.SNAPSHOTS_MODE else {}
     query_usage_index = _query_usage_index(content)
     sections = _plan_sections(content)
     items: list[PlannedItem] = []
     source_jobs: list[SourceJob] = []
 
-    for section_id, item_key, item_id, item in iter_report_items(content):
+    for section_id, item_key, iter_item_id, item in iter_report_items(content):
+        planned_item_id = f"{section_id}.{item_key}"
+        if item_id is not None and planned_item_id != item_id:
+            continue
         source_kind = _source_kind(item)
         if unsupported_reason:
             items.append(
                 PlannedItem(
-                    item_id=item_id,
+                    item_id=planned_item_id,
                     section_id=section_id,
                     item_key=item_key,
                     title=_item_title(content, source_kind, item, item_key),
@@ -137,7 +141,7 @@ def build_plan(
                     status="unsupported",
                     state=_item_state(content, item),
                     reason=unsupported_reason,
-                    source_metadata=_with_item_metadata(content, item_id, item),
+                    source_metadata=_with_item_metadata(content, planned_item_id, item),
                 )
             )
             continue
@@ -148,23 +152,23 @@ def build_plan(
                     content,
                     section_id,
                     item_key,
-                    item_id,
+                    planned_item_id,
                     item,
                     server_version_num,
                     query_usage_index,
                 )
             )
         elif source_kind == "script":
-            items.append(_plan_script_item(content, section_id, item_key, item_id, item, collection_mode))
+            items.append(_plan_script_item(content, section_id, item_key, planned_item_id, item, collection_mode))
         elif source_kind == "python":
-            items.append(_plan_python_item(content, section_id, item_key, item_id, item, collection_mode))
+            items.append(_plan_python_item(content, section_id, item_key, planned_item_id, item, collection_mode))
         elif source_kind == "metric":
             items.append(
                 _plan_metric_item(
                     content,
                     section_id,
                     item_key,
-                    item_id,
+                    planned_item_id,
                     item,
                     mode,
                     collection_mode,
@@ -172,7 +176,17 @@ def build_plan(
                 )
             )
         else:
-            raise ValueError(f"Unsupported source kind {source_kind!r} for item {item_id}")
+            raise ValueError(f"Unsupported source kind {source_kind!r} for item {planned_item_id}")
+
+    planned_item_ids = {item.item_id for item in items}
+    sections = [
+        {
+            **section,
+            "items": [iid for iid in section["items"] if iid in planned_item_ids],
+        }
+        for section in sections
+        if any(iid in planned_item_ids for iid in section["items"])
+    ]
 
     if unsupported_reason is None and metric_dependencies:
         for query_id in sorted(metric_dependencies):
@@ -650,11 +664,11 @@ def _plan_metric_item(
     )
 
 
-def _metric_dependencies(content: ContentPack) -> dict[str, str]:
+def _metric_dependencies(content: ContentPack, item_id: str | None = None) -> dict[str, str]:
     referenced_metric_ids = {
         item.get("metric")
         for _section_id, _item_key, _item_id, item in iter_report_items(content)
-        if item.get("metric")
+        if item.get("metric") and (item_id is None or _item_id == item_id)
     }
     return {
         str(metric["source_query"]): str(metric["requires_collection"])
