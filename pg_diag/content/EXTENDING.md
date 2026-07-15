@@ -22,6 +22,9 @@ and derived snapshot tables.
   layout; table headers come from the actual SQL result.
 - Every visible report item needs a Markdown instruction file under
   `instructions/items/<section>/<item>.md`.
+- Every report item needs at least one tag from
+  `report.allowed_item_tags`. Keep three to five items in each section
+  `state: expanded`; use `collapsed` for the rest unless an item is hidden.
 - `catalog/*.yaml` is not loaded by glob. A new catalog file must be registered
   in `queries.yaml` under `query_catalog.files`.
 - SQL used by metrics should expose stable `semantic_columns` so metrics do not
@@ -37,17 +40,23 @@ and derived snapshot tables.
   should not create temporary objects. Snapshot
   joins, deltas, rates, and top-N calculations are done in the Python runtime.
 
-Run validation after every content change:
+The executable-content integrity baseline covers `*.py`, `*.sh`, `*.sql`,
+`*.yaml`, and `*.yml`, but not Markdown. In the vendor source tree, refresh that
+baseline only through the release maintenance workflow after the content change
+has been reviewed. The public validation command intentionally neither repairs
+nor accepts an unknown protected-content set.
+
+After any required vendor baseline update, run validation for every content
+change:
 
 ```bash
-pg-diag validate --content content
+pg-diag validate
 ```
 
 Preview the selected execution plan:
 
 ```bash
 pg-diag explain-plan \
-  --content content \
   --pg-version 180000 \
   --run-mode snapshots \
   --collection-mode local
@@ -344,10 +353,11 @@ database.workload_delta:
       - name: datname
         role: key
         key_index: 0
+        pg_type: text
       - name: commit_delta
         value_ref: counters.xact_commit
         transform: delta
-        pg_type: float8
+        pg_type: int8
       - name: commits_per_sec
         value_ref: counters.xact_commit
         transform: rate
@@ -355,7 +365,7 @@ database.workload_delta:
       - name: rollback_delta
         value_ref: counters.xact_rollback
         transform: delta
-        pg_type: float8
+        pg_type: int8
 ```
 
 Supported endpoint-table transforms include key columns, `delta`, `rate`, and
@@ -406,8 +416,9 @@ PostgreSQL SQL.
         state: collapsed
    ```
 
-Scripts are local-only by default. In `remote-db-only` collection mode they are
-kept in the report with skipped status and a skip message.
+Scripts are local-only by default. In `remote-db-only` collection mode the
+planner does not execute them and omits their items from JSON/HTML. The item id
+and skip reason are written to stdout and `report.log`.
 
 Host shell scripts inherit `runtime_policy.default_shell_timeout_ms`; an optional
 per-source `timeout_ms` can only reduce that bound. Local-only Python sources
@@ -416,8 +427,8 @@ A timeout is attached to that item as its collection error and rendered in place
 of the expected result; it does not abort unrelated items when `fail_fast` is
 disabled.
 
-4. Add `instructions/items/<section>/<item>.md` so the skipped or collected
-   script still has DBA guidance in the HTML report.
+4. Add `instructions/items/<section>/<item>.md` so the collected script has DBA
+   guidance in reports produced by applicable collection modes.
 
 ## Add A Trusted Python Item
 
@@ -466,9 +477,10 @@ multiple SQL calls, local file parsing, or structured issue output.
          state: collapsed
    ```
 
-Local-only Python sources are skipped in `remote-db-only` collection mode. Use
-`local_only: true` when the function reads collector-host files such as
-PostgreSQL configuration files. Read host state only through async
+Local-only Python sources are not executed and are omitted from JSON/HTML in
+`remote-db-only` collection mode; their item ids and skip reasons remain in
+stdout and `report.log`. Use `local_only: true` when the function reads host
+files such as PostgreSQL configuration files. Read host state only through async
 `ctx.host` operations (`stat`, `read_text`, `read_bytes`, `list_dir`, `glob`,
 `run`, or `run_script`). This keeps one evaluator valid in both `local` and
 full SSH `remote` modes; direct `Path.read_*`, `Path.stat`, `subprocess`, and
@@ -587,19 +599,27 @@ Before committing a content change, check the following:
 - PostgreSQL variants use correct `min_pg_version` and optional
   `max_pg_version` boundaries.
 - Every referenced SQL, Bash, or Python source file exists.
-- Every report item has a non-empty Markdown instruction file.
+- Every visible report item has a non-empty Markdown instruction file.
+- Every report item has at least one allowed tag, and each section has three to
+  five items expanded by default.
 - Every SQL-backed chart query returns `snapshot_time`.
 - Every metric `value_ref`, `key_ref`, `label_ref`, and `partition_by` entry has
   a matching semantic column or sampler field.
 - Large cumulative views are pre-filtered in SQL before snapshot collection.
 - `display.default_sort` uses the public result column name expected by the
   renderer.
+- Every metric table column defines `pg_type`; integer counter Delta columns use
+  an integral type such as `int8`, while rates use a decimal type such as
+  `float8`.
 - Local-only scripts and Python sources have reasonable timeouts and safe remote
   behavior.
+- Reviewed changes to Python, shell, SQL, or YAML content are reflected in the
+  vendor integrity baseline before running validation; Markdown changes do not
+  require a baseline update.
 
 Run:
 
 ```bash
-pg-diag validate --content content
-pg-diag explain-plan --content content --pg-version 180000 --run-mode snapshots --collection-mode local
+pg-diag validate
+pg-diag explain-plan --pg-version 180000 --run-mode snapshots --collection-mode local
 ```

@@ -35,7 +35,7 @@ def _load_asyncpg():
         import asyncpg  # type: ignore
     except ModuleNotFoundError as exc:
         raise MissingAsyncpgError(
-            "asyncpg is not installed. Install pg_diag runtime dependencies before running snapshot."
+            "asyncpg is not installed. Install pg_diag runtime dependencies before running one-shot."
         ) from exc
     return asyncpg
 

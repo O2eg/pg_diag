@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import math
 import re
@@ -552,5 +552,5 @@ def _normalize_timestamp(value: Any) -> Any:
         return text
     if parsed.tzinfo is None:
         return text
-    normalized = parsed.astimezone(UTC).isoformat()
+    normalized = parsed.astimezone(timezone.utc).isoformat()
     return normalized.removesuffix("+00:00") + "Z"

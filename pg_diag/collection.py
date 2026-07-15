@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterable
 from dataclasses import dataclass
 import ipaddress
 from pathlib import Path
@@ -16,6 +17,7 @@ from .artifact import (
     extract_item_query_texts,
     item_error_from_exception,
     item_from_plan,
+    omit_skipped_report_items,
     report_output_paths,
     utc_now,
     write_json,
@@ -30,8 +32,15 @@ from .executors.remote_disabled_shell import skipped_python_item, skipped_shell_
 from .executors.shell import execute_remote_shell_item, execute_shell_item
 from .executors.sql import DatabaseConnector, connect, detect_runtime_context, execute_query_item, runtime_guard_server_settings
 from .host_access import LocalHostAccess
-from .planner import ExecutionPlan, PlannedItem, build_plan
+from .planner import (
+    ExecutionPlan,
+    PlannedItem,
+    build_plan,
+    normalize_requested_item_ids,
+    normalize_requested_tags,
+)
 from .presentation import apply_presentation_contract
+from .progress import ProgressReporter
 from .render.html import render_html
 from .ssh_transport import (
     SshConfig,
@@ -50,10 +59,11 @@ class CollectionRun:
     plan: ExecutionPlan
     artifact: dict[str, Any]
     fail_fast: bool
-    json_path: Path
-    html_path: Path
+    json_path: Path | None
+    html_path: Path | None
     database_connector: DatabaseConnector
     ssh: SshTransport | None = None
+    progress: ProgressReporter | None = None
 
 
 async def start_collection(
@@ -66,9 +76,12 @@ async def start_collection(
     collection_mode: str,
     json_out: str | Path | None,
     html_out: str | Path | None,
+    output_formats: str | Iterable[str] | None,
     content_validated: bool,
     ssh_config: SshConfig | None = None,
-    item_id: str | None = None,
+    item_id: str | Iterable[str] | None = None,
+    tags: Iterable[str] | None = None,
+    progress: ProgressReporter | None = None,
 ) -> CollectionRun:
     if collection_mode not in runtime_config.COLLECTION_MODES:
         raise ValueError(f"unsupported collection mode {collection_mode!r}")
@@ -81,8 +94,12 @@ async def start_collection(
                 if issue.level == "error"
             )
             raise ValueError(f"Content validation failed: {details}")
+    if item_id is not None and tags is not None:
+        raise ValueError("--item-id and --tags cannot be used together")
+    requested_item_ids = normalize_requested_item_ids(content, item_id)
+    requested_tags = normalize_requested_tags(content, tags)
 
-    json_path, html_path = report_output_paths(out_dir, json_out, html_out)
+    json_path, html_path = report_output_paths(out_dir, json_out, html_out, output_formats)
     conn: Any | None = None
     ssh: SshTransport | None = None
     remote_endpoint: tuple[str, int] | None = None
@@ -135,7 +152,8 @@ async def start_collection(
             server_version_num,
             mode=mode,
             collection_mode=collection_mode,
-            item_id=item_id,
+            item_id=requested_item_ids,
+            tags=requested_tags,
         )
         if not plan.supported_server_version:
             raise UnsupportedServerVersion(plan.reason or "Unsupported PostgreSQL server version")
@@ -151,6 +169,7 @@ async def start_collection(
             html_path=html_path,
             database_connector=database_connector,
             ssh=ssh,
+            progress=progress,
         )
     except BaseException:
         if conn is not None:
@@ -205,7 +224,7 @@ async def _endpoint_hostname(value: Any) -> str:
             asyncio.to_thread(socket.getfqdn, endpoint),
             timeout=runtime_config.HOST_COMMAND_TIMEOUT_SECONDS,
         )
-    except (OSError, TimeoutError):
+    except (OSError, asyncio.TimeoutError, TimeoutError):
         return endpoint
     return hostname or endpoint
 
@@ -299,6 +318,7 @@ async def execute_and_record_report_item(
             run.content.report["runtime_policy"]["query_text_catalog"],
         )
         run.artifact["items"][planned.item_id] = item
+        record_item_progress(run, planned, item)
         raise_if_fail_fast(run.fail_fast, item)
         return item
     except Exception as exc:
@@ -307,8 +327,21 @@ async def execute_and_record_report_item(
         item = item_error_from_exception(planned, exc)
         item["collected_at"] = collected_at
         run.artifact["items"][planned.item_id] = item
+        record_item_progress(run, planned, item)
         raise_if_fail_fast(run.fail_fast, item, cause=exc)
         return item
+
+
+def record_item_progress(
+    run: CollectionRun,
+    planned: PlannedItem,
+    item: dict[str, Any] | None = None,
+) -> None:
+    if run.progress is None:
+        return
+    status = str((item or {}).get("collection_status") or planned.status)
+    reason = (item or {}).get("reason") or planned.reason
+    run.progress.item(planned.item_id, status, str(reason) if reason else None)
 
 
 def raise_if_fail_fast(
@@ -336,12 +369,22 @@ def finish_collection(
     if runtime_updates:
         run.artifact["runtime"].update(runtime_updates)
     run.artifact["runtime"]["finished_at"] = utc_now()
+    omit_skipped_report_items(
+        run.artifact,
+        {
+            planned.item_id
+            for planned in run.plan.items
+            if planned.status == "skipped"
+        },
+    )
     apply_database_scope_presentation(run.artifact)
     apply_presentation_contract(run.content, run.artifact)
     validate_artifact(run.artifact)
-    html_text = render_html(run.artifact, validate=False)
-    write_text_secure(run.html_path, html_text)
-    write_json(run.json_path, run.artifact, validate=False)
+    if run.html_path is not None:
+        html_text = render_html(run.artifact, validate=False)
+        write_text_secure(run.html_path, html_text)
+    if run.json_path is not None:
+        write_json(run.json_path, run.artifact, validate=False)
     return run.artifact
 
 

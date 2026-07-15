@@ -25,11 +25,14 @@ JSON/HTML report.
   shown as comments in the Raw metadata view.
 - `presentation.yaml` - canonical units, logical descriptor defaults, ordered
   content rules, and source-specific presentation overrides.
+- `integrity.sha256` - vendor-maintained integrity baseline for executable and
+  declarative content (`*.py`, `*.sh`, `*.sql`, `*.yaml`, and `*.yml`).
 - `instructions/` - Markdown instructions embedded into report items and shown
   through the `Show Instruction` button.
 - `queries/` - SQL files referenced by query variants.
 - `scripts/` - local shell scripts referenced by `scripts.yaml`.
 - `python/` - trusted Python source files referenced by `python.yaml`.
+- `README.md` - this content-pack reference.
 - `EXTENDING.md` - examples for adding new report items.
 - `ITEM_DEVELOPMENT_SPEC.md` - normative units, timestamps, tables, charts,
   sorting, Delta, and rendering contract for all report content.
@@ -92,9 +95,15 @@ Useful item-level keys include:
   filters
 - `render.empty_message`, used by the HTML renderer for empty table, chart, or
   no-payload states
-- `instruction` or `instructions` to override the default Markdown instruction
-  path for the item
+- `instruction` to override the default Markdown instruction path for the item,
+  or `instruction: false` for a hidden item which intentionally has no
+  instruction
 - source reference: `query`, `script`, `metric`, or `python`
+
+The bundled report keeps between three and five items expanded by default in
+each section. This is a repository content contract enforced by unit tests so a
+report remains immediately useful without opening every item or overwhelming
+the initial page.
 
 ## Item Instructions
 
@@ -126,8 +135,12 @@ items:
     instruction: items/sql_workload/top_sql_by_total_time.md
 ```
 
-Instruction files are part of the content checksum. Validation fails when a
-report item has no Markdown instruction file.
+Markdown files under `instructions/` are part of the loaded content checksum
+stored in the report artifact, so instruction changes alter the report content
+identity. They are not part of the executable-content integrity baseline.
+The three Markdown documents in the content root are likewise excluded from
+that baseline. Validation fails when a visible report item has no Markdown
+instruction file.
 
 ## Query Manifests
 
@@ -222,8 +235,10 @@ Local-only scripts run on the collector host in `local` mode and on the SSH
 target in `remote` mode. Remote execution sends the local script body to
 `/bin/sh -s` through SSH stdin, so every declared item script must be
 self-contained and must not depend on its local filename or sibling files.
-Scripts are skipped in `remote-db-only` mode. The skip reason comes from
-`remote_db_only_behavior` or the runtime policy in `report.yaml`.
+Scripts are planner-skipped in `remote-db-only` mode. Their source is not
+executed and the item is omitted from the final JSON/HTML; the skip reason from
+`remote_db_only_behavior` or the runtime policy is written to `report.log` and
+stdout.
 
 The report-level `runtime_policy.default_shell_timeout_ms` is the single default
 for host shell items. A source may only override it with a lower positive
@@ -262,6 +277,10 @@ Local-only Python sources are always evaluated by the collector's Python
 runtime. They read database-host facts through `PythonSourceContext.host`: its
 local implementation reads the collector host in `local` mode, while its SSH
 implementation uses the existing AsyncSSH connection in `remote` mode.
+For example, the bundled per-backend `ldd` source obtains `pg_backend_pid()`
+over the database connection and follows its `/proc` parent only on that host;
+it does not select an arbitrary PostgreSQL process when several instances run
+on different ports.
 Database calls through `PythonSourceContext.conn` use the collector's explicit
 read-only asyncpg connection; in `remote` mode that connection targets a
 dynamic local SSH forward. A database-wide source can use
@@ -269,7 +288,9 @@ dynamic local SSH forward. A database-wide source can use
 context manager to open another verified read-only connection through the same
 direct endpoint or SSH tunnel. No Python code, dependencies, credentials, or
 temporary agent directory are copied to the target. Local-only sources are
-skipped in `remote-db-only` mode; database-only Python sources remain available.
+omitted without execution in `remote-db-only` mode; database-only Python
+sources remain available. Each omitted item and its skip reason are written to
+`report.log` and stdout.
 
 `timeout_ms` bounds module loading, local evaluation, database calls, and host
 operations. Synchronous local sources run in a killable child process. SSH
@@ -321,7 +342,7 @@ bundled report. The provider chooses how to interpret its opaque configuration.
 
 Host-backed providers receive the collector host in `local` mode and the SSH
 host abstraction in `remote` mode. Their shell source files remain in
-`content/scripts/`, are sent through stdin when remote, and are shown in metric
+`pg_diag/content/scripts/`, are sent through stdin when remote, and are shown in metric
 source dialogs. A `window_endpoints` output can feed a table without adding work
 to each chart iteration.
 
@@ -336,8 +357,19 @@ invalid values, and invalid timestamps are omitted and reported as warnings.
 
 ## Collection Modes
 
-`snapshot` mode collects one point-in-time report. Metric items are skipped
-because they require repeated samples.
+Before collection, report commands may narrow visible items by an exact
+`--item-id` scalar/list or by a case-insensitive `--tags` scalar/list. Tag
+matching uses OR semantics. The filters are mutually exclusive. For selected
+snapshot metrics the planner adds only their declared query or sampler
+dependencies; filters never directly select hidden catalog sources.
+
+`--item-id-list` prints item IDs, tags, and source descriptions;
+`--tags-list` prints tags assigned to report items. Both list operations exit
+after content validation and do not open PostgreSQL or SSH connections.
+
+`one-shot` mode collects one point-in-time report. Metric items are omitted
+without execution because they require repeated samples; their skip reasons
+remain in `report.log` and stdout.
 
 `snapshots` mode first collects ordinary report items once. During the timed
 window it repeats only chart sources. Delta/rate tables use two endpoint samples
@@ -346,24 +378,33 @@ declared `collection_scope`; endpoint outputs are not sampled at every chart
 point.
 
 `remote-db-only` collection mode executes PostgreSQL SQL sources and non-local
-Python sources, but skips local host scripts, local-only Python sources, and
-local samplers.
+Python sources, but omits local host scripts, local-only Python sources, and
+local samplers without invoking them.
 
 `local` collection mode executes PostgreSQL SQL sources, local host scripts,
 Python sources, and declared sampler providers on the collector machine.
 
 `remote` collection mode executes PostgreSQL SQL through an AsyncSSH local port
 forward. Host scripts are passed to the target POSIX shell through SSH stdin;
-host sampler providers use the same SSH host API; local-only Python evaluators obtain filesystem
-facts through SSH/SFTP and run locally. One SSH connection is shared for the
-collection run, and no collector files are installed or staged on the target.
+host sampler providers use the same SSH host API; local-only Python evaluators
+obtain filesystem facts through SSH/SFTP and run locally. One SSH connection is
+shared for the collection run, and no collector files are installed or staged on
+the target.
 
 ## Validation
 
-Run content validation after changing declarations or SQL files:
+The integrity baseline is checked before any content YAML is parsed. It covers
+Python, shell, SQL, and YAML files, including added or removed protected files;
+Markdown is deliberately excluded. A protected-file change must first pass
+review and then be incorporated into the vendor baseline through the release
+maintenance workflow. The ordinary validation command does not accept, repair,
+or regenerate a mismatched baseline, and users of a distributed build should
+restore an unknown content pack from a trusted distribution.
+
+After the reviewed vendor baseline is current, run content validation:
 
 ```bash
-pg-diag validate --content content
+pg-diag validate
 ```
 
 The validator checks schema versions, duplicate YAML keys, report references,

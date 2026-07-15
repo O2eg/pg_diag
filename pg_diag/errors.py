@@ -15,6 +15,10 @@ class ContentLoadError(PgDiagError):
     """Raised when content files cannot be loaded."""
 
 
+class ContentIntegrityError(PgDiagError):
+    """Raised before a content pack with an invalid vendor baseline is loaded."""
+
+
 class ValidationError(PgDiagError):
     """Raised when content validation fails."""
 

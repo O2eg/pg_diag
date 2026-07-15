@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 from dataclasses import replace
+from io import StringIO
 import json
 from pathlib import Path
 import shutil
@@ -13,20 +14,23 @@ import pytest
 import yaml
 
 from pg_diag import runtime_config
+from pg_diag._content_state import _rebase
 from pg_diag.artifact import (
     apply_database_scope_presentation,
     artifact_has_errors,
     item_from_plan,
+    omit_skipped_report_items,
     report_output_paths,
     write_json,
     write_text_secure,
 )
 from pg_diag.cli import build_parser
-from pg_diag.content_loader import ContentLoadError, load_content
+from pg_diag.content_loader import ContentLoadError, iter_report_items, load_content
 from pg_diag.errors import ValidationError
 from pg_diag.executors.python import execute_python_item
 from pg_diag.metric_engine import build_metric_item
 from pg_diag.planner import PlannedItem, build_plan
+from pg_diag.progress import ProgressReporter
 from pg_diag.render.html import _publicize_artifact_for_render, render_html
 from pg_diag.snapshots import _collect_db_samples, _execute_query_batch
 from pg_diag.validator import validate_content
@@ -123,7 +127,7 @@ def _artifact(*, title: str = "Test", data: str = "ok") -> dict:
             "provenance": {"report": ["report.yaml"]},
         },
         "report": {"id": "test", "title": title},
-        "runtime": {"mode": "snapshot", "collection_mode": "remote-db-only"},
+        "runtime": {"mode": "one-shot", "collection_mode": "remote-db-only"},
         "display": {
             "table": {"page_size": 25},
             "database_scope_presentation": {
@@ -214,6 +218,35 @@ def test_database_scope_presentation_labels_items_and_hides_redundant_datname() 
     ]
 
 
+def test_omit_skipped_report_items_removes_empty_sections() -> None:
+    artifact = _artifact()
+    skipped = deepcopy(artifact["items"]["s.i"])
+    skipped.update(
+        {
+            "item_id": "skipped.only",
+            "section_id": "skipped",
+            "item_key": "only",
+            "collection_status": "skipped",
+            "reason": "requires snapshots mode",
+            "result": {"kind": "none"},
+        }
+    )
+    artifact["sections"].append(
+        {
+            "section_id": "skipped",
+            "title": "Skipped",
+            "state": "expanded",
+            "items": ["skipped.only"],
+        }
+    )
+    artifact["items"]["skipped.only"] = skipped
+
+    omit_skipped_report_items(artifact)
+
+    assert list(artifact["items"]) == ["s.i"]
+    assert [section["section_id"] for section in artifact["sections"]] == ["s"]
+
+
 def test_snapshot_schedule_is_bounded_and_includes_window_end() -> None:
     assert runtime_config.snapshots_schedule_offsets(600, 30) == [
         float(offset) for offset in range(0, 601, 30)
@@ -239,6 +272,131 @@ def test_postgresql_settings_is_collected_once_in_snapshots_mode(content_path: P
     assert item.collection_scope == runtime_config.ONCE_COLLECTION_SCOPE
 
 
+def test_build_plan_rejects_unknown_requested_item(content_path: Path) -> None:
+    content = load_content(content_path)
+
+    with pytest.raises(ValueError, match=r"Unknown report item: overview\.missing"):
+        build_plan(content, 180000, item_id="overview.missing")
+
+
+def test_build_plan_accepts_multiple_requested_items_and_only_their_dependencies(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    requested = [
+        "overview.pg_settings",
+        "snapshot_delta_workload.database_workload_delta",
+        "overview.pg_settings",
+    ]
+
+    plan = build_plan(
+        content,
+        180000,
+        mode=runtime_config.SNAPSHOTS_MODE,
+        item_id=requested,
+    )
+
+    assert [item.item_id for item in plan.items] == [
+        "overview.pg_settings",
+        "snapshot_delta_workload.database_workload_delta",
+    ]
+    assert {job.source_id for job in plan.source_jobs} == {"metrics.database_workload_delta"}
+    assert {
+        item_id
+        for section in plan.sections
+        for item_id in section["items"]
+    } == {item.item_id for item in plan.items}
+
+
+def test_build_plan_reports_every_unknown_requested_item(content_path: Path) -> None:
+    content = load_content(content_path)
+
+    with pytest.raises(
+        ValueError,
+        match=r"Unknown report items: overview\.missing, backend_os\.missing",
+    ):
+        build_plan(
+            content,
+            180000,
+            item_id=["overview.missing", "overview.pg_settings", "backend_os.missing"],
+        )
+
+
+def test_build_plan_tag_filter_uses_case_insensitive_any_match(content_path: Path) -> None:
+    content = load_content(content_path)
+    requested_tags = {"Security", "Tables"}
+    expected_ids = [
+        item_id
+        for _section_id, _item_key, item_id, item in iter_report_items(content)
+        if requested_tags.intersection(item.get("tags") or [])
+    ]
+
+    plan = build_plan(content, 180000, tags=["security", "TABLES", "security"])
+
+    assert [item.item_id for item in plan.items] == expected_ids
+    assert expected_ids
+    assert any(
+        "Security" in item.source_metadata["tags"]
+        and "Tables" not in item.source_metadata["tags"]
+        for item in plan.items
+    )
+    assert any(
+        "Tables" in item.source_metadata["tags"]
+        and "Security" not in item.source_metadata["tags"]
+        for item in plan.items
+    )
+
+
+def test_build_plan_tag_filter_only_plans_selected_metric_dependencies(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    plan = build_plan(
+        content,
+        180000,
+        mode=runtime_config.SNAPSHOTS_MODE,
+        tags=["CPU"],
+    )
+    selected_metric_ids = {
+        item.source_id
+        for item in plan.items
+        if item.source_kind == "metric"
+    }
+    expected_query_ids = {
+        metric["source_query"]
+        for metric_id, metric in content.metrics.items()
+        if metric_id in selected_metric_ids
+        and metric.get("source_query")
+        and metric.get("requires_collection")
+        in {
+            runtime_config.EVERY_SNAPSHOT_COLLECTION_SCOPE,
+            runtime_config.WINDOW_ENDPOINTS_COLLECTION_SCOPE,
+        }
+    }
+
+    assert {item.source_metadata["tags"][0] for item in plan.items}.issubset(
+        set(content.report["report"]["allowed_item_tags"])
+    )
+    assert all("CPU" in item.source_metadata["tags"] for item in plan.items)
+    assert {job.source_id for job in plan.source_jobs} == expected_query_ids
+
+
+def test_build_plan_rejects_unknown_tags_and_mixed_item_tag_filters(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+
+    with pytest.raises(ValueError, match="Unknown report tag.*missing"):
+        build_plan(content, 180000, tags=["missing"])
+    with pytest.raises(ValueError, match="--item-id and --tags cannot be used together"):
+        build_plan(
+            content,
+            180000,
+            item_id="overview.pg_settings",
+            tags=["Configuration"],
+        )
+
+
 def test_cli_finds_source_tree_content_outside_repository(
     content_path: Path,
     tmp_path: Path,
@@ -251,7 +409,10 @@ def test_cli_finds_source_tree_content_outside_repository(
     assert Path(args.content).resolve() == content_path.resolve()
 
 
-def test_db_snapshots_store_only_varying_table_data(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_db_snapshots_store_only_varying_table_data(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     planned = _planned_query()
     query_texts: dict[str, str] = {}
     snapshot_schemas: dict[str, dict] = {}
@@ -278,26 +439,33 @@ def test_db_snapshots_store_only_varying_table_data(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr("pg_diag.snapshots.execute_query_item", execute_stub)
 
     conn = _BatchConnection()
-    snapshots, diagnostics, latest = asyncio.run(
-        _collect_db_samples(
-            SimpleNamespace(
-                report={
-                    "runtime_policy": {
-                        "query_text_catalog": {
-                            "id_column_suffix": "query_id",
-                            "value_column_remove_suffix": "_id",
+    progress_output = StringIO()
+    progress = ProgressReporter(tmp_path / "report.log", stream=progress_output)
+    progress.configure(2)
+    try:
+        snapshots, diagnostics, latest = asyncio.run(
+            _collect_db_samples(
+                SimpleNamespace(
+                    report={
+                        "runtime_policy": {
+                            "query_text_catalog": {
+                                "id_column_suffix": "query_id",
+                                "value_column_remove_suffix": "_id",
+                            }
                         }
                     }
-                }
-            ),
-            conn,
-            [planned],
-            30,
-            15,
-            query_texts=query_texts,
-            snapshot_schemas=snapshot_schemas,
+                ),
+                conn,
+                [planned],
+                30,
+                15,
+                query_texts=query_texts,
+                snapshot_schemas=snapshot_schemas,
+                progress=progress,
+            )
         )
-    )
+    finally:
+        progress.close()
 
     compact = snapshots[0]["items"]["s.q"]
     assert compact == {
@@ -315,6 +483,7 @@ def test_db_snapshots_store_only_varying_table_data(monkeypatch: pytest.MonkeyPa
     ]
     assert diagnostics == []
     assert conn.readonly_transactions == 1
+    assert "progress=50% SAMPLE point=1/1 queries=1 errors=0" in progress_output.getvalue()
 
 
 def test_db_sampler_does_not_start_stale_final_sample(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -814,6 +983,7 @@ def test_content_loader_rejects_catalog_path_escape(tmp_path: Path) -> None:
         "    queries: ../outside.yaml\n",
         encoding="utf-8",
     )
+    _rebase(root)
 
     with pytest.raises(ContentLoadError, match="must stay under"):
         load_content(root)
@@ -826,6 +996,7 @@ def test_content_loader_requires_explicit_catalog_paths(content_path: Path, tmp_
     report = yaml.safe_load(report_path.read_text(encoding="utf-8"))
     del report["report"]["catalogs"]["scripts"]
     report_path.write_text(yaml.safe_dump(report, sort_keys=False), encoding="utf-8")
+    _rebase(copied)
 
     with pytest.raises(ContentLoadError, match="Script catalog path must be a non-empty relative path"):
         load_content(copied)
@@ -839,10 +1010,12 @@ def test_checksum_tracks_configured_sql_root(content_path: Path, tmp_path: Path)
     query_index["query_catalog"]["sql_root"] = "custom_sql"
     query_index_path.write_text(yaml.safe_dump(query_index, sort_keys=False), encoding="utf-8")
     (copied / "queries").rename(copied / "custom_sql")
+    _rebase(copied)
 
     before = load_content(copied).checksum
     sql_file = next((copied / "custom_sql").rglob("*.sql"))
     sql_file.write_text(sql_file.read_text(encoding="utf-8") + "\n-- checksum test\n", encoding="utf-8")
+    _rebase(copied)
     after = load_content(copied).checksum
 
     assert before != after

@@ -137,6 +137,178 @@ class ControlDataHost:
         )
 
 
+class PostgresMainLddConn:
+    def __init__(
+        self,
+        *,
+        backend_pid: int = 23117,
+        server_port: int = 6432,
+        database_name: str = "tenant_b",
+    ) -> None:
+        self.backend_pid = backend_pid
+        self.server_port = server_port
+        self.database_name = database_name
+
+    def transaction(self, *, readonly: bool):
+        assert readonly is True
+        return FakeReadOnlyTransaction()
+
+    async def fetchrow(self, sql: str) -> dict[str, Any]:
+        assert "pg_catalog.pg_backend_pid()" in sql
+        assert "pg_catalog.current_setting('port')" in sql
+        return {
+            "backend_pid": self.backend_pid,
+            "server_port": self.server_port,
+            "database_name": self.database_name,
+        }
+
+
+class PostgresMainLddHost:
+    def __init__(
+        self,
+        *,
+        returncode: int = 0,
+        stdout: str | None = None,
+        stderr: str = "",
+    ) -> None:
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+        self.arguments: tuple[str, ...] | None = None
+        self.script: str | None = None
+
+    async def run_script(
+        self,
+        script: str,
+        *,
+        arguments: tuple[str, ...] = (),
+    ) -> SshCommandResult:
+        self.script = script
+        self.arguments = arguments
+        stdout = self.stdout
+        if stdout is None:
+            stdout = (
+                "PGDIAG_BACKEND_PID=23117\n"
+                "PGDIAG_POSTGRES_MAIN_PID=22001\n"
+                "PGDIAG_POSTGRES_EXECUTABLE=/usr/lib/postgresql/18/bin/postgres\n"
+                "PGDIAG_LDD_PATH=/usr/bin/ldd\n"
+                "PGDIAG_LDD_BEGIN\n"
+                "linux-vdso.so.1 (0x0000ffffaabb0000)\n"
+                "libpq.so.5 => /lib/aarch64-linux-gnu/libpq.so.5 (0x0000ffffaa100000)\n"
+                "libmissing.so => not found\n"
+                "/lib/ld-linux-aarch64.so.1 (0x0000ffffaac00000)\n"
+            )
+        return SshCommandResult(self.returncode, stdout, self.stderr)
+
+
+def test_postgres_main_ldd_uses_connected_backend_parent_and_parses_dependencies(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    plan = build_plan(content, 180004, collection_mode=LOCAL_COLLECTION_MODE)
+    planned = {item.item_id: item for item in plan.items}[
+        "backend_os.postgres_main_process_linked_libraries"
+    ]
+    host = PostgresMainLddHost()
+
+    item = asyncio.run(
+        execute_python_item(
+            content,
+            PostgresMainLddConn(),
+            planned,
+            ssh_transport=SimpleNamespace(host_access=host),
+        )
+    )
+
+    assert item["collection_status"] == "ok"
+    assert item["severity_level"] == "unknown"
+    assert host.arguments == ("23117",)
+    assert "/proc/$backend_pid/status" in str(host.script)
+    assert "PPid" in str(host.script)
+    assert '"$ldd_bin" "/proc/$postgres_main_pid/exe"' in str(host.script)
+    assert "pgrep" not in str(host.script)
+    columns = [column["name"] for column in item["result"]["columns"]]
+    rows = item["result"]["rows"]
+    assert item["result"]["row_count"] == 4
+    assert {row[columns.index("server_port")] for row in rows} == {6432}
+    assert {row[columns.index("database_name")] for row in rows} == {"tenant_b"}
+    assert {row[columns.index("backend_pid")] for row in rows} == {23117}
+    assert {row[columns.index("postgres_main_pid")] for row in rows} == {22001}
+    by_library = {row[columns.index("library")]: row for row in rows}
+    libpq = by_library["libpq.so.5"]
+    assert libpq[columns.index("resolved_path")] == "/lib/aarch64-linux-gnu/libpq.so.5"
+    assert libpq[columns.index("link_status")] == "resolved"
+    assert by_library["linux-vdso.so.1"][columns.index("link_status")] == "virtual"
+    assert by_library["libmissing.so"][columns.index("link_status")] == "not_found"
+    assert by_library["ld-linux-aarch64.so.1"][columns.index("link_status")] == "loader"
+    assert any(
+        diagnostic["code"] == "postgres_main_ldd_dependency_not_found"
+        for diagnostic in item["diagnostics"]
+    )
+
+
+def test_postgres_main_ldd_does_not_fall_back_to_another_postgres_instance(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    plan = build_plan(content, 180004, collection_mode=LOCAL_COLLECTION_MODE)
+    planned = {item.item_id: item for item in plan.items}[
+        "backend_os.postgres_main_process_linked_libraries"
+    ]
+    host = PostgresMainLddHost(
+        returncode=42,
+        stdout="",
+        stderr="PID 23117 is 'python3', not a PostgreSQL backend",
+    )
+
+    item = asyncio.run(
+        execute_python_item(
+            content,
+            PostgresMainLddConn(),
+            planned,
+            ssh_transport=SimpleNamespace(host_access=host),
+        )
+    )
+
+    assert item["collection_status"] == "unsupported"
+    assert item["result"]["row_count"] == 0
+    assert "PID 23117" in item["reason"]
+    assert item["diagnostics"][0]["code"] == "postgres_main_process_unavailable"
+    assert host.arguments == ("23117",)
+
+
+def test_postgres_main_ldd_failure_is_an_item_error(content_path: Path) -> None:
+    content = load_content(content_path)
+    plan = build_plan(content, 180004, collection_mode=LOCAL_COLLECTION_MODE)
+    planned = {item.item_id: item for item in plan.items}[
+        "backend_os.postgres_main_process_linked_libraries"
+    ]
+    host = PostgresMainLddHost(
+        returncode=1,
+        stdout=(
+            "PGDIAG_BACKEND_PID=23117\n"
+            "PGDIAG_POSTGRES_MAIN_PID=22001\n"
+            "PGDIAG_POSTGRES_EXECUTABLE=/usr/lib/postgresql/18/bin/postgres\n"
+            "PGDIAG_LDD_PATH=/usr/bin/ldd\n"
+            "PGDIAG_LDD_BEGIN\n"
+        ),
+        stderr="ldd: exited unexpectedly",
+    )
+
+    item = asyncio.run(
+        execute_python_item(
+            content,
+            PostgresMainLddConn(),
+            planned,
+            ssh_transport=SimpleNamespace(host_access=host),
+        )
+    )
+
+    assert item["collection_status"] == "error"
+    assert "main process PID 22001" in item["reason"]
+    assert item["diagnostics"][0]["code"] == "postgres_main_ldd_failed"
+
+
 def test_pg_controldata_uses_running_server_binary_and_parses_output(
     content_path: Path,
 ) -> None:

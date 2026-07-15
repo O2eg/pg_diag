@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -36,7 +36,7 @@ def json_safe(value: Any) -> Any:
     if isinstance(value, datetime):
         if value.tzinfo is None:
             return value.isoformat()
-        return value.astimezone(UTC).isoformat().removesuffix("+00:00") + "Z"
+        return value.astimezone(timezone.utc).isoformat().removesuffix("+00:00") + "Z"
     if isinstance(value, (date, time)):
         return value.isoformat()
     if isinstance(value, timedelta):

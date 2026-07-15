@@ -9,7 +9,8 @@ import platform
 import socket
 import tempfile
 import traceback
-from datetime import UTC, datetime
+from collections.abc import Iterable
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +32,7 @@ COLLECTION_ERROR_STATUSES = {"error"}
 
 
 def utc_now() -> str:
-    return datetime.now(UTC).isoformat().removesuffix("+00:00") + "Z"
+    return datetime.now(timezone.utc).isoformat().removesuffix("+00:00") + "Z"
 
 
 def create_artifact(
@@ -244,6 +245,38 @@ def artifact_has_errors(artifact: dict[str, Any]) -> bool:
     )
 
 
+def omit_skipped_report_items(
+    artifact: dict[str, Any],
+    planned_skipped_item_ids: set[str] | None = None,
+) -> None:
+    """Remove mode-inapplicable items and any sections left empty by them."""
+    items = artifact.get("items") or {}
+    skipped_item_ids = set(planned_skipped_item_ids or set())
+    skipped_item_ids.update({
+        item_id
+        for item_id, item in items.items()
+        if isinstance(item, dict) and item.get("collection_status") == "skipped"
+    })
+    if not skipped_item_ids:
+        return
+
+    artifact["items"] = {
+        item_id: item
+        for item_id, item in items.items()
+        if item_id not in skipped_item_ids
+    }
+    filtered_sections = []
+    for section in artifact.get("sections") or []:
+        item_ids = [
+            item_id
+            for item_id in section.get("items") or []
+            if item_id not in skipped_item_ids
+        ]
+        if item_ids:
+            filtered_sections.append({**section, "items": item_ids})
+    artifact["sections"] = filtered_sections
+
+
 def apply_database_scope_presentation(artifact: dict[str, Any]) -> None:
     """Apply the declarative database-scope presentation contract."""
     config = artifact["display"]["database_scope_presentation"]
@@ -377,11 +410,38 @@ def report_output_paths(
     out_dir: str | Path,
     json_out: str | Path | None = None,
     html_out: str | Path | None = None,
-) -> tuple[Path, Path]:
+    output_formats: str | Iterable[str] | None = None,
+) -> tuple[Path | None, Path | None]:
+    requested = (
+        runtime_config.DEFAULT_REPORT_OUTPUT_FORMATS
+        if output_formats is None
+        else (output_formats,)
+        if isinstance(output_formats, str)
+        else tuple(output_formats)
+    )
+    formats = {str(value).strip().lower() for value in requested if str(value).strip()}
+    unsupported = formats.difference(runtime_config.REPORT_OUTPUT_FORMATS)
+    if unsupported:
+        raise ValueError(f"unsupported report output format(s): {', '.join(sorted(unsupported))}")
+    if not formats:
+        raise ValueError("at least one report output format is required")
+    if json_out and "json" not in formats:
+        raise ValueError("--json-out requires --output-format to include json")
+    if html_out and "html" not in formats:
+        raise ValueError("--html-out requires --output-format to include html")
+
     output_dir = Path(out_dir)
-    json_path = Path(json_out) if json_out else output_dir / "report.json"
-    html_path = Path(html_out) if html_out else output_dir / "report.html"
-    if json_path.resolve(strict=False) == html_path.resolve(strict=False):
+    json_path = None
+    if "json" in formats:
+        json_path = Path(json_out) if json_out else output_dir / "report.json"
+    html_path = None
+    if "html" in formats:
+        html_path = Path(html_out) if html_out else output_dir / "report.html"
+    if (
+        json_path is not None
+        and html_path is not None
+        and json_path.resolve(strict=False) == html_path.resolve(strict=False)
+    ):
         raise ValueError("JSON and HTML output paths must be different files")
     return json_path, html_path
 

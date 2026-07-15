@@ -10,7 +10,8 @@ from typing import Any
 
 import yaml
 
-from .errors import ContentLoadError
+from ._content_state import _allows, _seed
+from .errors import ContentIntegrityError, ContentLoadError
 
 
 class UniqueKeySafeLoader(yaml.SafeLoader):
@@ -66,6 +67,8 @@ class ContentPack:
 
 
 def load_yaml_file(path: Path) -> dict[str, Any]:
+    if not _allows(path):
+        raise ContentIntegrityError
     try:
         with path.open("r", encoding="utf-8") as handle:
             data = yaml.load(handle, Loader=UniqueKeySafeLoader)
@@ -297,6 +300,7 @@ def load_content(content_path: str | Path) -> ContentPack:
     if not root.is_dir():
         raise ContentLoadError(f"Content path must be a directory: {root}")
 
+    _seed(root)
     report_path = root / "report.yaml"
     report = load_yaml_file(report_path)
     report_meta = _mapping(report.get("report"), "report.yaml:report")

@@ -56,7 +56,7 @@ defaults:
   table:
     page_size: 25
   item:
-    state: expanded
+    state: collapsed
     database_scope: all_databases
   section:
     state: expanded
@@ -78,10 +78,11 @@ sections:
       server_version:
         query: cluster.server_version
         tags: [Configuration]
+        state: expanded
       database_volume:
         python: database.database_volume
         tags: [Databases]
-        state: collapsed
+        state: expanded
       pg_config:
         script: cluster.pg_config
         tags: [Configuration]
@@ -93,11 +94,11 @@ sections:
       pg_settings:
         query: cluster.settings
         tags: [Configuration]
-        state: collapsed
+        state: expanded
       stat_reset_times:
         query: cluster.stat_reset_times
         tags: [Databases]
-        state: collapsed
+        state: expanded
       security_logging_settings:
         query: security.security_logging_settings
         tags: [Security]
@@ -143,7 +144,7 @@ sections:
       database_stats:
         query: database.database_stats
         tags: [Databases]
-        state: collapsed
+        state: expanded
 
   os:
     title: Operating System
@@ -157,11 +158,11 @@ sections:
       os_release:
         script: os.os_release
         tags: [Configuration, Kernel]
-        state: collapsed
+        state: expanded
       memory_info:
         script: os.memory_info
         tags: [Memory]
-        state: collapsed
+        state: expanded
       total_ram:
         script: os.total_ram
         tags: [Memory, Hardware]
@@ -169,10 +170,11 @@ sections:
       cpu_info:
         script: os.cpu_info
         tags: [CPU, Hardware]
-        state: collapsed
+        state: expanded
       disk_usage:
         script: os.disk_usage
         tags: [Disk, Filesystem]
+        state: expanded
       fstab:
         script: os.fstab
         tags: [Filesystem, Configuration]
@@ -180,7 +182,7 @@ sections:
       mounts:
         script: os.mounts
         tags: [Filesystem]
-        state: collapsed
+        state: expanded
       network_addresses:
         script: os.network_addresses
         tags: [Network]
@@ -345,13 +347,15 @@ sections:
       connection_pressure:
         query: activity.connection_pressure
         tags: [Sessions, Databases]
+        state: expanded
       session_states:
         query: activity.session_states
         tags: [Sessions]
+        state: expanded
       wait_events:
         query: activity.wait_events
         tags: [Sessions, Waits]
-        state: collapsed
+        state: expanded
       wait_event_sample_profile:
         metric: activity.wait_sample_profile
         tags: [Sessions, Waits]
@@ -369,7 +373,7 @@ sections:
       long_transactions:
         query: activity.long_transactions
         tags: [Transactions, Sessions]
-        state: collapsed
+        state: expanded
       idle_in_transaction:
         query: activity.idle_in_transaction
         tags: [Transactions, Sessions]
@@ -379,6 +383,7 @@ sections:
       lock_waits:
         query: locks.lock_waits
         tags: [Locks, Waits, Sessions]
+        state: expanded
         render:
           empty_message: No lock waits detected.
       lock_modes:
@@ -393,13 +398,15 @@ sections:
       pg_stat_statements_capabilities:
         query: statements.pg_stat_statements_capabilities
         tags: [Configuration, SQL]
+        state: expanded
       top_sql_by_total_time:
         query: statements.top_by_total_time
         tags: [SQL]
+        state: expanded
       top_sql_by_mean_time:
         query: statements.top_by_mean_time
         tags: [SQL]
-        state: collapsed
+        state: expanded
       top_sql_by_calls:
         query: statements.top_by_calls
         tags: [SQL]
@@ -407,11 +414,11 @@ sections:
       top_sql_by_shared_io:
         query: statements.top_by_io
         tags: [SQL, "I/O"]
-        state: collapsed
+        state: expanded
       top_sql_by_temp_io:
         query: statements.top_by_temp_io
         tags: [SQL, "I/O"]
-        state: collapsed
+        state: expanded
       top_sql_by_wal:
         query: statements.top_by_wal
         tags: [SQL, WAL]
@@ -425,14 +432,15 @@ sections:
       database_workload_delta:
         metric: database.workload_delta
         tags: [Databases, SQL]
+        state: expanded
       sql_time_delta:
         metric: statements.total_time_delta
         tags: [SQL]
-        state: collapsed
+        state: expanded
       sql_io_delta:
         metric: statements.io_delta
         tags: [SQL, "I/O"]
-        state: collapsed
+        state: expanded
       sql_wal_delta:
         metric: statements.wal_delta
         tags: [SQL, WAL]
@@ -464,7 +472,7 @@ sections:
       postgresql_io_delta:
         metric: io.activity_delta
         tags: ["I/O"]
-        state: collapsed
+        state: expanded
       checkpointer_delta:
         metric: checkpoints.checkpointer_delta
         tags: [Checkpoints, "I/O"]
@@ -472,7 +480,7 @@ sections:
       wal_activity_delta:
         metric: wal.activity_delta
         tags: [WAL]
-        state: collapsed
+        state: expanded
       table_maintenance_delta:
         metric: objects.table_maintenance_delta
         tags: [Tables, Vacuum]
@@ -521,27 +529,29 @@ sections:
       physical_replication:
         query: replication.physical_replication
         tags: [Replication]
+        state: expanded
         render:
           empty_message: No physical replication sender rows.
       replication_slots:
         query: replication.slots
         tags: [Replication, WAL]
-        state: collapsed
+        state: expanded
         render:
           empty_message: No replication slots.
       wal_receiver:
         query: replication.wal_receiver
         tags: [Replication, WAL]
-        state: collapsed
+        state: expanded
         render:
           empty_message: No WAL receiver row on this server.
       standby_conflicts:
         query: replication.database_conflicts
         tags: [Replication, Databases]
+        state: expanded
       subscription_workers:
         query: replication.subscription_workers
         tags: [Replication]
-        state: collapsed
+        state: expanded
         render:
           empty_message: No logical subscriptions.
       recovery_prefetch:
@@ -571,11 +581,11 @@ sections:
       wal_statistics:
         query: wal.stat_wal
         tags: [WAL]
-        state: collapsed
+        state: expanded
       wal_archiver:
         query: wal.archiver
         tags: [WAL]
-        state: collapsed
+        state: expanded
       slru_statistics:
         query: slru.stat_slru
         tags: [Storage]
@@ -583,15 +593,15 @@ sections:
       bgwriter:
         query: checkpoints.bgwriter
         tags: [Checkpoints, "I/O"]
-        state: collapsed
+        state: expanded
       checkpointer:
         query: checkpoints.checkpointer
         tags: [Checkpoints, "I/O"]
-        state: collapsed
+        state: expanded
       pg_stat_io:
         query: io.pg_stat_io
         tags: ["I/O"]
-        state: collapsed
+        state: expanded
 
   maintenance_progress:
     title: Maintenance Progress
@@ -601,24 +611,25 @@ sections:
       vacuum_progress:
         query: progress.vacuum
         tags: [Maintenance, Vacuum]
+        state: expanded
         render:
           empty_message: No VACUUM operations in progress.
       create_index_progress:
         query: progress.create_index
         tags: [Maintenance, Indexes]
-        state: collapsed
+        state: expanded
         render:
           empty_message: No CREATE INDEX operations in progress.
       cluster_progress:
         query: progress.cluster
         tags: [Maintenance, Tables]
-        state: collapsed
+        state: expanded
         render:
           empty_message: No CLUSTER or VACUUM FULL operations in progress.
       copy_progress:
         query: progress.copy
         tags: [Maintenance, Tables]
-        state: collapsed
+        state: expanded
         render:
           empty_message: No COPY operations in progress.
 
@@ -629,10 +640,11 @@ sections:
       autovacuum_queue:
         query: vacuum.autovacuum_queue
         tags: [Vacuum, Tables]
+        state: expanded
       database_wraparound:
         query: vacuum.database_wraparound
         tags: [Vacuum, Databases]
-        state: collapsed
+        state: expanded
       xmin_horizon:
         query: vacuum.xmin_horizon
         tags: [Vacuum, Transactions]
@@ -640,7 +652,7 @@ sections:
       xmin_horizon_blockers:
         query: vacuum.xmin_horizon_blockers
         tags: [Vacuum, Transactions, Replication]
-        state: collapsed
+        state: expanded
         render:
           empty_message: No xmin horizon blockers detected.
       prepared_xacts:
@@ -658,10 +670,11 @@ sections:
       table_size_detailed:
         query: storage.table_size_detailed
         tags: [Tables, Storage]
+        state: expanded
       data_checksums:
         query: security.data_checksums
         tags: [Security]
-        state: collapsed
+        state: expanded
         render:
           empty_message: Data checksums are enabled and no checksum failures were reported.
 
@@ -673,17 +686,19 @@ sections:
       table_workload:
         query: objects.table_workload
         tags: [Tables]
+        state: expanded
       table_io:
         query: objects.table_io
         tags: [Tables, "I/O"]
-        state: collapsed
+        state: expanded
       index_workload:
         query: objects.index_workload
         tags: [Indexes]
-        state: collapsed
+        state: expanded
       function_workload:
         query: objects.function_workload
         tags: [Functions]
+        state: expanded
       excessive_dml_privileges:
         query: security.excessive_dml_privileges
         tags: [Security]
@@ -801,24 +816,31 @@ sections:
 
   backend_os:
     title: Per-Backend OS
-    description: PostgreSQL backend activity correlated with /proc CPU and I/O endpoints from the local collector or SSH target.
+    description: PostgreSQL backend activity correlated with the owning main process, its executable dependencies, and /proc CPU and I/O endpoints from the local collector or SSH target.
     state: collapsed
     items:
       backend_activity:
         query: backend.activity
         tags: [Processes, Sessions]
+        state: expanded
       postgres_process_tree:
         script: os.postgres_process_tree
         tags: [Processes]
-        state: collapsed
+        state: expanded
+      postgres_main_process_linked_libraries:
+        python: backend.postgres_main_process_linked_libraries
+        tags: [Processes, Configuration]
+        state: expanded
+        render:
+          empty_message: ldd returned no dynamic dependencies for the PostgreSQL main process.
       backend_proc_cpu:
         metric: backend.proc_cpu_top
         tags: [Processes, CPU]
-        state: collapsed
+        state: expanded
       backend_proc_io:
         metric: backend.proc_io_top
         tags: [Processes, "I/O"]
-        state: collapsed
+        state: expanded
 
   indexes:
     title: Index Health
@@ -827,16 +849,17 @@ sections:
       invalid_indexes:
         query: indexes.invalid_indexes
         tags: [Indexes]
+        state: expanded
         render:
           empty_message: No invalid indexes detected.
       unused_indexes:
         query: indexes.unused_indexes
         tags: [Indexes]
-        state: collapsed
+        state: expanded
       redundant_indexes:
         query: indexes.redundant_indexes
         tags: [Indexes]
-        state: collapsed
+        state: expanded
         render:
           empty_message: No redundant indexes detected.
       duplicate_indexes:
@@ -848,13 +871,13 @@ sections:
       foreign_keys_without_index:
         query: indexes.foreign_keys_without_index
         tags: [Indexes, Tables]
-        state: collapsed
+        state: expanded
         render:
           empty_message: No foreign keys without supporting indexes detected.
       tables_without_pk_or_unique:
         query: indexes.tables_without_pk_or_unique
         tags: [Indexes, Tables]
-        state: collapsed
+        state: expanded
         render:
           empty_message: No user tables without PK or unique index detected.
       large_indexes:
@@ -872,10 +895,11 @@ sections:
       extensions:
         query: cluster.extensions
         tags: [Configuration]
+        state: expanded
       privileged_roles:
         query: cluster.roles_privileges
         tags: [Security]
-        state: collapsed
+        state: expanded
         render:
           empty_message: No privileged roles visible to the current user.
       privileged_login_roles:
@@ -929,7 +953,7 @@ sections:
       pg_hba_insecure_auth_methods:
         python: security.pg_hba_insecure_auth_methods
         tags: [Security]
-        state: collapsed
+        state: expanded
       pg_hba_broad_network_ranges:
         python: security.pg_hba_broad_network_ranges
         tags: [Security]
@@ -985,13 +1009,13 @@ sections:
       pending_restart_settings:
         query: cluster.pending_restart_settings
         tags: [Configuration]
-        state: collapsed
+        state: expanded
         render:
           empty_message: No settings pending restart.
       tablespaces:
         query: cluster.tablespaces
         tags: [Tablespaces, Storage]
-        state: collapsed
+        state: expanded
 
   snapshot_charts_os:
     title: Snapshot charts OS
@@ -1002,10 +1026,11 @@ sections:
       os_cpu_utilization:
         metric: os.cpu_utilization
         tags: [CPU]
+        state: expanded
       os_cpu_load:
         metric: os.cpu_load
         tags: [CPU]
-        state: collapsed
+        state: expanded
       os_memory_usage:
         metric: os.memory_usage
         tags: [Memory]
@@ -1013,7 +1038,7 @@ sections:
       os_memory_pressure:
         metric: os.memory_pressure
         tags: [Memory]
-        state: collapsed
+        state: expanded
       os_disk_read_throughput:
         metric: os.disk_read_throughput
         tags: [Disk, "I/O"]
@@ -1031,11 +1056,11 @@ sections:
       os_disk_utilization:
         metric: os.disk_utilization
         tags: [Disk]
-        state: collapsed
+        state: expanded
       os_disk_latency:
         metric: os.disk_latency
         tags: [Disk, "I/O"]
-        state: collapsed
+        state: expanded
       os_network_receive:
         metric: os.network_receive_throughput
         tags: [Network]
@@ -1057,18 +1082,19 @@ sections:
       database_transaction_rate:
         metric: database.transaction_rate
         tags: [Databases, Transactions]
+        state: expanded
       activity_sessions_by_state:
         metric: activity.sessions_by_state
         tags: [Sessions]
-        state: collapsed
+        state: expanded
       wal_growth_rate:
         metric: wal.growth_rate
         tags: [WAL]
-        state: collapsed
+        state: expanded
       io_read_write_rate:
         metric: io.read_write_rate
         tags: ["I/O"]
-        state: collapsed
+        state: expanded
       database_tuple_dml_rate:
         metric: database.tuple_dml_rate
         tags: [Databases, Tables]
@@ -1088,7 +1114,7 @@ sections:
       database_temp_bytes_rate:
         metric: database.temp_bytes_rate
         tags: [Databases, Storage]
-        state: collapsed
+        state: expanded
       database_io_time_rate:
         metric: database.io_time_rate
         tags: [Databases, "I/O"]
@@ -1174,6 +1200,7 @@ sections:
       utilization:
         metric: buffer_cache.utilization
         tags: [Memory]
+        state: expanded
       usage_count_distribution:
         metric: buffer_cache.usage_count_distribution
         tags: [Memory]
@@ -1181,7 +1208,7 @@ sections:
       dirty_and_pinned:
         metric: buffer_cache.dirty_and_pinned
         tags: [Memory, "I/O"]
-        state: collapsed
+        state: expanded
       dirty_by_usage_count:
         metric: buffer_cache.dirty_by_usage_count
         tags: [Memory, "I/O"]
@@ -1189,11 +1216,11 @@ sections:
       by_database:
         metric: buffer_cache.by_database
         tags: [Memory, Databases]
-        state: collapsed
+        state: expanded
       top_relations:
         metric: buffer_cache.top_relations
         tags: [Memory, Tables, Indexes]
-        state: collapsed
+        state: expanded
       top_dirty_relations:
         metric: buffer_cache.top_dirty_relations
         tags: [Memory, Tables, Indexes, "I/O"]
@@ -1205,7 +1232,7 @@ sections:
       relation_residency_delta:
         metric: buffer_cache.relation_residency_delta
         tags: [Memory, Tables, Indexes]
-        state: collapsed
+        state: expanded
       relation_kinds:
         metric: buffer_cache.relation_kinds
         tags: [Memory, Tables, Indexes]

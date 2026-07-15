@@ -39,8 +39,9 @@ PYTHONDONTWRITEBYTECODE=1 python -m pytest -q \
 
 The main unit-test groups are:
 
-- `test_cli.py` - CLI command behavior for validation, planning, query inspection,
-  and rendering from JSON.
+- `test_cli.py` - CLI command behavior for validation, report selection by
+  item-ID arrays or tag intersections, selection-list output, planning, query
+  inspection, and rendering from JSON.
 - `test_core_engine.py` - scheduler bounds, collection scopes, compact snapshots, strict artifact
   validation, secure output, Python timeouts, renderer substitution safety,
   metric source statuses, and content path/checksum contracts.
@@ -61,9 +62,9 @@ The main unit-test groups are:
 - `test_public_output.py` - public artifact shape, column-name cleanup,
   redaction, source text embedding, and item-level error diagnostics.
 - `test_render.py` - generated HTML/JS/CSS behavior used by the report UI.
-- `test_report_output_paths.py` - snapshot and snapshots JSON/HTML output path,
-  including once/endpoints/chart-window execution order
-  selection.
+- `test_report_output_paths.py` - one-shot and snapshots output-format selection and JSON/HTML paths,
+  secure mirrored progress logs, planner-skipped source suppression, and
+  once/endpoints/chart-window execution order selection.
 - `test_ssh_transport.py` - strict AsyncSSH key authentication, known-host
   verification, dynamic PostgreSQL forwarding, stdin shell execution, SFTP
   host access, remote OS sampling, local evaluation of every host-dependent
@@ -79,9 +80,8 @@ Requirements:
 
 - installed project development dependencies;
 - Docker CLI available to the current user;
-- `psql` and `pgbench` available in `PATH`;
-- a local `.venv` in the repository, because the integration test invokes
-  `.venv/bin/python -m pg_diag.cli`.
+- the project and test dependencies installed in the active Python interpreter;
+- Python 3.10 or newer.
 
 Install useful extras:
 
@@ -93,7 +93,7 @@ python -m pip install -e ".[dev]"
 python -m pip install -e ".[docker]"
 ```
 
-Run the Docker integration test:
+Run the complete Docker matrix for PostgreSQL 14 through 18:
 
 ```bash
 PG_DIAG_DOCKER_INTEGRATION=1 \
@@ -101,18 +101,47 @@ PYTHONDONTWRITEBYTECODE=1 \
 python -m pytest -q tests/integration
 ```
 
-Use a different PostgreSQL image:
+Run only selected PostgreSQL majors while developing a fix:
 
 ```bash
 PG_DIAG_DOCKER_INTEGRATION=1 \
-PG_DIAG_DOCKER_IMAGE=postgres:17 \
+PG_DIAG_DOCKER_VERSIONS=14,18 \
 PYTHONDONTWRITEBYTECODE=1 \
 python -m pytest -q tests/integration
 ```
 
-The current integration test starts PostgreSQL, initializes pgbench data, runs a
-short background load, collects a report, checks `report.json` and
-`report.html`, and removes the container in `finally`.
+Each major uses a cached image derived from the official
+`postgres:<major>-bookworm` image. The image installs OpenSSH, host inspection
+utilities, and the matching `postgresql-<major>-pg-wait-sampling` package. Set
+`PG_DIAG_DOCKER_PULL=1` when the official base images must be refreshed.
+
+For every PostgreSQL major, one module-scoped container is prepared and reused
+by both report tests. Preparation is mandatory and verifies all of the
+following before collection starts:
+
+- `shared_preload_libraries` contains `pg_stat_statements,pg_wait_sampling`;
+- `pg_stat_statements`, `pg_wait_sampling`, and `pg_buffercache` are created in
+  the target database;
+- pgbench data is initialized and a short background workload is started for
+  each report;
+- a fresh Ed25519 client key, root `authorized_keys`, SSH host keys, and a
+  strict generated `known_hosts` file are installed;
+- pg_diag reaches both PostgreSQL and the operating-system collectors through
+  the container IP and the SSH tunnel used by `--collection-mode remote`.
+
+The first test builds a complete remote `one-shot` report. The second builds a
+remote `snapshots` report and exercises both `every_snapshot` and
+`window_endpoints` sources. The integration-only launcher reduces the snapshots
+window to five seconds with exactly two points; the production CLI minimum is
+unchanged.
+
+These tests are execution smoke tests, not semantic-output tests. They require
+every applicable SQL, shell, Python, metric, and compact snapshot item to avoid
+`collection_status=error`. Runtime `empty`, `unsupported`, and
+configuration-dependent `skipped` results remain valid. Every planned shell and
+Python report item must either appear in the report or have an explicit runtime
+entry in `report.log`. The container is removed after both tests for its major;
+the derived Docker image remains cached for later test iterations.
 
 ## Full Test Run
 
@@ -122,12 +151,12 @@ Run the default suite:
 PYTHONDONTWRITEBYTECODE=1 python -m pytest -q
 ```
 
-Without `PG_DIAG_DOCKER_INTEGRATION=1`, the Docker integration test is reported
+Without `PG_DIAG_DOCKER_INTEGRATION=1`, the ten Docker matrix cases are reported
 as skipped.
 
 ## When Adding Tests
 
-- Add content contract tests for new rules in `content/*.yaml`, query catalogs,
+- Add content contract tests for new rules in `pg_diag/content/*.yaml`, query catalogs,
   SQL files, scripts, Python sources, or metric declarations.
 - Add Python executor tests for new trusted Python source behavior, especially
   local file access, diagnostics, issues, and result shape.
@@ -163,14 +192,13 @@ generated reports in `reports/`.
 Validate content:
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 python -m pg_diag.cli validate --content content
+PYTHONDONTWRITEBYTECODE=1 python -m pg_diag.cli validate
 ```
 
 Preview a PostgreSQL 18 snapshots plan:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python -m pg_diag.cli explain-plan \
-  --content content \
   --pg-version 180000 \
   --run-mode snapshots \
   --collection-mode local

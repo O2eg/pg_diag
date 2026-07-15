@@ -17,7 +17,7 @@ from pg_diag.presentation import apply_presentation_contract, resolve_column_des
 from pg_diag.runtime_config import (
     HOST_COMMAND_TIMEOUT_SECONDS,
     REMOTE_DB_ONLY_COLLECTION_MODE,
-    SNAPSHOT_MODE,
+    ONE_SHOT_MODE,
     SNAPSHOTS_MODE,
 )
 from pg_diag.validator import has_errors, validate_content
@@ -343,7 +343,7 @@ def test_content_pack_exposes_one_effective_document_with_file_provenance(
 
     artifact = create_artifact(
         content,
-        build_plan(content, 180000, mode=SNAPSHOT_MODE),
+        build_plan(content, 180000, mode=ONE_SHOT_MODE),
         {},
         "2026-07-11T00:00:00+00:00",
     )
@@ -355,8 +355,21 @@ def test_content_contract_has_no_legacy_report_state(content_path: Path) -> None
     content = load_content(content_path)
 
     assert "default_state" not in content.report["report"]
-    assert content.report["defaults"]["item"]["state"] == "expanded"
+    assert content.report["defaults"]["item"]["state"] == "collapsed"
     assert content.report["defaults"]["section"]["state"] == "expanded"
+
+
+def test_each_report_section_expands_three_to_five_items(content_path: Path) -> None:
+    content = load_content(content_path)
+    default_state = content.report["defaults"]["item"]["state"]
+
+    for section_id, section in content.report["sections"].items():
+        expanded = [
+            item_key
+            for item_key, item in section["items"].items()
+            if item.get("state", default_state) == "expanded"
+        ]
+        assert 3 <= len(expanded) <= 5, (section_id, expanded)
 
 
 def test_field_reference_covers_every_unified_content_node(content_path: Path) -> None:
@@ -522,7 +535,7 @@ def test_activity_lock_sql_uses_supported_bounded_semantics(content_path: Path) 
     lock_waits_sql = (query_root / "locks/lock_waits.sql").read_text(encoding="utf-8").lower()
     assert "pg_blocking_pids(activity.pid)" in lock_waits_sql
     assert "waitstart" in lock_waits_sql
-    assert "limit 10000" in lock_waits_sql
+    assert "limit 1000" in lock_waits_sql
     assert "blocked.relation = blocker.relation" not in lock_waits_sql
 
     wait_sql = (query_root / "activity/wait_events.sql").read_text(encoding="utf-8").lower()
@@ -1726,13 +1739,17 @@ def test_snapshot_collection_policy(content_path: Path) -> None:
     plan = build_plan(
         content,
         180000,
-        mode=SNAPSHOT_MODE,
+        mode=ONE_SHOT_MODE,
         collection_mode=REMOTE_DB_ONLY_COLLECTION_MODE,
     )
 
     by_id = {item.item_id: item for item in plan.items}
     assert by_id["os.kernel_version"].status == "skipped"
     assert by_id["os.kernel_version"].reason == "no data because remote call"
+    assert by_id["backend_os.postgres_main_process_linked_libraries"].status == "skipped"
+    assert by_id["backend_os.postgres_main_process_linked_libraries"].reason == (
+        "no data because remote call"
+    )
     assert by_id["snapshot_charts_db.database_transaction_rate"].status == "skipped"
     assert by_id["snapshot_charts_db.database_transaction_rate"].reason == "requires snapshots mode"
 
@@ -1883,6 +1900,12 @@ def test_workload_sections_and_delta_dependencies_are_planned(content_path: Path
     assert by_id["activity_locks.pg_wait_sampling_capabilities"].source_kind == "query"
     assert by_id["backend_os.postgres_process_tree"].source_kind == "script"
     assert by_id["backend_os.postgres_process_tree"].script_file == "os/postgres_process_tree.sh"
+    assert by_id["backend_os.postgres_main_process_linked_libraries"].source_kind == "python"
+    assert by_id["backend_os.postgres_main_process_linked_libraries"].python_file == (
+        "backend/postgres_main_process_linked_libraries.py"
+    )
+    assert content.pythons["backend.postgres_main_process_linked_libraries"]["local_only"] is True
+    assert by_id["backend_os.postgres_main_process_linked_libraries"].collection_scope == "once"
     assert by_id["snapshot_delta_workload.sql_time_delta"].source_metadata["display"]["default_sort"] == {
         "column": "exec_time_ms_per_sec",
         "direction": "desc",

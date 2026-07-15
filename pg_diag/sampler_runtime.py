@@ -165,7 +165,7 @@ async def _run_provider(
             function(context),
             timeout=context.duration_seconds + grace_seconds,
         )
-    except TimeoutError as exc:
+    except (asyncio.TimeoutError, TimeoutError) as exc:
         raise PgDiagError(
             f"sampler provider {provider_id} exceeded its collection window"
         ) from exc

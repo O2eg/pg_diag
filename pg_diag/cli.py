@@ -13,11 +13,17 @@ from typing import Any
 from . import __version__, runtime_config
 from .artifact import artifact_has_errors, report_output_paths
 from .content_loader import ContentPack, iter_report_items, load_content
-from .errors import PgDiagError
-from .planner import build_plan
+from .errors import ContentIntegrityError, PgDiagError
+from .planner import (
+    available_item_tags,
+    build_plan,
+    normalize_requested_item_ids,
+    normalize_requested_tags,
+)
+from .progress import ProgressReporter, report_log_path
 from .render.html import render_from_json
 from .security import redact_error
-from .snapshot import collect_snapshot
+from .one_shot import collect_one_shot
 from .snapshots import collect_snapshots
 from .ssh_transport import SshConfig
 from .validator import has_errors, validate_content
@@ -29,6 +35,17 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return args.func(args)
+    except ContentIntegrityError:
+        message = (
+            "CRITICAL: content integrity verification failed.\n"
+            "Report collection was not started because the selected check set differs "
+            "from the vendor-provided pg_diag content.\n"
+            "Modified checks may be unsafe or contain vulnerabilities.\n"
+            "Reinstall pg_diag and content from a trusted distribution."
+        )
+        print(message)
+        print(message, file=sys.stderr)
+        return 2
     except PgDiagError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
@@ -68,22 +85,19 @@ def build_parser() -> argparse.ArgumentParser:
     run_query_parser.add_argument("--dry-run", action="store_true", help=argparse.SUPPRESS)
     run_query_parser.set_defaults(func=cmd_run_query)
 
-    snapshot_parser = subparsers.add_parser("snapshot", help="Collect one snapshot report")
-    _add_content_arg(snapshot_parser)
-    _add_database_connection_args(snapshot_parser)
-    _add_ssh_args(snapshot_parser)
-    snapshot_parser.add_argument("--out", default="report", help="Output directory")
-    _add_report_output_file_args(snapshot_parser)
-    snapshot_parser.add_argument(
+    one_shot_parser = subparsers.add_parser("one-shot", help="Collect one point-in-time report")
+    _add_content_arg(one_shot_parser)
+    _add_database_connection_args(one_shot_parser)
+    _add_ssh_args(one_shot_parser)
+    one_shot_parser.add_argument("--out", default="report", help="Output directory")
+    _add_report_output_file_args(one_shot_parser)
+    one_shot_parser.add_argument(
         "--collection-mode",
         choices=runtime_config.COLLECTION_MODES,
         default=runtime_config.DEFAULT_COLLECTION_MODE,
     )
-    snapshot_parser.add_argument(
-        "--item-id",
-        help="Collect only the specified report item (section.item)",
-    )
-    snapshot_parser.set_defaults(func=cmd_snapshot)
+    _add_report_selection_args(one_shot_parser)
+    one_shot_parser.set_defaults(func=cmd_one_shot)
 
     render_parser = subparsers.add_parser("render", help="Render HTML from report JSON")
     render_parser.add_argument("--from-json", required=True, dest="from_json")
@@ -111,10 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=runtime_config.COLLECTION_MODES,
         default=runtime_config.LOCAL_COLLECTION_MODE,
     )
-    snapshots_parser.add_argument(
-        "--item-id",
-        help="Collect only the specified report item (section.item)",
-    )
+    _add_report_selection_args(snapshots_parser)
     snapshots_parser.set_defaults(func=cmd_snapshots)
 
     return parser
@@ -129,18 +140,85 @@ def _add_content_arg(parser: argparse.ArgumentParser) -> None:
 
 
 def _default_content_path() -> str:
-    working_directory_content = Path("content")
-    if working_directory_content.is_dir():
-        return str(working_directory_content)
-    source_tree_content = Path(__file__).resolve().parents[1] / "content"
-    if source_tree_content.is_dir():
-        return str(source_tree_content)
-    return "content"
+    return str(Path(__file__).resolve().parent / "content")
 
 
 def _add_report_output_file_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--json-out", help="Exact report JSON output file")
     parser.add_argument("--html-out", help="Exact report HTML output file")
+    parser.add_argument(
+        "--output-format",
+        type=_parse_output_formats_argument,
+        default=runtime_config.DEFAULT_REPORT_OUTPUT_FORMATS,
+        metavar="[html,json]",
+        help="Write html, json, or a comma-separated list (default: html,json)",
+    )
+
+
+def _add_report_selection_args(parser: argparse.ArgumentParser) -> None:
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument(
+        "--item-id",
+        type=_parse_item_ids_argument,
+        metavar="[SECTION.ITEM,...]",
+        help="Collect one report item or a comma-separated list of report items",
+    )
+    selection.add_argument(
+        "--item-id-list",
+        action="store_true",
+        help="List item ids with tags and descriptions, then exit without connecting",
+    )
+    selection.add_argument(
+        "--tags",
+        type=_parse_tags_argument,
+        metavar="[TAG,...]",
+        help="Collect items matching at least one comma-separated tag (case-insensitive)",
+    )
+    selection.add_argument(
+        "--tags-list",
+        action="store_true",
+        help="List tags available for --tags and exit without connecting",
+    )
+
+
+def _parse_tags_argument(value: str) -> tuple[str, ...]:
+    return _parse_cli_list(value, "--tags", "tag")
+
+
+def _parse_item_ids_argument(value: str) -> tuple[str, ...]:
+    return _parse_cli_list(value, "--item-id", "report item")
+
+
+def _parse_output_formats_argument(value: str) -> tuple[str, ...]:
+    entries = tuple(entry.lower() for entry in _parse_cli_list(value, "--output-format", "format"))
+    unsupported = sorted(set(entries).difference(runtime_config.REPORT_OUTPUT_FORMATS))
+    if unsupported:
+        raise argparse.ArgumentTypeError(
+            "--output-format supports only html and json; unknown: " + ", ".join(unsupported)
+        )
+    if len(set(entries)) != len(entries):
+        raise argparse.ArgumentTypeError("--output-format contains a duplicate format")
+    return tuple(
+        format_name
+        for format_name in runtime_config.REPORT_OUTPUT_FORMATS
+        if format_name in entries
+    )
+
+
+def _parse_cli_list(value: str, option: str, entry_name: str) -> tuple[str, ...]:
+    text = str(value).strip()
+    has_open = text.startswith("[")
+    has_close = text.endswith("]")
+    if has_open != has_close:
+        raise argparse.ArgumentTypeError(f"{option} brackets must be balanced")
+    if has_open:
+        text = text[1:-1].strip()
+    if not text:
+        raise argparse.ArgumentTypeError(f"{option} requires at least one {entry_name}")
+    entries = tuple(part.strip() for part in text.split(","))
+    if any(not entry for entry in entries):
+        raise argparse.ArgumentTypeError(f"{option} contains an empty {entry_name}")
+    return entries
 
 
 def _add_database_connection_args(parser: argparse.ArgumentParser) -> None:
@@ -180,8 +258,8 @@ def _add_pg_version_arg(parser: argparse.ArgumentParser) -> None:
 def _add_mode_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--run-mode",
-        choices=[runtime_config.SNAPSHOT_MODE, runtime_config.SNAPSHOTS_MODE],
-        default=runtime_config.SNAPSHOT_MODE,
+        choices=[runtime_config.ONE_SHOT_MODE, runtime_config.SNAPSHOTS_MODE],
+        default=runtime_config.ONE_SHOT_MODE,
     )
     parser.add_argument(
         "--collection-mode",
@@ -277,15 +355,29 @@ def cmd_run_query(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_snapshot(args: argparse.Namespace) -> int:
-    connection_error = _connection_args_error(args, "snapshot")
+def cmd_one_shot(args: argparse.Namespace) -> int:
+    selection_list_result = _selection_list_result(args)
+    if selection_list_result is not None:
+        return selection_list_result
+    connection_error = _connection_args_error(args, "one-shot")
     if connection_error:
         print(f"ERROR: {connection_error}", file=sys.stderr)
+        return 2
+    try:
+        log_path = _validated_report_log_path(args)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     content, issues = _load_and_validate(args.content)
     if has_errors(issues):
         _print_validation_errors(issues)
         return 1
+    try:
+        requested_item_ids = normalize_requested_item_ids(content, args.item_id)
+        requested_tags = normalize_requested_tags(content, args.tags)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     connection_kwargs = {
         "host": args.host,
         "port": args.port,
@@ -295,9 +387,15 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
         "passfile": args.passfile,
     }
     ssh_config = _ssh_config(args)
+    progress: ProgressReporter | None = None
     try:
+        progress = ProgressReporter(log_path)
+        progress.info(
+            f"START command=one-shot collection_mode={args.collection_mode}"
+            f"{_selection_log_suffix(requested_item_ids, requested_tags)} log={progress.path}"
+        )
         artifact = asyncio.run(
-            collect_snapshot(
+            collect_one_shot(
                 content=content,
                 out_dir=args.out,
                 dsn=args.dsn,
@@ -305,24 +403,45 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
                 collection_mode=args.collection_mode,
                 json_out=args.json_out,
                 html_out=args.html_out,
+                output_formats=args.output_format,
                 content_validated=True,
                 ssh_config=ssh_config,
-                item_id=args.item_id,
+                item_id=requested_item_ids,
+                tags=requested_tags,
+                progress=progress,
             )
         )
     except Exception as exc:
-        print(f"ERROR: snapshot failed: {redact_error(exc)}", file=sys.stderr)
+        message = f"one-shot failed: {redact_error(exc)}"
+        if progress is not None:
+            progress.error(message)
+        print(f"ERROR: {message}", file=sys.stderr)
         return 1
-    json_path, html_path = report_output_paths(args.out, args.json_out, args.html_out)
-    print(f"Wrote {json_path}")
-    print(f"Wrote {html_path}")
-    if artifact_has_errors(artifact):
-        print("ERROR: report was written with item collection errors", file=sys.stderr)
-        return 1
-    return 0
+    finally:
+        if progress is not None and "artifact" not in locals():
+            progress.close()
+    try:
+        json_path, html_path = report_output_paths(
+            args.out, args.json_out, args.html_out, args.output_format
+        )
+        for path in (json_path, html_path):
+            if path is not None:
+                progress.info(f"WROTE path={path}")
+        if artifact_has_errors(artifact):
+            progress.error("report was written with item collection errors")
+            progress.complete("DONE status=item_errors")
+            print("ERROR: report was written with item collection errors", file=sys.stderr)
+            return 1
+        progress.complete("DONE status=success")
+        return 0
+    finally:
+        progress.close()
 
 
 def cmd_snapshots(args: argparse.Namespace) -> int:
+    selection_list_result = _selection_list_result(args)
+    if selection_list_result is not None:
+        return selection_list_result
     connection_error = _connection_args_error(args, "snapshots")
     if connection_error:
         print(f"ERROR: {connection_error}", file=sys.stderr)
@@ -331,10 +450,21 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
     if window_error:
         print(f"ERROR: {window_error}", file=sys.stderr)
         return 2
+    try:
+        log_path = _validated_report_log_path(args)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     content, issues = _load_and_validate(args.content)
     if has_errors(issues):
         _print_validation_errors(issues)
         return 1
+    try:
+        requested_item_ids = normalize_requested_item_ids(content, args.item_id)
+        requested_tags = normalize_requested_tags(content, args.tags)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     connection_kwargs = {
         "host": args.host,
         "port": args.port,
@@ -344,7 +474,13 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
         "passfile": args.passfile,
     }
     ssh_config = _ssh_config(args)
+    progress: ProgressReporter | None = None
     try:
+        progress = ProgressReporter(log_path)
+        progress.info(
+            f"START command=snapshots collection_mode={args.collection_mode}"
+            f"{_selection_log_suffix(requested_item_ids, requested_tags)} log={progress.path}"
+        )
         artifact = asyncio.run(
             collect_snapshots(
                 content=content,
@@ -356,21 +492,107 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
                 interval_seconds=args.interval_seconds,
                 json_out=args.json_out,
                 html_out=args.html_out,
+                output_formats=args.output_format,
                 content_validated=True,
                 ssh_config=ssh_config,
-                item_id=args.item_id,
+                item_id=requested_item_ids,
+                tags=requested_tags,
+                progress=progress,
             )
         )
     except Exception as exc:
-        print(f"ERROR: snapshots failed: {redact_error(exc)}", file=sys.stderr)
+        message = f"snapshots failed: {redact_error(exc)}"
+        if progress is not None:
+            progress.error(message)
+        print(f"ERROR: {message}", file=sys.stderr)
         return 1
-    json_path, html_path = report_output_paths(args.out, args.json_out, args.html_out)
-    print(f"Wrote {json_path}")
-    print(f"Wrote {html_path}")
-    if artifact_has_errors(artifact):
-        print("ERROR: report was written with item collection errors", file=sys.stderr)
+    finally:
+        if progress is not None and "artifact" not in locals():
+            progress.close()
+    try:
+        json_path, html_path = report_output_paths(
+            args.out, args.json_out, args.html_out, args.output_format
+        )
+        for path in (json_path, html_path):
+            if path is not None:
+                progress.info(f"WROTE path={path}")
+        if artifact_has_errors(artifact):
+            progress.error("report was written with item collection errors")
+            progress.complete("DONE status=item_errors")
+            print("ERROR: report was written with item collection errors", file=sys.stderr)
+            return 1
+        progress.complete("DONE status=success")
+        return 0
+    finally:
+        progress.close()
+
+
+def _validated_report_log_path(args: argparse.Namespace) -> Path:
+    json_path, html_path = report_output_paths(
+        args.out, args.json_out, args.html_out, args.output_format
+    )
+    log_path = report_log_path(args.out)
+    resolved_log = log_path.resolve(strict=False)
+    output_paths = {
+        path.resolve(strict=False)
+        for path in (json_path, html_path)
+        if path is not None
+    }
+    if resolved_log in output_paths:
+        raise ValueError("report.log path must be different from JSON and HTML output paths")
+    return log_path
+
+
+def _selection_list_result(args: argparse.Namespace) -> int | None:
+    if not args.tags_list and not args.item_id_list:
+        return None
+    content, issues = _load_and_validate(args.content)
+    if has_errors(issues):
+        _print_validation_errors(issues)
         return 1
+    if args.tags_list:
+        for tag in available_item_tags(content):
+            print(tag)
+    else:
+        _print_item_id_list(content)
     return 0
+
+
+def _print_item_id_list(content: ContentPack) -> None:
+    catalogs = {
+        "query": content.queries,
+        "script": content.scripts,
+        "metric": content.metrics,
+        "python": content.pythons,
+    }
+    print("ITEM_ID\tTAGS\tDESCRIPTION")
+    for _section_id, _item_key, item_id, item in iter_report_items(content):
+        source_kind = next(
+            (key for key in ("query", "script", "metric", "python") if key in item),
+            "unknown",
+        )
+        manifest = catalogs.get(source_kind, {}).get(item.get(source_kind), {})
+        description = (
+            item.get("description")
+            or manifest.get("description")
+            or item.get("title")
+            or manifest.get("title")
+            or ""
+        )
+        description = " ".join(str(description).split())
+        tags = ",".join(str(tag) for tag in (item.get("tags") or []))
+        print(f"{item_id}\t{tags}\t{description}")
+
+
+def _selection_log_suffix(
+    item_ids: tuple[str, ...] | None,
+    tags: tuple[str, ...] | None,
+) -> str:
+    if item_ids is not None:
+        return f" item_ids={','.join(item_ids)}"
+    if tags is not None:
+        return f" tags={','.join(tags)}"
+    return ""
 
 
 def _connection_args_error(args: argparse.Namespace, command: str) -> str | None:

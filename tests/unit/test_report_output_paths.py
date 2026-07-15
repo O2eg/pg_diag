@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from io import StringIO
 import json
 from types import SimpleNamespace
 
@@ -12,8 +13,9 @@ from pg_diag.artifact import item_from_plan
 from pg_diag.artifact import report_output_paths
 from pg_diag.errors import PgDiagError, UnsupportedServerVersion
 from pg_diag.planner import PlannedItem, SourceJob
+from pg_diag.progress import ProgressReporter
 from pg_diag.sampler_runtime import SamplerCollection
-from pg_diag.snapshot import collect_snapshot
+from pg_diag.one_shot import collect_one_shot
 from pg_diag.snapshots import collect_snapshots
 
 
@@ -165,7 +167,144 @@ def test_report_output_paths_use_exact_files() -> None:
     assert str(html_path) == "fixed/report-2026.html"
 
 
-def test_collect_snapshot_writes_exact_output_files(tmp_path, monkeypatch) -> None:
+def test_report_output_paths_select_one_format() -> None:
+    json_path, disabled_html_path = report_output_paths(
+        "reports/json-only",
+        output_formats="json",
+    )
+    disabled_json_path, html_path = report_output_paths(
+        "reports/html-only",
+        output_formats=("html",),
+    )
+
+    assert str(json_path) == "reports/json-only/report.json"
+    assert disabled_html_path is None
+    assert disabled_json_path is None
+    assert str(html_path) == "reports/html-only/report.html"
+
+
+@pytest.mark.parametrize(
+    ("output_formats", "json_out", "html_out", "message"),
+    [
+        (("html",), "disabled.json", None, "--json-out requires"),
+        (("json",), None, "disabled.html", "--html-out requires"),
+        ((), None, None, "at least one report output format"),
+        (("xml",), None, None, "unsupported report output format"),
+    ],
+)
+def test_report_output_paths_reject_invalid_format_combinations(
+    output_formats,
+    json_out,
+    html_out,
+    message,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        report_output_paths(
+            "reports/run",
+            json_out=json_out,
+            html_out=html_out,
+            output_formats=output_formats,
+        )
+
+
+@pytest.mark.parametrize("output_format", ["html", "json"])
+def test_collect_one_shot_writes_only_selected_output_format(
+    tmp_path,
+    monkeypatch,
+    output_format,
+) -> None:
+    async def connect_stub(*args, **kwargs):
+        return FakeConn()
+
+    async def detect_runtime_context_stub(conn):
+        return {
+            "server_version_num": 180000,
+            "server_version": "PostgreSQL 18",
+            "current_database": "testdb",
+            "current_user": "app",
+            "in_recovery": False,
+            "capabilities": {},
+        }
+
+    render_calls = []
+
+    def render_stub(artifact, **kwargs):
+        render_calls.append(artifact)
+        return "<html>selected</html>"
+
+    monkeypatch.setattr(collection_module, "connect", connect_stub)
+    monkeypatch.setattr(collection_module, "detect_runtime_context", detect_runtime_context_stub)
+    monkeypatch.setattr(
+        collection_module,
+        "build_plan",
+        lambda *args, **kwargs: fake_plan(kwargs.get("mode"), kwargs.get("collection_mode")),
+    )
+    monkeypatch.setattr(collection_module, "render_html", render_stub)
+
+    out_dir = tmp_path / output_format
+    asyncio.run(
+        collect_one_shot(
+            content=fake_content(tmp_path),
+            out_dir=out_dir,
+            dsn=None,
+            connection_kwargs={},
+            collection_mode=runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE,
+            output_formats=output_format,
+            content_validated=True,
+        )
+    )
+
+    assert (out_dir / "report.html").exists() is (output_format == "html")
+    assert (out_dir / "report.json").exists() is (output_format == "json")
+    assert bool(render_calls) is (output_format == "html")
+
+
+def test_collect_snapshots_propagates_json_only_output_format(tmp_path, monkeypatch) -> None:
+    async def connect_stub(*args, **kwargs):
+        return FakeConn()
+
+    async def detect_runtime_context_stub(conn):
+        return {
+            "server_version_num": 180000,
+            "server_version": "PostgreSQL 18",
+            "current_database": "testdb",
+            "current_user": "app",
+            "in_recovery": False,
+            "capabilities": {},
+        }
+
+    def unexpected_render(*args, **kwargs):
+        raise AssertionError("JSON-only snapshots must not render HTML")
+
+    monkeypatch.setattr(collection_module, "connect", connect_stub)
+    monkeypatch.setattr(collection_module, "detect_runtime_context", detect_runtime_context_stub)
+    monkeypatch.setattr(
+        collection_module,
+        "build_plan",
+        lambda *args, **kwargs: fake_plan(kwargs.get("mode"), kwargs.get("collection_mode")),
+    )
+    monkeypatch.setattr(collection_module, "render_html", unexpected_render)
+
+    out_dir = tmp_path / "snapshots-json"
+    asyncio.run(
+        collect_snapshots(
+            content=fake_content(tmp_path),
+            out_dir=out_dir,
+            dsn=None,
+            connection_kwargs={},
+            collection_mode=runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE,
+            duration_seconds=30,
+            interval_seconds=15,
+            output_formats="json",
+            content_validated=True,
+        )
+    )
+
+    assert (out_dir / "report.json").exists()
+    assert not (out_dir / "report.html").exists()
+
+
+def test_collect_one_shot_writes_exact_output_files(tmp_path, monkeypatch) -> None:
     json_path = tmp_path / "fixed" / "one.json"
     html_path = tmp_path / "html" / "one.html"
 
@@ -189,10 +328,10 @@ def test_collect_snapshot_writes_exact_output_files(tmp_path, monkeypatch) -> No
         "build_plan",
         lambda *args, **kwargs: fake_plan(kwargs.get("mode"), kwargs.get("collection_mode")),
     )
-    monkeypatch.setattr(collection_module, "render_html", lambda artifact, **kwargs: "<html>snapshot</html>")
+    monkeypatch.setattr(collection_module, "render_html", lambda artifact, **kwargs: "<html>one-shot</html>")
 
     asyncio.run(
-        collect_snapshot(
+        collect_one_shot(
             content=fake_content(tmp_path),
             out_dir=tmp_path / "ignored",
             dsn=None,
@@ -209,9 +348,102 @@ def test_collect_snapshot_writes_exact_output_files(tmp_path, monkeypatch) -> No
         json.loads(json_path.read_text(encoding="utf-8"))["artifact_schema_version"]
         == runtime_config.ARTIFACT_SCHEMA_VERSION
     )
-    assert html_path.read_text(encoding="utf-8") == "<html>snapshot</html>"
+    assert html_path.read_text(encoding="utf-8") == "<html>one-shot</html>"
     assert not (tmp_path / "ignored" / "report.json").exists()
     assert not (tmp_path / "ignored" / "report.html").exists()
+
+
+def test_collect_one_shot_does_not_execute_or_render_planner_skipped_metric(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    planned = PlannedItem(
+        item_id="snapshot_charts_db.database_transaction_rate",
+        section_id="snapshot_charts_db",
+        item_key="database_transaction_rate",
+        title="Database Transaction Rate",
+        source_kind="metric",
+        source_id="database.transaction_rate",
+        status="skipped",
+        state="expanded",
+        reason="requires snapshots mode",
+    )
+
+    async def connect_stub(*args, **kwargs):
+        return FakeConn()
+
+    async def detect_runtime_context_stub(conn):
+        return {
+            "server_version_num": 180000,
+            "server_version": "PostgreSQL 18",
+            "current_database": "testdb",
+            "current_user": "app",
+            "in_recovery": False,
+            "capabilities": {},
+        }
+
+    async def execute_report_item_stub(*args, **kwargs):
+        pytest.fail("a planner-skipped metric must not be executed")
+
+    monkeypatch.setattr(collection_module, "connect", connect_stub)
+    monkeypatch.setattr(collection_module, "detect_runtime_context", detect_runtime_context_stub)
+    monkeypatch.setattr(collection_module, "execute_report_item", execute_report_item_stub)
+    monkeypatch.setattr(
+        collection_module,
+        "build_plan",
+        lambda *args, **kwargs: fake_plan_with_items(
+            kwargs.get("mode"),
+            kwargs.get("collection_mode"),
+            [planned],
+        ),
+    )
+    monkeypatch.setattr(collection_module, "render_html", lambda artifact, **kwargs: "<html></html>")
+
+    progress_output = StringIO()
+    progress = ProgressReporter(tmp_path / "out" / "report.log", stream=progress_output)
+    try:
+        artifact = asyncio.run(
+            collect_one_shot(
+                content=fake_content(tmp_path),
+                out_dir=tmp_path / "out",
+                dsn=None,
+                connection_kwargs={},
+                collection_mode=runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE,
+                content_validated=True,
+                progress=progress,
+            )
+        )
+    finally:
+        progress.close()
+
+    assert artifact["items"] == {}
+    assert artifact["sections"] == []
+    assert (
+        "progress=100% SKIP "
+        "item=snapshot_charts_db.database_transaction_rate reason=requires snapshots mode"
+    ) in progress_output.getvalue()
+
+
+def test_collect_one_shot_rejects_unknown_item_before_connecting(tmp_path, monkeypatch) -> None:
+    async def connect_stub(*args, **kwargs):
+        pytest.fail("database connection must not be opened for an unknown item")
+
+    monkeypatch.setattr(collection_module, "connect", connect_stub)
+
+    with pytest.raises(ValueError, match=r"Unknown report item: overview\.missing"):
+        asyncio.run(
+            collect_one_shot(
+                content=fake_content(tmp_path),
+                out_dir=tmp_path / "out",
+                dsn=None,
+                connection_kwargs={},
+                content_validated=True,
+                item_id="overview.missing",
+            )
+        )
+
+    assert not (tmp_path / "out" / "report.json").exists()
+    assert not (tmp_path / "out" / "report.html").exists()
 
 
 def test_collect_snapshots_writes_exact_output_files(tmp_path, monkeypatch) -> None:
@@ -267,7 +499,7 @@ def test_collect_snapshots_writes_exact_output_files(tmp_path, monkeypatch) -> N
     assert not (tmp_path / "ignored" / "report.html").exists()
 
 
-def test_collect_snapshots_formats_remote_skipped_once_items(tmp_path, monkeypatch) -> None:
+def test_collect_snapshots_omits_remote_skipped_once_items(tmp_path, monkeypatch) -> None:
     import pg_diag.snapshots as snapshots_module
 
     planned = PlannedItem(
@@ -300,8 +532,12 @@ def test_collect_snapshots_formats_remote_skipped_once_items(tmp_path, monkeypat
     async def collect_db_samples_stub(*args, **kwargs):
         return [], [], {}
 
+    async def execute_report_item_stub(*args, **kwargs):
+        pytest.fail("a planner-skipped item must not be executed")
+
     monkeypatch.setattr(collection_module, "connect", connect_stub)
     monkeypatch.setattr(collection_module, "detect_runtime_context", detect_runtime_context_stub)
+    monkeypatch.setattr(collection_module, "execute_report_item", execute_report_item_stub)
     monkeypatch.setattr(snapshots_module, "_collect_db_samples", collect_db_samples_stub)
     monkeypatch.setattr(
         collection_module,
@@ -314,9 +550,94 @@ def test_collect_snapshots_formats_remote_skipped_once_items(tmp_path, monkeypat
     )
     monkeypatch.setattr(collection_module, "render_html", lambda artifact, **kwargs: "<html>snapshots</html>")
 
+    progress_output = StringIO()
+    progress = ProgressReporter(tmp_path / "out" / "report.log", stream=progress_output)
+    try:
+        artifact = asyncio.run(
+            collect_snapshots(
+                content=fake_content(tmp_path),
+                out_dir=tmp_path / "out",
+                dsn=None,
+                connection_kwargs={},
+                collection_mode=runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE,
+                duration_seconds=30,
+                interval_seconds=15,
+                content_validated=True,
+                progress=progress,
+            )
+        )
+    finally:
+        progress.close()
+
+    assert "os.kernel_version" not in artifact["items"]
+    assert artifact["sections"] == []
+    log_text = (tmp_path / "out" / "report.log").read_text(encoding="utf-8")
+    assert "progress=100% SKIP item=os.kernel_version reason=no data because remote call" in log_text
+    assert progress_output.getvalue() == log_text
+    assert (tmp_path / "out" / "report.log").stat().st_mode & 0o777 == 0o600
+
+
+def test_collect_snapshots_skips_empty_window_for_requested_once_item(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import pg_diag.snapshots as snapshots_module
+
+    planned = PlannedItem(
+        item_id="overview.pg_settings",
+        section_id="overview",
+        item_key="pg_settings",
+        title="PostgreSQL Settings",
+        source_kind="query",
+        source_id="cluster.settings",
+        status="planned",
+        state="expanded",
+        collection_scope="once",
+    )
+    plan = fake_plan_with_items(
+        runtime_config.SNAPSHOTS_MODE,
+        runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE,
+        [planned],
+    )
+    calls: list[str] = []
+
+    async def connect_stub(*args, **kwargs):
+        return FakeConn()
+
+    async def detect_runtime_context_stub(conn):
+        return {
+            "server_version_num": 180000,
+            "server_version": "PostgreSQL 18",
+            "current_database": "testdb",
+            "current_user": "app",
+            "in_recovery": False,
+            "capabilities": {},
+        }
+
+    async def execute_once_stub(content, conn, item, ssh, database_connector):
+        calls.append(f"once:{item.item_id}")
+        return item_from_plan(item, collection_status="ok", result={"kind": "none"})
+
+    async def collect_db_samples_stub(*args, **kwargs):
+        pytest.fail("snapshot window must not start for a requested once item")
+
+    content = fake_content(tmp_path)
+    content.report["sections"] = {
+        "overview": {
+            "title": "Overview",
+            "items": {"pg_settings": {"query": "cluster.settings"}},
+        }
+    }
+    monkeypatch.setattr(collection_module, "connect", connect_stub)
+    monkeypatch.setattr(collection_module, "detect_runtime_context", detect_runtime_context_stub)
+    monkeypatch.setattr(collection_module, "build_plan", lambda *args, **kwargs: plan)
+    monkeypatch.setattr(collection_module, "execute_report_item", execute_once_stub)
+    monkeypatch.setattr(snapshots_module, "_collect_db_samples", collect_db_samples_stub)
+    monkeypatch.setattr(collection_module, "render_html", lambda artifact, **kwargs: "<html></html>")
+
     artifact = asyncio.run(
         collect_snapshots(
-            content=fake_content(tmp_path),
+            content=content,
             out_dir=tmp_path / "out",
             dsn=None,
             connection_kwargs={},
@@ -324,13 +645,15 @@ def test_collect_snapshots_formats_remote_skipped_once_items(tmp_path, monkeypat
             duration_seconds=30,
             interval_seconds=15,
             content_validated=True,
+            item_id=planned.item_id,
         )
     )
 
-    item = artifact["items"]["os.kernel_version"]
-    assert item["collection_status"] == "skipped"
-    assert item["reason"] == "remote_db_only"
-    assert item["result"] == {"kind": "plain_text", "data": "no data because remote call"}
+    assert calls == ["once:overview.pg_settings"]
+    assert artifact["snapshots"] == []
+    assert artifact["runtime"]["snapshot_count"] == 0
+    assert "snapshot_window_started_at" not in artifact["runtime"]
+    assert "snapshot_window_finished_at" not in artifact["runtime"]
 
 
 def test_collect_snapshots_runs_static_items_before_chart_window(tmp_path, monkeypatch) -> None:
@@ -603,7 +926,7 @@ def test_collect_snapshots_uses_backend_proc_window_endpoints(tmp_path, monkeypa
     assert artifact["runtime"]["window_endpoint_sampler_count"] == 1
 
 
-def test_collect_snapshot_rejects_unsupported_server_before_writing(tmp_path, monkeypatch) -> None:
+def test_collect_one_shot_rejects_unsupported_server_before_writing(tmp_path, monkeypatch) -> None:
     async def connect_stub(*args, **kwargs):
         return FakeConn()
 
@@ -615,7 +938,10 @@ def test_collect_snapshot_rejects_unsupported_server_before_writing(tmp_path, mo
             "database_host_ip": "127.0.0.1",
         }
 
-    unsupported_plan = fake_plan(runtime_config.SNAPSHOT_MODE, runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE)
+    unsupported_plan = fake_plan(
+        runtime_config.ONE_SHOT_MODE,
+        runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE,
+    )
     unsupported_plan.supported_server_version = False
     unsupported_plan.reason = "unsupported test version"
 
@@ -625,7 +951,7 @@ def test_collect_snapshot_rejects_unsupported_server_before_writing(tmp_path, mo
 
     with pytest.raises(UnsupportedServerVersion, match="unsupported test version"):
         asyncio.run(
-            collect_snapshot(
+            collect_one_shot(
                 content=fake_content(tmp_path),
                 out_dir=tmp_path / "out",
                 dsn=None,
@@ -638,7 +964,7 @@ def test_collect_snapshot_rejects_unsupported_server_before_writing(tmp_path, mo
     assert not (tmp_path / "out" / "report.html").exists()
 
 
-def test_collect_snapshot_honors_fail_fast_policy(tmp_path, monkeypatch) -> None:
+def test_collect_one_shot_honors_fail_fast_policy(tmp_path, monkeypatch) -> None:
     planned = PlannedItem(
         item_id="s.q",
         section_id="s",
@@ -683,7 +1009,7 @@ def test_collect_snapshot_honors_fail_fast_policy(tmp_path, monkeypatch) -> None
         collection_module,
         "build_plan",
         lambda *args, **kwargs: fake_plan_with_items(
-            runtime_config.SNAPSHOT_MODE,
+            runtime_config.ONE_SHOT_MODE,
             runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE,
             [planned],
         ),
@@ -692,7 +1018,7 @@ def test_collect_snapshot_honors_fail_fast_policy(tmp_path, monkeypatch) -> None
 
     with pytest.raises(PgDiagError, match="fail_fast stopped collection at s.q"):
         asyncio.run(
-            collect_snapshot(
+            collect_one_shot(
                 content=content,
                 out_dir=tmp_path / "out",
                 dsn=None,

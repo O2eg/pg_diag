@@ -133,4 +133,4 @@ left join lateral (
   ) as blockers(upstream_pid)
 ) upstream on true
 order by blocked_ms desc nulls last, pairs.blocked_pid, pairs.blocker_pid
-limit 10000
+limit 1000

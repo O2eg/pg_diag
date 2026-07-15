@@ -1,11 +1,13 @@
 # Report Item And Chart Data Specification
 
-Status: normative target contract for every PostgreSQL, operating-system,
-Python, Bash, metric-table, and chart item.
+Status: normative schema-version-4 contract for new PostgreSQL,
+operating-system, Python, Bash, metric-table, and chart content. It is also the
+migration target for legacy declarations explicitly listed in Section 19.
 
-Existing content which violates this document must be migrated as one controlled
-change. New content must not introduce a local formatter, inferred unit, mixed
-numeric/text column, or another representation convention.
+The schema-version-4 descriptor and artifact pipeline is active. New content
+must comply with this document. A successful `pg-diag validate` proves the
+currently implemented structural checks; it does not waive the remaining
+semantic migration requirements identified in Section 19.
 
 ## 1. Goals
 
@@ -21,9 +23,11 @@ This specification separates collection, meaning, transport, and presentation:
 5. Filtering, sorting, evaluation, and aggregation use raw typed values, never
    formatted text.
 
-The renderer must not infer a unit from a column name. Suffix-based byte
-detection and generic `K/M/B` count scaling are legacy behavior and must be
-removed after migration.
+The renderer must not infer a unit from a column name. Content-owned
+presentation rules may construct a descriptor from physical type and stable
+source context before rendering. Adaptive SI scaling is valid only for fields
+whose resolved descriptor declares `unit: count` or `unit: blocks`; it must not
+be applied generically to arbitrary numeric fields.
 
 ## 2. Normative Language
 
@@ -366,10 +370,11 @@ descriptor in addition to its stable `name` and optional physical type:
 Snapshot schemas carry the same descriptors. Compact snapshot rows reference
 that schema and MUST use the declared encoding.
 
-Introducing this descriptor requires a content schema version and artifact
-schema version increase. A renderer MUST either support the current and previous
-artifact versions explicitly or reject an unsupported version with an actionable
-error; it must not silently fall back to suffix inference.
+Complete descriptors are part of content and artifact schema version 4. A future
+incompatible descriptor change requires another content and artifact schema
+version increase. The current runtime accepts its current artifact schema and
+rejects other versions with an explicit unsupported-version error; it must not
+silently fall back to suffix inference.
 
 ### 5.4 Presentation layer
 
@@ -543,9 +548,12 @@ When byte volume is useful, expose a separate exact byte field. Never assume an
 
 ### 10.1 Counts
 
-Counts display as grouped integers without `K/M/B` abbreviations. IDs, OIDs,
-PIDs, ports, timelines, LSNs, query IDs, and system identifiers are never grouped
-or scaled.
+Table fields with resolved `unit: count` use adaptive decimal SI magnitudes
+(`K`, `M`, `G`, and higher registry-supported prefixes) and expose the exact
+grouped integer in cell detail. Values below the first scaling boundary display
+as grouped integers. IDs, OIDs, PIDs, ports, timelines, LSNs, query IDs, and
+system identifiers use the identifier role with `unit: none`; they are never
+grouped or scaled.
 
 Chart axes MAY use a single SI count scale (`k`, `M`, `G`) to save space. The
 axis title states the scale and chart tooltips show the exact grouped count.
@@ -601,8 +609,11 @@ Rules:
 - Delta duration uses exact endpoints, not configured duration or snapshot
   count;
 - invalid or missing instants display `N/A` and produce a diagnostic;
-- using `collected_at` instead of a source timestamp requires an explicit
-  `timestamp_source: collected_at` descriptor;
+- every collected non-metric item receives collector-generated `collected_at`;
+  a table `snapshot_time` column takes precedence for the displayed table time,
+  otherwise the renderer uses `collected_at`;
+- metric tables use their source `snapshot_time` or `delta_window` endpoints and
+  do not use the ordinary item `collected_at` label;
 - `date` and `time` values are not timezone-converted;
 - PostgreSQL infinity timestamps must be text/state values or null; they are not
   parsed as finite instants.
@@ -652,13 +663,15 @@ The artifact MUST declare `display.numeric_locale`; the initial default is
 `en-US`. Numeric display and text collation use this value, not an implicit
 browser locale. Browser timezone remains independent.
 
-Tests inject the locale explicitly. Examples in this document use `en-US`, so
-`30988` displays as `30,988`.
+Tests inject the locale explicitly. Examples in this document use `en-US`; an
+unscaled integer `30988` therefore displays as `30,988`, while `unit: count`
+may select the adaptive representation defined in Section 10.1.
 
 ### 12.4 Precision
 
 - all display rounding uses round-half-away-from-zero;
-- integer quantities have no fractional part;
+- raw integer quantities have no fractional part; an adaptive scaled display may
+  contain a fractional magnitude while preserving the exact integer in detail;
 - adaptive IEC values use the algorithm in Section 8.1;
 - rates and timing values use at most three fractional digits;
 - percentages use at most two fractional digits;
@@ -814,7 +827,8 @@ Severity evaluates raw typed values in canonical units.
 - display scaling never changes a threshold;
 - null, timeout, unsupported, and invalid Delta cells do not match numeric
   conditions;
-- estimated fields require `allow_estimated: true` in the rule;
+- the current rule schema has no estimated-value opt-in, so automatic evaluation
+  MUST NOT target a field whose resolved `quality` is `estimated`;
 - obvious discrete failures may receive automatic severity;
 - workload-dependent volume or rate receives no arbitrary global threshold
   without documented evidence;
@@ -834,7 +848,10 @@ Severity evaluates raw typed values in canonical units.
 
 ## 18. Validation Requirements
 
-Content validation MUST reject:
+The following are normative acceptance requirements. The current validator
+enforces the structural subset and the artifact validator enforces resolved
+descriptor and encoding shape. Remaining semantic enforcement gaps are listed
+in Section 19. Content validation MUST ultimately reject:
 
 - a displayed field without a complete logical descriptor;
 - unknown value kinds, semantic roles, units, encodings, or quality values;
@@ -869,7 +886,8 @@ Unit tests MUST cover:
 - timestamp UTC normalization and exact-value preservation;
 - null, zero, timeout, unsupported, and empty-string distinctions;
 - row-dependent unit refs;
-- estimated-value presentation and evaluation opt-in;
+- estimated-value presentation and exclusion from automatic evaluation while no
+  validated opt-in contract exists;
 - table/chart formatter equivalence;
 - Delta reset, counter-decrease, optional-column, and endpoint behavior;
 - JSON raw values remaining unchanged by rendering.
@@ -877,25 +895,51 @@ Unit tests MUST cover:
 Browser screenshots are not required. Unit tests and JSON artifact assertions
 are authoritative.
 
-## 19. Migration Of Existing Content
+## 19. Current Implementation Status And Remaining Migration
 
-The report is migrated as one controlled change:
+Schema version 4 already provides the unified content document, resolved table
+and chart descriptors, cell and column statuses, lossless `decimal_string`
+transport, BigInt browser sorting, shared unit formatting, UTC timestamp
+normalization, row-dependent unit references, and explicit rejection of
+unsupported artifact schema versions.
 
-1. Inventory every table column and chart series.
-2. Assign `value_kind`, `semantic_role`, `quantity`, `unit`, `quality`,
-   `nullable`, `encoding`, and `label`.
-3. Add `unit_ref` contracts for row-dependent units.
-4. Add cell/column status transport and remove mixed numeric/text cells.
-5. Increase content and artifact schema versions.
-6. Propagate descriptors into top-level items and compact snapshot schemas.
-7. Preserve integer arithmetic and add lossless artifact encoding.
-8. Replace suffix inference with the shared registry.
-9. Remove SQL-side MB/GB conversions and ambiguous `K/M/B` scaling.
-10. Remove all numeric version placeholders.
-11. Regenerate a load-test report and validate every column and chart series
-    from JSON.
-12. Keep explicit compatibility for the immediately previous artifact schema or
-    fail old artifacts with a clear version error.
+Known gaps remain in metric-table typing and in enforcement of some semantic
+requirements:
 
-Until this migration is complete, adding a numeric or temporal field without a
-complete descriptor is prohibited.
+- A number of existing integer counter Delta columns are still declared as
+  `pg_type: float8`. The metric engine subtracts endpoint values before
+  rendering, but the floating output declaration selects a decimal JSON
+  descriptor and therefore does not guarantee the exact-integer transport
+  required by Sections 4 and 14.1. New integer counter Delta columns MUST use an
+  integral output type such as `int8`; rates and genuinely fractional timing
+  Delta values remain decimal.
+- Timestamp normalization converts parseable timezone-aware values to UTC, but
+  the current artifact validator does not validate the RFC 3339 form of every
+  timestamp-valued table cell. Invalid text can therefore remain verbatim and a
+  missing table-context timestamp can suppress the time label instead of
+  automatically producing the Section 11 diagnostic.
+- The current evaluation schema has no estimated-value opt-in, and validation
+  does not yet cross-check rule columns against their resolved `quality`.
+  Existing content must keep estimated fields out of automatic rules.
+
+Migration completion requires:
+
+1. Inventory existing `transform: delta` metric-table columns and classify their
+   source semantics as integral counters or decimal measurements.
+2. Change integral counter Delta declarations to an integral `pg_type` and
+   verify `value_kind: integer` plus `encoding: decimal_string` in generated
+   artifacts.
+3. Add semantic validation which rejects floating declarations for integral
+   counter Delta outputs while allowing documented decimal timing counters.
+4. Validate and normalize every timestamp-valued artifact cell, with an explicit
+   diagnostic or status for invalid and missing required instants.
+5. Keep estimated-quality fields out of automatic evaluation until a versioned,
+   validated opt-in field is implemented and enforce that restriction during
+   validation.
+6. Regenerate a load-test report and validate every table column and chart
+   series from JSON, including values beyond the JavaScript safe-integer range.
+
+Until these steps are complete, `pg-diag validate` is necessary but not
+sufficient evidence that legacy content satisfies every semantic requirement in
+this document. Adding any new numeric or temporal field without a complete
+effective descriptor remains prohibited.

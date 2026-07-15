@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ from .collection import (
     execute_and_record_report_item,
     finish_collection,
     raise_if_fail_fast,
+    record_item_progress,
     start_collection,
 )
 from .content_loader import ContentPack
@@ -30,6 +32,7 @@ from .errors import PgDiagError
 from .host_access import HostAccess, LocalHostAccess
 from .metric_engine import build_metric_item
 from .planner import SourceJob
+from .progress import ProgressReporter
 from .sampler_runtime import (
     SamplerCollection,
     collect_sampler_providers,
@@ -50,9 +53,12 @@ async def collect_snapshots(
     interval_seconds: float = runtime_config.SNAPSHOTS_DEFAULT_INTERVAL_SECONDS,
     json_out: str | Path | None = None,
     html_out: str | Path | None = None,
+    output_formats: str | Iterable[str] | None = None,
     content_validated: bool = False,
     ssh_config: SshConfig | None = None,
-    item_id: str | None = None,
+    item_id: str | Iterable[str] | None = None,
+    tags: Iterable[str] | None = None,
+    progress: ProgressReporter | None = None,
 ) -> dict[str, Any]:
     window_error = runtime_config.validate_snapshots_window(duration_seconds, interval_seconds)
     if window_error:
@@ -67,9 +73,12 @@ async def collect_snapshots(
         collection_mode=collection_mode,
         json_out=json_out,
         html_out=html_out,
+        output_formats=output_formats,
         content_validated=content_validated,
         ssh_config=ssh_config,
         item_id=item_id,
+        tags=tags,
+        progress=progress,
     )
     conn = run.conn
     plan = run.plan
@@ -97,7 +106,7 @@ async def collect_snapshots(
         once_items = [
             item
             for item in plan.items
-            if item.status in {"planned", "skipped"}
+            if item.status == "planned"
             and item.source_kind in {"query", "script", "python"}
             and item.collection_scope not in {
                 runtime_config.EVERY_SNAPSHOT_COLLECTION_SCOPE,
@@ -114,6 +123,33 @@ async def collect_snapshots(
             for item in metric_items
             if (content.metrics.get(item.source_id or "") or {}).get("source_sampler")
         }
+        window_required = bool(
+            chart_queries
+            or endpoint_queries
+            or (
+                required_sampler_ids
+                and collection_mode in {
+                    runtime_config.LOCAL_COLLECTION_MODE,
+                    runtime_config.REMOTE_COLLECTION_MODE,
+                }
+            )
+        )
+        schedule_point_count = (
+            len(runtime_config.snapshots_schedule_offsets(duration_seconds, interval_seconds))
+            if window_required
+            else 0
+        )
+        sample_progress_units = max(1, len(chart_queries))
+        if progress is not None:
+            progress.configure(
+                len(plan.items)
+                + len(endpoint_queries) * 2
+                + schedule_point_count * sample_progress_units
+                + len(required_sampler_ids)
+            )
+            for planned in plan.items:
+                if planned.status == "skipped":
+                    record_item_progress(run, planned)
         sampler_registry = sampler_output_registry(content)
         sampler_metadata = sampler_source_metadata(
             content,
@@ -154,6 +190,11 @@ async def collect_snapshots(
             endpoint_snapshots.append(start_endpoint)
             artifact["diagnostics"].extend(endpoint_diagnostics)
             source_latest_items.update(endpoint_items)
+            if progress is not None:
+                progress.advance(
+                    f"ENDPOINT phase=start queries={len(endpoint_queries)}",
+                    units=len(endpoint_queries),
+                )
 
         sampler_host: HostAccess | None = None
         if collection_mode == runtime_config.LOCAL_COLLECTION_MODE:
@@ -161,6 +202,10 @@ async def collect_snapshots(
         elif collection_mode == runtime_config.REMOTE_COLLECTION_MODE and run.ssh is not None:
             sampler_host = run.ssh.host_access
         if sampler_host is not None and required_sampler_ids:
+            if progress is not None:
+                progress.info(
+                    "SAMPLER start providers=" + ",".join(sorted(required_sampler_ids))
+                )
             sampler_task = asyncio.create_task(
                 collect_sampler_providers(
                     content,
@@ -171,18 +216,24 @@ async def collect_snapshots(
                 )
             )
 
-        artifact["runtime"]["snapshot_window_started_at"] = utc_now()
-        snapshots, db_sample_diagnostics, latest_sample_items = await _collect_db_samples(
-            content,
-            conn,
-            chart_queries,
-            duration_seconds,
-            interval_seconds,
-            fail_fast=fail_fast,
-            query_texts=artifact["query_texts"],
-            snapshot_schemas=artifact["snapshot_schemas"],
-        )
-        artifact["runtime"]["snapshot_window_finished_at"] = utc_now()
+        snapshots: list[dict[str, Any]] = []
+        db_sample_diagnostics: list[dict[str, Any]] = []
+        latest_sample_items: dict[str, dict[str, Any]] = {}
+        if chart_queries or endpoint_queries or sampler_task is not None:
+            artifact["runtime"]["snapshot_window_started_at"] = utc_now()
+            snapshots, db_sample_diagnostics, latest_sample_items = await _collect_db_samples(
+                content,
+                conn,
+                chart_queries,
+                duration_seconds,
+                interval_seconds,
+                fail_fast=fail_fast,
+                query_texts=artifact["query_texts"],
+                snapshot_schemas=artifact["snapshot_schemas"],
+                progress=progress,
+                progress_units_per_sample=sample_progress_units,
+            )
+            artifact["runtime"]["snapshot_window_finished_at"] = utc_now()
         artifact["diagnostics"].extend(db_sample_diagnostics)
         artifact["snapshots"] = snapshots
         source_latest_items.update(latest_sample_items)
@@ -200,6 +251,11 @@ async def collect_snapshots(
             endpoint_snapshots.append(end_endpoint)
             artifact["diagnostics"].extend(endpoint_diagnostics)
             source_latest_items.update(endpoint_items)
+            if progress is not None:
+                progress.advance(
+                    f"ENDPOINT phase=end queries={len(endpoint_queries)}",
+                    units=len(endpoint_queries),
+                )
 
         sampler_samples: dict[str, list[dict[str, Any]]] = {}
         diagnostics_by_sampler: dict[str, list[dict[str, Any]]] = {}
@@ -213,6 +269,12 @@ async def collect_snapshots(
                 sampler_errors.extend(
                     {"sampler": sampler, "message": str(exc)}
                     for sampler in sorted(required_sampler_ids)
+                )
+            if progress is not None:
+                progress.advance(
+                    f"SAMPLER finish providers={len(required_sampler_ids)}",
+                    units=len(required_sampler_ids),
+                    level="ERROR" if sampler_errors else "INFO",
                 )
         for error in sampler_errors:
             message = redact_error(error["message"])
@@ -261,21 +323,26 @@ async def collect_snapshots(
                     diagnostics_by_sampler.get(str(metric.get("source_sampler") or ""), []),
                     sampler_metadata.get(str(metric.get("source_sampler") or ""), {}),
                 )
+                record_item_progress(run, planned, artifact["items"][planned.item_id])
                 raise_if_fail_fast(fail_fast, artifact["items"][planned.item_id])
             except Exception as exc:
                 if isinstance(exc, PgDiagError):
                     raise
                 artifact["items"][planned.item_id] = item_error_from_exception(planned, exc)
+                record_item_progress(run, planned, artifact["items"][planned.item_id])
                 raise_if_fail_fast(fail_fast, artifact["items"][planned.item_id])
 
         for planned in plan.items:
             if planned.item_id not in artifact["items"]:
+                if planned.status == "skipped":
+                    continue
                 artifact["items"][planned.item_id] = item_from_plan(
                     planned,
                     collection_status=planned.status if planned.status != "planned" else "skipped",
                     reason=planned.reason,
                     result={"kind": "none"},
                 )
+                record_item_progress(run, planned, artifact["items"][planned.item_id])
 
         return finish_collection(
             run,
@@ -288,7 +355,7 @@ async def collect_snapshots(
                     asyncio.shield(sampler_task),
                     timeout=runtime_config.HOST_COMMAND_TIMEOUT_SECONDS,
                 )
-            except (TimeoutError, asyncio.CancelledError):
+            except (asyncio.TimeoutError, TimeoutError, asyncio.CancelledError):
                 sampler_task.cancel()
                 try:
                     await sampler_task
@@ -312,6 +379,8 @@ async def _collect_db_samples(
     fail_fast: bool = False,
     query_texts: dict[str, str] | None = None,
     snapshot_schemas: dict[str, dict[str, Any]] | None = None,
+    progress: ProgressReporter | None = None,
+    progress_units_per_sample: int = 1,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, dict[str, Any]]]:
     schedule_offsets = runtime_config.snapshots_schedule_offsets(duration_seconds, interval_seconds)
     loop = asyncio.get_running_loop()
@@ -332,11 +401,21 @@ async def _collect_db_samples(
         lag_seconds = max(loop.time() - target, 0.0)
         if index > 0 and loop.time() > deadline + lag_tolerance:
             skipped_samples += 1
+            if progress is not None:
+                progress.advance(
+                    f"SAMPLE point={index + 1}/{len(schedule_offsets)} state=skipped_stale",
+                    units=progress_units_per_sample,
+                )
             continue
         if index > 0 and lag_seconds > lag_tolerance:
             lagged_samples += 1
             max_lag_seconds = max(max_lag_seconds, lag_seconds)
             skipped_samples += 1
+            if progress is not None:
+                progress.advance(
+                    f"SAMPLE point={index + 1}/{len(schedule_offsets)} state=skipped_lag",
+                    units=progress_units_per_sample,
+                )
             continue
         snapshot, items, error_counts = await _execute_query_batch(
             content,
@@ -349,6 +428,15 @@ async def _collect_db_samples(
         latest_items.update(items)
         sample_error_counts.update(error_counts)
         snapshots.append(snapshot)
+        if progress is not None:
+            progress.advance(
+                (
+                    f"SAMPLE point={index + 1}/{len(schedule_offsets)} "
+                    f"queries={len(sampled_queries)} errors={sum(error_counts.values())}"
+                ),
+                units=progress_units_per_sample,
+                level="ERROR" if error_counts else "INFO",
+            )
     diagnostics = []
     if lagged_samples or skipped_samples:
         diagnostics.append(

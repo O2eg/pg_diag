@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -113,12 +114,22 @@ class ExecutionPlan:
 def build_plan(
     content: ContentPack,
     server_version_num: int,
-    mode: str = runtime_config.SNAPSHOT_MODE,
+    mode: str = runtime_config.ONE_SHOT_MODE,
     collection_mode: str = runtime_config.DEFAULT_COLLECTION_MODE,
-    item_id: str | None = None,
+    item_id: str | Iterable[str] | None = None,
+    tags: Iterable[str] | None = None,
 ) -> ExecutionPlan:
+    if item_id is not None and tags is not None:
+        raise ValueError("--item-id and --tags cannot be used together")
+    requested_item_ids = normalize_requested_item_ids(content, item_id)
+    requested_tags = normalize_requested_tags(content, tags)
+    selected_item_ids = _selected_report_item_ids(content, requested_item_ids, requested_tags)
     unsupported_reason = supported_version_reason(server_version_num)
-    metric_dependencies = _metric_dependencies(content, item_id=item_id) if mode == runtime_config.SNAPSHOTS_MODE else {}
+    metric_dependencies = (
+        _metric_dependencies(content, selected_item_ids=selected_item_ids)
+        if mode == runtime_config.SNAPSHOTS_MODE
+        else {}
+    )
     query_usage_index = _query_usage_index(content)
     sections = _plan_sections(content)
     items: list[PlannedItem] = []
@@ -126,7 +137,7 @@ def build_plan(
 
     for section_id, item_key, iter_item_id, item in iter_report_items(content):
         planned_item_id = f"{section_id}.{item_key}"
-        if item_id is not None and planned_item_id != item_id:
+        if selected_item_ids is not None and planned_item_id not in selected_item_ids:
             continue
         source_kind = _source_kind(item)
         if unsupported_reason:
@@ -210,6 +221,115 @@ def build_plan(
         items=items,
         source_jobs=source_jobs,
     )
+
+
+def available_report_item_ids(content: ContentPack) -> list[str]:
+    """Return report item ids in their declared display order."""
+    return [item_id for _section_id, _item_key, item_id, _item in iter_report_items(content)]
+
+
+def normalize_requested_item_ids(
+    content: ContentPack,
+    item_id: str | Iterable[str] | None,
+) -> tuple[str, ...] | None:
+    """Validate and de-duplicate a scalar or list report-item filter."""
+    if item_id is None:
+        return None
+    values = [item_id] if isinstance(item_id, str) else list(item_id)
+    if not values:
+        raise ValueError("--item-id requires at least one report item")
+
+    available = set(available_report_item_ids(content))
+    normalized: list[str] = []
+    unknown: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value).strip()
+        if not text or text not in available:
+            unknown.append(text or "<empty>")
+            continue
+        if text not in seen:
+            normalized.append(text)
+            seen.add(text)
+    if unknown:
+        if len(unknown) == 1:
+            raise ValueError(f"Unknown report item: {unknown[0]}")
+        raise ValueError(f"Unknown report items: {', '.join(unknown)}")
+    return tuple(normalized)
+
+
+def validate_requested_item_id(
+    content: ContentPack,
+    item_id: str | Iterable[str] | None,
+) -> None:
+    """Backward-compatible validation wrapper for report item filters."""
+    normalize_requested_item_ids(content, item_id)
+
+
+def available_item_tags(content: ContentPack) -> list[str]:
+    """Return canonical tags which are assigned to at least one report item."""
+    used = {
+        tag
+        for _section_id, _item_key, _item_id, item in iter_report_items(content)
+        for tag in _item_tags(item)
+    }
+    declared = list((content.report.get("report") or {}).get("allowed_item_tags") or [])
+    ordered = [str(tag) for tag in declared if str(tag) in used]
+    declared_set = set(ordered)
+    ordered.extend(sorted(used.difference(declared_set), key=str.casefold))
+    return ordered
+
+
+def normalize_requested_tags(
+    content: ContentPack,
+    tags: Iterable[str] | None,
+) -> tuple[str, ...] | None:
+    """Resolve a case-insensitive tag filter to canonical content tag names."""
+    if tags is None:
+        return None
+    values = [tags] if isinstance(tags, str) else list(tags)
+    if not values:
+        raise ValueError("--tags requires at least one report tag")
+
+    canonical_by_folded = {
+        tag.casefold(): tag
+        for tag in available_item_tags(content)
+    }
+    normalized: list[str] = []
+    unknown: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value).strip()
+        canonical = canonical_by_folded.get(text.casefold()) if text else None
+        if canonical is None:
+            unknown.append(text or "<empty>")
+            continue
+        if canonical not in seen:
+            normalized.append(canonical)
+            seen.add(canonical)
+    if unknown:
+        available = ", ".join(available_item_tags(content))
+        raise ValueError(
+            f"Unknown report tag(s): {', '.join(unknown)}. Available tags: {available}"
+        )
+    return tuple(normalized)
+
+
+def _selected_report_item_ids(
+    content: ContentPack,
+    item_ids: tuple[str, ...] | None,
+    tags: tuple[str, ...] | None,
+) -> set[str] | None:
+    if item_ids is not None:
+        return set(item_ids)
+    if tags is None:
+        return None
+    requested = set(tags)
+    return {
+        report_item_id
+        for _section_id, _item_key, report_item_id, item in iter_report_items(content)
+        if requested.intersection(_item_tags(item))
+    }
 
 
 def _source_kind(item: dict[str, Any]) -> str:
@@ -596,7 +716,7 @@ def _plan_metric_item(
     metric = content.metrics[metric_id]
     source_query = metric.get("source_query")
     query_usage_metadata = _query_usage_metadata(source_query, item_id, query_usage_index) if source_query else {}
-    if mode == runtime_config.SNAPSHOT_MODE:
+    if mode == runtime_config.ONE_SHOT_MODE:
         return PlannedItem(
             item_id=item_id,
             section_id=section_id,
@@ -664,11 +784,15 @@ def _plan_metric_item(
     )
 
 
-def _metric_dependencies(content: ContentPack, item_id: str | None = None) -> dict[str, str]:
+def _metric_dependencies(
+    content: ContentPack,
+    selected_item_ids: set[str] | None = None,
+) -> dict[str, str]:
     referenced_metric_ids = {
         item.get("metric")
         for _section_id, _item_key, _item_id, item in iter_report_items(content)
-        if item.get("metric") and (item_id is None or _item_id == item_id)
+        if item.get("metric")
+        and (selected_item_ids is None or _item_id in selected_item_ids)
     }
     return {
         str(metric["source_query"]): str(metric["requires_collection"])

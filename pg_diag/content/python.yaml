@@ -5,6 +5,18 @@ python_catalog:
     local_only: false
 
 python_sources:
+  backend.postgres_main_process_linked_libraries:
+    title: PostgreSQL Main Process ldd Dependencies
+    description: Resolve the PostgreSQL main process that owns the current database backend and capture the dynamic dependencies reported by ldd for that exact executable.
+    python_file: backend/postgres_main_process_linked_libraries.py
+    function: collect
+    timeout_ms: 1000
+    local_only: true
+    display:
+      default_sort:
+        column: library
+        direction: asc
+
   cluster.pg_controldata:
     title: PostgreSQL Control Data
     description: Read cluster control and initdb-format information with the pg_controldata binary belonging to the running PostgreSQL server.

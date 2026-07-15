@@ -105,7 +105,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
         },
         "report": {"id": "test", "title": "Test"},
         "runtime": {
-            "mode": "snapshot",
+            "mode": "one-shot",
             "collection_mode": "remote-db-only",
             "collector_host": "collector-1",
             "collector_user": "oleg",

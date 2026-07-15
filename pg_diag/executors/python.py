@@ -125,7 +125,7 @@ async def execute_python_item(
             source_text=source_text,
             source_language="python",
         )
-    except (TimeoutError, CommandTimeoutError):
+    except (asyncio.TimeoutError, TimeoutError, CommandTimeoutError):
         timeout_ms = int(round(timeout_seconds * 1000))
         message = f"Python source timed out after {timeout_ms} ms"
         return item_from_plan(

@@ -19,7 +19,7 @@ from pg_diag.executors.shell import execute_remote_shell_item
 from pg_diag.host_access import HostAccess, SshHostAccess
 from pg_diag.planner import ExecutionPlan, PlannedItem, build_plan
 from pg_diag.sampler_runtime import collect_sampler_providers
-from pg_diag.snapshot import collect_snapshot
+from pg_diag.one_shot import collect_one_shot
 from pg_diag.ssh_transport import (
     REMOTE_SCRIPT_WRAPPER,
     SshCommandResult,
@@ -600,7 +600,7 @@ def test_remote_collection_tunnels_dsn_and_closes_ssh_after_db(
         }
 
     plan = ExecutionPlan(
-        mode=runtime_config.SNAPSHOT_MODE,
+        mode=runtime_config.ONE_SHOT_MODE,
         collection_mode=runtime_config.REMOTE_COLLECTION_MODE,
         server_version_num=180000,
         supported_server_version=True,
@@ -620,7 +620,7 @@ def test_remote_collection_tunnels_dsn_and_closes_ssh_after_db(
     monkeypatch.setattr(collection_module, "render_html", lambda artifact, **kwargs: "<html></html>")
 
     artifact = asyncio.run(
-        collect_snapshot(
+        collect_one_shot(
             content=load_content(content_path),
             out_dir=tmp_path / "report",
             dsn="postgresql://app:secret@db.internal:6432/appdb",
@@ -906,6 +906,12 @@ def test_asyncssh_end_to_end_forward_shell_sftp_and_local_python_evaluation(
                     return self.ReadOnlyTransaction()
 
                 async def fetchrow(self, sql: str) -> dict[str, Any]:
+                    if "pg_catalog.pg_backend_pid()" in sql:
+                        return {
+                            "backend_pid": os.getpid(),
+                            "server_port": 5432,
+                            "database_name": "loopback_test",
+                        }
                     assert "current_setting('data_directory')" in sql
                     return {
                         "data_directory": str(pgdata),

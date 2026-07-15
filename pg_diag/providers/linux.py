@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import time
 from typing import Any
@@ -135,7 +135,7 @@ async def _collect_proc_samples(
             return
 
         now_mono = time.monotonic()
-        timestamp = datetime.now(UTC).isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()
         if output_ids["memory"] in selected_outputs:
             samples[output_ids["memory"]].append(
                 {"timestamp": timestamp, "rows": [_memory_row_from_values(memory)]}
@@ -174,7 +174,7 @@ async def _collect_iostat(
     duration = ctx.duration_seconds
     interval_seconds = max(1, int(round(min(ctx.interval_seconds, duration))))
     points = max(1, int(duration // interval_seconds))
-    started = datetime.now(UTC)
+    started = datetime.now(timezone.utc)
     try:
         result = await ctx.host.run_script(
             script,
@@ -319,7 +319,7 @@ async def _capture_backend_proc_state(
             "rss_bytes": int(values[13] or 0) * 1024,
         }
     return {
-        "timestamp": datetime.now(UTC).isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "monotonic": monotonic,
         "clock_ticks": clock_ticks,
         "processes": processes,
