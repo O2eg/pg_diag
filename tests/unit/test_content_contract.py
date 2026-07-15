@@ -41,6 +41,16 @@ def test_buffer_cache_section_has_ten_independent_chart_sources(content_path: Pa
     assert all(content.queries[source_id].get("optional") is not True for source_id in source_ids)
 
 
+def test_relation_coverage_excludes_system_schemas(content_path: Path) -> None:
+    sql = (content_path / "queries/buffer_cache/relation_coverage.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "join pg_catalog.pg_namespace n" in sql
+    assert "n.nspname !~ '^pg_'" in sql
+    assert "n.nspname <> 'information_schema'" in sql
+
+
 def test_zero_disk_reads_have_an_explicit_empty_message(content_path: Path) -> None:
     content = load_content(content_path)
     item = content.report["sections"]["snapshot_charts_os"]["items"]["os_disk_read_throughput"]

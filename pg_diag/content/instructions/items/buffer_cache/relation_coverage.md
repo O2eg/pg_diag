@@ -3,6 +3,8 @@
 ## What this item shows
 - Cached percentage of each selected relation's current on-disk size.
 - Coverage calculated with PostgreSQL `block_size` rather than a fixed block size.
+- Only application relations are included. Relations in `pg_catalog`,
+  `information_schema`, TOAST, temporary, and other `pg_*` schemas are excluded.
 
 ## What to watch
 - Coverage loss for frequently accessed relations during cache churn.

@@ -746,11 +746,27 @@ declared series must remain the top layer. The CPU utilization chart uses this
 contract to keep `idle` above busy CPU states. The renderer applies no
 item-name-specific exception.
 
-For stacked column/bar charts, Apex renders the first series at the bottom and
-the last series at the top. The renderer therefore orders drawable series by
-ascending arithmetic mean so the largest series is the top layer. The legend
-uses the inverse display order and remains descending by mean. Shared-tooltip
-rows remain independently sorted by the selected datapoint value.
+For stacked column/bar charts, ECharts renders the first series at the bottom
+and the last series at the top. The renderer therefore orders drawable series
+by ascending arithmetic mean so the largest series is the top layer. The
+legend receives the inverse display order and remains descending by mean.
+Shared-tooltip rows remain independently sorted by the selected datapoint
+value.
+
+The interactive HTML legend wraps series into rows and shows at most six rows
+at once. Additional rows remain available through a vertical scrollbar; the
+legend must not degrade into a single horizontally paginated row. Image
+exports use the complete legend and grow the exported chart vertically when
+needed. Chart interaction provides selection zoom, explicit zoom in/out,
+reset, and drag-pan over a zoomed range. A single Export menu provides SVG,
+PNG, and CSV. SVG and PNG are rendered with a light export palette and white
+background so labels remain readable regardless of the current report theme.
+
+The chart title, Y-axis labels, Y-axis crosshair label, and tooltip values use
+one scale calculated from the complete chart. Binary byte units use IEC
+prefixes (`KiB`, `MiB`, and so on); count-like units use SI prefixes (`k`, `M`,
+and so on). A tooltip must not independently choose a different scale for an
+individual datapoint.
 
 For a shared tooltip, rows are sorted independently at every selected x value
 by descending datapoint value. Equal values retain the legend order. A series

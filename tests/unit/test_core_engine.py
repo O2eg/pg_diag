@@ -866,10 +866,10 @@ def test_artifact_error_status_includes_historical_snapshot_failures() -> None:
 
 
 def test_renderer_does_not_rescan_replacement_payloads() -> None:
-    html = render_html(_artifact(title="__PAYLOAD__", data="__APEXCHARTS_JS__"))
+    html = render_html(_artifact(title="__PAYLOAD__", data="__ECHARTS_JS__"))
 
     assert "<title>__PAYLOAD__</title>" in html
-    assert '"data":"__APEXCHARTS_JS__"' in html
+    assert '"data":"__ECHARTS_JS__"' in html
 
 
 def test_renderer_excludes_hidden_sections_and_items() -> None:

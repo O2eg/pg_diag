@@ -8,8 +8,8 @@
   <style id="highlight-theme">
 __HIGHLIGHT_CSS__
   </style>
-  <script id="apexcharts-library">
-__APEXCHARTS_JS__
+  <script id="echarts-library">
+__ECHARTS_JS__
   </script>
   <style>
     :root {
@@ -1633,34 +1633,7 @@ __APEXCHARTS_JS__
       overflow: visible;
     }
 
-    .chart-hover-tooltip-panel {
-      position: absolute;
-      top: 70px;
-      z-index: 55;
-      max-width: min(520px, calc(100% - 60px));
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
-      color: var(--text);
-      pointer-events: auto;
-    }
-
-    .chart-hover-tooltip-panel.is-left {
-      left: 30px;
-      right: auto;
-    }
-
-    .chart-hover-tooltip-panel.is-right {
-      left: auto;
-      right: 30px;
-    }
-
-    .chart-hover-tooltip-panel[hidden] {
-      display: none;
-    }
-
-    .apex-chart {
+    .echarts-chart {
       box-sizing: border-box;
       width: 100%;
       height: 470px;
@@ -1668,162 +1641,138 @@ __APEXCHARTS_JS__
       border: 1px solid var(--line);
       border-radius: 6px;
       background: var(--input-bg);
-      padding: 10px 12px 6px;
-      overflow: visible;
+      padding: 0;
+      overflow: hidden;
     }
 
-    .apex-chart .apexcharts-legend {
-      max-height: 92px !important;
-      overflow-x: hidden !important;
-      overflow-y: auto !important;
-      align-content: flex-start !important;
-      padding: 4px 8px 0 !important;
+    .chart-legend-panel {
+      box-sizing: border-box;
+      display: flex;
+      flex-wrap: wrap;
+      align-content: flex-start;
+      gap: 5px 14px;
+      width: 100%;
+      max-height: 160px;
+      margin-top: 8px;
+      overflow-x: hidden;
+      overflow-y: auto;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--input-bg);
+      padding: 8px 10px;
+      scrollbar-gutter: stable;
+      scrollbar-width: thin;
+      scrollbar-color: var(--line-strong) var(--panel-soft);
+      overscroll-behavior: contain;
     }
 
-    .apex-chart .apexcharts-legend-series {
-      display: inline-flex !important;
-      align-items: center !important;
+    .chart-legend-panel::-webkit-scrollbar {
+      width: 10px;
+    }
+
+    .chart-legend-panel::-webkit-scrollbar-track {
+      background: var(--panel-soft);
+      border-radius: 5px;
+    }
+
+    .chart-legend-panel::-webkit-scrollbar-thumb {
+      border: 2px solid var(--panel-soft);
+      border-radius: 5px;
+      background: var(--line-strong);
+    }
+
+    .chart-legend-item {
+      box-sizing: border-box;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       min-width: 0;
-      margin-top: 3px !important;
-      margin-bottom: 3px !important;
+      max-width: 100%;
+      min-height: 19px;
+      margin: 0;
+      overflow: hidden;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      padding: 0;
+      font: 12px/19px ui-sans-serif, system-ui, sans-serif;
+      text-align: left;
+      cursor: pointer;
     }
 
-    .apex-chart .apexcharts-legend-text {
+    .chart-legend-item[aria-pressed="false"] {
+      opacity: 0.42;
+    }
+
+    .chart-legend-item:focus-visible {
+      outline: 1px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .chart-legend-marker {
+      flex: 0 0 auto;
+      width: 20px;
+      height: 10px;
+      border-radius: 2px;
+    }
+
+    .chart-legend-label {
       min-width: 0;
-      line-height: 1.25 !important;
-      white-space: normal !important;
-      overflow-wrap: anywhere;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
-    .apexcharts-toolbar {
-      display: inline-flex !important;
-      align-items: center !important;
-      gap: 2px !important;
-      max-width: none !important;
-      min-height: 31px !important;
-      padding: 3px 5px !important;
-      border: 1px solid var(--line-strong) !important;
-      border-radius: 7px !important;
-      background: var(--button-bg) !important;
-      color: var(--muted) !important;
-      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.22) !important;
+    .chart-export-menu[hidden] {
+      display: none;
     }
 
-    .apexcharts-toolbar .apexcharts-menu-icon,
-    .apexcharts-toolbar .apexcharts-reset-icon,
-    .apexcharts-toolbar .apexcharts-reset-zoom-icon,
-    .apexcharts-toolbar .apexcharts-zoom-icon,
-    .apexcharts-toolbar .apexcharts-zoomin-icon,
-    .apexcharts-toolbar .apexcharts-zoomout-icon,
-    .apexcharts-toolbar .apexcharts-pan-icon,
-    .apexcharts-toolbar .apexcharts-selection-icon,
-    .apexcharts-toolbar .apexcharts-toolbar-custom-icon {
-      display: inline-grid !important;
-      place-items: center !important;
-      width: 24px !important;
-      height: 24px !important;
-      margin: 0 !important;
-      border: 1px solid transparent !important;
-      border-radius: 5px !important;
-      background: transparent !important;
-      color: var(--muted) !important;
-      line-height: 1 !important;
+    .chart-export-menu {
+      position: absolute;
+      z-index: 20;
+      top: 50px;
+      right: 24px;
+      display: grid;
+      min-width: 138px;
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: var(--panel);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.34);
     }
 
-    .apexcharts-toolbar .apexcharts-menu-icon:hover,
-    .apexcharts-toolbar .apexcharts-reset-icon:hover,
-    .apexcharts-toolbar .apexcharts-reset-zoom-icon:hover,
-    .apexcharts-toolbar .apexcharts-zoom-icon:hover,
-    .apexcharts-toolbar .apexcharts-zoomin-icon:hover,
-    .apexcharts-toolbar .apexcharts-zoomout-icon:hover,
-    .apexcharts-toolbar .apexcharts-pan-icon:hover,
-    .apexcharts-toolbar .apexcharts-selection-icon:hover,
-    .apexcharts-toolbar .apexcharts-toolbar-custom-icon:hover {
-      border-color: var(--button-hover-border) !important;
-      background: var(--button-hover-bg) !important;
-      color: var(--accent) !important;
+    .chart-export-menu button {
+      appearance: none;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      background: transparent;
+      color: var(--text);
+      padding: 9px 12px;
+      text-align: left;
+      font: inherit;
+      cursor: pointer;
     }
 
-    .apexcharts-toolbar .apexcharts-selected,
-    .apexcharts-toolbar .apexcharts-menu-open {
-      border-color: var(--accent) !important;
-      background: var(--accent-soft) !important;
-      color: var(--accent-fg) !important;
+    .chart-export-menu button:last-child {
+      border-bottom: 0;
     }
 
-    .apexcharts-toolbar .apexcharts-menu-icon svg,
-    .apexcharts-toolbar .apexcharts-reset-icon svg,
-    .apexcharts-toolbar .apexcharts-reset-zoom-icon svg,
-    .apexcharts-toolbar .apexcharts-zoom-icon svg,
-    .apexcharts-toolbar .apexcharts-zoomin-icon svg,
-    .apexcharts-toolbar .apexcharts-zoomout-icon svg,
-    .apexcharts-toolbar .apexcharts-pan-icon svg,
-    .apexcharts-toolbar .apexcharts-selection-icon svg,
-    .apexcharts-toolbar .apexcharts-toolbar-custom-icon svg {
-      fill: none !important;
-      stroke: currentColor !important;
+    .chart-export-menu button:hover,
+    .chart-export-menu button:focus-visible {
+      outline: none;
+      background: var(--button-hover-bg);
+      color: var(--button-fg);
     }
 
-    .apexcharts-toolbar .apexcharts-menu-icon:hover svg,
-    .apexcharts-toolbar .apexcharts-reset-icon:hover svg,
-    .apexcharts-toolbar .apexcharts-reset-zoom-icon:hover svg,
-    .apexcharts-toolbar .apexcharts-zoom-icon:hover svg,
-    .apexcharts-toolbar .apexcharts-zoomin-icon:hover svg,
-    .apexcharts-toolbar .apexcharts-zoomout-icon:hover svg,
-    .apexcharts-toolbar .apexcharts-pan-icon:hover svg,
-    .apexcharts-toolbar .apexcharts-selection-icon:hover svg,
-    .apexcharts-toolbar .apexcharts-toolbar-custom-icon:hover svg {
-      fill: none !important;
-      stroke: currentColor !important;
-    }
-
-    .apexcharts-toolbar .apexcharts-selected svg,
-    .apexcharts-toolbar .apexcharts-menu-open svg {
-      fill: none !important;
-      stroke: currentColor !important;
-    }
-
-    .apexcharts-menu {
+    .pg-diag-echarts-tooltip {
       background: var(--panel) !important;
       border: 1px solid var(--line) !important;
       border-radius: 6px !important;
       box-shadow: 0 12px 30px rgba(0, 0, 0, 0.32) !important;
       color: var(--text) !important;
-      min-width: 126px !important;
-    }
-
-    .apexcharts-menu .apexcharts-menu-item {
-      display: flex !important;
-      align-items: center !important;
-      justify-content: flex-start !important;
-      background: transparent !important;
-      color: var(--text) !important;
-      font-size: 12px !important;
-      line-height: 1.25 !important;
-      min-height: 30px !important;
-      padding: 7px 14px !important;
-      text-align: left !important;
-      text-indent: 0 !important;
-      white-space: nowrap !important;
-    }
-
-    .apexcharts-menu .apexcharts-menu-item:hover {
-      background: var(--button-hover-bg) !important;
-      color: var(--accent-fg) !important;
-    }
-
-    .apexcharts-tooltip,
-    .apexcharts-tooltip-title,
-    .apexcharts-xaxistooltip,
-    .apexcharts-yaxistooltip {
-      background: var(--panel) !important;
-      border-color: var(--line) !important;
-      color: var(--text) !important;
       z-index: 60 !important;
-    }
-
-    .apexcharts-tooltip {
       pointer-events: auto !important;
+      overflow: hidden !important;
     }
 
     .pg-diag-chart-tooltip {
@@ -2317,9 +2266,13 @@ __HIGHLIGHT_JS__
     const app = document.getElementById("app");
     const tableViews = [];
     const pendingCharts = [];
-    const apexCharts = [];
-    const CHART_HEIGHT_PX = 450;
-    const CHART_LEGEND_HEIGHT_PX = 92;
+    const echartsCharts = [];
+    let activeEChartsPanEntry = null;
+    const CHART_MIN_HEIGHT_PX = 470;
+    const CHART_PLOT_MIN_HEIGHT_PX = 300;
+    const CHART_LEGEND_ROW_HEIGHT_PX = 24;
+    const CHART_LEGEND_PADDING_PX = 16;
+    const CHART_LEGEND_MAX_VISIBLE_ROWS = 6;
     const DATA_TYPE_ORDER = ["table", "plain_text", "chart"];
     const TAG_ORDER = [
       "Configuration",
@@ -2828,18 +2781,14 @@ __HIGHLIGHT_JS__
       }
       const scopes = Array.from(chartResizeScopes);
       chartResizeScopes.clear();
-      for (const entry of apexCharts) {
+      for (const entry of echartsCharts) {
         if (!scopes.some((scope) => scope.contains(entry.container))) {
           continue;
         }
         if (!isVisibleThroughDetails(entry.container)) {
           continue;
         }
-        entry.chart.updateOptions(
-          buildApexChartOptions(entry.result, entry.item, entry.series, entry.tooltipPanel),
-          false,
-          true
-        );
+        resizeEChartsLayout(entry);
       }
     }
 
@@ -4348,7 +4297,7 @@ __HIGHLIGHT_JS__
     }
 
     function renderChart(result, item) {
-      const series = apexSeries(result);
+      const series = echartsSeries(result);
       if (!series.length) {
         const empty = document.createElement("div");
         empty.className = "empty-state";
@@ -4359,40 +4308,44 @@ __HIGHLIGHT_JS__
       const shell = document.createElement("div");
       shell.className = "chart-shell";
       const container = document.createElement("div");
-      container.className = "apex-chart";
-      container.id = "apex_chart_" + pendingCharts.length;
+      container.className = "echarts-chart";
+      container.id = "echarts_chart_" + pendingCharts.length;
       shell.appendChild(container);
-      const tooltipPanel = document.createElement("div");
-      tooltipPanel.className = "chart-hover-tooltip-panel";
-      tooltipPanel.classList.add("is-right");
-      tooltipPanel.hidden = true;
-      shell.appendChild(tooltipPanel);
-      shell.addEventListener("mouseleave", () => {
-        tooltipPanel.hidden = true;
-      });
-      pendingCharts.push({shell, container, tooltipPanel, result, item, series});
+      pendingCharts.push({shell, container, result, item, series});
       return shell;
     }
 
     function renderPendingCharts() {
       for (const pending of pendingCharts) {
-        if (!window.ApexCharts) {
-          pending.container.textContent = "ApexCharts is unavailable";
+        if (!window.echarts) {
+          pending.container.textContent = "Apache ECharts is unavailable";
           continue;
         }
         enableChartTooltipScrolling(pending.shell);
-        const chart = new ApexCharts(
-          pending.container,
-          buildApexChartOptions(pending.result, pending.item, pending.series, pending.tooltipPanel)
-        );
-        apexCharts.push({
+        const chart = window.echarts.init(pending.container, null, {renderer: "svg"});
+        const entry = {
           chart,
+          shell: pending.shell,
+          container: pending.container,
           result: pending.result,
           item: pending.item,
           series: pending.series,
-          tooltipPanel: pending.tooltipPanel,
-        });
-        chart.render();
+          zoomRange: {start: 0, end: 100},
+          panEnabled: false,
+          panDrag: null,
+          legendPanel: null,
+          exportMenu: null,
+        };
+        echartsCharts.push(entry);
+        chart.on("datazoom", (event) => rememberEChartsZoom(entry, event));
+        chart.setOption(buildEChartsOptions(entry), {notMerge: true});
+        chart.resize();
+        bindEChartsPan(entry);
+        entry.legendPanel = createEChartsLegendPanel(entry);
+        pending.shell.appendChild(entry.legendPanel);
+        entry.exportMenu = createEChartsExportMenu(entry);
+        pending.shell.appendChild(entry.exportMenu);
+        pending.container.dataset.chartReady = "true";
       }
     }
 
@@ -4419,7 +4372,7 @@ __HIGHLIGHT_JS__
       }, {capture: true, passive: false});
     }
 
-    function apexSeries(result) {
+    function echartsSeries(result) {
       const xType = (result.chart || {}).x_type || "datetime";
       const chartKind = (result.chart || {}).kind || "line";
       const largestStackSeriesOnTop = chartKind === "stacked_column" || chartKind === "stacked_bar";
@@ -4505,134 +4458,546 @@ __HIGHLIGHT_JS__
       return {key: value, value, sortValue: 0};
     }
 
-    function buildApexChartOptions(result, item, series, tooltipPanel) {
+    function buildEChartsOptions(entry, themeOverride = null, exporting = false) {
+      const result = entry.result;
+      const item = entry.item;
+      const series = entry.series;
       const unit = chartUnit(result, series);
-      const theme = apexThemeOptions();
+      const theme = themeOverride || echartsThemeOptions();
       const chartKind = (result.chart || {}).kind || "line";
-      const apexType = apexChartType(chartKind);
+      const seriesType = echartsChartType(chartKind);
       const stacked = chartKind === "stacked_bar" || chartKind === "stacked_column" || chartKind === "stacked_area";
+      const isBar = seriesType === "bar";
+      const isArea = chartKind === "area" || chartKind === "stacked_area";
       const axisScale = chartAxisScale(series, unit, (result.chart || {}).quantity, stacked);
+      const isPercent = unit === "percent" || unit === "%";
       const xType = (result.chart || {}).x_type || "datetime";
-      const isBar = apexType === "bar";
-      const isArea = apexType === "area";
-      const axisXType = xType;
-      const datetimeBounds = axisXType === "datetime" ? chartDatetimeBounds(series) : {};
+      const datetimeBounds = xType === "datetime" ? chartDatetimeBounds(series) : {};
+      const colors = chartColors(series);
+      const categoryValues = series.length ? series[0].data.map((point) => point.x) : [];
+      const zoomRange = entry.zoomRange || {start: 0, end: 100};
+      const legendData = eChartsLegendData(series, chartKind);
+      const legendLayout = eChartsLegendLayout(entry, legendData);
+
+      const renderedSeries = series.map((source, seriesIndex) => {
+        const color = colors[seriesIndex];
+        const data = source.data.map((point) => {
+          if (xType === "datetime") {
+            return [Date.parse(point.x), point.y];
+          }
+          return point.y;
+        });
+        return {
+          name: source.name,
+          type: seriesType,
+          stack: stacked ? "pg_diag_stack" : undefined,
+          data,
+          smooth: !isBar,
+          showSymbol: false,
+          connectNulls: false,
+          barMaxWidth: 48,
+          itemStyle: {
+            color,
+            borderRadius: isBar ? [2, 2, 0, 0] : 0,
+            opacity: isArea && !stacked ? 0.9 : 1,
+          },
+          lineStyle: {color, width: isArea ? 1 : 2},
+          areaStyle: isArea ? {color, opacity: stacked ? 0.82 : 0.24} : undefined,
+          emphasis: {focus: "series"},
+        };
+      });
+
       return {
-        series,
-        chart: {
-          height: CHART_HEIGHT_PX,
-          type: apexType,
-          stacked,
-          zoom: {
-            enabled: true,
-            type: "x",
-            autoScaleYaxis: unit !== "percent",
-            allowMouseWheelZoom: false,
-          },
-          toolbar: {
-            show: true,
-            offsetX: -6,
-            offsetY: 6,
-            tools: {
-              download: true,
-              selection: true,
-              zoom: true,
-              zoomin: true,
-              zoomout: true,
-              pan: true,
-              reset: true,
-            },
-            autoSelected: "zoom",
-          },
-          events: {
-            dataPointMouseEnter: (event, _chartContext, context) => {
-              if (!isBar || !tooltipPanel) {
-                return;
-              }
-              const content = buildSortedChartTooltip(context, unit, xType);
-              if (!content) {
-                return;
-              }
-              tooltipPanel.innerHTML = content;
-              positionChartTooltipPanel(tooltipPanel, event);
-              tooltipPanel.hidden = false;
-            },
-          },
-          background: "transparent",
-          foreColor: theme.text,
+        animation: !exporting,
+        animationDuration: 220,
+        backgroundColor: theme.chartBackground || "transparent",
+        color: colors,
+        title: {
+          text: chartTitle(item.title || "", axisScale.label),
+          left: 16,
+          top: 12,
+          textStyle: {color: theme.text, fontSize: 15, fontWeight: 700},
         },
-        colors: chartColors(series),
-        dataLabels: {enabled: false},
-        stroke: {curve: isBar ? "straight" : "smooth", width: isBar ? 0 : isArea ? 1 : 2},
-        fill: isArea ? {type: "solid", opacity: stacked ? 0.82 : 0.24} : {opacity: 1},
-        plotOptions: {
-          bar: {
-            horizontal: Boolean((result.chart || {}).horizontal),
-            columnWidth: "72%",
-            borderRadius: 2,
-          },
-        },
-        title: {text: chartTitle(item.title || "", axisScale.label), align: "left", margin: 12, offsetX: 0, offsetY: 4, style: {color: theme.text}},
         grid: {
-          borderColor: theme.line,
-          row: {colors: [theme.panelSoft, "transparent"], opacity: 0.14},
+          left: 18,
+          right: 26,
+          top: 68,
+          bottom: exporting ? legendLayout.height + 24 : 44,
+          containLabel: true,
         },
         legend: {
-          show: true,
-          position: "bottom",
-          height: CHART_LEGEND_HEIGHT_PX,
-          inverseOrder: isBar && stacked,
-          formatter: (seriesName) => formatChartSeriesLabel(seriesName),
-          labels: {colors: theme.text},
-          itemMargin: {horizontal: 8, vertical: 2},
+          show: exporting,
+          type: "plain",
+          data: legendData,
+          left: 18,
+          width: legendLayout.width,
+          bottom: 8,
+          height: legendLayout.height,
+          orient: "horizontal",
+          formatter: (seriesName) => chartSeriesLabel(seriesName),
+          textStyle: {color: theme.text, fontSize: 12},
+          itemWidth: 20,
+          itemHeight: 10,
+          itemGap: 14,
+          selectedMode: true,
+        },
+        toolbox: {
+          show: !exporting,
+          right: 14,
+          top: 10,
+          itemSize: 17,
+          itemGap: 9,
+          iconStyle: {borderColor: theme.muted, borderWidth: 1.5},
+          emphasis: {iconStyle: {borderColor: theme.accent, borderWidth: 2}},
+          feature: {
+            dataZoom: {
+              title: {zoom: "Select zoom", back: "Undo zoom"},
+              xAxisIndex: [0],
+              yAxisIndex: "none",
+            },
+            myPan: {
+              show: true,
+              title: entry.panEnabled
+                ? "Pan mode enabled - drag horizontally"
+                : "Pan by dragging",
+              icon: "path://M5 11V8a1.5 1.5 0 0 1 3 0v2-4a1.5 1.5 0 0 1 3 0v4-5a1.5 1.5 0 0 1 3 0v5-3a1.5 1.5 0 0 1 3 0v7c0 4-2.5 7-7 7H9c-2.5 0-4-1-5.5-3L1 14a1.5 1.5 0 0 1 2.5-1.7L5 14z",
+              iconStyle: {
+                borderColor: entry.panEnabled ? theme.accent : theme.muted,
+                borderWidth: entry.panEnabled ? 2 : 1.5,
+              },
+              onclick: () => enableEChartsPan(entry),
+            },
+            myZoomIn: {
+              show: true,
+              title: "Zoom in",
+              icon: "path://M10 3a7 7 0 1 0 0 14a7 7 0 1 0 0-14M15 15l6 6M10 6v8M6 10h8",
+              onclick: () => zoomEChart(entry, 0.5),
+            },
+            myZoomOut: {
+              show: true,
+              title: "Zoom out",
+              icon: "path://M10 3a7 7 0 1 0 0 14a7 7 0 1 0 0-14M15 15l6 6M6 10h8",
+              onclick: () => zoomEChart(entry, 2),
+            },
+            restore: {show: true, title: "Reset zoom"},
+            myExport: {
+              show: true,
+              title: "Export",
+              icon: "path://M2 8h7V2h6v6h7L12 20z",
+              onclick: () => toggleEChartsExportMenu(entry),
+            },
+          },
         },
         tooltip: {
-          enabled: !isBar,
-          theme: document.documentElement.dataset.theme === "light" ? "light" : "dark",
-          shared: true,
-          intersect: false,
-          custom: (context) => buildSortedChartTooltip(context, unit, xType),
+          show: !exporting,
+          trigger: "axis",
+          renderMode: "html",
+          className: "pg-diag-echarts-tooltip",
+          confine: true,
+          enterable: true,
+          hideDelay: 120,
+          backgroundColor: theme.panel,
+          borderColor: theme.line,
+          borderWidth: 1,
+          padding: 0,
+          textStyle: {color: theme.text},
+          axisPointer: {
+            type: isBar ? "shadow" : "cross",
+            lineStyle: {color: theme.muted},
+            crossStyle: {color: theme.muted},
+            label: {backgroundColor: theme.panelSoft, color: theme.text},
+          },
+          formatter: (params) => buildSortedEChartsTooltip(
+            params,
+            unit,
+            xType,
+            axisScale,
+          ),
         },
-        xaxis: {
-          type: axisXType === "datetime" ? "datetime" : "category",
+        dataZoom: [{
+          type: "inside",
+          xAxisIndex: 0,
+          start: zoomRange.start,
+          end: zoomRange.end,
+          filterMode: "filter",
+          zoomOnMouseWheel: false,
+          moveOnMouseWheel: false,
+          moveOnMouseMove: false,
+          preventDefaultMouseMove: true,
+        }],
+        xAxis: {
+          type: xType === "datetime" ? "time" : "category",
+          data: xType === "datetime" ? undefined : categoryValues,
           min: datetimeBounds.min,
           max: datetimeBounds.max,
-          title: {text: ""},
-          labels: {
-            datetimeUTC: false,
-            rotate: xType === "datetime" ? 0 : -35,
-            trim: true,
-            formatter: undefined,
-            style: {colors: theme.muted},
+          boundaryGap: isBar,
+          axisLabel: {
+            color: theme.muted,
+            rotate: xType === "datetime" ? 0 : 35,
+            hideOverlap: true,
+            formatter: xType === "datetime" ? (value) => formatChartTimeCoordinate(value) : undefined,
           },
-          axisBorder: {color: theme.line},
-          axisTicks: {color: theme.line},
-          crosshairs: {show: !isBar},
+          axisLine: {lineStyle: {color: theme.line}},
+          axisTick: {lineStyle: {color: theme.line}},
+          splitLine: {show: false},
+          axisPointer: {
+            label: {
+              backgroundColor: theme.panelSoft,
+              color: theme.text,
+              formatter: (params) => xType === "datetime"
+                ? formatChartTimeCoordinate(params.value)
+                : String(params.value == null ? "" : params.value),
+            },
+          },
         },
-        yaxis: {
-          min: unit === "percent" ? 0 : undefined,
-          max: unit === "percent" ? 100 : undefined,
-          title: {text: ""},
-          labels: {
-            style: {colors: theme.muted},
+        yAxis: {
+          type: "value",
+          min: isPercent ? 0 : undefined,
+          max: isPercent ? 100 : undefined,
+          axisLabel: {
+            color: theme.muted,
             formatter: (value) => formatChartAxisValue(value, unit, axisScale),
           },
+          axisLine: {show: false},
+          axisTick: {show: false},
+          splitLine: {lineStyle: {color: theme.line, opacity: 0.65}},
+          axisPointer: {
+            label: {
+              backgroundColor: theme.panelSoft,
+              color: theme.text,
+              formatter: (params) => formatChartAxisValue(params.value, unit, axisScale),
+            },
+          },
         },
+        series: renderedSeries,
       };
     }
 
-    function positionChartTooltipPanel(tooltipPanel, event) {
-      const shell = tooltipPanel.closest(".chart-shell");
-      if (!shell) {
+    function eChartsLegendData(series, chartKind) {
+      const names = series.map((source) => source.name);
+      return chartKind === "stacked_column" || chartKind === "stacked_bar"
+        ? names.reverse()
+        : names;
+    }
+
+    function eChartsLegendLayout(entry, legendData) {
+      const containerWidth = Math.max(
+        Number(entry.container.clientWidth) || Number(entry.shell.clientWidth) || 0,
+        640,
+      );
+      const width = Math.max(containerWidth - 36, 320);
+      let rows = 1;
+      let occupied = 0;
+      for (const seriesName of legendData) {
+        const label = chartSeriesLabel(seriesName);
+        const estimatedWidth = Math.min(width, 48 + Array.from(label).length * 7);
+        if (occupied > 0 && occupied + estimatedWidth > width) {
+          rows += 1;
+          occupied = 0;
+        }
+        occupied += estimatedWidth;
+      }
+      const height = CHART_LEGEND_PADDING_PX + rows * CHART_LEGEND_ROW_HEIGHT_PX;
+      const chartHeight = Math.max(
+        CHART_MIN_HEIGHT_PX,
+        68 + CHART_PLOT_MIN_HEIGHT_PX + height + 24,
+      );
+      return {chartHeight, height, width};
+    }
+
+    function createEChartsLegendPanel(entry) {
+      const panel = document.createElement("div");
+      panel.className = "chart-legend-panel";
+      panel.setAttribute("role", "group");
+      panel.setAttribute("aria-label", "Chart series");
+      panel.style.maxHeight = (
+        CHART_LEGEND_MAX_VISIBLE_ROWS * CHART_LEGEND_ROW_HEIGHT_PX
+        + CHART_LEGEND_PADDING_PX
+      ) + "px";
+      const colors = chartColors(entry.series);
+      const colorByName = new Map(
+        entry.series.map((source, index) => [source.name, colors[index]]),
+      );
+      const chartKind = (entry.result.chart || {}).kind || "line";
+      for (const seriesName of eChartsLegendData(entry.series, chartKind)) {
+        const labelText = chartSeriesLabel(seriesName);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "chart-legend-item";
+        button.setAttribute("aria-pressed", "true");
+        button.title = labelText;
+        button.__seriesName = seriesName;
+
+        const marker = document.createElement("span");
+        marker.className = "chart-legend-marker";
+        marker.style.background = safeChartColor(colorByName.get(seriesName));
+        button.appendChild(marker);
+
+        const label = document.createElement("span");
+        label.className = "chart-legend-label";
+        label.textContent = labelText;
+        button.appendChild(label);
+
+        button.addEventListener("click", () => {
+          entry.chart.dispatchAction({type: "legendToggleSelect", name: seriesName});
+        });
+        panel.appendChild(button);
+      }
+      entry.chart.on("legendselectchanged", (event) => {
+        updateEChartsLegendPanel(entry, event.selected || {});
+      });
+      return panel;
+    }
+
+    function updateEChartsLegendPanel(entry, selected) {
+      if (!entry.legendPanel) {
         return;
       }
-      const bounds = shell.getBoundingClientRect();
-      const cursorX = Number(event && event.clientX);
-      const cursorOnRight = Number.isFinite(cursorX)
-        ? cursorX >= bounds.left + bounds.width / 2
-        : false;
-      tooltipPanel.classList.toggle("is-left", cursorOnRight);
-      tooltipPanel.classList.toggle("is-right", !cursorOnRight);
+      for (const button of entry.legendPanel.querySelectorAll(".chart-legend-item")) {
+        const enabled = selected[button.__seriesName] !== false;
+        button.setAttribute("aria-pressed", enabled ? "true" : "false");
+      }
+    }
+
+    function rememberEChartsZoom(entry, event) {
+      const payload = event && Array.isArray(event.batch) ? event.batch[0] : event;
+      const start = Number(payload && payload.start);
+      const end = Number(payload && payload.end);
+      if (Number.isFinite(start) && Number.isFinite(end)) {
+        entry.zoomRange = {start, end};
+      }
+    }
+
+    function bindEChartsPan(entry) {
+      const renderer = entry.chart.getZr();
+      renderer.on("mousedown", (event) => {
+        const nativeEvent = event.event || {};
+        const range = entry.zoomRange || {start: 0, end: 100};
+        const span = range.end - range.start;
+        if (
+          !entry.panEnabled
+          || (nativeEvent.button !== undefined && nativeEvent.button !== 0)
+          || span >= 99.999
+          || !entry.chart.containPixel({gridIndex: 0}, [event.offsetX, event.offsetY])
+        ) {
+          return;
+        }
+        entry.panDrag = {
+          startX: Number(nativeEvent.clientX),
+          width: Math.max(entry.chart.getWidth(), 1),
+          range: {start: range.start, end: range.end},
+        };
+        activeEChartsPanEntry = entry;
+        window.addEventListener(
+          "mousemove",
+          moveEChartsPan,
+          {capture: true, passive: false},
+        );
+        window.addEventListener(
+          "mouseup",
+          finishActiveEChartsPan,
+          {capture: true, once: true},
+        );
+        renderer.setCursorStyle("grabbing");
+        if (typeof nativeEvent.preventDefault === "function") {
+          nativeEvent.preventDefault();
+        }
+      });
+    }
+
+    function moveEChartsPan(event) {
+      const entry = activeEChartsPanEntry;
+      const drag = entry && entry.panDrag;
+      if (!entry || !entry.panEnabled || !drag) {
+        return;
+      }
+      const span = drag.range.end - drag.range.start;
+      const shift = ((event.clientX - drag.startX) / drag.width) * span;
+      const start = Math.max(0, Math.min(100 - span, drag.range.start - shift));
+      const end = start + span;
+      entry.zoomRange = {start, end};
+      entry.chart.dispatchAction({type: "dataZoom", dataZoomIndex: 0, start, end});
+      event.preventDefault();
+    }
+
+    function finishActiveEChartsPan() {
+      if (activeEChartsPanEntry) {
+        finishEChartsPanDrag(activeEChartsPanEntry);
+      }
+    }
+
+    function finishEChartsPanDrag(entry) {
+      window.removeEventListener("mousemove", moveEChartsPan, true);
+      window.removeEventListener("mouseup", finishActiveEChartsPan, true);
+      activeEChartsPanEntry = null;
+      entry.panDrag = null;
+      entry.chart.getZr().setCursorStyle(entry.panEnabled ? "grab" : "default");
+    }
+
+    function enableEChartsPan(entry) {
+      entry.panEnabled = !entry.panEnabled;
+      finishEChartsPanDrag(entry);
+      entry.chart.dispatchAction({
+        type: "takeGlobalCursor",
+        key: "dataZoomSelect",
+        dataZoomSelectActive: false,
+      });
+      const range = entry.zoomRange || {start: 0, end: 100};
+      if (entry.panEnabled && range.end - range.start >= 99.999) {
+        zoomEChart(entry, 0.8);
+      }
+      const theme = echartsThemeOptions();
+      entry.chart.setOption({
+        toolbox: {
+          feature: {
+            myPan: {
+              title: entry.panEnabled
+                ? "Pan mode enabled - drag horizontally"
+                : "Pan by dragging",
+              iconStyle: {
+                borderColor: entry.panEnabled ? theme.accent : theme.muted,
+                borderWidth: entry.panEnabled ? 2 : 1.5,
+              },
+            },
+          },
+        },
+      });
+    }
+
+    function zoomEChart(entry, multiplier) {
+      const range = entry.zoomRange || {start: 0, end: 100};
+      const center = (range.start + range.end) / 2;
+      const span = Math.min(100, Math.max(0.5, (range.end - range.start) * multiplier));
+      const start = Math.max(0, Math.min(100 - span, center - span / 2));
+      const end = start + span;
+      entry.zoomRange = {start, end};
+      entry.chart.dispatchAction({type: "dataZoom", dataZoomIndex: 0, start, end});
+    }
+
+    function chartExportFileName(item) {
+      const raw = String((item || {}).item_id || (item || {}).title || "pg_diag_chart");
+      const normalized = raw.replace(/[^a-z0-9._-]+/gi, "_").replace(/^_+|_+$/g, "");
+      return normalized || "pg_diag_chart";
+    }
+
+    function createEChartsExportMenu(entry) {
+      const menu = document.createElement("div");
+      menu.className = "chart-export-menu";
+      menu.setAttribute("role", "menu");
+      menu.setAttribute("aria-label", "Export chart");
+      menu.hidden = true;
+      for (const format of ["svg", "png", "csv"]) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.setAttribute("role", "menuitem");
+        button.dataset.exportFormat = format;
+        button.textContent = "Export " + format.toUpperCase();
+        button.addEventListener("click", () => {
+          menu.hidden = true;
+          if (format === "csv") {
+            downloadEChartsCsv(entry);
+          } else {
+            downloadEChartsImage(entry, format);
+          }
+        });
+        menu.appendChild(button);
+      }
+      return menu;
+    }
+
+    function toggleEChartsExportMenu(entry) {
+      for (const candidate of echartsCharts) {
+        if (candidate !== entry && candidate.exportMenu) {
+          candidate.exportMenu.hidden = true;
+        }
+      }
+      entry.exportMenu.hidden = !entry.exportMenu.hidden;
+      if (!entry.exportMenu.hidden) {
+        entry.exportMenu.querySelector("button").focus({preventScroll: true});
+      }
+    }
+
+    function downloadEChartsImage(entry, format) {
+      if (format !== "svg" && format !== "png") {
+        return;
+      }
+      const width = Math.max(Math.round(entry.container.clientWidth), 640);
+      const chartKind = (entry.result.chart || {}).kind || "line";
+      const legendData = eChartsLegendData(entry.series, chartKind);
+      const legendLayout = eChartsLegendLayout(entry, legendData);
+      const height = Math.max(legendLayout.chartHeight, CHART_MIN_HEIGHT_PX);
+      const exportContainer = document.createElement("div");
+      exportContainer.style.position = "fixed";
+      exportContainer.style.left = "-100000px";
+      exportContainer.style.top = "0";
+      exportContainer.style.width = width + "px";
+      exportContainer.style.height = height + "px";
+      exportContainer.style.visibility = "hidden";
+      document.body.appendChild(exportContainer);
+      const exportChart = window.echarts.init(
+        exportContainer,
+        null,
+        {renderer: format === "png" ? "canvas" : "svg", width, height},
+      );
+      try {
+        exportChart.setOption(
+          buildEChartsOptions(entry, eChartsExportTheme(), true),
+          {notMerge: true},
+        );
+        const dataUrl = exportChart.getDataURL({
+          type: format,
+          pixelRatio: format === "png" ? 2 : 1,
+          backgroundColor: "#ffffff",
+          excludeComponents: ["toolbox"],
+        });
+        downloadDataUrl(dataUrl, chartExportFileName(entry.item) + "." + format);
+      } finally {
+        exportChart.dispose();
+        exportContainer.remove();
+      }
+    }
+
+    function downloadDataUrl(dataUrl, fileName) {
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+
+    function downloadEChartsCsv(entry) {
+      const series = entry.series || [];
+      if (!series.length) {
+        return;
+      }
+      const rows = [["x", ...series.map((item) => item.name || "series")]];
+      const length = Math.max(0, ...series.map((item) => (item.data || []).length));
+      for (let index = 0; index < length; index += 1) {
+        const firstPoint = (series[0].data || [])[index] || {};
+        rows.push([
+          firstPoint.x == null ? "" : firstPoint.x,
+          ...series.map((item) => {
+            const point = (item.data || [])[index] || {};
+            return point.y == null ? "" : point.y;
+          }),
+        ]);
+      }
+      const csv = rows.map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
+      const blob = new Blob([csv], {type: "text/csv;charset=utf-8"});
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = chartExportFileName(entry.item) + ".csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+
+    function csvCell(value) {
+      const text = String(value == null ? "" : value);
+      return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
     }
 
     function chartDatetimeBounds(series) {
@@ -4668,44 +5033,43 @@ __HIGHLIGHT_JS__
       return title + " [" + unit + "]";
     }
 
-    function formatChartSeriesLabel(seriesName) {
+    function chartSeriesLabel(seriesName) {
       const rawName = String(seriesName || "");
       const queryIdMatch = /^(.*)\.(-?\d+)$/.exec(rawName);
       if (!queryIdMatch) {
-        return escapeChartLabel(rawName);
+        return rawName;
       }
       const queryText = queryTextForId(queryIdMatch[2]);
       if (!queryText) {
-        return escapeChartLabel(rawName);
+        return rawName;
       }
       const baseLabel = queryIdMatch[1].split(".").join(" / ");
       const normalizedQuery = String(queryText).replace(/\s+/g, " ").trim();
       const shortQuery = normalizedQuery.length > CHART_QUERY_LABEL_MAX_CHARS
         ? normalizedQuery.slice(0, CHART_QUERY_LABEL_MAX_CHARS - 3).trimEnd() + "..."
         : normalizedQuery;
-      return escapeChartLabel(baseLabel + " / SQL: " + shortQuery);
+      return baseLabel + " / SQL: " + shortQuery;
     }
 
-    function buildSortedChartTooltip(context, unit, xType) {
-      const w = context.w || {};
-      const globals = w.globals || {};
-      const configuredSeries = ((w.config || {}).series) || [];
-      const hoveredPoint = ((configuredSeries[context.seriesIndex] || {}).data || [])[context.dataPointIndex];
-      if (!hoveredPoint || typeof hoveredPoint !== "object") {
+    function formatChartSeriesLabel(seriesName) {
+      return escapeChartLabel(chartSeriesLabel(seriesName));
+    }
+
+    function buildSortedEChartsTooltip(params, unit, xType, scale) {
+      const points = Array.isArray(params) ? params : params ? [params] : [];
+      if (!points.length) {
         return "";
       }
-      const hoveredX = hoveredPoint.x;
+      const firstPoint = points[0] || {};
+      const hoveredX = firstPoint.axisValue != null
+        ? firstPoint.axisValue
+        : Array.isArray(firstPoint.value)
+          ? firstPoint.value[0]
+          : firstPoint.name;
       const entries = [];
 
-      for (let seriesIndex = 0; seriesIndex < configuredSeries.length; seriesIndex += 1) {
-        const configured = configuredSeries[seriesIndex] || {};
-        const configuredData = configured.data || [];
-        const pointIndex = configuredData.findIndex((point) => point && point.x === hoveredX);
-        if (pointIndex < 0) {
-          continue;
-        }
-        const configuredPoint = configuredData[pointIndex];
-        const rawValue = configuredPoint.y;
+      for (const point of points) {
+        const rawValue = Array.isArray(point.value) ? point.value[1] : point.value;
         if (rawValue === null || rawValue === undefined) {
           continue;
         }
@@ -4714,10 +5078,10 @@ __HIGHLIGHT_JS__
           continue;
         }
         entries.push({
-          seriesIndex,
+          seriesIndex: Number(point.seriesIndex) || 0,
           value,
-          name: configured.name || "Series " + (seriesIndex + 1),
-          color: safeChartColor((globals.colors || [])[seriesIndex]),
+          name: point.seriesName || "Series " + ((Number(point.seriesIndex) || 0) + 1),
+          color: safeChartColor(point.color),
         });
       }
 
@@ -4727,7 +5091,7 @@ __HIGHLIGHT_JS__
         return '<div class="pg-diag-chart-tooltip-row">'
           + '<span class="pg-diag-chart-tooltip-marker" style="background:' + entry.color + '"></span>'
           + '<span class="pg-diag-chart-tooltip-label">' + formatChartSeriesLabel(entry.name) + '</span>'
-          + '<span class="pg-diag-chart-tooltip-value">' + escapeChartLabel(formatChartTooltipValue(entry.value, unit)) + '</span>'
+          + '<span class="pg-diag-chart-tooltip-value">' + escapeChartLabel(formatChartTooltipValue(entry.value, unit, scale)) + '</span>'
           + '</div>';
       }).join("");
       return '<div class="pg-diag-chart-tooltip">'
@@ -4792,12 +5156,9 @@ __HIGHLIGHT_JS__
       });
     }
 
-    function apexChartType(kind) {
+    function echartsChartType(kind) {
       if (kind === "bar" || kind === "column" || kind === "stacked_bar" || kind === "stacked_column") {
         return "bar";
-      }
-      if (kind === "area" || kind === "stacked_area") {
-        return "area";
       }
       return "line";
     }
@@ -4840,7 +5201,8 @@ __HIGHLIGHT_JS__
         }
         return {factor, label: labels[index]};
       }
-      if (unit === "count" || unit === "count/s" || unit === "operations/s" || unit === "iops") {
+      const scalableUnit = chartScalableUnitLabel(unit, quantity);
+      if (scalableUnit) {
         const prefixes = ["", "k", "M", "G", "T", "P"];
         let factor = 1;
         let index = 0;
@@ -4848,42 +5210,109 @@ __HIGHLIGHT_JS__
           factor *= 1000;
           index += 1;
         }
-        const quantityLabel = String(quantity || "count").replace(/_/g, " ");
-        const base = unit === "count" ? quantityLabel : unit === "count/s" ? quantityLabel + "/s" : unit === "iops" ? "IOPS" : "ops/s";
-        return {factor, label: prefixes[index] + base};
+        return {factor, label: prefixes[index] + scalableUnit};
       }
       const labels = {
         percent: "%",
+        "%": "%",
         ratio: "ratio",
-        blocks: "blocks",
-        "blocks/s": "blocks/s",
+        ms: "ms",
+        "ms/s": "ms/s",
         milliseconds: "ms",
         "milliseconds/s": "ms/s",
         seconds: "s",
-        hertz: "Hz",
-        "bits/s": "bits/s",
         load: "load",
       };
       return {factor: 1, label: labels[unit] || unit || ""};
     }
 
-    function apexThemeOptions() {
+    function chartScalableUnitLabel(unit, quantity) {
+      if (unit === "count" || unit === "count/s") {
+        const quantityLabel = String(quantity || "count").replace(/_/g, " ");
+        return unit === "count" ? quantityLabel : quantityLabel + "/s";
+      }
+      if (unit === "operations/s") {
+        return "ops/s";
+      }
+      if (unit === "iops") {
+        return "IOPS";
+      }
+      if (unit === "hertz") {
+        return "Hz";
+      }
+      const scalableUnits = new Set([
+        "backends",
+        "bits/s",
+        "blocks",
+        "blocks/s",
+        "calls",
+        "calls/s",
+        "connections",
+        "connections/s",
+        "deadlocks",
+        "events",
+        "events/s",
+        "files",
+        "files/s",
+        "packets/s",
+        "records",
+        "records/s",
+        "rows",
+        "rows/s",
+        "scans",
+        "scans/s",
+        "sessions",
+        "sessions/s",
+        "transactions",
+        "transactions/s",
+        "tuples",
+        "tuples/s",
+        "tx/s",
+      ]);
+      return scalableUnits.has(unit) ? unit : "";
+    }
+
+    function echartsThemeOptions() {
       return {
         text: cssVar("--text"),
         muted: cssVar("--muted"),
         line: cssVar("--line"),
+        lineStrong: cssVar("--line-strong"),
         panelSoft: cssVar("--panel-soft"),
+        panel: cssVar("--panel"),
+        inputBg: cssVar("--input-bg"),
+        accent: cssVar("--accent"),
       };
     }
 
-    function refreshApexChartsTheme() {
-      for (const entry of apexCharts) {
-        entry.chart.updateOptions(
-          buildApexChartOptions(entry.result, entry.item, entry.series, entry.tooltipPanel),
-          false,
-          true
-        );
+    function eChartsExportTheme() {
+      return {
+        text: "#21182f",
+        muted: "#62566f",
+        line: "#d7cfdf",
+        lineStrong: "#9b8da8",
+        panelSoft: "#f6f3f8",
+        panel: "#ffffff",
+        inputBg: "#ffffff",
+        chartBackground: "#ffffff",
+        accent: "#6d3fc0",
+      };
+    }
+
+    function refreshEChartsTheme() {
+      for (const entry of echartsCharts) {
+        const currentLegend = ((entry.chart.getOption().legend || [])[0] || {});
+        const selected = currentLegend.selected || {};
+        const options = buildEChartsOptions(entry);
+        options.legend.selected = selected;
+        entry.chart.setOption(options, {notMerge: true});
+        updateEChartsLegendPanel(entry, selected);
+        entry.chart.resize();
       }
+    }
+
+    function resizeEChartsLayout(entry) {
+      entry.chart.resize();
     }
 
     function cssVar(name) {
@@ -5833,19 +6262,20 @@ __HIGHLIGHT_JS__
       return formatDecimalValue(numeric, unit === "percent" ? 2 : 3);
     }
 
-    function formatChartTooltipValue(value, unit) {
+    function formatChartTooltipValue(value, unit, scale) {
       if (!Number.isFinite(Number(value))) {
         return "";
       }
-      const numeric = Number(value);
-      if (unit === "bytes" || unit === "bytes/s") {
-        return formatAdaptiveBytes(numeric, unit === "bytes/s").text;
+      const numeric = Number(value) / Number((scale || {}).factor || 1);
+      const label = String((scale || {}).label || "");
+      const formatted = formatDecimalValue(
+        numeric,
+        unit === "percent" || unit === "%" ? 2 : 3,
+      );
+      if (!label) {
+        return formatted;
       }
-      const descriptor = {
-        valueKind: Number.isInteger(numeric) ? "integer" : "decimal",
-        semanticRole: unit && unit.endsWith("/s") ? "rate" : "gauge",
-      };
-      return formatMeasurement(numeric, descriptor, unit || "none").text;
+      return label === "%" ? formatted + label : formatted + " " + label;
     }
 
     function formatCompactMetricValue(value, base) {
@@ -5999,7 +6429,14 @@ __HIGHLIGHT_JS__
         window.scrollTo({top: document.documentElement.scrollHeight, behavior: scrollBehavior()});
       });
       window.addEventListener("scroll", requestPageScrollControlsUpdate, {passive: true});
-      window.addEventListener("resize", requestPageScrollControlsUpdate);
+      window.addEventListener("resize", () => {
+        requestPageScrollControlsUpdate();
+        for (const entry of echartsCharts) {
+          if (isVisibleThroughDetails(entry.container)) {
+            resizeEChartsLayout(entry);
+          }
+        }
+      });
       requestPageScrollControlsUpdate();
     }
 
@@ -6057,8 +6494,8 @@ __HIGHLIGHT_JS__
       if (toggle) {
         toggle.checked = normalized === "light";
       }
-      if (apexCharts.length) {
-        window.requestAnimationFrame(refreshApexChartsTheme);
+      if (echartsCharts.length) {
+        window.requestAnimationFrame(refreshEChartsTheme);
       }
       if (!persist) {
         return;

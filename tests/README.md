@@ -71,6 +71,21 @@ The main unit-test groups are:
   Python item, passfile matching, and cleanup. It includes an in-process
   loopback SSH server and needs no external sshd or network access.
 
+## Browser Renderer Test
+
+Run the optional self-contained HTML renderer test in Chromium:
+
+```bash
+python -m pip install -e '.[browser]'
+python -m playwright install chromium
+PG_DIAG_BROWSER_TESTS=1 python -m pytest -q tests/browser/test_echarts_report.py
+```
+
+The browser test opens the generated report through `file://`, rejects external
+HTTP requests and console errors, and checks SVG rendering, line/stacked chart
+configuration, zoom, drag-pan, six-row scrollable legends, consistent
+axis/tooltip unit scaling, theme switching, and SVG/PNG/CSV export.
+
 ## Integration Tests
 
 Integration tests are opt-in. They are skipped unless

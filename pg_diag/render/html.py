@@ -27,14 +27,16 @@ def render_html(artifact: dict[str, Any], *, validate: bool = True) -> str:
     replacements = {
         "__TITLE__": title,
         "__PAYLOAD__": payload,
-        "__APEXCHARTS_JS__": _inline_script(_read_render_resource("vendor", "apexcharts-5.16.0.min.js")),
-        "__HIGHLIGHT_JS__": _inline_script(_read_render_resource("vendor", "highlight-11.11.1.min.js")),
+        "__ECHARTS_JS__": _inline_script(
+            _read_render_resource("vendor", "echarts-6.1.0.min.js")
+        ),
+        "__HIGHLIGHT_JS__": _inline_script(
+            _read_render_resource("vendor", "highlight-11.11.1.min.js")
+        ),
         "__HIGHLIGHT_CSS__": _inline_style(
             _read_render_resource("vendor", "highlight-github-dark-11.11.1.min.css")
         ),
-        "__THIRD_PARTY_LICENSES__": _inline_script(
-            _read_render_resource("vendor", "THIRD_PARTY_LICENSES.txt")
-        ),
+        "__THIRD_PARTY_LICENSES__": _inline_script(_third_party_licenses()),
     }
     placeholder_pattern = re.compile("|".join(re.escape(key) for key in replacements))
     return placeholder_pattern.sub(lambda match: replacements[match.group(0)], _html_template())
@@ -73,6 +75,22 @@ def _inline_script(value: str) -> str:
 
 def _inline_style(value: str) -> str:
     return _STYLE_END_RE.sub("<\\/style", value)
+
+
+@lru_cache(maxsize=1)
+def _third_party_licenses() -> str:
+    sections = [
+        _read_render_resource("vendor", "THIRD_PARTY_LICENSES.txt"),
+        "Apache ECharts 6.1.0 - Apache-2.0 license\n\n"
+        + _read_render_resource("vendor", "echarts-6.1.0.LICENSE.txt"),
+        "Apache ECharts 6.1.0 - NOTICE\n\n"
+        + _read_render_resource("vendor", "echarts-6.1.0.NOTICE.txt"),
+        "Apache ECharts 6.1.0 embedded d3 components - BSD-3-Clause license\n\n"
+        + _read_render_resource("vendor", "echarts-6.1.0.LICENSE-d3.txt"),
+        "highlight.js 11.11.1 - BSD-3-Clause license\n\n"
+        + _read_render_resource("vendor", "highlight-11.11.1.LICENSE.txt"),
+    ]
+    return "\n\n".join(section.rstrip() for section in sections) + "\n"
 
 
 def _publicize_artifact_for_render(artifact: dict[str, Any]) -> dict[str, Any]:

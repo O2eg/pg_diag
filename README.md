@@ -52,7 +52,9 @@ in core dispatch, validation, or metric rendering.
 - OS sections and OS charts from the collector host or an SSH target.
 - Table, plain text, and chart report items.
 - Table filtering, sorting, pagination, and compact value formatting.
-- Chart zoom, pan, reset, export menu, and fixed color palettes.
+- Chart zoom, drag-pan, reset, legends with vertical scrolling after six rows,
+  consistent axis/tooltip unit scaling, SVG/PNG/CSV export, and fixed color
+  palettes.
 - Source and metadata dialogs for report items.
 - Error diagnostics embedded directly into failed report items.
 - JSON artifact separated from HTML rendering.

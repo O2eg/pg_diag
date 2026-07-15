@@ -32,10 +32,11 @@ def test_distribution_metadata_policy(repo_root: Path) -> None:
     assert data["build-system"]["requires"] == ["setuptools>=77.0.3"]
 
     project = data["project"]
-    assert project["license"] == "MIT AND BSD-3-Clause AND LicenseRef-ApexCharts"
+    assert project["license"] == "MIT AND BSD-3-Clause AND Apache-2.0"
     assert project["license-files"] == [
         "LICENSE",
         "pg_diag/render/vendor/*LICENSE*",
+        "pg_diag/render/vendor/*NOTICE*",
         "pg_diag/render/vendor/THIRD_PARTY_LICENSES.txt",
     ]
     assert project["authors"] == [{"name": "O2eg", "email": "oleg.ispu@yandex.ru"}]

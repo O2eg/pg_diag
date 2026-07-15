@@ -31,7 +31,7 @@ def _without_vendor_bundles(html: str) -> str:
     blocks = [
         ('<script id="pg-diag-third-party-licenses"', "</script>"),
         ('<style id="highlight-theme"', "</style>"),
-        ('<script id="apexcharts-library"', "</script>"),
+        ('<script id="echarts-library"', "</script>"),
         ('<script id="highlight-library"', "</script>"),
     ]
     result = html
@@ -316,20 +316,23 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "return renderTimeContextLabel(labelName, display.text, display.title)" in html
     assert ".snapshot-time-label" in html
     assert "renderChart(result, item)" in html
-    assert "ApexCharts v5.16.0" in html
-    assert 'id="apexcharts-library"' in html
+    assert 'version:"6.1.0"' in html
+    assert 'id="echarts-library"' in html
     assert 'id="highlight-library"' in html
     assert "pg-diag-third-party-licenses" in html
-    assert "License: SEE LICENSE IN LICENSE" in html
+    assert "License: Apache-2.0" in html
+    assert "Copyright 2017-2026 The Apache Software Foundation" in html
+    assert "Copyright 2010-2016 Mike Bostock" in html
     assert "https://cdnjs.cloudflare.com/ajax/libs" not in html
     assert "https://cdn.jsdelivr.net/npm" not in html
-    assert "__APEXCHARTS_JS__" not in html
+    assert "__ECHARTS_JS__" not in html
     assert "__HIGHLIGHT_JS__" not in html
     assert "__HIGHLIGHT_CSS__" not in html
     assert "__THIRD_PARTY_LICENSES__" not in html
-    assert "new ApexCharts" in html
-    assert "buildApexChartOptions" in html
-    assert "apexChartType(chartKind)" in html
+    assert "ApexCharts" not in html
+    assert 'window.echarts.init(pending.container, null, {renderer: "svg"})' in html
+    assert "buildEChartsOptions(entry)" in html
+    assert "echartsChartType(chartKind)" in html
     assert "chartDatetimeBounds(series)" in html
     assert "min: datetimeBounds.min" in html
     assert "max: datetimeBounds.max" in html
@@ -338,61 +341,70 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert '(result.chart || {}).series_order === "configured"' in html
     assert 'chartKind === "stacked_column" || chartKind === "stacked_bar"' in html
     assert "left._average - right._average || left._sourceIndex - right._sourceIndex" in html
-    assert "inverseOrder: isBar && stacked" in html
     assert "right._average - left._average || left._sourceIndex - right._sourceIndex" in html
+    assert "names.reverse()" in html
     assert "entry._color || defaults[colorIndex % defaults.length]" in html
     assert '"stacked_area"' in html
-    assert "kind === \"area\" || kind === \"stacked_area\"" in html
-    assert 'type: axisXType === "datetime" ? "datetime" : "category"' in html
-    assert "apex-chart" in html
+    assert 'chartKind === "area" || chartKind === "stacked_area"' in html
+    assert 'type: xType === "datetime" ? "time" : "category"' in html
+    assert "echarts-chart" in html
     assert "z-index: 60 !important" in html
-    assert ".apexcharts-toolbar {\n      display: inline-flex !important;" in html
-    assert "background: var(--button-bg) !important;" in html
-    assert ".apexcharts-toolbar .apexcharts-menu-icon,\n    .apexcharts-toolbar .apexcharts-reset-icon," in html
-    assert ".apexcharts-toolbar .apexcharts-selected,\n    .apexcharts-toolbar .apexcharts-menu-open" in html
-    assert "background: var(--accent-soft) !important;" in html
-    assert "apexcharts-menu" in html
-    assert "justify-content: flex-start !important" in html
-    assert "text-align: left !important" in html
-    assert "padding: 10px 12px 6px" in html
-    assert "zoom: {" in html
-    assert "enabled: true" in html
-    assert 'type: "x"' in html
-    assert "autoScaleYaxis: unit !== \"percent\"" in html
-    assert "allowMouseWheelZoom: false" in html
-    assert "toolbar: {" in html
-    assert "selection: true" in html
-    assert "zoomin: true" in html
-    assert "zoomout: true" in html
-    assert "pan: true" in html
-    assert "reset: true" in html
-    assert 'autoSelected: "zoom"' in html
-    assert ".apexcharts-toolbar .apexcharts-selected svg" in html
-    assert "fill: none !important;\n      stroke: currentColor !important;" in html
-    assert "fill: var(--muted) !important;" not in html
+    assert ".pg-diag-echarts-tooltip" in html
+    assert "background: var(--panel) !important;" in html
+    assert 'type: "inside"' in html
+    assert 'filterMode: "filter"' in html
+    assert "zoomOnMouseWheel: false" in html
+    assert "moveOnMouseMove: false" in html
+    assert "toolbox: {" in html
+    assert "dataZoom: {" in html
+    assert "myPan: {" in html
+    assert "myZoomIn: {" in html
+    assert "myZoomOut: {" in html
+    assert "myExport: {" in html
+    assert 'title: "Export"' in html
+    assert "saveAsImage: {" not in html
+    assert 'for (const format of ["svg", "png", "csv"])' in html
+    assert "downloadEChartsImage(entry, format)" in html
+    assert 'renderer: format === "png" ? "canvas" : "svg"' in html
+    assert 'backgroundColor: "#ffffff"' in html
+    assert 'text: "#21182f"' in html
+    assert 'type: "plain"' in html
+    assert "eChartsLegendLayout(entry, legendData)" in html
+    assert "CHART_LEGEND_ROW_HEIGHT_PX" in html
+    assert "CHART_LEGEND_MAX_VISIBLE_ROWS = 6" in html
+    assert ".chart-legend-panel" in html
+    assert "overflow-y: auto" in html
+    assert "scrollbar-color: var(--line-strong) var(--panel-soft)" in html
+    assert ".chart-legend-panel::-webkit-scrollbar-thumb" in html
+    assert 'panel.setAttribute("role", "group")' in html
+    assert "createEChartsLegendPanel(entry)" in html
+    assert 'entry.chart.dispatchAction({type: "legendToggleSelect", name: seriesName})' in html
+    assert "show: exporting" in html
+    assert 'entry.chart.dispatchAction({type: "dataZoom"' in html
+    assert "dataZoomSelectActive: false" in html
+    assert "bindEChartsPan(entry)" in html
+    assert "entry.panDrag = {" in html
+    assert "range.end - range.start >= 99.999" in html
+    assert "zoomEChart(entry, 0.8)" in html
+    assert '"mousemove",\n          moveEChartsPan,\n          {capture: true, passive: false}' in html
+    assert "function moveEChartsPan(event)" in html
+    assert "downloadEChartsCsv(entry)" in html
+    assert 'new Blob([csv], {type: "text/csv;charset=utf-8"})' in html
+    assert 'icon: "path://M2 8h7V2h6v6h7L12 20z"' in html
     assert "chartTitle(item.title || \"\", axisScale.label)" in html
-    assert "title: {text: \"\"}" in html
     assert "formatChartAxisValue(value, unit, axisScale)" in html
-    assert "formatChartTooltipValue(value, unit)" in html
-    assert "buildSortedChartTooltip(context, unit, xType)" in html
+    assert "formatChartTooltipValue(entry.value, unit, scale)" in html
+    assert "buildSortedEChartsTooltip(params, unit, xType, scale)" in html
+    assert "chartScalableUnitLabel(unit, quantity)" in html
+    assert 'formatter: (params) => formatChartAxisValue(params.value, unit, axisScale)' in html
     assert "right.value - left.value || left.seriesIndex - right.seriesIndex" in html
-    assert "const axisXType = xType" in html
-    assert 'const axisXType = isBar && xType === "datetime" ? "category" : xType' not in html
-    assert "crosshairs: {show: !isBar}" in html
+    assert 'type: isBar ? "shadow" : "cross"' in html
     assert "formatChartTimeCoordinate(value)" in html
-    assert "configuredData.findIndex((point) => point && point.x === hoveredX)" in html
     assert ".pg-diag-chart-tooltip-row" in html
     assert "enableChartTooltipScrolling(pending.shell)" in html
-    assert 'tooltipPanel.className = "chart-hover-tooltip-panel"' in html
-    assert 'shell.addEventListener("mouseleave"' in html
-    assert "dataPointMouseEnter:" in html
-    assert "tooltipPanel.innerHTML = content" in html
-    assert "positionChartTooltipPanel(tooltipPanel, event)" in html
-    assert "tooltipPanel.hidden = false" in html
-    assert 'tooltipPanel.classList.toggle("is-left", cursorOnRight)' in html
-    assert 'tooltipPanel.classList.toggle("is-right", !cursorOnRight)' in html
-    assert "cursorX >= bounds.left + bounds.width / 2" in html
-    assert "enabled: !isBar" in html
+    assert 'className: "pg-diag-echarts-tooltip"' in html
+    assert "enterable: true" in html
+    assert 'trigger: "axis"' in html
     assert 'target.closest(".pg-diag-chart-tooltip-rows")' in html
     assert "rows.scrollTop = next" in html
     assert "event.stopImmediatePropagation()" in html
@@ -405,15 +417,15 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "return grid.slice(firstFinite, lastFinite + 1)" in html
     assert "valuesByX.has(coordinate.key) ? valuesByX.get(coordinate.key) : null" in html
     assert "Number.isFinite(point.y) && point.y !== 0" in html
-    assert "((w.config || {}).series) || []" in html
-    assert "configuredPoint.y" in html
+    assert "Array.isArray(point.value) ? point.value[1] : point.value" in html
     assert "rawValue === null || rawValue === undefined" in html
     assert "formatChartSeriesLabel(seriesName)" in html
     assert 'const queryIdMatch = /^(.*)\\.(-?\\d+)$/.exec(rawName)' in html
     assert 'baseLabel + " / SQL: " + shortQuery' in html
     assert ".replace(/</g, \"&lt;\")" in html
     assert "chartAxisScale(series, unit" in html
-    assert "formatAdaptiveBytes(numeric, unit === \"bytes/s\")" in html
+    assert 'unit === "bytes" || unit === "bytes/s"' in html
+    assert '["B/s", "KiB/s", "MiB/s", "GiB/s"' in html
     assert "Highlight.js v11.11.1" in html
     assert 'id="sourceModal"' in html
     assert "html.report-modal-open,\n    body.report-modal-open" in html
@@ -549,7 +561,6 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert 'diagnosticParts.push(key + ":\\n" + stringifyValue(value));' in html
     assert 'parts.push("diagnostic[" + index + "]:\\n" + diagnosticParts.join("\\n\\n"));' in html
     assert 'parts.push("output:\\n" + stringifyValue(result.data));' in html
-    assert 'const bounds = shell.getBoundingClientRect()' in app_html
     assert "offsetHeight" not in app_html
     assert "details.animate([" not in app_html
     assert 'window.dispatchEvent(new Event("resize"))' not in app_html
