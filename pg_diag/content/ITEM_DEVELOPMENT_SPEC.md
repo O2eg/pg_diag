@@ -852,7 +852,7 @@ Severity evaluates raw typed values in canonical units.
 
 ## 17. Versioning And Source Safety
 
-- PostgreSQL 14 through 18 are the supported major versions for the current
+- PostgreSQL 10 through 18 are the supported major versions for the current
   content schema;
 - PostgreSQL variants expose the same logical meaning and canonical units even
   when physical columns differ.

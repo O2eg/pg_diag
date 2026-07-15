@@ -13,6 +13,14 @@ queries:
       default: once
       supports: [once]
     variants:
+      - id: backend_activity_pg10_pg12
+        min_pg_version: 100000
+        max_pg_version: 129999
+        sql_file: backend/activity_pg10_pg12.sql
+      - id: backend_activity_pg13
+        min_pg_version: 130000
+        max_pg_version: 139999
+        sql_file: backend/activity_pg13.sql
       - id: backend_activity_pg14_plus
         min_pg_version: 140000
         sql_file: backend/activity.sql

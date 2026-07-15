@@ -29,7 +29,7 @@ def supported_version_reason(server_version_num: int) -> str | None:
         return None
     return (
         "PostgreSQL server version is outside supported window "
-        f"14-18 ({runtime_config.MIN_SUPPORTED_PG_VERSION}-"
+        f"10-18 ({runtime_config.MIN_SUPPORTED_PG_VERSION}-"
         f"{runtime_config.MAX_SUPPORTED_PG_VERSION}): {server_version_num}"
     )
 

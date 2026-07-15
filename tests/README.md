@@ -108,7 +108,7 @@ python -m pip install -e ".[dev]"
 python -m pip install -e ".[docker]"
 ```
 
-Run the complete Docker matrix for PostgreSQL 14 through 18:
+Run the complete Docker matrix for PostgreSQL 10 through 18:
 
 ```bash
 PG_DIAG_DOCKER_INTEGRATION=1 \
@@ -120,15 +120,19 @@ Run only selected PostgreSQL majors while developing a fix:
 
 ```bash
 PG_DIAG_DOCKER_INTEGRATION=1 \
-PG_DIAG_DOCKER_VERSIONS=14,18 \
+PG_DIAG_DOCKER_VERSIONS=10,13,18 \
 PYTHONDONTWRITEBYTECODE=1 \
 python -m pytest -q tests/integration
 ```
 
-Each major uses a cached image derived from the official
-`postgres:<major>-bookworm` image. The image installs OpenSSH, host inspection
+Each major uses a cached image derived from an official PostgreSQL image:
+PostgreSQL 10 uses `postgres:10-bullseye`, while PostgreSQL 11-18 use
+`postgres:<major>-bookworm`. The image installs OpenSSH, host inspection
 utilities, and the matching `postgresql-<major>-pg-wait-sampling` package. Set
 `PG_DIAG_DOCKER_PULL=1` when the official base images must be refreshed.
+The PostgreSQL 10 image intentionally retains Bullseye's legacy
+`lshw 02.18.x` and `sysstat/iostat 12.5.x`; the test asserts those package
+generations so compatibility is not accidentally proved with newer binaries.
 
 For every PostgreSQL major, one module-scoped container is prepared and reused
 by both report tests. Preparation is mandatory and verifies all of the
@@ -155,8 +159,10 @@ every applicable SQL, shell, Python, metric, and compact snapshot item to avoid
 `collection_status=error`. Runtime `empty`, `unsupported`, and
 configuration-dependent `skipped` results remain valid. Every planned shell and
 Python report item must either appear in the report or have an explicit runtime
-entry in `report.log`. The container is removed after both tests for its major;
-the derived Docker image remains cached for later test iterations.
+entry in `report.log`. Snapshot collection additionally rejects sampler-provider
+errors and requires the `iostat`-backed disk charts to be materialized. The
+container is removed after both tests for its major; the derived Docker image
+remains cached for later test iterations.
 
 ## Full Test Run
 
@@ -166,7 +172,7 @@ Run the default suite:
 PYTHONDONTWRITEBYTECODE=1 python -m pytest -q
 ```
 
-Without `PG_DIAG_DOCKER_INTEGRATION=1`, the ten Docker matrix cases are reported
+Without `PG_DIAG_DOCKER_INTEGRATION=1`, the eighteen Docker matrix cases are reported
 as skipped.
 
 ## When Adding Tests

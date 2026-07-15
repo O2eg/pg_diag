@@ -22,7 +22,7 @@ from pg_diag.runtime_config import ONE_SHOT_MODE, REMOTE_COLLECTION_MODE, SNAPSH
 ENABLE_ENV = "PG_DIAG_DOCKER_INTEGRATION"
 VERSIONS_ENV = "PG_DIAG_DOCKER_VERSIONS"
 TRUE_VALUES = {"1", "true", "yes", "on"}
-SUPPORTED_MAJORS = (14, 15, 16, 17, 18)
+SUPPORTED_MAJORS = (10, 11, 12, 13, 14, 15, 16, 17, 18)
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCKER_CONTEXT = Path(__file__).resolve().parent / "docker"
 
@@ -42,7 +42,7 @@ def configured_postgres_majors() -> tuple[int, ...]:
     unsupported = sorted(set(majors).difference(SUPPORTED_MAJORS))
     if unsupported:
         raise ValueError(
-            f"{VERSIONS_ENV} supports only PostgreSQL 14-18; unknown: "
+            f"{VERSIONS_ENV} supports only PostgreSQL 10-18; unknown: "
             + ", ".join(str(version) for version in unsupported)
         )
     if len(set(majors)) != len(majors):
@@ -136,11 +136,14 @@ def wait_for_tcp(host: str, port: int) -> None:
 
 def build_integration_image(major: int) -> str:
     image = f"pg-diag-integration-pg{major}:local"
+    image_tag = f"{major}-bullseye" if major == 10 else f"{major}-bookworm"
     command = [
         "docker",
         "build",
         "--build-arg",
         f"PG_MAJOR={major}",
+        "--build-arg",
+        f"PG_IMAGE_TAG={image_tag}",
         "--tag",
         image,
         str(DOCKER_CONTEXT),
@@ -187,6 +190,25 @@ def psql(container_name: str, sql: str) -> subprocess.CompletedProcess[str]:
         ],
         timeout=60,
     )
+
+
+def assert_legacy_host_tool_versions(cluster: PreparedPostgres) -> None:
+    if cluster.major != 10:
+        return
+    versions = run(
+        [
+            "docker",
+            "exec",
+            cluster.container_name,
+            "dpkg-query",
+            "--show",
+            "--showformat=${Package}=${Version}\\n",
+            "lshw",
+            "sysstat",
+        ]
+    ).stdout.splitlines()
+    assert any(entry.startswith("lshw=02.18.") for entry in versions), versions
+    assert any(entry.startswith("sysstat=12.5.") for entry in versions), versions
 
 
 def prepare_postgres_extensions(container_name: str) -> None:
@@ -268,33 +290,31 @@ def prepared_postgres(
     container_name = f"pg-diag-it-pg{major}-{uuid.uuid4().hex[:10]}"
     password = "pg_diag_pw"
 
-    run(
-        [
-            "docker",
-            "run",
-            "--name",
-            container_name,
-            "--init",
-            "--shm-size",
-            "256m",
-            "--cap-add",
-            "SYS_PTRACE",
-            "--env",
-            f"POSTGRES_PASSWORD={password}",
-            "--detach",
-            image,
-            "postgres",
-            "-c",
-            "shared_preload_libraries=pg_stat_statements,pg_wait_sampling",
-            "-c",
-            "compute_query_id=on",
-            "-c",
-            "pg_stat_statements.track=all",
-            "-c",
-            "track_io_timing=on",
-        ],
-        timeout=120,
-    )
+    postgres_options = [
+        "docker",
+        "run",
+        "--name",
+        container_name,
+        "--init",
+        "--shm-size",
+        "256m",
+        "--cap-add",
+        "SYS_PTRACE",
+        "--env",
+        f"POSTGRES_PASSWORD={password}",
+        "--detach",
+        image,
+        "postgres",
+        "-c",
+        "shared_preload_libraries=pg_stat_statements,pg_wait_sampling",
+        "-c",
+        "pg_stat_statements.track=all",
+        "-c",
+        "track_io_timing=on",
+    ]
+    if major >= 14:
+        postgres_options.extend(["-c", "compute_query_id=on"])
+    run(postgres_options, timeout=120)
     try:
         wait_for_postgres(container_name)
         prepare_postgres_extensions(container_name)
@@ -453,6 +473,15 @@ def assert_no_collection_errors(artifact: dict[str, object]) -> None:
     assert errors == []
 
 
+def assert_no_sampler_errors(artifact: dict[str, object]) -> None:
+    errors = [
+        diagnostic
+        for diagnostic in artifact.get("diagnostics") or []
+        if diagnostic.get("code") == "sampler_provider"
+    ]
+    assert errors == []
+
+
 def assert_remote_host_items_ran(
     artifact: dict[str, object],
     report_log: str,
@@ -494,7 +523,7 @@ def assert_items_ran(artifact: dict[str, object], item_ids: set[str]) -> None:
     failed = sorted(
         item_id
         for item_id in item_ids
-        if items[item_id].get("collection_status") in {"error", "skipped"}
+        if items[item_id].get("collection_status") in {"error", "skipped", "unsupported"}
     )
     assert failed == []
 
@@ -503,6 +532,7 @@ def test_remote_one_shot_runs_all_applicable_items(
     prepared_postgres: PreparedPostgres,
     tmp_path: Path,
 ) -> None:
+    assert_legacy_host_tool_versions(prepared_postgres)
     artifact, report_log = collect_report(
         prepared_postgres,
         ONE_SHOT_MODE,
@@ -512,20 +542,19 @@ def test_remote_one_shot_runs_all_applicable_items(
     assert int(artifact["runtime"]["server_version_num"]) // 10000 == prepared_postgres.major
     assert_no_collection_errors(artifact)
     assert_remote_host_items_ran(artifact, report_log, ONE_SHOT_MODE)
-    assert_items_ran(
-        artifact,
-        {
-            "activity_locks.pg_wait_sampling_capabilities",
-            "activity_locks.pg_wait_sampling_profile",
-            "sql_workload.pg_stat_statements_capabilities",
-            "sql_workload.top_sql_by_total_time",
-            "sql_workload.top_sql_by_mean_time",
-            "sql_workload.top_sql_by_calls",
-            "sql_workload.top_sql_by_shared_io",
-            "sql_workload.top_sql_by_temp_io",
-            "sql_workload.top_sql_by_wal",
-        },
-    )
+    required_items = {
+        "activity_locks.pg_wait_sampling_capabilities",
+        "activity_locks.pg_wait_sampling_profile",
+        "sql_workload.pg_stat_statements_capabilities",
+        "sql_workload.top_sql_by_total_time",
+        "sql_workload.top_sql_by_mean_time",
+        "sql_workload.top_sql_by_calls",
+        "sql_workload.top_sql_by_shared_io",
+        "sql_workload.top_sql_by_temp_io",
+    }
+    if prepared_postgres.major >= 13:
+        required_items.add("sql_workload.top_sql_by_wal")
+    assert_items_ran(artifact, required_items)
 
 
 def test_remote_snapshots_runs_all_items_and_collection_scopes(
@@ -541,18 +570,27 @@ def test_remote_snapshots_runs_all_items_and_collection_scopes(
     assert int(artifact["runtime"]["server_version_num"]) // 10000 == prepared_postgres.major
     assert len(artifact["snapshots"]) == 2
     assert_no_collection_errors(artifact)
+    assert_no_sampler_errors(artifact)
     assert_remote_host_items_ran(artifact, report_log, SNAPSHOTS_MODE)
-    assert_items_ran(
-        artifact,
-        {
-            "activity_locks.wait_event_sample_profile",
-            "activity_locks.pg_wait_sampling_capabilities",
-            "activity_locks.pg_wait_sampling_profile",
-            "sql_workload.pg_stat_statements_capabilities",
-            "snapshot_delta_workload.sql_time_delta",
-            "snapshot_delta_workload.sql_io_delta",
-            "snapshot_delta_workload.sql_wal_delta",
-            "snapshot_delta_workload.sql_temp_io_delta",
-            "snapshot_delta_workload.sql_planning_delta",
-        },
-    )
+    required_items = {
+        "activity_locks.wait_event_sample_profile",
+        "activity_locks.pg_wait_sampling_capabilities",
+        "activity_locks.pg_wait_sampling_profile",
+        "snapshot_charts_os.os_disk_read_throughput",
+        "snapshot_charts_os.os_disk_write_throughput",
+        "snapshot_charts_os.os_disk_iops",
+        "snapshot_charts_os.os_disk_utilization",
+        "snapshot_charts_os.os_disk_latency",
+        "sql_workload.pg_stat_statements_capabilities",
+        "snapshot_delta_workload.sql_time_delta",
+        "snapshot_delta_workload.sql_io_delta",
+        "snapshot_delta_workload.sql_temp_io_delta",
+    }
+    if prepared_postgres.major >= 13:
+        required_items.update(
+            {
+                "snapshot_delta_workload.sql_wal_delta",
+                "snapshot_delta_workload.sql_planning_delta",
+            }
+        )
+    assert_items_ran(artifact, required_items)

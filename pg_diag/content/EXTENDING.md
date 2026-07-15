@@ -15,8 +15,8 @@ and derived snapshot tables.
 
 ## Before You Start
 
-- PostgreSQL versions 14 through 18 are supported. New SQL variants should use
-  `min_pg_version: 140000` unless the source view exists only in a newer major
+- PostgreSQL versions 10 through 18 are supported. New SQL variants should use
+  `min_pg_version: 100000` unless the source view exists only in a newer major
   version.
 - `report.yaml` must stay lightweight. Do not describe table columns in report
   layout; table headers come from the actual SQL result.
@@ -102,8 +102,8 @@ Use this when the report needs another PostgreSQL result table.
          default: once
          supports: [once, every_snapshot]
        variants:
-         - id: locks_mode_summary_pg14_plus
-           min_pg_version: 140000
+         - id: locks_mode_summary_pg10_plus
+           min_pg_version: 100000
            sql_file: locks/mode_summary.sql
            semantic_columns:
              dimensions:
@@ -223,8 +223,8 @@ Use this when the report needs a time-series chart from SQL samples.
          default: every_snapshot
          supports: [once, every_snapshot]
        variants:
-         - id: metrics_transaction_counters_pg14_plus
-           min_pg_version: 140000
+         - id: metrics_transaction_counters_pg10_plus
+           min_pg_version: 100000
            sql_file: metrics/transaction_counters.sql
            semantic_columns:
              dimensions:

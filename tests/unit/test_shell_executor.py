@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import pg_diag.executors.shell as shell_executor
 from pg_diag.errors import CommandTimeoutError
 from pg_diag.executors.shell import execute_shell_item, table_json_result
@@ -173,3 +175,37 @@ def test_table_json_parser_does_not_apply_item_specific_normalization() -> None:
     assert result["row_count"] == 1
     assert columns == ["blockdevices"]
     assert result["rows"][0][0][0]["path"] == "/dev/sda"
+
+
+def test_table_json_parser_repairs_lshw_0218_filtered_output() -> None:
+    result = table_json_result(
+        """
+        [
+        {
+          "id" : "host",
+          "class" : "system",
+          "capabilities" : {
+            "smp" : "Symmetric Multi-Processing"
+          }  {
+            "id" : "pnp00:00",
+            "class" : "system"
+          },
+
+        ]
+        """,
+        repair_legacy_lshw=True,
+    )
+
+    assert result["row_count"] == 2
+    assert [row[0] for row in result["rows"]] == ["host", "pnp00:00"]
+
+
+def test_table_json_parser_repairs_lshw_0218_empty_class() -> None:
+    result = table_json_result("]", repair_legacy_lshw=True)
+
+    assert result == {"kind": "table", "columns": [], "rows": [], "row_count": 0}
+
+
+def test_table_json_parser_does_not_repair_unrelated_invalid_json() -> None:
+    with pytest.raises(ValueError, match="cannot parse shell JSON output"):
+        table_json_result('{"broken": }', repair_legacy_lshw=True)

@@ -4,7 +4,7 @@ This instruction belongs to report item `activity_locks.connection_pressure`. Th
 
 ## What this item shows
 - An instantaneous, cluster-wide count of `client backend` processes that consume `max_connections` slots.
-- Ordinary, reserved-role, and total connection limits and remaining headroom. `reserved_connections` is reported as zero on PostgreSQL 14-15, where that setting does not exist.
+- Ordinary, reserved-role, and total connection limits and remaining headroom. `reserved_connections` is reported as zero on PostgreSQL 10-15, where that setting does not exist.
 - Active, idle, idle-in-transaction (including aborted), and actively waiting client-session counts.
 
 ## What to watch

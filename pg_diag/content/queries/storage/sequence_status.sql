@@ -1,4 +1,4 @@
-with sequence_catalog as materialized (
+with sequence_catalog as (
   select
     s.seqrelid as sequence_oid,
     format('%I.%I', n.nspname, c.relname)::text as sequence_name,
@@ -16,7 +16,7 @@ with sequence_catalog as materialized (
   where c.relkind = 'S'
     and not pg_catalog.pg_is_other_temp_schema(n.oid)
 ),
-sequence_table_refs as materialized (
+sequence_table_refs as (
   select distinct d.objid as sequence_oid, d.refobjid as table_oid
   from pg_catalog.pg_depend d
   join sequence_catalog sc on sc.sequence_oid = d.objid

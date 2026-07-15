@@ -21,4 +21,4 @@ This instruction belongs to report item `snapshot_delta_workload.table_maintenan
 
 ## Checklist
 - Compare with autovacuum queue, dead tuples, table DML, WAL, and I/O evidence.
-- On PostgreSQL 14-17, maintenance-time columns are null and marked unsupported; count deltas remain valid.
+- On PostgreSQL 10-17, maintenance-time columns are null and marked unsupported; count deltas remain valid.

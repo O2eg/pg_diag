@@ -18,8 +18,12 @@ queries:
       default: once
       supports: [once]
     variants:
-      - id: vacuum_autovacuum_queue_all
-        min_pg_version: 110000
+      - id: vacuum_autovacuum_queue_pg10_pg12
+        min_pg_version: 100000
+        max_pg_version: 129999
+        sql_file: vacuum/autovacuum_queue_pg10_pg12.sql
+      - id: vacuum_autovacuum_queue_pg13_plus
+        min_pg_version: 130000
         sql_file: vacuum/autovacuum_queue.sql
 
   storage.table_size_detailed:
@@ -39,5 +43,5 @@ queries:
       supports: [once]
     variants:
       - id: storage_table_size_detailed_all
-        min_pg_version: 110000
+        min_pg_version: 100000
         sql_file: storage/table_size_detailed.sql

@@ -44,6 +44,10 @@ queries:
       default: once
       supports: [once, every_snapshot]
     variants:
+      - id: locks_lock_waits_pg10_pg13
+        min_pg_version: 100000
+        max_pg_version: 139999
+        sql_file: locks/lock_waits_pg10_pg13.sql
       - id: locks_lock_waits_pg14_plus
         min_pg_version: 140000
         sql_file: locks/lock_waits.sql

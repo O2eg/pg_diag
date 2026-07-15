@@ -5,7 +5,7 @@ This instruction belongs to report item `maintenance_progress.vacuum_progress`. 
 ## What this item shows
 - A one-time, current-database snapshot of regular VACUUM and autovacuum rows visible in `pg_stat_progress_vacuum` when the report starts.
 - Database/relation OIDs and names, backend/mode, state/wait, phase, heap scan/vacuum progress, index cycles, command age, and bounded query text.
-- PostgreSQL 14-16 dead-tuple item counts versus PostgreSQL 17+ byte/item/index progress fields.
+- PostgreSQL 10-16 dead-tuple item counts versus PostgreSQL 17+ byte/item/index progress fields.
 
 ## What to watch
 - A wait event, repeated captures stuck in the same phase/counter position, multiple index-vacuum cycles, or an anti-wraparound autovacuum.

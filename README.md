@@ -1,6 +1,6 @@
 # pg_diag
 
-`pg_diag` is a PostgreSQL diagnostic report utility for PostgreSQL 14-18.
+`pg_diag` is a PostgreSQL diagnostic report utility for PostgreSQL 10-18.
 
 Based on [pg_perfbench](https://github.com/TantorLabs/pg_perfbench).
 
@@ -47,7 +47,7 @@ in core dispatch, validation, or metric rendering.
 
 ## Features
 
-- PostgreSQL version-aware SQL variants for PostgreSQL 14-18.
+- PostgreSQL version-aware SQL variants for PostgreSQL 10-18.
 - One-shot and repeated snapshots report modes.
 - Local, SSH remote, and remote DB-only collection modes.
 - Read-only SQL execution.
@@ -141,11 +141,11 @@ Python runtime:
 
 Compatibility matrix:
 
-| Collector Python | PostgreSQL 14 | PostgreSQL 15 | PostgreSQL 16 | PostgreSQL 17 | PostgreSQL 18 | Status |
-|---|---:|---:|---:|---:|---:|---|
-| 3.10 | Yes | Yes | Yes | Yes | Yes | Minimum supported Python; full unit and Docker integration matrix |
-| 3.11 | Yes | Yes | Yes | Yes | Yes | Supported |
-| 3.12 | Yes | Yes | Yes | Yes | Yes | Supported; primary development runtime |
+| Collector Python | PostgreSQL 10 | PostgreSQL 11 | PostgreSQL 12 | PostgreSQL 13 | PostgreSQL 14 | PostgreSQL 15 | PostgreSQL 16 | PostgreSQL 17 | PostgreSQL 18 | Status |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 3.10 | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Minimum supported Python; full unit and Docker integration matrix |
+| 3.11 | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Supported |
+| 3.12 | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Supported; primary development runtime |
 
 Python 3.9 and older are outside the compatibility contract. The PostgreSQL
 version is detected from the server, independently of the collector's Python
@@ -153,7 +153,7 @@ minor version.
 
 PostgreSQL target:
 
-- PostgreSQL 14-18.
+- PostgreSQL 10-18.
 - A login role that can connect to the diagnosed database and read PostgreSQL
   catalog/statistics views. Granting `pg_monitor` or `pg_read_all_stats` is
   recommended for complete activity/statistics visibility.
@@ -1161,7 +1161,7 @@ PYTHONDONTWRITEBYTECODE=1 python -m pytest -q
 On Linux, the complete suite can be run under Python 3.10 without installing
 that interpreter on the host. The Docker socket and CLI are passed into the
 Python container so the integration tests can create and reuse their PostgreSQL
-14-18 containers:
+10-18 containers:
 
 ```bash
 cd /home/oleg/Desktop/dev/pg_diag

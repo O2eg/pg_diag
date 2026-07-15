@@ -601,7 +601,10 @@ def test_sql_workload_queries_use_complete_bounded_statement_identity(
             assert "s.dbid" in sql, query_id
             assert "s.userid" in sql, query_id
             assert "s.queryid" in sql, query_id
-            assert "s.toplevel" in sql, query_id
+            if int(variant.get("max_pg_version", 999999)) < 140000:
+                assert "null::boolean as toplevel" in sql, query_id
+            else:
+                assert "s.toplevel" in sql, query_id
             assert "limit 50" in sql, query_id
             assert "pg_diag_internal_severity" in sql, query_id
 
@@ -661,7 +664,10 @@ def test_statement_delta_sources_do_not_collapse_hidden_query_ids(content_path: 
                 encoding="utf-8"
             ).lower()
             assert "s.queryid is not null" in sql, metric_id
-            assert "s.toplevel" in sql, metric_id
+            if int(variant.get("max_pg_version", 999999)) < 140000:
+                assert "false::boolean as toplevel" in sql, metric_id
+            else:
+                assert "s.toplevel" in sql, metric_id
             assert "''::text as query" in sql, metric_id
 
 
@@ -1735,7 +1741,7 @@ def test_variant_selection_by_supported_pg_version(content_path: Path) -> None:
 
 def test_unsupported_pg_version_boundaries(content_path: Path) -> None:
     content = load_content(content_path)
-    plan_low = build_plan(content, 130000)
+    plan_low = build_plan(content, 90000)
     plan_high = build_plan(content, 190000)
 
     assert not plan_low.supported_server_version

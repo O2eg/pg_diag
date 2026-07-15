@@ -9,7 +9,7 @@ queries:
     collection: {default: every_snapshot, supports: [once, every_snapshot]}
     variants:
       - id: buffer_cache_utilization_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: buffer_cache/utilization.sql
         semantic_columns:
           dimensions: {scope: scope}
@@ -25,7 +25,7 @@ queries:
     collection: {default: every_snapshot, supports: [once, every_snapshot]}
     variants:
       - id: buffer_cache_usage_count_distribution_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: buffer_cache/usage_count_distribution.sql
         semantic_columns:
           dimensions: {usage_count: usage_count_label}
@@ -41,7 +41,7 @@ queries:
     collection: {default: every_snapshot, supports: [once, every_snapshot]}
     variants:
       - id: buffer_cache_dirty_and_pinned_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: buffer_cache/dirty_and_pinned.sql
         semantic_columns:
           dimensions: {scope: scope}
@@ -57,7 +57,7 @@ queries:
     collection: {default: every_snapshot, supports: [once, every_snapshot]}
     variants:
       - id: buffer_cache_dirty_by_usage_count_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: buffer_cache/dirty_by_usage_count.sql
         semantic_columns:
           dimensions: {usage_count: usage_count_label}
@@ -73,7 +73,7 @@ queries:
     collection: {default: every_snapshot, supports: [once, every_snapshot]}
     variants:
       - id: buffer_cache_by_database_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: buffer_cache/by_database.sql
         semantic_columns:
           dimensions: {database: database_name}
@@ -89,7 +89,7 @@ queries:
     collection: {default: every_snapshot, supports: [once, every_snapshot]}
     variants:
       - id: buffer_cache_top_relations_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: buffer_cache/top_relations.sql
         semantic_columns:
           dimensions: {relation: relation_name}
@@ -105,7 +105,7 @@ queries:
     collection: {default: every_snapshot, supports: [once, every_snapshot]}
     variants:
       - id: buffer_cache_top_dirty_relations_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: buffer_cache/top_dirty_relations.sql
         semantic_columns:
           dimensions: {relation: relation_name}
@@ -121,7 +121,7 @@ queries:
     collection: {default: every_snapshot, supports: [once, every_snapshot]}
     variants:
       - id: buffer_cache_relation_coverage_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: buffer_cache/relation_coverage.sql
         semantic_columns:
           dimensions: {relation: relation_name}
@@ -137,7 +137,7 @@ queries:
     collection: {default: every_snapshot, supports: [once, every_snapshot]}
     variants:
       - id: buffer_cache_relation_residency_delta_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: buffer_cache/relation_residency_delta.sql
         semantic_columns:
           dimensions: {relation: relation_name}
@@ -153,7 +153,7 @@ queries:
     collection: {default: every_snapshot, supports: [once, every_snapshot]}
     variants:
       - id: buffer_cache_relation_kinds_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: buffer_cache/relation_kinds.sql
         semantic_columns:
           dimensions: {relation_kind: relation_kind}

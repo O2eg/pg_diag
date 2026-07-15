@@ -13,7 +13,7 @@ queries:
       supports: [once]
     variants:
       - id: security_privileged_login_roles_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/privileged_login_roles.sql
 
   security.predefined_admin_role_membership:
@@ -30,7 +30,7 @@ queries:
       supports: [once]
     variants:
       - id: security_predefined_admin_role_membership_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/predefined_admin_role_membership.sql
 
   security.public_schema_privileges:
@@ -48,7 +48,7 @@ queries:
       supports: [once]
     variants:
       - id: security_public_schema_privileges_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/public_schema_privileges.sql
 
   security.excessive_dml_privileges:
@@ -66,7 +66,7 @@ queries:
       supports: [once]
     variants:
       - id: security_excessive_dml_privileges_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/excessive_dml_privileges.sql
 
   security.security_definer_functions:
@@ -84,7 +84,7 @@ queries:
       supports: [once]
     variants:
       - id: security_security_definer_functions_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/security_definer_functions.sql
 
   security.security_logging_settings:
@@ -101,7 +101,7 @@ queries:
       supports: [once]
     variants:
       - id: security_security_logging_settings_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/security_logging_settings.sql
 
   security.password_encryption:
@@ -118,7 +118,7 @@ queries:
       supports: [once]
     variants:
       - id: security_password_encryption_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/password_encryption.sql
 
   security.password_complexity:
@@ -135,7 +135,7 @@ queries:
       supports: [once]
     variants:
       - id: security_password_complexity_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/password_complexity.sql
 
   security.auth_timeout_delay:
@@ -152,7 +152,7 @@ queries:
       supports: [once]
     variants:
       - id: security_auth_timeout_delay_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/auth_timeout_delay.sql
 
   security.function_execute_privileges:
@@ -170,7 +170,7 @@ queries:
       supports: [once]
     variants:
       - id: security_function_execute_privileges_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/function_execute_privileges.sql
 
   security.rls_configuration:
@@ -188,7 +188,7 @@ queries:
       supports: [once]
     variants:
       - id: security_rls_configuration_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/rls_configuration.sql
 
   security.pgaudit_configuration:
@@ -206,7 +206,7 @@ queries:
       supports: [once]
     variants:
       - id: security_pgaudit_configuration_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/pgaudit_configuration.sql
 
   security.cryptographic_extensions:
@@ -224,7 +224,7 @@ queries:
       supports: [once]
     variants:
       - id: security_cryptographic_extensions_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/cryptographic_extensions.sql
 
   security.anonymization_extensions:
@@ -242,7 +242,7 @@ queries:
       supports: [once]
     variants:
       - id: security_anonymization_extensions_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/anonymization_extensions.sql
 
   security.data_checksums:
@@ -261,8 +261,12 @@ queries:
       default: once
       supports: [once]
     variants:
-      - id: security_data_checksums_pg14_plus
-        min_pg_version: 140000
+      - id: security_data_checksums_pg10_pg11
+        min_pg_version: 100000
+        max_pg_version: 119999
+        sql_file: security/data_checksums_pg10_pg11.sql
+      - id: security_data_checksums_pg12_plus
+        min_pg_version: 120000
         sql_file: security/data_checksums.sql
 
   security.listen_addresses_exposure:
@@ -279,7 +283,7 @@ queries:
       supports: [once]
     variants:
       - id: security_listen_addresses_exposure_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/listen_addresses_exposure.sql
 
   security.login_roles_without_connection_limit:
@@ -296,7 +300,7 @@ queries:
       supports: [once]
     variants:
       - id: security_login_roles_without_connection_limit_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/login_roles_without_connection_limit.sql
 
   security.default_privileges_public_grants:
@@ -314,7 +318,7 @@ queries:
       supports: [once]
     variants:
       - id: security_default_privileges_public_grants_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/default_privileges_public_grants.sql
 
   security.sequence_privileges:
@@ -332,7 +336,7 @@ queries:
       supports: [once]
     variants:
       - id: security_sequence_privileges_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/sequence_privileges.sql
 
   security.non_public_schema_privileges:
@@ -350,7 +354,7 @@ queries:
       supports: [once]
     variants:
       - id: security_non_public_schema_privileges_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/non_public_schema_privileges.sql
 
   security.installed_risky_extensions:
@@ -368,7 +372,7 @@ queries:
       supports: [once]
     variants:
       - id: security_installed_risky_extensions_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/installed_risky_extensions.sql
 
   security.tls_server_configuration:
@@ -385,7 +389,7 @@ queries:
       supports: [once]
     variants:
       - id: security_tls_server_configuration_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/tls_server_configuration.sql
 
   security.weak_tls_ciphers:
@@ -402,7 +406,7 @@ queries:
       supports: [once]
     variants:
       - id: security_weak_tls_ciphers_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/weak_tls_ciphers.sql
 
   security.replication_roles:
@@ -422,7 +426,7 @@ queries:
       supports: [once]
     variants:
       - id: security_replication_roles_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/replication_roles.sql
 
   security.log_replication_commands:
@@ -442,7 +446,7 @@ queries:
       supports: [once]
     variants:
       - id: security_log_replication_commands_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/log_replication_commands.sql
 
   security.superuser_owned_user_objects:
@@ -460,7 +464,7 @@ queries:
       supports: [once]
     variants:
       - id: security_superuser_owned_user_objects_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/superuser_owned_user_objects.sql
 
   security.object_owner_drift:
@@ -478,7 +482,7 @@ queries:
       supports: [once]
     variants:
       - id: security_object_owner_drift_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/object_owner_drift.sql
 
   security.database_owner_mismatch:
@@ -496,7 +500,7 @@ queries:
       supports: [once]
     variants:
       - id: security_database_owner_mismatch_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/database_owner_mismatch.sql
 
   security.schema_owner_drift:
@@ -514,7 +518,7 @@ queries:
       supports: [once]
     variants:
       - id: security_schema_owner_drift_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/schema_owner_drift.sql
 
   security.object_acl_drift:
@@ -532,7 +536,7 @@ queries:
       supports: [once]
     variants:
       - id: security_object_acl_drift_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/object_acl_drift.sql
 
   security.direct_user_grants:
@@ -550,7 +554,7 @@ queries:
       supports: [once]
     variants:
       - id: security_direct_user_grants_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/direct_user_grants.sql
 
   security.grant_option_holders:
@@ -568,7 +572,7 @@ queries:
       supports: [once]
     variants:
       - id: security_grant_option_holders_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/grant_option_holders.sql
 
   security.orphaned_object_owners:
@@ -586,7 +590,7 @@ queries:
       supports: [once]
     variants:
       - id: security_orphaned_object_owners_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/orphaned_object_owners.sql
 
   security.sequence_table_owner_mismatch:
@@ -604,7 +608,7 @@ queries:
       supports: [once]
     variants:
       - id: security_sequence_table_owner_mismatch_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/sequence_table_owner_mismatch.sql
 
   security.security_definer_owner_drift:
@@ -622,7 +626,7 @@ queries:
       supports: [once]
     variants:
       - id: security_security_definer_owner_drift_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/security_definer_owner_drift.sql
 
   security.extension_objects_acl_drift:
@@ -640,7 +644,7 @@ queries:
       supports: [once]
     variants:
       - id: security_extension_objects_acl_drift_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/extension_objects_acl_drift.sql
 
   security.rls_table_privilege_mismatch:
@@ -658,7 +662,7 @@ queries:
       supports: [once]
     variants:
       - id: security_rls_table_privilege_mismatch_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/rls_table_privilege_mismatch.sql
 
   security.unused_privileged_grants:
@@ -676,7 +680,7 @@ queries:
       supports: [once]
     variants:
       - id: security_unused_privileged_grants_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/unused_privileged_grants.sql
 
   security.privilege_surface_by_role:
@@ -694,7 +698,7 @@ queries:
       supports: [once]
     variants:
       - id: security_privilege_surface_by_role_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/privilege_surface_by_role.sql
 
   security.schema_privilege_matrix:
@@ -712,5 +716,5 @@ queries:
       supports: [once]
     variants:
       - id: security_schema_privilege_matrix_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: security/schema_privilege_matrix.sql

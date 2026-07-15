@@ -4,8 +4,8 @@ This instruction belongs to report item `sql_workload.top_sql_by_calls`. The ite
 
 ## What this item shows
 - Up to 50 current-database entries ranked by cumulative completed execution count.
-- Total/mean execution time, rows, shared blocks, WAL, full `(dbid, userid, queryid, toplevel)` identity, and representative SQL.
-- `stats_since` on PostgreSQL 17+; PostgreSQL 14-16 does not expose per-entry start time.
+- Total/mean execution time, rows, shared blocks, version-dependent WAL, statement identity, and representative SQL.
+- PostgreSQL 10-13 has no `toplevel` field, so it is reported as unavailable; `stats_since` exists on PostgreSQL 17+ and is unavailable on PostgreSQL 10-16.
 
 ## What to watch
 - High-frequency queries with non-trivial mean time, I/O, WAL, or connection occupancy.

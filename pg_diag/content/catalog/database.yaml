@@ -40,8 +40,8 @@ queries:
       default: once
       supports: [once, every_snapshot]
     variants:
-      - id: database_stats_pg11
-        min_pg_version: 110000
+      - id: database_stats_pg10_pg11
+        min_pg_version: 100000
         max_pg_version: 119999
         sql_file: database/database_stats_pg11.sql
         semantic_columns: *database_workload_counters

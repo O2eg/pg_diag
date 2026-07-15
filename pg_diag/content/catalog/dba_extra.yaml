@@ -17,7 +17,7 @@ queries:
       supports: [once]
     variants:
       - id: activity_connection_pressure_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: activity/connection_pressure.sql
 
   activity.wait_events:
@@ -35,6 +35,20 @@ queries:
       default: once
       supports: [once, every_snapshot]
     variants:
+      - id: activity_wait_events_pg10_pg13
+        min_pg_version: 100000
+        max_pg_version: 139999
+        sql_file: activity/wait_events_pg10_pg13.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            application: application_name
+            wait_event_type: wait_event_type
+            wait_event: wait_event
+            query_id: query_id
+            query: query
+          gauges:
+            sessions: sessions
       - id: activity_wait_events_pg14_plus
         min_pg_version: 140000
         sql_file: activity/wait_events.sql
@@ -68,6 +82,10 @@ queries:
       default: once
       supports: [once, every_snapshot]
     variants:
+      - id: activity_long_transactions_pg10_pg13
+        min_pg_version: 100000
+        max_pg_version: 139999
+        sql_file: activity/long_transactions_pg10_pg13.sql
       - id: activity_long_transactions_pg14_plus
         min_pg_version: 140000
         sql_file: activity/long_transactions.sql
@@ -91,7 +109,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: activity_idle_in_transaction_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: activity/idle_in_transaction.sql
 
   locks.lock_modes:
@@ -113,7 +131,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: locks_lock_modes_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: locks/lock_modes.sql
 
   replication.slots:
@@ -133,6 +151,30 @@ queries:
       default: once
       supports: [once, every_snapshot]
     variants:
+      - id: replication_slots_pg10_pg12
+        min_pg_version: 100000
+        max_pg_version: 129999
+        sql_file: replication/replication_slots_pg10_pg12.sql
+        column_statuses:
+          wal_status: {status: unsupported, reason: Replication slot WAL status is available from PostgreSQL 13.}
+          safe_wal_size_bytes: {status: unsupported, reason: Replication slot safe WAL size is available from PostgreSQL 13.}
+          inactive_since: {status: unsupported, reason: Replication slot inactive_since is available from PostgreSQL 17.}
+          invalidation_reason: {status: unsupported, reason: Replication slot invalidation_reason is available from PostgreSQL 17.}
+          two_phase: {status: unsupported, reason: Two-phase logical decoding slot metadata is available from PostgreSQL 14.}
+          failover: {status: unsupported, reason: Failover slot metadata is available from PostgreSQL 17.}
+          synced: {status: unsupported, reason: Standby slot synchronization metadata is available from PostgreSQL 17.}
+          conflicting: {status: unsupported, reason: Replication slot conflicting is available from PostgreSQL 16.}
+      - id: replication_slots_pg13
+        min_pg_version: 130000
+        max_pg_version: 139999
+        sql_file: replication/replication_slots_pg13.sql
+        column_statuses:
+          inactive_since: {status: unsupported, reason: Replication slot inactive_since is available from PostgreSQL 17.}
+          invalidation_reason: {status: unsupported, reason: Replication slot invalidation_reason is available from PostgreSQL 17.}
+          two_phase: {status: unsupported, reason: Two-phase logical decoding slot metadata is available from PostgreSQL 14.}
+          failover: {status: unsupported, reason: Failover slot metadata is available from PostgreSQL 17.}
+          synced: {status: unsupported, reason: Standby slot synchronization metadata is available from PostgreSQL 17.}
+          conflicting: {status: unsupported, reason: Replication slot conflicting is available from PostgreSQL 16.}
       - id: replication_slots_pg14_pg15
         min_pg_version: 140000
         max_pg_version: 159999
@@ -168,6 +210,8 @@ queries:
     collection:
       default: once
       supports: [once, every_snapshot]
+    requirements:
+      unsupported_versions_reason: pg_stat_wal exists only from PostgreSQL 14.
     variants:
       - id: wal_stat_wal_pg14_pg17
         min_pg_version: 140000
@@ -195,7 +239,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: wal_archiver_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: wal/archiver.sql
 
   slru.stat_slru:
@@ -211,9 +255,11 @@ queries:
     collection:
       default: once
       supports: [once, every_snapshot]
+    requirements:
+      unsupported_versions_reason: pg_stat_slru exists only from PostgreSQL 13.
     variants:
       - id: slru_stat_slru_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 130000
         sql_file: slru/stat_slru.sql
 
   vacuum.database_wraparound:
@@ -234,6 +280,10 @@ queries:
       default: once
       supports: [once]
     variants:
+      - id: vacuum_database_wraparound_pg10_pg13
+        min_pg_version: 100000
+        max_pg_version: 139999
+        sql_file: vacuum/database_wraparound_pg10_pg13.sql
       - id: vacuum_database_wraparound_pg14_plus
         min_pg_version: 140000
         sql_file: vacuum/database_wraparound.sql
@@ -253,7 +303,7 @@ queries:
       supports: [once]
     variants:
       - id: vacuum_xmin_horizon_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: vacuum/xmin_horizon.sql
 
   vacuum.xmin_horizon_blockers:
@@ -271,7 +321,7 @@ queries:
       supports: [once]
     variants:
       - id: vacuum_xmin_horizon_blockers_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: vacuum/xmin_horizon_blockers.sql
 
   vacuum.prepared_xacts:
@@ -289,7 +339,7 @@ queries:
       supports: [once]
     variants:
       - id: vacuum_prepared_xacts_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: vacuum/prepared_xacts.sql
 
   progress.vacuum:
@@ -308,7 +358,7 @@ queries:
       supports: [once]
     variants:
       - id: progress_vacuum_pg14_pg16
-        min_pg_version: 140000
+        min_pg_version: 100000
         max_pg_version: 169999
         sql_file: progress/vacuum_progress_pg14_pg16.sql
       - id: progress_vacuum_pg17_plus
@@ -328,9 +378,11 @@ queries:
     collection:
       default: once
       supports: [once]
+    requirements:
+      unsupported_versions_reason: pg_stat_progress_create_index exists only from PostgreSQL 12.
     variants:
       - id: progress_create_index_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 120000
         sql_file: progress/create_index_progress.sql
 
   progress.cluster:
@@ -346,9 +398,11 @@ queries:
     collection:
       default: once
       supports: [once]
+    requirements:
+      unsupported_versions_reason: pg_stat_progress_cluster exists only from PostgreSQL 12.
     variants:
       - id: progress_cluster_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 120000
         sql_file: progress/cluster_progress.sql
 
   progress.copy:
@@ -364,6 +418,8 @@ queries:
     collection:
       default: once
       supports: [once]
+    requirements:
+      unsupported_versions_reason: pg_stat_progress_copy exists only from PostgreSQL 14.
     variants:
       - id: progress_copy_pg14_plus
         min_pg_version: 140000
@@ -389,7 +445,7 @@ queries:
       supports: [once]
     variants:
       - id: storage_sequence_status_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: storage/sequence_status.sql
 
   indexes.redundant_indexes:
@@ -411,8 +467,12 @@ queries:
       default: once
       supports: [once]
     variants:
-      - id: indexes_redundant_indexes_pg14_plus
-        min_pg_version: 140000
+      - id: indexes_redundant_indexes_pg10
+        min_pg_version: 100000
+        max_pg_version: 109999
+        sql_file: indexes/redundant_indexes_pg10.sql
+      - id: indexes_redundant_indexes_pg11_plus
+        min_pg_version: 110000
         sql_file: indexes/redundant_indexes.sql
 
   indexes.foreign_keys_without_index:
@@ -435,7 +495,7 @@ queries:
       supports: [once]
     variants:
       - id: indexes_foreign_keys_without_index_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: indexes/foreign_keys_without_index.sql
 
   indexes.duplicate_indexes:
@@ -457,8 +517,12 @@ queries:
       default: once
       supports: [once]
     variants:
-      - id: indexes_duplicate_indexes_pg14_plus
-        min_pg_version: 140000
+      - id: indexes_duplicate_indexes_pg10
+        min_pg_version: 100000
+        max_pg_version: 109999
+        sql_file: indexes/duplicate_indexes_pg10.sql
+      - id: indexes_duplicate_indexes_pg11_plus
+        min_pg_version: 110000
         sql_file: indexes/duplicate_indexes.sql
 
   indexes.tables_without_pk_or_unique:
@@ -481,7 +545,7 @@ queries:
       supports: [once]
     variants:
       - id: indexes_tables_without_pk_or_unique_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: indexes/tables_without_pk_or_unique.sql
 
   indexes.large_indexes:
@@ -501,7 +565,7 @@ queries:
       supports: [once]
     variants:
       - id: indexes_large_indexes_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: indexes/large_indexes.sql
 
   cluster.extensions:
@@ -519,7 +583,7 @@ queries:
       supports: [once]
     variants:
       - id: cluster_extensions_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: cluster/extensions.sql
 
   cluster.roles_privileges:
@@ -537,7 +601,7 @@ queries:
       supports: [once]
     variants:
       - id: cluster_roles_privileges_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: cluster/roles_privileges.sql
 
   cluster.pending_restart_settings:
@@ -555,7 +619,7 @@ queries:
       supports: [once]
     variants:
       - id: cluster_pending_restart_settings_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: cluster/pending_restart_settings.sql
 
   cluster.tablespaces:
@@ -573,5 +637,5 @@ queries:
       supports: [once]
     variants:
       - id: cluster_tablespaces_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: cluster/tablespaces.sql

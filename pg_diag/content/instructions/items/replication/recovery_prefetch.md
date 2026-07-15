@@ -14,7 +14,7 @@ This instruction belongs to report item `replication.recovery_prefetch`. The ite
 
 ## Automatic evaluation
 - No automatic severity: useful ratios depend on recovery workload, cache state, and storage.
-- Unsupported on PostgreSQL 14; a primary zero row is not a failure.
+- Unsupported on PostgreSQL 10-14; a primary zero row is not a failure.
 
 ## Common fault causes
 - Feature disabled, workload already cached, full-page images, new/zero-initialized blocks, or unsuitable access patterns.

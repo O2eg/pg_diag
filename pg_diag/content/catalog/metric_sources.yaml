@@ -15,7 +15,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_database_transaction_rate_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/database_transaction_rate.sql
         semantic_columns:
           dimensions:
@@ -95,7 +95,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_activity_sessions_by_state_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/activity_sessions_by_state.sql
         semantic_columns:
           dimensions:
@@ -119,6 +119,19 @@ queries:
       default: every_snapshot
       supports: [once, every_snapshot]
     variants:
+      - id: metrics_activity_wait_sample_profile_pg10_pg13
+        min_pg_version: 100000
+        max_pg_version: 139999
+        sql_file: metrics/activity_wait_sample_profile_pg10_pg13.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            wait_event_type: wait_event_type
+            wait_event: wait_event
+            query_id: query_id
+            query: query
+          gauges:
+            sessions: sessions
       - id: metrics_activity_wait_sample_profile_pg14_plus
         min_pg_version: 140000
         sql_file: metrics/activity_wait_sample_profile.sql
@@ -148,7 +161,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_database_tuple_dml_rate_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/database_tuple_dml_rate.sql
         semantic_columns:
           dimensions:
@@ -174,7 +187,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_database_tuple_access_rate_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/database_tuple_access_rate.sql
         semantic_columns:
           dimensions:
@@ -199,7 +212,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_database_block_access_rate_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/database_block_access_rate.sql
         semantic_columns:
           dimensions:
@@ -224,7 +237,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_database_temp_files_delta_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/database_temp_files_delta.sql
         semantic_columns:
           dimensions:
@@ -248,7 +261,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_database_temp_bytes_rate_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/database_temp_bytes_rate.sql
         semantic_columns:
           dimensions:
@@ -272,7 +285,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_database_io_time_rate_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/database_io_time_rate.sql
         semantic_columns:
           dimensions:
@@ -297,7 +310,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_database_backends_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/database_backends.sql
         semantic_columns:
           dimensions:
@@ -321,7 +334,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_database_deadlocks_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/database_deadlocks.sql
         semantic_columns:
           dimensions:
@@ -345,7 +358,7 @@ queries:
       supports: [once, window_endpoints]
     variants:
       - id: metrics_database_workload_delta_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/database_workload_delta.sql
         semantic_columns:
           dimensions:
@@ -386,7 +399,7 @@ queries:
       supports: [once, window_endpoints]
     variants:
       - id: metrics_objects_table_dml_delta_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_table_dml_delta.sql
         semantic_columns:
           dimensions:
@@ -419,7 +432,7 @@ queries:
       supports: [once, window_endpoints]
     variants:
       - id: metrics_objects_table_scan_delta_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_table_scan_delta.sql
         semantic_columns:
           dimensions:
@@ -451,7 +464,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_objects_tables_top_tuple_access_rate_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_tables_top_tuple_access_rate.sql
         semantic_columns:
           dimensions:
@@ -479,7 +492,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_objects_tables_top_seq_read_rate_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_tables_top_seq_read_rate.sql
         semantic_columns:
           dimensions:
@@ -506,7 +519,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_objects_tables_top_index_fetch_rate_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_tables_top_index_fetch_rate.sql
         semantic_columns:
           dimensions:
@@ -533,7 +546,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_objects_tables_top_dml_rate_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_tables_top_dml_rate.sql
         semantic_columns:
           dimensions:
@@ -562,7 +575,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_objects_tables_top_insert_rate_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_tables_top_insert_rate.sql
         semantic_columns:
           dimensions:
@@ -589,7 +602,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_objects_tables_top_update_rate_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_tables_top_update_rate.sql
         semantic_columns:
           dimensions:
@@ -616,7 +629,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_objects_tables_top_delete_rate_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_tables_top_delete_rate.sql
         semantic_columns:
           dimensions:
@@ -643,7 +656,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_objects_tables_top_hot_update_rate_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_tables_top_hot_update_rate.sql
         semantic_columns:
           dimensions:
@@ -670,7 +683,7 @@ queries:
       supports: [once, window_endpoints]
     variants:
       - id: metrics_objects_table_io_delta_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_table_io_delta.sql
         semantic_columns:
           dimensions:
@@ -702,7 +715,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_objects_tables_top_heap_read_rate_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_tables_top_heap_read_rate.sql
         semantic_columns:
           dimensions:
@@ -729,7 +742,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_objects_tables_top_index_block_read_rate_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_tables_top_index_block_read_rate.sql
         semantic_columns:
           dimensions:
@@ -756,7 +769,7 @@ queries:
       supports: [once, window_endpoints]
     variants:
       - id: metrics_objects_index_usage_delta_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_index_usage_delta.sql
         semantic_columns:
           dimensions:
@@ -791,7 +804,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_objects_indexes_top_scan_rate_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_indexes_top_scan_rate.sql
         semantic_columns:
           dimensions:
@@ -820,7 +833,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_objects_indexes_top_tuple_read_rate_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_indexes_top_tuple_read_rate.sql
         semantic_columns:
           dimensions:
@@ -849,7 +862,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_objects_indexes_top_tuple_fetch_rate_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_indexes_top_tuple_fetch_rate.sql
         semantic_columns:
           dimensions:
@@ -878,7 +891,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_objects_indexes_top_reads_per_scan_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_indexes_top_reads_per_scan.sql
         semantic_columns:
           dimensions:
@@ -908,7 +921,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_objects_indexes_top_fetches_per_scan_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_indexes_top_fetches_per_scan.sql
         semantic_columns:
           dimensions:
@@ -938,7 +951,7 @@ queries:
       supports: [once, every_snapshot]
     variants:
       - id: metrics_objects_indexes_top_reads_per_fetch_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_indexes_top_reads_per_fetch.sql
         semantic_columns:
           dimensions:
@@ -968,7 +981,7 @@ queries:
       supports: [once, window_endpoints]
     variants:
       - id: metrics_objects_function_time_delta_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/objects_function_time_delta.sql
         semantic_columns:
           dimensions:
@@ -999,10 +1012,10 @@ queries:
       default: window_endpoints
       supports: [once, window_endpoints]
     variants:
-      - id: metrics_statements_total_time_delta_pg14_pg16
-        min_pg_version: 140000
-        max_pg_version: 169999
-        sql_file: metrics/statements_total_time_delta.sql
+      - id: metrics_statements_total_time_delta_pg10_pg12
+        min_pg_version: 100000
+        max_pg_version: 129999
+        sql_file: metrics/statements_total_time_delta_pg10_pg12.sql
         semantic_columns: &metrics_statements_total_time_delta_semantics
           dimensions:
             database: datname
@@ -1017,6 +1030,16 @@ queries:
             calls: calls
             rows: rows
             total_exec_time_ms: total_exec_time_ms
+      - id: metrics_statements_total_time_delta_pg13
+        min_pg_version: 130000
+        max_pg_version: 139999
+        sql_file: metrics/statements_total_time_delta_pg13.sql
+        semantic_columns: *metrics_statements_total_time_delta_semantics
+      - id: metrics_statements_total_time_delta_pg14_pg16
+        min_pg_version: 140000
+        max_pg_version: 169999
+        sql_file: metrics/statements_total_time_delta.sql
+        semantic_columns: *metrics_statements_total_time_delta_semantics
       - id: metrics_statements_total_time_delta_pg17_plus
         min_pg_version: 170000
         sql_file: metrics/statements_total_time_delta_pg17_plus.sql
@@ -1038,10 +1061,10 @@ queries:
       default: window_endpoints
       supports: [once, window_endpoints]
     variants:
-      - id: metrics_statements_wal_delta_pg14_pg16
-        min_pg_version: 140000
-        max_pg_version: 169999
-        sql_file: metrics/statements_wal_delta.sql
+      - id: metrics_statements_wal_delta_pg13
+        min_pg_version: 130000
+        max_pg_version: 139999
+        sql_file: metrics/statements_wal_delta_pg13.sql
         semantic_columns: &metrics_statements_wal_delta_semantics
           dimensions:
             database: datname
@@ -1056,6 +1079,11 @@ queries:
             wal_bytes: wal_bytes
             wal_records: wal_records
             wal_fpi: wal_fpi
+      - id: metrics_statements_wal_delta_pg14_pg16
+        min_pg_version: 140000
+        max_pg_version: 169999
+        sql_file: metrics/statements_wal_delta.sql
+        semantic_columns: *metrics_statements_wal_delta_semantics
       - id: metrics_statements_wal_delta_pg17_plus
         min_pg_version: 170000
         sql_file: metrics/statements_wal_delta_pg17_plus.sql
@@ -1077,10 +1105,10 @@ queries:
       default: window_endpoints
       supports: [once, window_endpoints]
     variants:
-      - id: metrics_statements_io_delta_pg14_pg16
-        min_pg_version: 140000
-        max_pg_version: 169999
-        sql_file: metrics/statements_io_delta.sql
+      - id: metrics_statements_io_delta_pg10_pg13
+        min_pg_version: 100000
+        max_pg_version: 139999
+        sql_file: metrics/statements_io_delta_pg10_pg13.sql
         semantic_columns: &metrics_statements_io_delta_semantics
           dimensions:
             database: datname
@@ -1096,6 +1124,11 @@ queries:
             shared_blks_written: shared_blks_written
             blk_read_time_ms: blk_read_time_ms
             blk_write_time_ms: blk_write_time_ms
+      - id: metrics_statements_io_delta_pg14_pg16
+        min_pg_version: 140000
+        max_pg_version: 169999
+        sql_file: metrics/statements_io_delta.sql
+        semantic_columns: *metrics_statements_io_delta_semantics
       - id: metrics_statements_io_delta_pg17_plus
         min_pg_version: 170000
         sql_file: metrics/statements_io_delta_pg17_plus.sql

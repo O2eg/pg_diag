@@ -52,6 +52,14 @@ queries:
       default: once
       supports: [once, every_snapshot]
     variants:
+      - id: cluster_stat_reset_times_pg10_pg12
+        min_pg_version: 100000
+        max_pg_version: 129999
+        sql_file: cluster/stat_reset_times_pg10_pg12.sql
+      - id: cluster_stat_reset_times_pg13
+        min_pg_version: 130000
+        max_pg_version: 139999
+        sql_file: cluster/stat_reset_times_pg13.sql
       - id: cluster_stat_reset_times_pg14
         min_pg_version: 140000
         max_pg_version: 149999

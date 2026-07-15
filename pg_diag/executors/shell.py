@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import time
 from typing import Any, TYPE_CHECKING
@@ -158,7 +159,12 @@ def _item_from_process(
         status = "error"
     if status == "ok" and _script_output_mode(content, planned) == "table_json":
         try:
-            result = table_json_result(output)
+            result = table_json_result(
+                output,
+                repair_legacy_lshw=bool(
+                    planned.source_id and planned.source_id.startswith("os.lshw_")
+                ),
+            )
         except ValueError as exc:
             message = redact_error(exc)
             return item_from_plan(
@@ -196,7 +202,11 @@ def _item_from_process(
     )
 
 
-def table_json_result(output: str) -> dict[str, Any]:
+def table_json_result(
+    output: str,
+    *,
+    repair_legacy_lshw: bool = False,
+) -> dict[str, Any]:
     text = output.strip()
     if not text:
         return {"kind": "table", "columns": [], "rows": [], "row_count": 0}
@@ -204,6 +214,15 @@ def table_json_result(output: str) -> dict[str, Any]:
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError as exc:
+        if repair_legacy_lshw:
+            try:
+                parsed = _parse_legacy_lshw_json(text)
+            except json.JSONDecodeError:
+                pass
+            else:
+                return table_result_from_records(
+                    parsed if isinstance(parsed, list) else [parsed]
+                )
         raise ValueError(f"cannot parse shell JSON output: {exc}") from exc
 
     if isinstance(parsed, dict):
@@ -213,6 +232,28 @@ def table_json_result(output: str) -> dict[str, Any]:
     else:
         records = [{"value": parsed}]
     return table_result_from_records(records)
+
+
+def _parse_legacy_lshw_json(text: str) -> Any:
+    """Repair the malformed filtered JSON emitted by lshw 02.18.x.
+
+    That release can omit an outer object terminator before a selected child,
+    leave the parent terminator behind, or emit only a closing bracket for an
+    empty class.  The transformations are deliberately narrow and are used
+    only for declared lshw sources after strict JSON parsing has failed.
+    """
+    if text.strip() == "]":
+        return []
+
+    repaired = re.sub(r"}\s+{", "}}, {", text)
+    repaired = re.sub(
+        r'("(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?|true|false|null)\s+{',
+        r"\1}, {",
+        repaired,
+    )
+    repaired = re.sub(r",\s*}\s*]\s*$", "\n]", repaired)
+    repaired = re.sub(r",\s*]\s*$", "\n]", repaired)
+    return json.loads(repaired)
 
 
 def _script_output_mode(content: ContentPack, planned: PlannedItem) -> str:

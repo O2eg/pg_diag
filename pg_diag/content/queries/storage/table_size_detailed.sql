@@ -1,4 +1,4 @@
-with candidates as materialized (
+with candidates as (
   select
     c.oid as table_oid,
     c.reltoastrelid,

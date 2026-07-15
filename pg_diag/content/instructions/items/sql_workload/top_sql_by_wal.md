@@ -4,8 +4,8 @@ This instruction belongs to report item `sql_workload.top_sql_by_wal`. The item 
 
 ## What this item shows
 - Up to 50 current-database entries ranked by cumulative WAL bytes generated.
-- WAL records, full-page images, calls, execution time, rows, full statement identity, and representative SQL.
-- `stats_since` on PostgreSQL 17+; PostgreSQL 14-16 provides no per-entry start timestamp.
+- WAL records, full-page images, calls, execution time, rows, statement identity, and representative SQL. WAL counters are available from PostgreSQL 13.
+- PostgreSQL 13 has no `toplevel` field; `stats_since` exists on PostgreSQL 17+ and is unavailable on PostgreSQL 13-16.
 
 ## What to watch
 - WAL bytes per call and per affected row, not only the cumulative total.

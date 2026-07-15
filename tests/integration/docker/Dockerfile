@@ -1,5 +1,5 @@
-ARG PG_MAJOR=18
-FROM postgres:${PG_MAJOR}-bookworm
+ARG PG_IMAGE_TAG=18-bookworm
+FROM postgres:${PG_IMAGE_TAG}
 
 ARG PG_MAJOR
 

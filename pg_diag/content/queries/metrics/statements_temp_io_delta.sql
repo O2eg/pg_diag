@@ -11,8 +11,8 @@ select
   s.temp_blks_written::int8 as temp_blks_written,
   ((s.temp_blks_read + s.temp_blks_written)::numeric * current_setting('block_size')::int)
     as temp_io_bytes,
-  (s.temp_blk_read_time::numeric) as temp_read_time_ms,
-  (s.temp_blk_write_time::numeric) as temp_write_time_ms,
+  null::numeric as temp_read_time_ms,
+  null::numeric as temp_write_time_ms,
   ''::text as query
 from pg_stat_statements s
 join pg_database d on d.oid = s.dbid

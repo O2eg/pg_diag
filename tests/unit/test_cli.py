@@ -304,7 +304,7 @@ def test_explain_plan_remote_mode_plans_host_sources(repo_root: Path) -> None:
 
 
 def test_explain_plan_rejects_unsupported_pg_version(repo_root: Path) -> None:
-    proc = run_cli(repo_root, "explain-plan", "--pg-version", "130000")
+    proc = run_cli(repo_root, "explain-plan", "--pg-version", "90000")
     assert proc.returncode == 1
     assert "outside supported window" in proc.stdout
 

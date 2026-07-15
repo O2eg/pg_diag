@@ -8,7 +8,7 @@ This instruction belongs to report item `snapshot_delta_workload.checkpointer_de
 
 ## What to watch
 - Repeated requested checkpoints, high buffer volume, or synchronization time aligned with latency spikes.
-- PostgreSQL 14-16 expose the older checkpoint counters through `pg_stat_bgwriter`.
+- PostgreSQL 10-16 expose the older checkpoint counters through `pg_stat_bgwriter`.
 - Restartpoint counters are null and marked unsupported before PostgreSQL 17; `slru_written` is null and marked unsupported before PostgreSQL 18.
 
 ## Automatic evaluation

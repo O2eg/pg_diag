@@ -18,7 +18,7 @@ queries:
       supports: [once]
     variants:
       - id: objects_table_workload_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: objects/table_workload.sql
         semantic_columns:
           dimensions:
@@ -60,7 +60,7 @@ queries:
       supports: [once]
     variants:
       - id: objects_table_io_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: objects/table_io.sql
         semantic_columns:
           dimensions:
@@ -96,7 +96,7 @@ queries:
       supports: [once]
     variants:
       - id: objects_index_workload_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: objects/index_workload.sql
         semantic_columns:
           dimensions:
@@ -132,7 +132,7 @@ queries:
       supports: [once]
     variants:
       - id: objects_function_workload_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: objects/function_workload.sql
         semantic_columns:
           dimensions:

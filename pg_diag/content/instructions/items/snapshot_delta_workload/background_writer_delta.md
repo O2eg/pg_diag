@@ -6,7 +6,7 @@ This instruction belongs to report item `snapshot_delta_workload.background_writ
 - Buffers cleaned, allocation activity, cleaning-limit stops, and version-dependent backend writes/fsyncs.
 
 ## What to watch
-- Repeated `maxwritten_clean` increases and, on PostgreSQL 14-16, backend fsync activity.
+- Repeated `maxwritten_clean` increases and, on PostgreSQL 10-16, backend fsync activity.
 
 ## Automatic evaluation
 - New backend fsync operations produce `medium` severity on versions exposing that counter.

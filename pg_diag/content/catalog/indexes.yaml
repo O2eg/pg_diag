@@ -18,8 +18,8 @@ queries:
       default: once
       supports: [once]
     variants:
-      - id: indexes_invalid_indexes_pg12_plus
-        min_pg_version: 120000
+      - id: indexes_invalid_indexes_pg10_plus
+        min_pg_version: 100000
         sql_file: indexes/invalid_indexes.sql
 
   indexes.unused_indexes:
@@ -41,6 +41,6 @@ queries:
       default: once
       supports: [once]
     variants:
-      - id: indexes_unused_indexes_pg12_plus
-        min_pg_version: 120000
+      - id: indexes_unused_indexes_pg10_plus
+        min_pg_version: 100000
         sql_file: indexes/unused_indexes.sql

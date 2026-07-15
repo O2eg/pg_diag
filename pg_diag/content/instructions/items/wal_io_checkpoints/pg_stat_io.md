@@ -25,4 +25,4 @@ This instruction belongs to report item `wal_io_checkpoints.pg_stat_io`. The ite
 - Compare deltas for the same backend/object/context and reset epoch.
 - Correlate with OS disk latency/throughput and SQL/object workload.
 - Do not add backend-type rows together with a synthetic total; this item intentionally emits no total row.
-- Unsupported on PostgreSQL 14-15.
+- Unsupported on PostgreSQL 10-15.

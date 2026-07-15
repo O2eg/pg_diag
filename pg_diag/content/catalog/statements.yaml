@@ -16,8 +16,8 @@ queries:
       default: once
       supports: [once]
     variants:
-      - id: statements_pgss_capabilities_pg14_plus
-        min_pg_version: 140000
+      - id: statements_pgss_capabilities_pg10_plus
+        min_pg_version: 100000
         sql_file: statements/pg_stat_statements_capabilities.sql
 
   statements.top_by_total_time:
@@ -39,6 +39,14 @@ queries:
       default: once
       supports: [once]
     variants:
+      - id: statements_top_by_total_time_pg10_pg12
+        min_pg_version: 100000
+        max_pg_version: 129999
+        sql_file: statements/top_by_total_time_pg10_pg12.sql
+      - id: statements_top_by_total_time_pg13
+        min_pg_version: 130000
+        max_pg_version: 139999
+        sql_file: statements/top_by_total_time_pg13.sql
       - id: statements_top_by_total_time_pg14_pg16
         min_pg_version: 140000
         max_pg_version: 169999
@@ -96,6 +104,14 @@ queries:
       default: once
       supports: [once]
     variants:
+      - id: statements_top_by_mean_time_pg10_pg12
+        min_pg_version: 100000
+        max_pg_version: 129999
+        sql_file: statements/top_by_mean_time_pg10_pg12.sql
+      - id: statements_top_by_mean_time_pg13
+        min_pg_version: 130000
+        max_pg_version: 139999
+        sql_file: statements/top_by_mean_time_pg13.sql
       - id: statements_top_by_mean_time_pg14_pg16
         min_pg_version: 140000
         max_pg_version: 169999
@@ -121,6 +137,14 @@ queries:
       default: once
       supports: [once]
     variants:
+      - id: statements_top_by_calls_pg10_pg12
+        min_pg_version: 100000
+        max_pg_version: 129999
+        sql_file: statements/top_by_calls_pg10_pg12.sql
+      - id: statements_top_by_calls_pg13
+        min_pg_version: 130000
+        max_pg_version: 139999
+        sql_file: statements/top_by_calls_pg13.sql
       - id: statements_top_by_calls_pg14_pg16
         min_pg_version: 140000
         max_pg_version: 169999
@@ -146,6 +170,14 @@ queries:
       default: once
       supports: [once]
     variants:
+      - id: statements_top_by_io_pg10_pg12
+        min_pg_version: 100000
+        max_pg_version: 129999
+        sql_file: statements/top_by_io_pg10_pg12.sql
+      - id: statements_top_by_io_pg13
+        min_pg_version: 130000
+        max_pg_version: 139999
+        sql_file: statements/top_by_io_pg13.sql
       - id: statements_top_by_io_pg14_pg16
         min_pg_version: 140000
         max_pg_version: 169999
@@ -173,6 +205,14 @@ queries:
       default: once
       supports: [once]
     variants:
+      - id: statements_top_by_temp_io_pg10_pg12
+        min_pg_version: 100000
+        max_pg_version: 129999
+        sql_file: statements/top_by_temp_io_pg10_pg12.sql
+      - id: statements_top_by_temp_io_pg13
+        min_pg_version: 130000
+        max_pg_version: 139999
+        sql_file: statements/top_by_temp_io_pg13.sql
       - id: statements_top_by_temp_io_pg14_pg16
         min_pg_version: 140000
         max_pg_version: 169999
@@ -197,7 +237,13 @@ queries:
     collection:
       default: once
       supports: [once]
+    requirements:
+      unsupported_versions_reason: pg_stat_statements exposes WAL counters only from PostgreSQL 13.
     variants:
+      - id: statements_top_by_wal_pg13
+        min_pg_version: 130000
+        max_pg_version: 139999
+        sql_file: statements/top_by_wal_pg13.sql
       - id: statements_top_by_wal_pg14_pg16
         min_pg_version: 140000
         max_pg_version: 169999

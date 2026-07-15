@@ -193,8 +193,8 @@ queries:
       default: once
       supports: [once, every_snapshot]
     variants:
-      - id: cluster_settings_pg14_plus
-        min_pg_version: 140000
+      - id: cluster_settings_pg10_plus
+        min_pg_version: 100000
         sql_file: cluster/settings.sql
         semantic_columns:
           dimensions:

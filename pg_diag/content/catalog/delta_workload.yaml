@@ -15,11 +15,11 @@ queries:
       default: window_endpoints
       supports: [once, window_endpoints]
     variants:
-      - id: metrics_statements_temp_io_delta_pg14_pg16
-        min_pg_version: 140000
-        max_pg_version: 169999
-        sql_file: metrics/statements_temp_io_delta.sql
-        semantic_columns:
+      - id: metrics_statements_temp_io_delta_pg10_pg13
+        min_pg_version: 100000
+        max_pg_version: 139999
+        sql_file: metrics/statements_temp_io_delta_pg10_pg13.sql
+        semantic_columns: &statement_temp_io_semantics
           dimensions:
             database: datname
             user: rolname
@@ -34,6 +34,11 @@ queries:
             temp_io_bytes: temp_io_bytes
             temp_read_time_ms: temp_read_time_ms
             temp_write_time_ms: temp_write_time_ms
+      - id: metrics_statements_temp_io_delta_pg14_pg16
+        min_pg_version: 140000
+        max_pg_version: 169999
+        sql_file: metrics/statements_temp_io_delta.sql
+        semantic_columns: *statement_temp_io_semantics
       - id: metrics_statements_temp_io_delta_pg17_plus
         min_pg_version: 170000
         sql_file: metrics/statements_temp_io_delta_pg17_plus.sql
@@ -111,7 +116,7 @@ queries:
     collection: *window_endpoints
     variants:
       - id: metrics_checkpointer_delta_pg14_pg16
-        min_pg_version: 140000
+        min_pg_version: 100000
         max_pg_version: 169999
         sql_file: metrics/checkpointer_delta_pg14_pg16.sql
         semantic_columns: &checkpointer_semantics
@@ -186,7 +191,7 @@ queries:
     collection: *window_endpoints
     variants:
       - id: metrics_objects_table_maintenance_delta_pg14_pg17
-        min_pg_version: 140000
+        min_pg_version: 100000
         max_pg_version: 179999
         sql_file: metrics/objects_table_maintenance_delta.sql
         semantic_columns: &table_maintenance_semantics
@@ -233,7 +238,7 @@ queries:
     collection: *window_endpoints
     variants:
       - id: metrics_recovery_conflicts_delta_pg14_pg15
-        min_pg_version: 140000
+        min_pg_version: 100000
         max_pg_version: 159999
         sql_file: metrics/recovery_conflicts_delta.sql
         semantic_columns: &recovery_conflicts_semantics
@@ -301,7 +306,7 @@ queries:
     collection: *window_endpoints
     variants:
       - id: metrics_physical_replication_progress_delta_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/physical_replication_progress_delta.sql
         semantic_columns:
           dimensions:
@@ -333,10 +338,10 @@ queries:
         direction: desc
     collection: *window_endpoints
     variants:
-      - id: metrics_statements_planning_delta_pg14_pg16
-        min_pg_version: 140000
-        max_pg_version: 169999
-        sql_file: metrics/statements_planning_delta.sql
+      - id: metrics_statements_planning_delta_pg13
+        min_pg_version: 130000
+        max_pg_version: 139999
+        sql_file: metrics/statements_planning_delta_pg13.sql
         semantic_columns: &statement_planning_semantics
           dimensions:
             database: datname
@@ -350,6 +355,11 @@ queries:
           counters:
             plans: plans
             total_plan_time_ms: total_plan_time_ms
+      - id: metrics_statements_planning_delta_pg14_pg16
+        min_pg_version: 140000
+        max_pg_version: 169999
+        sql_file: metrics/statements_planning_delta.sql
+        semantic_columns: *statement_planning_semantics
       - id: metrics_statements_planning_delta_pg17_plus
         min_pg_version: 170000
         sql_file: metrics/statements_planning_delta_pg17_plus.sql
@@ -382,7 +392,7 @@ queries:
     collection: *window_endpoints
     variants:
       - id: metrics_bgwriter_delta_pg14_pg16
-        min_pg_version: 140000
+        min_pg_version: 100000
         max_pg_version: 169999
         sql_file: metrics/bgwriter_delta_pg14_pg16.sql
         semantic_columns: &bgwriter_semantics
@@ -417,7 +427,7 @@ queries:
     collection: *window_endpoints
     variants:
       - id: metrics_slru_activity_delta_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 130000
         sql_file: metrics/slru_activity_delta.sql
         semantic_columns:
           dimensions:
@@ -446,7 +456,7 @@ queries:
     collection: *window_endpoints
     variants:
       - id: metrics_wal_archiver_delta_pg14_plus
-        min_pg_version: 140000
+        min_pg_version: 100000
         sql_file: metrics/wal_archiver_delta.sql
         semantic_columns:
           dimensions:

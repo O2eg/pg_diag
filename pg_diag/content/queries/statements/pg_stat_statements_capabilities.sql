@@ -15,12 +15,21 @@ with settings as (
 required_columns(column_name) as (
   select unnest(
     array[
-      'userid', 'dbid', 'toplevel', 'queryid', 'query', 'calls',
-      'total_exec_time', 'mean_exec_time', 'max_exec_time', 'total_plan_time',
-      'rows', 'shared_blks_hit', 'shared_blks_read', 'shared_blks_dirtied',
-      'shared_blks_written', 'temp_blks_read', 'temp_blks_written',
-      'wal_records', 'wal_fpi', 'wal_bytes'
+      'userid', 'dbid', 'queryid', 'query', 'calls', 'rows',
+      'shared_blks_hit', 'shared_blks_read', 'shared_blks_dirtied',
+      'shared_blks_written', 'temp_blks_read', 'temp_blks_written'
     ]::text[]
+    || case
+      when current_setting('server_version_num')::int >= 140000 then array[
+        'toplevel', 'total_exec_time', 'mean_exec_time', 'max_exec_time',
+        'total_plan_time', 'wal_records', 'wal_fpi', 'wal_bytes'
+      ]
+      when current_setting('server_version_num')::int >= 130000 then array[
+        'total_exec_time', 'mean_exec_time', 'max_exec_time',
+        'total_plan_time', 'wal_records', 'wal_fpi', 'wal_bytes'
+      ]
+      else array['total_time', 'mean_time', 'max_time']
+    end
     || case
       when current_setting('server_version_num')::int >= 170000
         then array['shared_blk_read_time', 'shared_blk_write_time', 'stats_since', 'minmax_stats_since']
@@ -75,8 +84,14 @@ capabilities as (
   union all
   select
     'info_view_available',
-    (to_regclass('pg_stat_statements_info') is not null)::text,
-    'to_regclass on pg_diag search_path'
+    case
+      when current_setting('server_version_num')::int < 140000 then 'not_applicable'
+      else (to_regclass('pg_stat_statements_info') is not null)::text
+    end,
+    case
+      when current_setting('server_version_num')::int < 140000 then 'not required before PostgreSQL 14'
+      else 'to_regclass on pg_diag search_path'
+    end
   union all
   select
     'required_view_columns',
@@ -116,7 +131,10 @@ capabilities as (
   union all
   select
     'compute_query_id',
-    coalesce((select setting from settings where name = 'compute_query_id'), '<missing>'),
+    case
+      when current_setting('server_version_num')::int < 140000 then 'not_applicable'
+      else coalesce((select setting from settings where name = 'compute_query_id'), '<missing>')
+    end,
     'pg_settings'
   union all
   select
@@ -176,7 +194,9 @@ select
       then 'the pg_stat_statements package is not available on this server'
     when capability = 'extension_installed' and value <> 'true'
       then 'install the extension in this database under the site change policy'
-    when capability in ('view_available', 'info_view_available') and value <> 'true'
+    when capability = 'view_available' and value <> 'true'
+      then 'the extension view is unavailable in the current database or pg_diag search path'
+    when capability = 'info_view_available' and value not in ('true', 'not_applicable')
       then 'the extension view is unavailable in the current database or pg_diag search path'
     when capability = 'required_view_columns' and value <> 'true'
       then 'required columns are unavailable; install or update the extension as indicated by the other capability rows'
@@ -184,7 +204,7 @@ select
       then 'shared_preload_libraries is hidden; pg_read_all_settings or pg_monitor is required to verify preload'
     when capability = 'preloaded' and value <> 'true'
       then 'add pg_stat_statements to shared_preload_libraries and restart PostgreSQL'
-    when capability = 'compute_query_id' and value not in ('on', 'auto')
+    when capability = 'compute_query_id' and value not in ('on', 'auto', 'not_applicable')
       then 'query identifiers require compute_query_id=on/auto or another query-ID provider'
     when capability = 'cross_user_query_visibility' and value <> 'full'
       then 'Top SQL can identify only statements owned by the current role; grant pg_read_all_stats only if policy permits'
@@ -203,9 +223,10 @@ select
   case
     when capability in (
       'extension_available', 'extension_installed', 'view_available',
-      'info_view_available', 'required_view_columns', 'preloaded'
+      'required_view_columns', 'preloaded'
     ) and value <> 'true' then 'unknown'
-    when capability = 'compute_query_id' and value not in ('on', 'auto') then 'unknown'
+    when capability = 'info_view_available' and value not in ('true', 'not_applicable') then 'unknown'
+    when capability = 'compute_query_id' and value not in ('on', 'auto', 'not_applicable') then 'unknown'
     when capability = 'cross_user_query_visibility' and value <> 'full' then 'unknown'
     when capability = 'settings_visibility' and value <> 'full' then 'unknown'
     when capability = 'pg_stat_statements.track' and value = 'none' then 'unknown'
@@ -216,7 +237,9 @@ select
       then 'pg_stat_statements package availability is not proven'
     when capability = 'extension_installed' and value <> 'true'
       then 'pg_stat_statements is not installed in the connected database'
-    when capability in ('view_available', 'info_view_available') and value <> 'true'
+    when capability = 'view_available' and value <> 'true'
+      then capability || ' is false'
+    when capability = 'info_view_available' and value not in ('true', 'not_applicable')
       then capability || ' is false'
     when capability = 'required_view_columns' and value <> 'true'
       then 'columns required by the selected PostgreSQL variant are unavailable'
@@ -224,7 +247,7 @@ select
       then 'shared_preload_libraries is not visible to the collection role'
     when capability = 'preloaded' and value <> 'true'
       then 'pg_stat_statements is not present in shared_preload_libraries'
-    when capability = 'compute_query_id' and value not in ('on', 'auto')
+    when capability = 'compute_query_id' and value not in ('on', 'auto', 'not_applicable')
       then 'built-in query ID computation is not enabled'
     when capability = 'cross_user_query_visibility' and value <> 'full'
       then 'query IDs and SQL text for other roles are hidden'
