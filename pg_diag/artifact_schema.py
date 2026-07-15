@@ -72,6 +72,10 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
     for key in ("generator", "content", "report", "runtime"):
         if not isinstance(artifact[key], dict):
             raise ValidationError(f"Artifact field {key!r} must be a mapping")
+    if "strip_meta" in artifact["runtime"] and not isinstance(
+        artifact["runtime"]["strip_meta"], bool
+    ):
+        raise ValidationError("Artifact field 'runtime.strip_meta' must be boolean")
     content = artifact["content"]
     if content.get("schema_version") != runtime_config.SUPPORTED_CONTENT_SCHEMA_VERSION:
         raise ValidationError("Artifact content schema version does not match the runtime contract")

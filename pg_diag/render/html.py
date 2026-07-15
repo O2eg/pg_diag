@@ -11,7 +11,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-from pg_diag.artifact import write_text_secure
+from pg_diag.artifact import strip_artifact_metadata, write_text_secure
 from pg_diag.artifact_schema import validate_artifact
 
 _SCRIPT_END_RE = re.compile(r"</script", re.IGNORECASE)
@@ -42,8 +42,15 @@ def render_html(artifact: dict[str, Any], *, validate: bool = True) -> str:
     return placeholder_pattern.sub(lambda match: replacements[match.group(0)], _html_template())
 
 
-def render_from_json(json_path: str | Path, html_path: str | Path) -> None:
+def render_from_json(
+    json_path: str | Path,
+    html_path: str | Path,
+    *,
+    strip_meta: bool = False,
+) -> None:
     artifact = json.loads(Path(json_path).read_text(encoding="utf-8"))
+    if strip_meta:
+        strip_artifact_metadata(artifact)
     html_text = render_html(artifact)
     write_text_secure(html_path, html_text)
 

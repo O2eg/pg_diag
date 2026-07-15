@@ -113,6 +113,17 @@ def test_output_format_cli_parses_scalar_array_and_default_forms() -> None:
     assert both.output_format == ("html", "json")
 
 
+def test_strip_meta_cli_is_opt_in_for_report_and_render_commands() -> None:
+    parser = build_parser()
+
+    assert parser.parse_args(["one-shot"]).strip_meta is False
+    assert parser.parse_args(["one-shot", "--strip-meta"]).strip_meta is True
+    assert parser.parse_args(["snapshots", "--strip-meta"]).strip_meta is True
+    assert parser.parse_args(
+        ["render", "--from-json", "report.json", "--out", "report.html", "--strip-meta"]
+    ).strip_meta is True
+
+
 @pytest.mark.parametrize("value", ["xml", "[html,pdf]", "[json,json]", "[]"])
 def test_output_format_cli_rejects_invalid_values(value: str) -> None:
     parser = build_parser()
@@ -343,12 +354,17 @@ def test_render_from_json_cli(repo_root: Path, tmp_path: Path) -> None:
                 "catalogs": {
                     "presentation": {"units": {"none": {}}},
                 },
-                "queries": {},
+                "queries": {"test.query": {"title": "Embedded check query"}},
                 "scripts": {},
                 "metrics": {},
                 "python_sources": {},
                 "sampler_providers": {},
-                "instructions": {},
+                "instructions": {
+                    "overview.x": {
+                        "format": "markdown",
+                        "path": "instructions/items/overview/x.md",
+                    }
+                },
                 "field_reference": {"report": "Report metadata."},
             },
             "provenance": {"report": ["report.yaml"]},
@@ -400,7 +416,19 @@ def test_render_from_json_cli(repo_root: Path, tmp_path: Path) -> None:
                     "row_count": 1,
                 },
                 "timing_ms": 1,
-                "source_metadata": {},
+                "source_metadata": {
+                    "query_id": "test.query",
+                    "sql_file": "overview/x.sql",
+                    "source_text": "select secret_check_source()",
+                    "source_language": "sql",
+                    "instructions": {
+                        "format": "markdown",
+                        "path": "instructions/items/overview/x.md",
+                        "text": "Private item instruction",
+                    },
+                    "tags": ["SQL"],
+                    "display": {"default_sort": {"column": "value", "direction": "asc"}},
+                },
                 "diagnostics": [],
                 "issues": {},
             }
@@ -420,6 +448,27 @@ def test_render_from_json_cli(repo_root: Path, tmp_path: Path) -> None:
     html = html_path.read_text(encoding="utf-8")
     assert "\\u003c/script\\u003e" in html
     assert "<script>alert(1)</script>" not in html
+
+    stripped_html_path = tmp_path / "report-stripped.html"
+    stripped_proc = run_cli(
+        repo_root,
+        "render",
+        "--from-json",
+        str(json_path),
+        "--out",
+        str(stripped_html_path),
+        "--strip-meta",
+    )
+
+    assert stripped_proc.returncode == 0, stripped_proc.stderr + stripped_proc.stdout
+    stripped_html = stripped_html_path.read_text(encoding="utf-8")
+    assert '"strip_meta":true' in stripped_html
+    assert "select secret_check_source()" not in stripped_html
+    assert "Private item instruction" not in stripped_html
+    assert '"queries":{}' in stripped_html
+    assert '"instructions":{}' in stripped_html
+    assert '"source_metadata":{"display":' in stripped_html
+    assert '"tags":["SQL"]' in stripped_html
 
 
 def test_snapshots_cli_rejects_interval_below_minimum(repo_root: Path) -> None:

@@ -102,6 +102,11 @@ def build_parser() -> argparse.ArgumentParser:
     render_parser = subparsers.add_parser("render", help="Render HTML from report JSON")
     render_parser.add_argument("--from-json", required=True, dest="from_json")
     render_parser.add_argument("--out", required=True)
+    render_parser.add_argument(
+        "--strip-meta",
+        action="store_true",
+        help="Omit item source, instruction, and configuration metadata from HTML",
+    )
     render_parser.set_defaults(func=cmd_render)
 
     snapshots_parser = subparsers.add_parser("snapshots", help="Collect repeated snapshots report")
@@ -152,6 +157,11 @@ def _add_report_output_file_args(parser: argparse.ArgumentParser) -> None:
         default=runtime_config.DEFAULT_REPORT_OUTPUT_FORMATS,
         metavar="[html,json]",
         help="Write html, json, or a comma-separated list (default: html,json)",
+    )
+    parser.add_argument(
+        "--strip-meta",
+        action="store_true",
+        help="Omit item source, instruction, and configuration metadata from reports",
     )
 
 
@@ -392,7 +402,8 @@ def cmd_one_shot(args: argparse.Namespace) -> int:
         progress = ProgressReporter(log_path)
         progress.info(
             f"START command=one-shot collection_mode={args.collection_mode}"
-            f"{_selection_log_suffix(requested_item_ids, requested_tags)} log={progress.path}"
+            f"{_selection_log_suffix(requested_item_ids, requested_tags)}"
+            f"{_strip_meta_log_suffix(args.strip_meta)} log={progress.path}"
         )
         artifact = asyncio.run(
             collect_one_shot(
@@ -409,6 +420,7 @@ def cmd_one_shot(args: argparse.Namespace) -> int:
                 item_id=requested_item_ids,
                 tags=requested_tags,
                 progress=progress,
+                strip_meta=args.strip_meta,
             )
         )
     except Exception as exc:
@@ -479,7 +491,8 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
         progress = ProgressReporter(log_path)
         progress.info(
             f"START command=snapshots collection_mode={args.collection_mode}"
-            f"{_selection_log_suffix(requested_item_ids, requested_tags)} log={progress.path}"
+            f"{_selection_log_suffix(requested_item_ids, requested_tags)}"
+            f"{_strip_meta_log_suffix(args.strip_meta)} log={progress.path}"
         )
         artifact = asyncio.run(
             collect_snapshots(
@@ -498,6 +511,7 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
                 item_id=requested_item_ids,
                 tags=requested_tags,
                 progress=progress,
+                strip_meta=args.strip_meta,
             )
         )
     except Exception as exc:
@@ -595,6 +609,10 @@ def _selection_log_suffix(
     return ""
 
 
+def _strip_meta_log_suffix(enabled: bool) -> str:
+    return " strip_meta=true" if enabled else ""
+
+
 def _connection_args_error(args: argparse.Namespace, command: str) -> str | None:
     if not args.dsn and not (args.host and args.database and args.user):
         return f"{command} requires --dsn or --host/--database/--user"
@@ -664,7 +682,7 @@ def _ssh_config(args: argparse.Namespace) -> SshConfig | None:
 
 def cmd_render(args: argparse.Namespace) -> int:
     try:
-        render_from_json(args.from_json, args.out)
+        render_from_json(args.from_json, args.out, strip_meta=args.strip_meta)
     except Exception as exc:
         print(f"ERROR: render failed: {redact_error(exc)}", file=sys.stderr)
         return 1

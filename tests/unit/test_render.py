@@ -229,9 +229,14 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert 'list.className = "item-tag-list"' in html
     assert 'badge.className = "item-tag"' in html
     assert 'list.setAttribute("aria-label", "Item tags")' in html
+    assert "const stripMeta = Boolean(runtime.strip_meta)" in html
+    assert "if (stripMeta || !sourceText(item))" in html
+    assert "if (stripMeta || !instructionText(item))" in html
+    assert "if (stripMeta) {\n        return null;\n      }" in html
+    assert "if (buttons.childElementCount)" in html
     assert html.index("buttons.appendChild(sourceButton)") < html.index(
         "buttons.appendChild(instructionButton)"
-    ) < html.index("buttons.appendChild(renderMetaButton(item))")
+    ) < html.index("buttons.appendChild(metaButton)")
     assert "const tag = document.getElementById(\"tagFilter\").value" in html
     assert "if (leftEmpty !== rightEmpty)" in html
     assert "if ((leftNumber === null) !== (rightNumber === null))" in html

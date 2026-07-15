@@ -2262,6 +2262,7 @@ __HIGHLIGHT_JS__
     const contentDocument = contentConfig.document;
     const contentProvenance = contentConfig.provenance;
     const contentFieldReference = contentDocument.field_reference;
+    const stripMeta = Boolean(runtime.strip_meta);
     const visibleItems = Object.values(items).filter(isVisibleItem);
     const app = document.getElementById("app");
     const tableViews = [];
@@ -3111,7 +3112,7 @@ __HIGHLIGHT_JS__
     }
 
     function renderSourceButton(item) {
-      if (!sourceText(item)) {
+      if (stripMeta || !sourceText(item)) {
         return null;
       }
       const button = document.createElement("button");
@@ -3123,6 +3124,9 @@ __HIGHLIGHT_JS__
     }
 
     function renderMetaButton(item) {
+      if (stripMeta) {
+        return null;
+      }
       const button = document.createElement("button");
       button.type = "button";
       button.className = "btn source-button";
@@ -3132,7 +3136,7 @@ __HIGHLIGHT_JS__
     }
 
     function renderInstructionButton(item) {
-      if (!instructionText(item)) {
+      if (stripMeta || !instructionText(item)) {
         return null;
       }
       const button = document.createElement("button");
@@ -3156,8 +3160,13 @@ __HIGHLIGHT_JS__
       if (instructionButton) {
         buttons.appendChild(instructionButton);
       }
-      buttons.appendChild(renderMetaButton(item));
-      meta.appendChild(buttons);
+      const metaButton = renderMetaButton(item);
+      if (metaButton) {
+        buttons.appendChild(metaButton);
+      }
+      if (buttons.childElementCount) {
+        meta.appendChild(buttons);
+      }
       const tags = renderItemTags(item);
       if (tags) {
         meta.appendChild(tags);

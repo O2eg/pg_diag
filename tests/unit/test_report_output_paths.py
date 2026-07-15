@@ -259,6 +259,101 @@ def test_collect_one_shot_writes_only_selected_output_format(
     assert bool(render_calls) is (output_format == "html")
 
 
+def test_collect_one_shot_strip_meta_cleans_json_and_html_artifact(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    planned = PlannedItem(
+        item_id="os.test_script",
+        section_id="os",
+        item_key="test_script",
+        title="Test Script",
+        source_kind="script",
+        source_id="os.test_script",
+        status="planned",
+        state="expanded",
+        source_metadata={
+            "script_id": "os.test_script",
+            "script_file": "test_script.sh",
+            "instructions": {
+                "path": "instructions/items/os/test_script.md",
+                "text": "Private instruction",
+            },
+            "tags": ["OS"],
+            "render": {"empty_message": "No output."},
+        },
+    )
+
+    async def connect_stub(*args, **kwargs):
+        return FakeConn()
+
+    async def detect_runtime_context_stub(conn):
+        return {
+            "server_version_num": 180000,
+            "server_version": "PostgreSQL 18",
+            "current_database": "testdb",
+            "current_user": "app",
+            "in_recovery": False,
+            "capabilities": {},
+        }
+
+    async def execute_report_item_stub(*args, **kwargs):
+        return item_from_plan(
+            planned,
+            collection_status="ok",
+            result={"kind": "plain_text", "data": "collected result"},
+            source_text="printf private-source",
+            source_language="bash",
+        )
+
+    rendered_artifacts = []
+
+    def render_stub(artifact, **kwargs):
+        rendered_artifacts.append(artifact)
+        return "<html>stripped</html>"
+
+    monkeypatch.setattr(collection_module, "connect", connect_stub)
+    monkeypatch.setattr(collection_module, "detect_runtime_context", detect_runtime_context_stub)
+    monkeypatch.setattr(collection_module, "execute_report_item", execute_report_item_stub)
+    monkeypatch.setattr(
+        collection_module,
+        "build_plan",
+        lambda *args, **kwargs: fake_plan_with_items(
+            kwargs.get("mode"), kwargs.get("collection_mode"), [planned]
+        ),
+    )
+    monkeypatch.setattr(collection_module, "render_html", render_stub)
+
+    out_dir = tmp_path / "stripped"
+    artifact = asyncio.run(
+        collect_one_shot(
+            content=fake_content(tmp_path),
+            out_dir=out_dir,
+            dsn=None,
+            connection_kwargs={},
+            collection_mode=runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE,
+            content_validated=True,
+            strip_meta=True,
+        )
+    )
+
+    written = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+    assert artifact["runtime"]["strip_meta"] is True
+    assert written["runtime"]["strip_meta"] is True
+    assert written["items"][planned.item_id]["source_metadata"] == {
+        "render": {"empty_message": "No output."},
+        "tags": ["OS"],
+    }
+    assert written["content"]["document"]["queries"] == {}
+    assert written["content"]["document"]["scripts"] == {}
+    assert written["content"]["document"]["instructions"] == {}
+    assert written["content"]["provenance"] == {"report": ["report.yaml"]}
+    assert written["items"][planned.item_id]["result"]["data"] == "collected result"
+    assert "printf private-source" not in json.dumps(written)
+    assert "Private instruction" not in json.dumps(written)
+    assert rendered_artifacts == [artifact]
+
+
 def test_collect_snapshots_propagates_json_only_output_format(tmp_path, monkeypatch) -> None:
     async def connect_stub(*args, **kwargs):
         return FakeConn()
@@ -286,7 +381,7 @@ def test_collect_snapshots_propagates_json_only_output_format(tmp_path, monkeypa
     monkeypatch.setattr(collection_module, "render_html", unexpected_render)
 
     out_dir = tmp_path / "snapshots-json"
-    asyncio.run(
+    artifact = asyncio.run(
         collect_snapshots(
             content=fake_content(tmp_path),
             out_dir=out_dir,
@@ -297,11 +392,14 @@ def test_collect_snapshots_propagates_json_only_output_format(tmp_path, monkeypa
             interval_seconds=15,
             output_formats="json",
             content_validated=True,
+            strip_meta=True,
         )
     )
 
     assert (out_dir / "report.json").exists()
     assert not (out_dir / "report.html").exists()
+    assert artifact["runtime"]["strip_meta"] is True
+    assert artifact["content"]["document"]["queries"] == {}
 
 
 def test_collect_one_shot_writes_exact_output_files(tmp_path, monkeypatch) -> None:

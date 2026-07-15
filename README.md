@@ -33,10 +33,12 @@ in core dispatch, validation, or metric rendering.
 
 ## Quick Navigation
 
-- [Quick start](#quick-start)
 - [Credentials and security](#credentials-and-security)
+- [Quick start](#quick-start)
+- [Report consumers and automation](#report-consumers-and-automation)
 - [Inspect and validate content](#inspect-and-validate-content)
 - [Report and collection modes](#report-and-collection-modes)
+- [Connection topologies](#connection-topologies)
 - [Run one-shot reports](#run-one-shot-reports)
 - [Run repeated snapshots](#run-repeated-snapshots)
 - [Select report items](#select-report-items)
@@ -57,9 +59,37 @@ in core dispatch, validation, or metric rendering.
   palettes.
 - Source and metadata dialogs for report items.
 - Error diagnostics embedded directly into failed report items.
-- JSON artifact separated from HTML rendering.
+- Self-contained HTML for human review and structured JSON for LLM, ETL, and
+  other automation workflows.
 
 ## Installation
+
+### Install from PyPI (planned)
+
+The project is not published on PyPI yet. After the first release is uploaded,
+the intended installation command will be:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+
+python -m pip install --upgrade pip
+python -m pip install pg-diag
+```
+
+The distribution name will be `pg-diag`, the import package is `pg_diag`, and
+the installed command is `pg-diag`. The wheel will include the bundled content
+pack and the JavaScript/CSS assets required for self-contained HTML reports.
+Until the package is actually published, `pip install pg-diag` may report that
+no matching distribution exists; use the source installation below.
+
+After a PyPI release, upgrade an existing installation with:
+
+```bash
+python -m pip install --upgrade pg-diag
+```
+
+### Install from Source
 
 Install from the project directory:
 
@@ -76,7 +106,7 @@ python -m pip install -e .
 For development and tests:
 
 ```bash
-cd pg_diag
+# Activate the environment used during installation, if applicable.
 . .venv/bin/activate
 
 python -m pip install -e ".[dev]"
@@ -255,13 +285,11 @@ publishing them.
 
 ## Quick Start
 
-After installation, validate the bundled content and build a database-only
-point-in-time report:
+After installation, activate the environment containing `pg-diag` if needed,
+then validate the bundled content and build a database-only point-in-time
+report. These commands work from any directory:
 
 ```bash
-cd pg_diag
-. .venv/bin/activate
-
 export PGPASSWORD='change-me'
 
 pg-diag validate
@@ -285,6 +313,86 @@ reports/appdb_one_shot/report.log
 
 Open the HTML locally in a browser. Keep the JSON artifact: it can be validated
 or rendered again without reconnecting to PostgreSQL.
+
+## Report Consumers and Automation
+
+One collection can serve several consumers. The self-contained HTML is the
+primary interactive view for a human, while JSON is the stable machine-readable
+artifact for automation. `pg_diag` itself writes report files; schedulers,
+LLM systems, ETL loaders, databases, compressors, and chat delivery are external
+components selected by the operator.
+
+```text
+                         +--------------------------+
+                         | Human DBA / on-call      |
+                         | opens report.html        |
+                         +-------------^------------+
+                                       |
++------------------+       +-----------+-----------+
+| cron / systemd   |       | pg_diag collection    |
+| timer / CI job   +------>|                          |
++------------------+       | report.html            |
+                           | report.json            |
+                           | report.log             |
+                           +-----------+------------+
+                                       |
+             +-------------------------+-------------------------+
+             |                         |                         |
+             v                         v                         v
++------------------------+  +----------------------+  +-----------------------+
+| Agentic LLM system     |  | ETL / ingestion job |  | Archive / delivery    |
+| reads report.json      |  | stores JSON / JSONB |  | gzip/zstd or summary  |
+| summarizes and triages |  | normalized facts    |  | -> bot/webhook -> chat|
++------------------------+  +----------+-----------+  +-----------+-----------+
+                                      |                          |
+                                      v                          v
+                           +----------------------+  +-----------------------+
+                           | Diagnostics database |  | On-call team chat     |
+                           | history and trends   |  | daily/on-schedule     |
+                           +----------------------+  +-----------------------+
+```
+
+Typical use cases:
+
+- A DBA opens `report.html` during an incident, filters sections and tags, and
+  exports selected charts.
+- An agentic LLM system reads `report.json`, correlates item statuses,
+  diagnostics, tables, and charts, and prepares a concise triage summary or a
+  proposed investigation plan for a human reviewer.
+- An ingestion job stores the complete artifact in a separate database (for
+  example, a PostgreSQL `jsonb` column) and optionally normalizes runtime,
+  item, diagnostic, and metric records for historical queries and dashboards.
+- A scheduled job builds a targeted report, compresses the JSON artifact or
+  produces a shorter summary, and sends it through an organization-approved
+  bot or webhook to the on-call chat every day or on another schedule.
+- A human and an LLM can review the same run: HTML provides the visual report,
+  while JSON preserves the exact structured evidence used by automation.
+
+For scheduled lightweight collection, combine `--tags` or `--item-id` with
+JSON-only output and optionally `--strip-meta`:
+
+```bash
+run_dir="reports/daily/$(date -u +%Y%m%dT%H%M%SZ)"
+
+pg-diag one-shot \
+  --dsn "postgresql://diag@db.example.com:5432/appdb" \
+  --collection-mode remote-db-only \
+  --tags='[Configuration,Security,Locks,Replication]' \
+  --output-format=json \
+  --strip-meta \
+  --out "$run_dir"
+
+gzip -9 "$run_dir/report.json"
+# Send report.json.gz, or a derived concise summary, with the approved chat bot.
+```
+
+The example is suitable for a `cron` job, a systemd timer, or a CI scheduler;
+credential and retention policy remain the responsibility of that environment.
+When an LLM processes a report, treat all database text and custom item output
+as untrusted data rather than instructions. Do not let an agent execute SQL,
+shell commands, or remediation actions solely because they appear in a report;
+use explicit tool allowlists, read-only credentials, redaction, and human
+approval for production changes.
 
 ## Inspect and Validate Content
 
@@ -369,6 +477,72 @@ by default).
 | `remote-db-only` | Direct asyncpg connection from the collector | Not collected | Host `script`, host-dependent `python`, and host-backed `metric` items are omitted from the final report without executing their sources; DB-only sources remain available |
 | `local` | Direct asyncpg connection from the collector | Read from the collector machine | Use when the collector is the PostgreSQL host or when collector-host evidence is intentionally required |
 | `remote` | Asyncpg connection through an AsyncSSH local port forward | Read from the SSH target over the same authenticated connection | `script` sources execute on the SSH target; trusted `python` evaluates locally using SSH-backed file and process evidence |
+
+### Connection Topologies
+
+The selected collection mode determines where PostgreSQL connections originate
+and which operating system is inspected.
+
+`remote-db-only` connects directly to PostgreSQL and never opens SSH or runs
+host probes:
+
+```text
++----------------------------+       PostgreSQL protocol       +----------------------+
+| Collector host             |  ---------------------------->  | PostgreSQL endpoint  |
+|                            |                                 |                      |
+| pg-diag                    |  <----------------------------  | catalogs/statistics  |
+| Python + asyncpg           |       rows and metadata         | port 5432 or proxy   |
++----------------------------+                                 +----------------------+
+
+Host OS evidence: not collected
+Best fit: workstation, automation runner, Kubernetes job, or restricted network
+```
+
+`local` connects directly to PostgreSQL and inspects the same machine on which
+`pg-diag` is running:
+
+```text
++--------------------------------------------------------------------------+
+| PostgreSQL / collector host                                              |
+|                                                                          |
+|  +-------------------+     local socket or TCP     +------------------+  |
+|  | pg-diag           +---------------------------->| PostgreSQL       |  |
+|  |                   |<----------------------------+ instance         |  |
+|  |                   |                              +------------------+  |
+|  |                   | reads /proc, config files, ps, lshw, iostat       |
+|  +---------+---------+                                                   |
+|            +---------------------------> local host OS                    |
++--------------------------------------------------------------------------+
+
+Host OS evidence: collector machine
+Best fit: pg-diag runs directly on the PostgreSQL VM or inside its host context
+```
+
+If PostgreSQL is in a container but `pg-diag` runs on the container host,
+`local` host items describe the host. Run `pg-diag` inside the container only
+when container-local OS evidence is the intended scope and the required tools
+and files are available there.
+
+`remote` uses one SSH session for host access and a local TCP forward for the
+database connection. The PostgreSQL endpoint may be on the SSH host, in a
+container, or reachable from that host over its private network:
+
+```text
++-----------------------------+                 +-------------------------------+
+| Collector host              |  SSH commands   | SSH target host               |
+|                             +---------------->|                               |
+| pg-diag                     |  SFTP / /proc   | sshd -> shell and host probes |
+| AsyncSSH + asyncpg          |<----------------+ config, ps, lshw, iostat      |
+|       |                     |                 |                               |
+|       +-- local TCP forward +================>| PostgreSQL endpoint            |
+|             DB protocol     |  SSH tunnel     | local/container/private host  |
++-----------------------------+                 +-------------------------------+
+
+The SSH private key and PostgreSQL credentials stay on the collector;
+pg-diag does not need to be installed on the SSH target
+Host OS evidence: SSH target
+Best fit: production VM reachable only through SSH or a bastion-style endpoint
+```
 
 ### Combined Report Matrix
 
@@ -833,6 +1007,31 @@ enabled report path; passing a path for a format excluded by `--output-format`
 is an argument error. `report.log` is always written under `--out`. When both
 formats are enabled, the JSON and HTML paths must identify different files.
 
+`--strip-meta` is an opt-in option for `one-shot` and `snapshots`. It removes
+the item check source, source identifiers and paths, instruction text and
+references, item source catalogs, and item-level source provenance before JSON
+and HTML are written. The stripped HTML does not show the `Show SQL`, `Show
+Bash`, `Show Python`, `Show Instruction`, or `Show meta` buttons. Collected
+results are unchanged. Only presentation metadata required by the report UI is
+retained (`tags`, `display`, `render`, `chart`, and the internal visibility
+marker). The `query_texts` catalog is also retained because it contains
+diagnostic data collected from PostgreSQL and is referenced by query-ID cells;
+it is not the source code of a pg_diag check.
+
+```bash
+pg-diag snapshots \
+  --dsn "postgresql://app@127.0.0.1:5432/appdb" \
+  --duration-seconds 30 \
+  --interval-seconds 5 \
+  --strip-meta \
+  --out reports/appdb_stripped
+```
+
+Without `--strip-meta`, reports keep the complete metadata and all source,
+instruction, and metadata buttons. A stripped artifact records
+`runtime.strip_meta: true`; the start line in `report.log` also includes
+`strip_meta=true`.
+
 Each generated file has mode `0600`; JSON and HTML are written atomically.
 Progress lines are flushed to `report.log` and identically printed to stdout.
 Every line contains `progress=N%`; planner-skipped items are reported as
@@ -867,6 +1066,16 @@ pg-diag render \
   --out reports/appdb_60s/report.html
 ```
 
+To create a metadata-stripped HTML copy from an existing full JSON artifact,
+add `--strip-meta`. The input JSON file is read-only and is not rewritten:
+
+```bash
+pg-diag render \
+  --from-json reports/appdb_60s/report.json \
+  --out reports/appdb_60s/report-stripped.html \
+  --strip-meta
+```
+
 ## Report Contents
 
 The bundled content pack includes sections for:
@@ -896,8 +1105,11 @@ Repeated table samples store their column schema once in `snapshot_schemas` and
 keep only status, rows, and an optional failure reason in each snapshot point.
 Raw snapshot points are not duplicated into the self-contained HTML after
 derived metric items have been built. Reports use artifact schema version 4.
-The renderer accepts that version only and requires the complete unified
-content document and source provenance stored by the collector.
+The renderer accepts that version only. Normal artifacts contain the complete
+unified content document and source provenance. Artifacts produced with
+`--strip-meta` use the schema's reduced metadata form: the presentation unit
+registry and report-level provenance remain, while item source catalogs and
+provenance are empty.
 
 ## Content Layout
 

@@ -59,6 +59,7 @@ async def collect_snapshots(
     item_id: str | Iterable[str] | None = None,
     tags: Iterable[str] | None = None,
     progress: ProgressReporter | None = None,
+    strip_meta: bool = False,
 ) -> dict[str, Any]:
     window_error = runtime_config.validate_snapshots_window(duration_seconds, interval_seconds)
     if window_error:
@@ -347,6 +348,7 @@ async def collect_snapshots(
         return finish_collection(
             run,
             runtime_updates={"snapshot_count": len(snapshots)},
+            strip_meta=strip_meta,
         )
     finally:
         if sampler_task is not None and not sampler_task.done():

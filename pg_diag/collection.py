@@ -19,6 +19,7 @@ from .artifact import (
     item_from_plan,
     omit_skipped_report_items,
     report_output_paths,
+    strip_artifact_metadata,
     utc_now,
     write_json,
     write_text_secure,
@@ -365,6 +366,7 @@ def finish_collection(
     run: CollectionRun,
     *,
     runtime_updates: dict[str, Any] | None = None,
+    strip_meta: bool = False,
 ) -> dict[str, Any]:
     if runtime_updates:
         run.artifact["runtime"].update(runtime_updates)
@@ -379,6 +381,8 @@ def finish_collection(
     )
     apply_database_scope_presentation(run.artifact)
     apply_presentation_contract(run.content, run.artifact)
+    if strip_meta:
+        strip_artifact_metadata(run.artifact)
     validate_artifact(run.artifact)
     if run.html_path is not None:
         html_text = render_html(run.artifact, validate=False)

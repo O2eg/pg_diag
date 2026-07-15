@@ -29,6 +29,7 @@ from .security import (
 
 INTERNAL_TAG_PREFIX = "tag_"
 COLLECTION_ERROR_STATUSES = {"error"}
+STRIPPED_SOURCE_METADATA_KEYS = ("chart", "display", "internal", "render", "tags")
 
 
 def utc_now() -> str:
@@ -76,6 +77,65 @@ def create_artifact(
         "snapshots": [],
         "diagnostics": [],
     }
+
+
+def strip_artifact_metadata(artifact: dict[str, Any]) -> dict[str, Any]:
+    """Remove item source/configuration metadata while preserving report presentation."""
+    runtime = artifact.setdefault("runtime", {})
+    runtime["strip_meta"] = True
+
+    for item in (artifact.get("items") or {}).values():
+        if not isinstance(item, dict):
+            continue
+        metadata = item.get("source_metadata")
+        item["source_metadata"] = {
+            key: json_safe(metadata[key])
+            for key in STRIPPED_SOURCE_METADATA_KEYS
+            if isinstance(metadata, dict) and key in metadata
+        }
+
+    content = artifact.get("content")
+    if not isinstance(content, dict):
+        return artifact
+    document = content.get("document")
+    presentation = (
+        ((document.get("catalogs") or {}).get("presentation") or {})
+        if isinstance(document, dict)
+        else {}
+    )
+    units = presentation.get("units") if isinstance(presentation, dict) else {}
+    unit_registry = {
+        str(unit): {}
+        for unit in (units if isinstance(units, dict) else {})
+    }
+    content["document"] = {
+        "report": {},
+        "runtime_policy": {},
+        "defaults": {},
+        "sections": {},
+        "catalogs": {"presentation": {"units": unit_registry}},
+        "queries": {},
+        "scripts": {},
+        "metrics": {},
+        "python_sources": {},
+        "sampler_providers": {},
+        "instructions": {},
+        "field_reference": {"*": "Item metadata omitted by --strip-meta."},
+    }
+    provenance = content.get("provenance")
+    report_sources = (
+        provenance.get("report")
+        if isinstance(provenance, dict) and isinstance(provenance.get("report"), list)
+        else []
+    )
+    content["provenance"] = {
+        "report": [
+            source
+            for source in report_sources
+            if isinstance(source, str) and source
+        ]
+    }
+    return artifact
 
 
 def _collector_host() -> str:

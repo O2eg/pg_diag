@@ -33,6 +33,7 @@ async def collect_one_shot(
     item_id: str | Iterable[str] | None = None,
     tags: Iterable[str] | None = None,
     progress: ProgressReporter | None = None,
+    strip_meta: bool = False,
 ) -> dict[str, Any]:
     run = await start_collection(
         content=content,
@@ -58,6 +59,6 @@ async def collect_one_shot(
                 record_item_progress(run, planned)
                 continue
             await execute_and_record_report_item(run, planned)
-        return finish_collection(run)
+        return finish_collection(run, strip_meta=strip_meta)
     finally:
         await close_collection(run)

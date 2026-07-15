@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from pg_diag import runtime_config
+from pg_diag.artifact import strip_artifact_metadata
 from pg_diag.render.html import render_html
 
 
@@ -302,4 +303,41 @@ def test_self_contained_echarts_report_in_browser(tmp_path: Path) -> None:
         assert "140,000" not in tooltip.inner_text()
         assert external_requests == []
         assert errors == []
+        browser.close()
+
+
+def test_strip_meta_removes_item_action_buttons_in_browser(tmp_path: Path) -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    artifact = _artifact()
+    first_item = artifact["items"]["charts.line"]
+    first_item["source_metadata"].update(
+        {
+            "source_text": "select private_check_source()",
+            "source_language": "sql",
+            "instructions": {
+                "format": "markdown",
+                "path": "instructions/items/charts/line.md",
+                "text": "Private instruction",
+            },
+        }
+    )
+    strip_artifact_metadata(artifact)
+    report_path = tmp_path / "stripped-report.html"
+    report_path.write_text(render_html(artifact, validate=False), encoding="utf-8")
+
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1200, "height": 800})
+        page.goto(report_path.as_uri(), wait_until="load")
+        page.wait_for_function(
+            "document.querySelectorAll('[data-chart-ready=true]').length === 3"
+        )
+
+        assert page.locator(".item-action-buttons button").count() == 0
+        assert page.get_by_role("button", name="Show SQL").count() == 0
+        assert page.get_by_role("button", name="Show Instruction").count() == 0
+        assert page.get_by_role("button", name="Show meta").count() == 0
+        assert page.locator(".item-tag").count() > 0
+        assert page.evaluate("artifact.runtime.strip_meta") is True
+        assert page.evaluate("artifact.content.document.queries") == {}
         browser.close()

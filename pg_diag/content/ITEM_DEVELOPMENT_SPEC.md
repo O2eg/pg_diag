@@ -919,6 +919,15 @@ transport, BigInt browser sorting, shared unit formatting, UTC timestamp
 normalization, row-dependent unit references, and explicit rejection of
 unsupported artifact schema versions.
 
+By default, the artifact embeds complete item source metadata, instructions,
+the unified content document, and source provenance. The opt-in `--strip-meta`
+representation keeps collected results and only the presentation metadata
+needed to render them. It clears item source identifiers and text,
+instructions, source catalogs, and item-level provenance, records
+`runtime.strip_meta: true`, and retains the presentation unit registry required
+for schema validation. The stripped HTML must not render source, instruction,
+or metadata action buttons.
+
 Known gaps remain in metric-table typing and in enforcement of some semantic
 requirements:
 

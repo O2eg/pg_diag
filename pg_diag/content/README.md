@@ -121,10 +121,11 @@ sql_workload.top_sql_by_total_time
 => instructions/items/sql_workload/top_sql_by_total_time.md
 ```
 
-The Markdown text is embedded in `source_metadata.instructions` in the JSON
-artifact and rendered in the HTML report through `Show Instruction`. Keep these
-files focused on DBA interpretation: what the item can reveal, what to watch,
-common fault causes, and a short checklist.
+By default, the Markdown text is embedded in `source_metadata.instructions` in
+the JSON artifact and rendered in the HTML report through `Show Instruction`.
+It is omitted from both report representations when collection uses
+`--strip-meta`. Keep these files focused on DBA interpretation: what the item
+can reveal, what to watch, common fault causes, and a short checklist.
 
 If an item needs a non-standard path, set it in `report.yaml`:
 
