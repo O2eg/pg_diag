@@ -1164,7 +1164,7 @@ Python container so the integration tests can create and reuse their PostgreSQL
 10-18 containers:
 
 ```bash
-cd /home/oleg/Desktop/dev/pg_diag
+cd /path/to/pg_diag
 
 docker run --rm --init \
   --volume "$PWD:/workspace:ro" \
@@ -1180,7 +1180,7 @@ docker run --rm --init \
 The PostgreSQL matrix defaults to all supported majors. Restrict it during a
 targeted compatibility check by adding, for example,
 `--env PG_DIAG_DOCKER_VERSIONS=14,18`. Without
-`PG_DIAG_DOCKER_INTEGRATION=1`, only the unit suite runs and the ten Docker
+`PG_DIAG_DOCKER_INTEGRATION=1`, only the unit suite runs and the eighteen Docker
 cases are skipped. The derived PostgreSQL images remain in the Docker build
 cache; temporary database containers are removed after their version's tests.
 
@@ -1233,4 +1233,11 @@ python -m ruff check pg_diag tests
 
 ## License
 
-`pg_diag` is distributed under the [MIT License](https://github.com/O2eg/pg_diag/blob/main/LICENSE).
+The `pg_diag` source code is distributed under the
+[MIT License](https://github.com/O2eg/pg_diag/blob/main/LICENSE). Self-contained
+HTML reports bundle Apache ECharts under Apache-2.0 and highlight.js plus the
+ECharts d3 components under BSD-3-Clause. Their complete license and notice
+files are listed in
+[THIRD_PARTY_LICENSES.txt](https://github.com/O2eg/pg_diag/blob/main/pg_diag/render/vendor/THIRD_PARTY_LICENSES.txt)
+and are included in both source and wheel distributions. The complete package
+therefore uses the SPDX expression `MIT AND BSD-3-Clause AND Apache-2.0`.
