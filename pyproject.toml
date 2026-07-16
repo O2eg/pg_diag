@@ -66,6 +66,9 @@ Issues = "https://github.com/O2eg/pg_diag/issues"
 testpaths = ["tests"]
 pythonpath = ["."]
 
+[tool.setuptools]
+include-package-data = false
+
 [tool.setuptools.packages.find]
 include = ["pg_diag*"]
 namespaces = false

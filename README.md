@@ -64,10 +64,9 @@ in core dispatch, validation, or metric rendering.
 
 ## Installation
 
-### Install from PyPI (planned)
+### Install from PyPI
 
-The project is not published on PyPI yet. After the first release is uploaded,
-the intended installation command will be:
+Install a published release from PyPI in an isolated environment:
 
 ```bash
 python3 -m venv .venv
@@ -77,13 +76,11 @@ python -m pip install --upgrade pip
 python -m pip install pg-diag
 ```
 
-The distribution name will be `pg-diag`, the import package is `pg_diag`, and
-the installed command is `pg-diag`. The wheel will include the bundled content
+The distribution name is `pg-diag`, the import package is `pg_diag`, and the
+installed command is `pg-diag`. The wheel includes the bundled content
 pack and the JavaScript/CSS assets required for self-contained HTML reports.
-Until the package is actually published, `pip install pg-diag` may report that
-no matching distribution exists; use the source installation below.
 
-After a PyPI release, upgrade an existing installation with:
+Upgrade an existing installation with:
 
 ```bash
 python -m pip install --upgrade pg-diag
