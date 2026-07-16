@@ -951,23 +951,28 @@ def test_asyncssh_end_to_end_forward_shell_sftp_and_local_python_evaluation(
             }
             assert local_only_sources <= planned_by_source.keys()
             ordered_sources = sorted(local_only_sources)
-            all_items = await asyncio.gather(
-                *(
-                    execute_python_item(
-                        content,
-                        AllChecksDb(),
-                        planned_by_source[source_id],
-                        transport,
-                    )
-                    for source_id in ordered_sources
+            # The collector executes report items sequentially. Keep this
+            # end-to-end transport check aligned with that runtime behavior:
+            # running every local-only source concurrently through one SSH
+            # connection can consume a source's one-second timeout while it is
+            # merely waiting behind unrelated SFTP operations.
+            all_items = [
+                await execute_python_item(
+                    content,
+                    AllChecksDb(),
+                    planned_by_source[source_id],
+                    transport,
                 )
-            )
+                for source_id in ordered_sources
+            ]
             errors = [
                 (source_id, item.get("reason"))
                 for source_id, item in zip(ordered_sources, all_items)
                 if item["collection_status"] == "error"
             ]
-            assert [source_id for source_id, _reason in errors] == ["cluster.pg_controldata"]
+            assert [source_id for source_id, _reason in errors] == [
+                "cluster.pg_controldata"
+            ], errors
             assert errors[0][1]
 
             forbidden = ("python", "tar", "mktemp", "remote_agent")
