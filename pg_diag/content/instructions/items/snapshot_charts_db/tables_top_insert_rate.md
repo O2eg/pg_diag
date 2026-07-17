@@ -6,6 +6,9 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_insert_ra
 - Tables with highest insert rate.
 - Current insert-heavy relations.
 
+## Units
+- `rows/s` means inserted-row counter increments per wall-clock second for each table, calculated only for relations present in both adjacent bounded samples.
+
 ## What to watch
 - Insert spike on one table.
 - Unexpected ingest table activity.

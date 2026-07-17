@@ -6,6 +6,9 @@ This instruction belongs to report item `snapshot_charts_os.os_disk_write_throug
 - Write throughput by block device over time.
 - Which device receives writes during the capture window.
 
+## Units
+- `B/s` means bytes written per wall-clock second. The chart scales the axis and tooltips together to adaptive IEC units such as `KiB/s`, `MiB/s`, or `GiB/s`.
+
 ## What to watch
 - Sustained high writes on WAL or data device.
 - Write spike during checkpoint or bulk load.

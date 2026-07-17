@@ -6,6 +6,9 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_heap_read
 - Tables with highest heap block read rate.
 - Current physical heap-read pressure by table.
 
+## Units
+- `blocks/s` means heap-block read counter increments per wall-clock second for each table. A block uses the server's configured `block_size` and is not an I/O operation count.
+
 ## What to watch
 - Large heap reads from one relation.
 - Reads aligned with disk latency.

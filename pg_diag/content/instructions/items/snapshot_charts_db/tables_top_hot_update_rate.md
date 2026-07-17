@@ -7,6 +7,9 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_hot_updat
 - Updates that can avoid index changes.
 - Which tables benefit from HOT-friendly updates.
 
+## Units
+- `rows/s` means HOT-updated-row counter increments per wall-clock second for each table. It is an event rate, not the percentage of updates that were HOT.
+
 ## What to watch
 - HOT updates high on expected hot tables.
 - HOT low elsewhere despite high update rate.

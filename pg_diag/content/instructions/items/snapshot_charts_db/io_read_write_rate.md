@@ -6,6 +6,9 @@ This instruction belongs to report item `snapshot_charts_db.io_read_write_rate`.
 - PostgreSQL read and write byte rates by backend type from pg_stat_io.
 - Cluster-wide PostgreSQL I/O rate over the capture window.
 
+## Units
+- `B/s` means bytes read or written per wall-clock second. The chart uses adaptive IEC rate units such as `KiB/s`, `MiB/s`, or `GiB/s`.
+
 ## What to watch
 - Client backend reads or writes dominating.
 - Autovacuum or checkpointer I/O spikes.

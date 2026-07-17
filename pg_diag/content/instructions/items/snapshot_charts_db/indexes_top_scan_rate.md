@@ -6,6 +6,9 @@ This instruction belongs to report item `snapshot_charts_db.indexes_top_scan_rat
 - Indexes with highest scan rate during the capture.
 - Current index usage frequency.
 
+## Units
+- `scans/s` means index-scan counter increments per wall-clock second for each index. It counts scan initiations, not tuples returned or storage operations.
+
 ## What to watch
 - One index scanned far more than others.
 - Unexpected index becoming hot after release.

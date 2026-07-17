@@ -6,6 +6,9 @@ This instruction belongs to report item `snapshot_charts_os.os_network_transmit`
 - Outbound network throughput by interface over time.
 - Network send pressure during query results, replication, or backup streaming.
 
+## Units
+- `B/s` means bytes transmitted per wall-clock second. The chart uses adaptive IEC rate units such as `KiB/s`, `MiB/s`, or `GiB/s`.
+
 ## What to watch
 - Transmit spikes from large result sets.
 - Replication network saturation.

@@ -6,6 +6,9 @@ This instruction belongs to report item `snapshot_charts_db.database_tuple_acces
 - Separate tuple-returned and tuple-fetched rates at database level.
 - Current row access volume over time.
 
+## Units
+- `tuples/s` means PostgreSQL tuple-counter increments per wall-clock second. Tuples are logical row-processing events, not unique rows or physical storage blocks.
+
 ## What to watch
 - Rows returned much higher than expected.
 - Fetch/read spikes during report workload.

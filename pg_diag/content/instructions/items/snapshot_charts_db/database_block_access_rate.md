@@ -6,6 +6,9 @@ This instruction belongs to report item `snapshot_charts_db.database_block_acces
 - Database block hit and read rates over time.
 - Buffer cache activity and physical-read pressure.
 
+## Units
+- `blocks/s` means PostgreSQL block-counter increments per wall-clock second. A block uses the server's configured `block_size`; the chart does not convert blocks to bytes.
+
 ## What to watch
 - Read rate increasing while hit rate falls.
 - Physical reads aligned with disk latency.

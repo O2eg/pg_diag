@@ -6,6 +6,9 @@ This instruction belongs to report item `snapshot_charts_db.database_transaction
 - Commit and rollback rates over the snapshot window.
 - Transaction throughput for every named database, partitioned by database.
 
+## Units
+- `transactions/s` (`tx/s` in the metric declaration) means committed or rolled-back transactions per wall-clock second, calculated from adjacent `pg_stat_database` counter samples.
+
 ## What to watch
 - Commit rate spikes.
 - Rollback rate rising with errors.

@@ -6,6 +6,9 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_delete_ra
 - Tables with highest delete rate.
 - Current delete-heavy relations.
 
+## Units
+- `rows/s` means deleted-row counter increments per wall-clock second for each table, calculated only for relations present in both adjacent bounded samples.
+
 ## What to watch
 - Delete spike on large table.
 - Deletes causing autovacuum lag.

@@ -4,6 +4,9 @@
 - Dirty buffers and buffers pinned by one or more backends.
 - Two overlapping gauges that must not be summed.
 
+## Units
+- `blocks` counts dirty or pinned shared-buffer slots/pages. One block uses the server's configured `block_size`; `kblocks` and `Mblocks` are SI-scaled block counts.
+
 ## What to watch
 - Sustained dirty growth or prolonged pinned-buffer growth.
 

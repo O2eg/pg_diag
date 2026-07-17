@@ -6,6 +6,9 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_index_fet
 - Tables with highest tuple fetch rate through indexes.
 - Current index-driven table access hotspots.
 
+## Units
+- `tuples/s` means `idx_tup_fetch` counter increments per wall-clock second for each table: heap tuples fetched through index paths, not index entries or disk blocks.
+
 ## What to watch
 - High fetch rate from one table.
 - Fetch spike without matching transaction rate.

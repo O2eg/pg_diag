@@ -6,6 +6,9 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_update_ra
 - Tables with highest update rate.
 - Current update-heavy relations.
 
+## Units
+- `rows/s` means updated-row counter increments per wall-clock second for each table, calculated only for relations present in both adjacent bounded samples.
+
 ## What to watch
 - High update rate on table with many indexes.
 - Low HOT update behavior elsewhere in report.

@@ -6,6 +6,9 @@ This instruction belongs to report item `snapshot_charts_os.os_network_receive`.
 - Inbound network throughput by interface over time.
 - Network receive pressure during client, replication, or backup traffic.
 
+## Units
+- `B/s` means bytes received per wall-clock second. The chart uses adaptive IEC rate units such as `KiB/s`, `MiB/s`, or `GiB/s`.
+
 ## What to watch
 - Receive spikes during replication or bulk load.
 - Unexpected traffic on database host.

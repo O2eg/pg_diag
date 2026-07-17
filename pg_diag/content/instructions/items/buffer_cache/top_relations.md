@@ -4,6 +4,9 @@
 - The 30 largest current-database relation residents plus `Other`.
 - Cache composition with independently selected members at each snapshot.
 
+## Units
+- `blocks` counts shared-buffer slots/pages attributed to each relation. One block uses the server's configured `block_size`; `kblocks` and `Mblocks` are SI-scaled block counts.
+
 ## What to watch
 - Dominant relations and abrupt composition changes.
 

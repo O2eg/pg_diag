@@ -6,6 +6,9 @@ This instruction belongs to report item `snapshot_charts_os.os_disk_latency`. Th
 - Read and write latency by device over time.
 - Storage response time during the capture window.
 
+## Units
+- `ms` means average milliseconds per completed I/O request during the interval. The iostat `await`, read-await, and write-await values include time spent queued and serviced by the device stack.
+
 ## What to watch
 - Latency spikes on WAL or data device.
 - Sustained high write latency during checkpoints.

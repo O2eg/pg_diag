@@ -6,6 +6,9 @@ This instruction belongs to report item `snapshot_charts_os.os_memory_usage`. Th
 - A stacked accounting view of free RAM, page cache, shared memory, buffers, slab, selected kernel allocations, and a residual application bucket.
 - Whether memory pressure changes during the capture.
 
+## Units
+- Values are memory byte counts. The chart uses one adaptive IEC scale for the whole stack: `B`, `KiB`, `MiB`, `GiB`, and larger binary units as needed.
+
 ## What to watch
 - Free memory and reclaimable components changing quickly; use the separate RAM/swap chart for `MemAvailable`-based usage.
 - Swap-related pressure.

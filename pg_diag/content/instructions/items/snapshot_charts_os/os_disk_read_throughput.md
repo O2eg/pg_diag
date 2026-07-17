@@ -6,6 +6,9 @@ This instruction belongs to report item `snapshot_charts_os.os_disk_read_through
 - Read throughput by block device over time.
 - Which device reads data during the capture window.
 
+## Units
+- `B/s` means bytes read per wall-clock second. The chart scales the axis and tooltips together to adaptive IEC units such as `KiB/s`, `MiB/s`, or `GiB/s`.
+
 ## What to watch
 - Sustained high reads on database device.
 - Read spike during report or batch workload.

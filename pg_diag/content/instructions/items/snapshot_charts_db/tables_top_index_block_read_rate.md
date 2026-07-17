@@ -6,6 +6,9 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_index_blo
 - Tables whose indexes have highest block read rate.
 - Current physical index-read pressure by table.
 
+## Units
+- `blocks/s` means index-block read counter increments per wall-clock second, aggregated across a table's indexes. A block uses the server's configured `block_size`.
+
 ## What to watch
 - Index reads concentrated on one table.
 - Index block reads aligned with storage latency.

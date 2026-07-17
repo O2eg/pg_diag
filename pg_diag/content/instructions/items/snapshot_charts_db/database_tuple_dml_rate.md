@@ -6,6 +6,9 @@ This instruction belongs to report item `snapshot_charts_db.database_tuple_dml_r
 - Insert, update, and delete rates for every named database.
 - Current row-change workload intensity.
 
+## Units
+- `rows/s` means insert, update, or delete counter increments per wall-clock second. It measures PostgreSQL row-change events, not the number of distinct rows affected.
+
 ## What to watch
 - Update/delete spikes.
 - Low HOT update share on update-heavy workload.

@@ -4,6 +4,9 @@
 - Buffer counts at each clock-sweep usage count from 0 through 5.
 - How strongly cached pages have recently been reused.
 
+## Units
+- `blocks` counts shared-buffer slots/pages in each usage-count group. One block uses the server's configured `block_size`; `kblocks` and `Mblocks` are SI-scaled block counts.
+
 ## What to watch
 - Growth in usage counts 0 and 1 alongside physical reads.
 - Material shifts in the distribution during workload changes.

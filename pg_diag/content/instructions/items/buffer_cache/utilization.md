@@ -4,6 +4,9 @@
 - Used and unused PostgreSQL shared-buffer slots at each snapshot.
 - The occupancy trend of the configured shared-buffer pool.
 
+## Units
+- `blocks` counts shared-buffer slots/pages. One block uses the server's configured `block_size`; large values may be displayed with SI prefixes such as `kblocks` or `Mblocks`.
+
 ## What to watch
 - Abrupt changes after restart, failover, or workload shifts.
 - Occupancy changes that coincide with physical-read growth.

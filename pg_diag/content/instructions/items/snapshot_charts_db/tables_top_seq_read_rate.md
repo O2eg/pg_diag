@@ -6,6 +6,9 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_seq_read_
 - Tables with highest sequential tuple read rate.
 - Current sequential scan pressure by table.
 
+## Units
+- `tuples/s` means `seq_tup_read` counter increments per wall-clock second for each table: logical tuples visited by sequential scans, not storage blocks read.
+
 ## What to watch
 - Large table with high seq read rate.
 - Seq read spike after release.

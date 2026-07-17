@@ -6,6 +6,9 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_tuple_acc
 - Tables with highest tuple access rate.
 - Current table-level row access hotspots.
 
+## Units
+- `tuples/s` means logical tuple-read or tuple-fetch counter increments per wall-clock second for each table. It is not a byte-throughput or physical-I/O unit.
+
 ## What to watch
 - One table dominating tuple reads/fetches.
 - Unexpected table in top list.
