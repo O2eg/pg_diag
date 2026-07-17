@@ -1,6 +1,7 @@
 # World-Writable Paths In PostgreSQL Trees
 
-This instruction belongs to `os.world_writable_paths_in_pg_tree`, backed by local Python source `security.world_writable_paths_in_pg_tree`.
+This instruction belongs to report item `os.world_writable_paths_in_pg_tree`.
+It is backed by local Python source `security.world_writable_paths_in_pg_tree`.
 
 ## What this item shows
 - Findings under PGDATA, log directories, tablespaces, and inferred archive paths.
@@ -15,6 +16,11 @@ This instruction belongs to `os.world_writable_paths_in_pg_tree`, backed by loca
 
 ## Common fault causes
 - Recursive chmod, shared application directories, permissive archive targets, temporary troubleshooting changes, or inherited mount ACLs.
+
+## Related report items
+- [os.symlinks_in_sensitive_paths](#item-os.symlinks_in_sensitive_paths) — Check whether symlinks redirect trusted paths.
+- [cluster_inventory.pgdata_permissions](#item-cluster_inventory.pgdata_permissions) — Review the root data-directory mode.
+- [os.postgres_config_file_permissions](#item-os.postgres_config_file_permissions) — Inspect sensitive configuration files under writable paths.
 
 ## Checklist
 - Remove world-write permissions immediately.

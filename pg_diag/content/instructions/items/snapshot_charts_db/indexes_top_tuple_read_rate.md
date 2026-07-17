@@ -26,6 +26,11 @@ This instruction belongs to report item `snapshot_charts_db.indexes_top_tuple_re
 - `idx_tup_read` counts index entries returned, not heap or disk blocks.
 - Stable index OIDs prevent name reuse from merging counters; changing Top-N membership remains expected.
 
+## Related report items
+- [snapshot_charts_db.indexes_top_tuple_fetch_rate](#item-snapshot_charts_db.indexes_top_tuple_fetch_rate) — Compare index entries read with heap tuples fetched.
+- [snapshot_charts_db.indexes_top_reads_per_scan](#item-snapshot_charts_db.indexes_top_reads_per_scan) — Inspect work performed per scan.
+- [object_workload.index_workload](#item-object_workload.index_workload) — Review cumulative index counters.
+
 ## Checklist
 - Compare with tuple fetch rate.
 - Review predicates and column order.

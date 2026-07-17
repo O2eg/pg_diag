@@ -22,6 +22,11 @@ This instruction belongs to report item `activity_locks.connection_pressure`. Th
 - Slow transactions keeping backends occupied.
 - Retry storms or too many independently sized application pools.
 
+## Related report items
+- [snapshot_charts_db.database_backends](#item-snapshot_charts_db.database_backends) — Inspect the connection-count trend by database.
+- [snapshot_charts_db.activity_sessions_by_state](#item-snapshot_charts_db.activity_sessions_by_state) — Separate active, idle, and idle-in-transaction sessions.
+- [backend_os.postgres_process_tree](#item-backend_os.postgres_process_tree) — Check whether a process burst accompanies connection pressure.
+
 ## Checklist
 - Preserve superuser and reserved-role emergency access.
 - Identify the applications and roles owning connection growth in `Session States`.

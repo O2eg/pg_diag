@@ -22,6 +22,11 @@ This instruction belongs to report item `sql_workload.top_sql_by_wal`. The item 
 - Legitimate write-heavy workload retained over a long statistics window.
 - Entry churn hiding part of the historical workload.
 
+## Related report items
+- [snapshot_delta_workload.sql_wal_delta](#item-snapshot_delta_workload.sql_wal_delta) — Measure SQL WAL generation in the capture window.
+- [snapshot_charts_db.wal_growth_rate](#item-snapshot_charts_db.wal_growth_rate) — Compare statement attribution with cluster WAL rate.
+- [snapshot_delta_workload.checkpointer_delta](#item-snapshot_delta_workload.checkpointer_delta) — Check checkpoint pressure during WAL bursts.
+
 ## Checklist
 - Establish entry/reset age and divide WAL by calls/rows before comparing statements.
 - Correlate with interval WAL growth, checkpoint, archive, and replication evidence.

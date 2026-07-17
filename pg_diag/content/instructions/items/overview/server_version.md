@@ -23,6 +23,10 @@ This instruction belongs to report item `overview.server_version`. The item is b
 - This item is informational and does not assign severity from the version string.
 - Determining latest minor release, vendor support, and end-of-life status requires a maintained external release/support dataset.
 
+## Related report items
+- [overview.pg_config](#item-overview.pg_config) — Compare the server build with the installed PostgreSQL toolchain.
+- [overview.pg_controldata](#item-overview.pg_controldata) — Verify control-file compatibility and cluster identity.
+
 ## Checklist
 - Check latest PostgreSQL minor releases at `https://www.postgresql.org/`
 - Check support policy at `https://www.postgresql.org/support/versioning/`

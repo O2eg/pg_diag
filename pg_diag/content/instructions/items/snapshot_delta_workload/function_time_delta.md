@@ -21,6 +21,10 @@ This instruction belongs to report item `snapshot_delta_workload.function_time_d
 ## Common fault causes
 - Expensive procedural loops, nested function work, high call frequency, disabled tracking, reset, or selection churn.
 
+## Related report items
+- [object_workload.function_workload](#item-object_workload.function_workload) — Compare interval execution with cumulative function counters.
+- [sql_workload.top_sql_by_total_time](#item-sql_workload.top_sql_by_total_time) — Check SQL that may invoke expensive functions.
+
 ## Checklist
 - Confirm `track_functions` and whether the function can be inlined.
 - Compare total versus self time and profile called SQL/functions.

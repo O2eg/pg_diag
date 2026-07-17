@@ -21,6 +21,11 @@ This instruction belongs to report item `wal_io_checkpoints.wal_archiver`. The i
 - Command/library failure, full/slow/unreachable target, permissions, duplicate-file protection, network outage, or WAL generation exceeding throughput.
 - Some command termination paths restart the archiver without incrementing `failed_count`; logs remain authoritative.
 
+## Related report items
+- [snapshot_delta_workload.wal_archiver_delta](#item-snapshot_delta_workload.wal_archiver_delta) — Measure archive progress during the capture.
+- [snapshot_delta_workload.wal_activity_delta](#item-snapshot_delta_workload.wal_activity_delta) — Compare archived segments with generated WAL.
+- [os.wal_archive_directory_permissions](#item-os.wal_archive_directory_permissions) — Check archive-directory access and ownership.
+
 ## Checklist
 - Inspect PostgreSQL logs and the local `.ready` archive status, not filename distance alone.
 - Validate destination capacity, retention, and restore usability.

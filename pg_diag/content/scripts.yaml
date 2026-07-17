@@ -30,6 +30,12 @@ scripts:
     script_file: os/sys_memory_total.sh
     output: table_json
 
+  os.huge_page_pools:
+    title: OS Huge Page Pools
+    description: Per-page-size HugeTLB pool capacity, availability, reservation, surplus, and NUMA distribution from sysfs.
+    script_file: os/huge_page_pools.sh
+    output: table_json
+
   os.total_ram:
     title: Total RAM Capacity
     description: Exact total host RAM bytes from /proc/meminfo.

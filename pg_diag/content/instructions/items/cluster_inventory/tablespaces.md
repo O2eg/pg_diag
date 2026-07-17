@@ -21,6 +21,12 @@ This instruction belongs to report item `cluster_inventory.tablespaces`. The ite
 - This item is informational because size and placement policy are deployment-specific.
 - `pg_tablespace_size` reads exact size for each tablespace and may require privileges; tablespace counts are normally small.
 
+## Related report items
+- [os.tablespace_directory_permissions](#item-os.tablespace_directory_permissions) — Verify permissions on tablespace directories.
+- [os.mounts](#item-os.mounts) — Map tablespaces to backing filesystems.
+- [os.disk_encryption_status](#item-os.disk_encryption_status) — Check at-rest encryption evidence for tablespace storage.
+- [storage_vacuum.table_size_detailed](#item-storage_vacuum.table_size_detailed) — Identify large relations stored in tablespaces.
+
 ## Checklist
 - Map tablespace paths to mounted filesystems.
 - Confirm backups cover all tablespace locations.

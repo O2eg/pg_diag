@@ -18,6 +18,11 @@ This instruction belongs to report item `replication.log_replication_commands`. 
 - Default configuration, log-volume concerns, or an external audit design that intentionally uses other controls.
 - Setting changed in a configuration file but not reloaded.
 
+## Related report items
+- [overview.security_logging_settings](#item-overview.security_logging_settings) — Review the broader server logging posture.
+- [os.log_file_permissions](#item-os.log_file_permissions) — Verify protection of replication audit logs.
+- [replication.replication_roles](#item-replication.replication_roles) — Identify principals capable of replication commands.
+
 ## Checklist
 - Confirm the audit requirement and estimate log volume before enabling.
 - Validate effective configuration source and reload/restart requirements.

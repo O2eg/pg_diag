@@ -22,6 +22,11 @@ This instruction belongs to report item `sql_workload.top_sql_by_calls`. The ite
 - Legitimate high-throughput prepared statements.
 - Statistics retained for a long period or entries repeatedly evicted/recreated.
 
+## Related report items
+- [snapshot_charts_db.database_transaction_rate](#item-snapshot_charts_db.database_transaction_rate) — Compare statement calls with transaction throughput.
+- [snapshot_delta_workload.sql_time_delta](#item-snapshot_delta_workload.sql_time_delta) — Measure calls and time inside the capture window.
+- [backend_os.backend_proc_cpu](#item-backend_os.backend_proc_cpu) — Check whether high-frequency SQL aligns with backend CPU.
+
 ## Checklist
 - Establish the counter window from `stats_reset` and `stats_since` where available.
 - Prioritize only after combining calls with time, I/O, WAL, and business value.

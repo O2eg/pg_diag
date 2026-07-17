@@ -21,6 +21,11 @@ This instruction belongs to report item `os.sysctl_tcp`. The item is backed by `
 - No severity is assigned without proxy, firewall, kernel, and connection-rate context.
 - Only readable runtime `net.ipv4.tcp*` keys are shown; IPv6 and persistence are outside this item.
 
+## Related report items
+- [activity_locks.connection_pressure](#item-activity_locks.connection_pressure) — Check whether connection pressure motivates TCP tuning.
+- [snapshot_charts_os.os_network_packets](#item-snapshot_charts_os.os_network_packets) — Inspect packet-rate behavior.
+- [os.network_addresses](#item-os.network_addresses) — Confirm the interfaces carrying database traffic.
+
 ## Checklist
 - Compare TCP settings with application pool and proxy behavior.
 - Check connection pressure before changing network queues.

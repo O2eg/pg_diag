@@ -20,5 +20,10 @@ This instruction belongs to report item `snapshot_charts_db.indexes_top_reads_pe
 ## Automatic evaluation
 - This chart is informational because several efficient plan types naturally raise the ratio.
 
+## Related report items
+- [snapshot_charts_db.indexes_top_tuple_read_rate](#item-snapshot_charts_db.indexes_top_tuple_read_rate) — Inspect index entries returned.
+- [snapshot_charts_db.indexes_top_tuple_fetch_rate](#item-snapshot_charts_db.indexes_top_tuple_fetch_rate) — Inspect heap tuples fetched.
+- [indexes.redundant_indexes](#item-indexes.redundant_indexes) — Review index design only after validating representative plans.
+
 ## Checklist
 - Inspect actual plans and tuple/block I/O evidence; do not infer REINDEX or index removal from this ratio.

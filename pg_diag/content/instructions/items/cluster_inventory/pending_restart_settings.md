@@ -21,6 +21,10 @@ This instruction belongs to report item `cluster_inventory.pending_restart_setti
 - This is operational evidence, not an automatic severity: a pending restart may be planned.
 - Values are server-scoped and include source file/line when visible.
 
+## Related report items
+- [overview.pg_settings](#item-overview.pg_settings) — Compare pending values with active PostgreSQL settings.
+- [overview.server_version](#item-overview.server_version) — Check version-specific setting and restart behavior.
+
 ## Checklist
 - Schedule restart for intended changes.
 - Rollback unintended pending changes.

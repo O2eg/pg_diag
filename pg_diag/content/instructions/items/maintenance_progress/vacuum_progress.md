@@ -20,6 +20,11 @@ This instruction belongs to report item `maintenance_progress.vacuum_progress`. 
 - Large/bloated relation, index cleanup cycles, insufficient maintenance memory, cost delay, storage pressure, or a lock wait during truncation.
 - Emergency anti-wraparound work caused by an old frozen-XID horizon.
 
+## Related report items
+- [storage_vacuum.autovacuum_queue](#item-storage_vacuum.autovacuum_queue) — Check queued tables and worker pressure.
+- [storage_vacuum.xmin_horizon_blockers](#item-storage_vacuum.xmin_horizon_blockers) — Find sessions or slots preventing cleanup.
+- [snapshot_delta_workload.table_maintenance_delta](#item-snapshot_delta_workload.table_maintenance_delta) — Measure maintenance progress across the window.
+
 ## Checklist
 - Compare a later capture using the same PID/relation and phase before calling the operation stalled.
 - Treat anti-wraparound vacuum as safety-critical; do not cancel it without proving a safer recovery path.

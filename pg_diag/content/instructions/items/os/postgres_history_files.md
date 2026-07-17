@@ -1,6 +1,7 @@
 # PostgreSQL History Files
 
-This instruction belongs to `os.postgres_history_files`, backed by local Python source `security.postgres_history_files`.
+This instruction belongs to report item `os.postgres_history_files`.
+It is backed by local Python source `security.postgres_history_files`.
 
 ## What this item shows
 - History file paths.
@@ -16,6 +17,10 @@ This instruction belongs to `os.postgres_history_files`, backed by local Python 
 
 ## Common fault causes
 - `psql` used interactively for privileged work, permissive umask, copied home directories, or credentials pasted into SQL/meta-commands.
+
+## Related report items
+- [cluster_inventory.postgres_client_secret_files](#item-cluster_inventory.postgres_client_secret_files) — Check other persistent client secret files.
+- [os.postgres_env_secret_leaks](#item-os.postgres_env_secret_leaks) — Check secrets exposed through process environments.
 
 ## Checklist
 - Protect history files with owner-only permissions.

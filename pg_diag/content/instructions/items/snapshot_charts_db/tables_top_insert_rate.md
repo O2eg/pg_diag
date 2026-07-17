@@ -30,6 +30,11 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_insert_ra
 - This chart ranks insert counter deltas for stable relation OIDs present in both adjacent bounded samples.
 - No universal insert-rate severity is assigned.
 
+## Related report items
+- [snapshot_delta_workload.table_dml_delta](#item-snapshot_delta_workload.table_dml_delta) — Inspect detailed table DML deltas.
+- [snapshot_charts_db.wal_growth_rate](#item-snapshot_charts_db.wal_growth_rate) — Check WAL generation during inserts.
+- [storage_vacuum.table_size_detailed](#item-storage_vacuum.table_size_detailed) — Review growth of insert-heavy tables.
+
 ## Checklist
 - Check table growth and sequence capacity.
 - Compare with WAL growth.

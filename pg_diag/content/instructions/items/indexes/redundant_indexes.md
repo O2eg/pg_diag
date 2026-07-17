@@ -21,6 +21,11 @@ This instruction belongs to report item `indexes.redundant_indexes`. The item is
 - Severity is `unknown`: the check reports only conservative btree left-prefix candidates with matching opclass, collation, sort options, predicate, and expressions.
 - Constraint-backed candidate indexes are excluded, but INCLUDE coverage, workload, and other dependencies still require manual review.
 
+## Related report items
+- [indexes.duplicate_indexes](#item-indexes.duplicate_indexes) — Distinguish prefix redundancy from exact duplication.
+- [indexes.unused_indexes](#item-indexes.unused_indexes) — Check whether either index is actually used.
+- [object_workload.index_workload](#item-object_workload.index_workload) — Compare scan and tuple counters.
+
 ## Checklist
 - Verify uniqueness, predicate, collation, opclass, and included columns.
 - Keep the more useful or constraint-backed index.

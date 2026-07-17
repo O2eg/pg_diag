@@ -23,6 +23,13 @@ This instruction belongs to report item `os.memory_info`. The item is backed by 
 - No severity is assigned from this point-in-time snapshot. Low available memory and nonzero swap require rate/PSI evidence and workload context.
 - Missing kernel-version-specific fields are normal; `unsupported` means `/proc/meminfo` itself was unavailable.
 
+## Related report items
+- [os.postgresql_huge_pages](#item-os.postgresql_huge_pages) — Correlate aggregate huge-page and PageTables counters with PostgreSQL settings and process evidence.
+- [os.huge_page_pools](#item-os.huge_page_pools) — Inspect every page-size pool and its NUMA distribution.
+- [os.total_ram](#item-os.total_ram) — Compare current availability with installed RAM capacity.
+- [snapshot_charts_os.os_memory_usage](#item-snapshot_charts_os.os_memory_usage) — Inspect memory composition over time.
+- [snapshot_charts_os.os_memory_pressure](#item-snapshot_charts_os.os_memory_pressure) — Inspect RAM and swap pressure over time.
+
 ## Checklist
 - Compare `MemAvailable` with PostgreSQL memory settings.
 - Check swap activity before increasing memory settings.

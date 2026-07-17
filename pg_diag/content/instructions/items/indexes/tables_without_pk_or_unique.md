@@ -22,6 +22,11 @@ This instruction belongs to report item `indexes.tables_without_pk_or_unique`. T
 - `unknown`: smaller or empty tables require lifecycle context.
 - A nullable unique key may still be unsuitable as logical-replication identity; validate the actual constraint semantics.
 
+## Related report items
+- [indexes.foreign_keys_without_index](#item-indexes.foreign_keys_without_index) — Review referential-integrity indexing.
+- [object_workload.table_workload](#item-object_workload.table_workload) — Prioritize tables with meaningful write or scan activity.
+- [snapshot_delta_workload.table_dml_delta](#item-snapshot_delta_workload.table_dml_delta) — Check recent DML on affected tables.
+
 ## Checklist
 - Confirm whether table is transient/staging.
 - Add a primary key or appropriate unique constraint for durable tables.

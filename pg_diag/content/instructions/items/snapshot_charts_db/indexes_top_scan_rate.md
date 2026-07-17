@@ -30,6 +30,11 @@ This instruction belongs to report item `snapshot_charts_db.indexes_top_scan_rat
 - This chart ranks scan deltas for stable index OIDs present in both adjacent bounded samples.
 - High usage is not a fault and is evidence against removal during the observed workload.
 
+## Related report items
+- [object_workload.index_workload](#item-object_workload.index_workload) — Compare rate with cumulative index scans.
+- [snapshot_delta_workload.index_usage_delta](#item-snapshot_delta_workload.index_usage_delta) — Inspect interval index usage details.
+- [sql_workload.top_sql_by_calls](#item-sql_workload.top_sql_by_calls) — Find high-frequency statements using hot indexes.
+
 ## Checklist
 - Map index to Top SQL plans.
 - Check tuple read/fetch ratios.

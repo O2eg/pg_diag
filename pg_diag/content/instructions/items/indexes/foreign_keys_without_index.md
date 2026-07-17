@@ -22,6 +22,11 @@ This instruction belongs to report item `indexes.foreign_keys_without_index`. Th
 - `unknown`: the same structural gap exists on a smaller table; parent UPDATE/DELETE frequency determines impact.
 - `suggested_index` is a starting definition, not executable advice for partitioned tables or a substitute for workload review.
 
+## Related report items
+- [snapshot_delta_workload.table_scan_delta](#item-snapshot_delta_workload.table_scan_delta) — Check whether FK checks contribute to table scans.
+- [activity_locks.lock_waits](#item-activity_locks.lock_waits) — Investigate locking during parent-row updates or deletes.
+- [indexes.tables_without_pk_or_unique](#item-indexes.tables_without_pk_or_unique) — Review related key-design gaps.
+
 ## Checklist
 - Prioritize FKs where parent rows are updated/deleted.
 - Create supporting index concurrently where needed.

@@ -24,6 +24,11 @@ This instruction belongs to report item `snapshot_delta_workload.sql_io_delta`. 
 ## Common fault causes
 - Batch scans, cache-miss bursts, bulk DML, plan changes, or pg_stat_statements reset/eviction.
 
+## Related report items
+- [snapshot_delta_workload.sql_time_delta](#item-snapshot_delta_workload.sql_time_delta) — Relate statement I/O to execution time.
+- [snapshot_delta_workload.table_io_delta](#item-snapshot_delta_workload.table_io_delta) — Attribute shared-block activity to relations.
+- [snapshot_charts_os.os_disk_latency](#item-snapshot_charts_os.os_disk_latency) — Check whether database I/O reached slow storage.
+
 ## Checklist
 - Compare with table I/O and OS device latency at the same window.
 - Review safe representative plans with `BUFFERS`.

@@ -159,6 +159,8 @@ Query-backed metrics must repeat the same explicit scope as their source query.
    ```markdown
    # Lock Mode Summary
 
+   This instruction belongs to report item `activity_locks.lock_mode_summary`.
+
    ## What this item shows
    - Current lock volume by lock type and mode.
 
@@ -168,13 +170,26 @@ Query-backed metrics must repeat the same explicit scope as their source query.
    ## Common fault causes
    - Long transactions, DDL, hot rows, or unindexed foreign key checks.
 
+   ## Automatic evaluation
+   - Explain which conditions produce severity, or state that the item is informational.
+
+   ## Related report items
+   - [activity_locks.lock_waits](#item-activity_locks.lock_waits) — Identify blocker and waiter chains behind the lock volume.
+   - [activity_locks.long_transactions](#item-activity_locks.long_transactions) — Check transactions that can retain conflicting locks.
+
    ## Checklist
    - Find the root blocker before terminating sessions.
-   - Compare with Activity & Locks and SQL Workload sections.
+   - Correlate the finding with SQL workload during the same incident window.
    ```
 
    The HTML report embeds this file and shows it with the item-level
-   `Show Instruction` button.
+   `Show Instruction` button. Use the exact
+   `[section.item](#item-section.item)` syntax for related report items. The
+   renderer makes the reference clickable only when that item is present in
+   the generated report; clicking it closes the instruction dialog, clears
+   filters if necessary, expands the destination, and scrolls to it. If launch
+   parameters omitted the destination item, the reference remains visible but
+   inactive.
 
 ## Add A Repeated-Snapshot Chart
 

@@ -29,6 +29,11 @@ This instruction belongs to report item `snapshot_charts_db.indexes_top_tuple_fe
 - `idx_tup_fetch` is the per-index heap fetch counter for simple index scans and excludes some bitmap behavior.
 - The chart is informational and matches adjacent bounded samples by stable index OID.
 
+## Related report items
+- [snapshot_charts_db.indexes_top_tuple_read_rate](#item-snapshot_charts_db.indexes_top_tuple_read_rate) — Compare heap fetches with index entries read.
+- [sql_workload.top_sql_by_calls](#item-sql_workload.top_sql_by_calls) — Find high-frequency lookup statements.
+- [object_workload.index_workload](#item-object_workload.index_workload) — Review cumulative index counters.
+
 ## Checklist
 - Compare with Top SQL by calls and table fetch charts.
 - Check whether workload should be cached or batched.

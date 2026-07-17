@@ -485,3 +485,52 @@ presentation_catalog:
         quality: exact
         nullable: false
         encoding: json_string
+    os.postgresql_huge_pages:
+      server_version_num: {label: Server version number, value_kind: text, semantic_role: identifier, quantity: version, unit: none, quality: exact, nullable: false, encoding: json_string}
+      huge_pages_requested: {label: Requested huge pages, value_kind: text, semantic_role: state, quantity: state, unit: none, quality: exact, nullable: false, encoding: json_string}
+      huge_pages_actual: {label: Actual huge pages, value_kind: text, semantic_role: state, quantity: state, unit: none, quality: derived, nullable: false, encoding: json_string}
+      huge_pages_status_source: {label: Actual status source, value_kind: text, semantic_role: label, quantity: text, unit: none, quality: exact, nullable: false, encoding: json_string}
+      postgresql_huge_page_size_bytes: {label: PostgreSQL huge page size, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: derived, nullable: true, encoding: decimal_string}
+      shared_buffers_bytes: {label: Shared buffers, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: exact, nullable: true, encoding: decimal_string}
+      shared_memory_size_bytes: {label: Shared memory size, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: exact, nullable: true, encoding: decimal_string}
+      required_huge_pages: {label: Required huge pages, value_kind: integer, semantic_role: gauge, quantity: pages, unit: count, quality: exact, nullable: true, encoding: decimal_string}
+      required_huge_pages_bytes: {label: Required huge page capacity, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: derived, nullable: true, encoding: decimal_string}
+      os_default_huge_page_size_bytes: {label: OS default huge page size, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: exact, nullable: true, encoding: decimal_string}
+      default_pool_matches_postgresql_page_size: {label: Default pool matches PostgreSQL size, value_kind: boolean, semantic_role: state, quantity: state, unit: none, quality: derived, nullable: false, encoding: json_boolean}
+      default_pool_total_pages: {label: Default pool total pages, value_kind: integer, semantic_role: gauge, quantity: pages, unit: count, quality: exact, nullable: false, encoding: decimal_string}
+      default_pool_used_pages: {label: Default pool used pages, value_kind: integer, semantic_role: gauge, quantity: pages, unit: count, quality: derived, nullable: false, encoding: decimal_string}
+      default_pool_free_pages: {label: Default pool free pages, value_kind: integer, semantic_role: gauge, quantity: pages, unit: count, quality: exact, nullable: false, encoding: decimal_string}
+      default_pool_reserved_pages: {label: Default pool reserved pages, value_kind: integer, semantic_role: gauge, quantity: pages, unit: count, quality: exact, nullable: false, encoding: decimal_string}
+      default_pool_free_unreserved_pages: {label: Default pool free unreserved pages, value_kind: integer, semantic_role: gauge, quantity: pages, unit: count, quality: derived, nullable: false, encoding: decimal_string}
+      default_pool_surplus_pages: {label: Default pool surplus pages, value_kind: integer, semantic_role: gauge, quantity: pages, unit: count, quality: exact, nullable: false, encoding: decimal_string}
+      default_pool_total_bytes: {label: Default pool capacity, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: derived, nullable: false, encoding: decimal_string}
+      default_pool_shortfall_pages: {label: Default pool shortfall, value_kind: integer, semantic_role: gauge, quantity: pages, unit: count, quality: derived, nullable: true, encoding: decimal_string}
+      host_ram_bytes: {label: Host RAM, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: exact, nullable: false, encoding: decimal_string}
+      host_page_tables_bytes: {label: Host page tables, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: exact, nullable: false, encoding: decimal_string}
+      host_page_tables_pct_ram: {label: Host page tables of RAM, value_kind: decimal, semantic_role: gauge, quantity: percentage, unit: percent, quality: derived, nullable: false, encoding: json_number}
+      host_secondary_page_tables_bytes: {label: Host secondary page tables, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: exact, nullable: false, encoding: decimal_string}
+      host_hugetlb_bytes: {label: Host HugeTLB allocation, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: exact, nullable: false, encoding: decimal_string}
+      postgres_instance_procfs_status: {label: PostgreSQL procfs correlation, value_kind: text, semantic_role: state, quantity: state, unit: none, quality: exact, nullable: false, encoding: json_string}
+      postgres_process_count: {label: PostgreSQL processes, value_kind: integer, semantic_role: gauge, quantity: processes, unit: count, quality: sampled, nullable: true, encoding: decimal_string}
+      postgres_vmpte_bytes: {label: PostgreSQL VmPTE, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: sampled, nullable: true, encoding: decimal_string}
+      postgres_vmpte_share_pct: {label: PostgreSQL share of host PageTables, value_kind: decimal, semantic_role: gauge, quantity: percentage, unit: percent, quality: derived, nullable: true, encoding: json_number}
+      postgres_main_hugetlb_bytes: {label: PostgreSQL main process HugeTLB, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: sampled, nullable: true, encoding: decimal_string}
+      transparent_huge_pages_mode: {label: Transparent Huge Pages mode, value_kind: text, semantic_role: state, quantity: state, unit: none, quality: exact, nullable: false, encoding: json_string}
+      anonymous_huge_pages_bytes: {label: Anonymous huge pages, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: exact, nullable: false, encoding: decimal_string}
+      risk_level: {label: Risk level, value_kind: text, semantic_role: state, quantity: state, unit: none, quality: derived, nullable: false, encoding: json_string}
+      recommendation: {label: Recommendation, value_kind: text, semantic_role: label, quantity: text, unit: none, quality: derived, nullable: false, encoding: json_string}
+    os.huge_page_pools:
+      page_size_bytes: {label: Page size, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: exact, nullable: false, encoding: decimal_string}
+      is_default_size: {label: Default page size, value_kind: boolean, semantic_role: state, quantity: state, unit: none, quality: exact, nullable: false, encoding: json_boolean}
+      total_pages: {label: Total pages, value_kind: integer, semantic_role: gauge, quantity: pages, unit: count, quality: exact, nullable: false, encoding: decimal_string}
+      used_pages: {label: Used pages, value_kind: integer, semantic_role: gauge, quantity: pages, unit: count, quality: derived, nullable: false, encoding: decimal_string}
+      free_pages: {label: Free pages, value_kind: integer, semantic_role: gauge, quantity: pages, unit: count, quality: exact, nullable: false, encoding: decimal_string}
+      reserved_pages: {label: Reserved pages, value_kind: integer, semantic_role: gauge, quantity: pages, unit: count, quality: exact, nullable: false, encoding: decimal_string}
+      free_unreserved_pages: {label: Free unreserved pages, value_kind: integer, semantic_role: gauge, quantity: pages, unit: count, quality: derived, nullable: false, encoding: decimal_string}
+      surplus_pages: {label: Surplus pages, value_kind: integer, semantic_role: gauge, quantity: pages, unit: count, quality: exact, nullable: false, encoding: decimal_string}
+      pool_total_bytes: {label: Pool capacity, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: derived, nullable: false, encoding: decimal_string}
+      pool_used_bytes: {label: Used capacity, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: derived, nullable: false, encoding: decimal_string}
+      pool_reserved_bytes: {label: Reserved capacity, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: derived, nullable: false, encoding: decimal_string}
+      pool_free_unreserved_bytes: {label: Free unreserved capacity, value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: derived, nullable: false, encoding: decimal_string}
+      numa_distribution: {label: NUMA distribution, value_kind: text, semantic_role: label, quantity: text, unit: none, quality: exact, nullable: false, encoding: json_string}
+      numa_nodes_with_pages: {label: NUMA nodes with pages, value_kind: integer, semantic_role: gauge, quantity: nodes, unit: count, quality: exact, nullable: false, encoding: decimal_string}

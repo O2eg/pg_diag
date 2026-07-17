@@ -21,6 +21,11 @@ This instruction belongs to report item `replication.replication_roles`. The ite
 - Convenience roles accumulated privileges over time, migration tooling reused an admin account, or membership/HBA rules broadened access.
 - Intentional administrative service accounts that require documented compensating controls.
 
+## Related report items
+- [cluster_inventory.privileged_login_roles](#item-cluster_inventory.privileged_login_roles) — Review login roles with elevated privileges.
+- [cluster_inventory.pg_hba_broad_network_ranges](#item-cluster_inventory.pg_hba_broad_network_ranges) — Check networks allowed to reach replication roles.
+- [replication.physical_replication](#item-replication.physical_replication) — Compare role capability with active senders.
+
 ## Checklist
 - Trace role membership, ownership, credentials, and matching replication HBA rules before changing attributes.
 - Separate privileges only after validating failover, backup, CDC, and subscriber dependencies.

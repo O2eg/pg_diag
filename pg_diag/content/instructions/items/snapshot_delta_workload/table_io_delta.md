@@ -21,6 +21,11 @@ This instruction belongs to report item `snapshot_delta_workload.table_io_delta`
 ## Common fault causes
 - Large scans, cold cache, inefficient access paths, TOAST-heavy rows, batch work, or external resets.
 
+## Related report items
+- [snapshot_delta_workload.sql_io_delta](#item-snapshot_delta_workload.sql_io_delta) — Attribute statement I/O to table activity.
+- [snapshot_charts_os.os_disk_latency](#item-snapshot_charts_os.os_disk_latency) — Check storage latency in the same window.
+- [buffer_cache.relation_residency_delta](#item-buffer_cache.relation_residency_delta) — Check whether cache residency changed.
+
 ## Checklist
 - Compare with statement shared I/O and OS disk latency.
 - Inspect relation size, indexes, predicates, and large-value access.

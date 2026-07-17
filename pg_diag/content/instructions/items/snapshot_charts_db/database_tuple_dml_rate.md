@@ -24,6 +24,11 @@ This instruction belongs to report item `snapshot_charts_db.database_tuple_dml_r
 - Insert, update, and delete counter deltas are stacked and partitioned by database.
 - Counter decreases after reset become missing points; no workload-independent rate threshold is assigned.
 
+## Related report items
+- [snapshot_delta_workload.table_dml_delta](#item-snapshot_delta_workload.table_dml_delta) — Attribute database DML to tables.
+- [snapshot_charts_db.wal_growth_rate](#item-snapshot_charts_db.wal_growth_rate) — Check WAL amplification from write activity.
+- [storage_vacuum.autovacuum_queue](#item-storage_vacuum.autovacuum_queue) — Check maintenance pressure after DML.
+
 ## Checklist
 - Compare with table_dml_delta.
 - Check WAL growth for write amplification.

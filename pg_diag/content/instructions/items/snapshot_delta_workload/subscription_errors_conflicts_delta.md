@@ -19,6 +19,11 @@ This instruction belongs to report item `snapshot_delta_workload.subscription_er
 ## Common fault causes
 - Constraint violations, missing rows, permissions, row-level security, schema drift, and worker failures.
 
+## Related report items
+- [replication.subscription_workers](#item-replication.subscription_workers) — Inspect current subscription-worker state.
+- [snapshot_delta_workload.logical_decoding_slot_delta](#item-snapshot_delta_workload.logical_decoding_slot_delta) — Check related logical-slot progress.
+- [replication.log_replication_commands](#item-replication.log_replication_commands) — Verify replication-command logging for investigation.
+
 ## Checklist
 - Inspect subscriber logs and the subscription worker item.
 - Correct the underlying data or schema conflict before restarting or skipping work.

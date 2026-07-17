@@ -16,6 +16,11 @@ This instruction belongs to report item `storage_vacuum.data_checksums`. The ite
 ## Common fault causes
 - Storage/memory corruption, torn/offline modification, disabled cluster initialization, or a historical counter not yet investigated.
 
+## Related report items
+- [overview.pg_controldata](#item-overview.pg_controldata) — Cross-check control-file checksum metadata.
+- [os.disk_encryption_status](#item-os.disk_encryption_status) — Review complementary at-rest storage protection.
+- [snapshot_charts_os.os_disk_latency](#item-snapshot_charts_os.os_disk_latency) — Investigate storage symptoms separately from checksum configuration.
+
 ## Checklist
 - Investigate failures immediately and preserve evidence/backups.
 - Use the enablement procedure supported by the installed PostgreSQL version; do not improvise on production.

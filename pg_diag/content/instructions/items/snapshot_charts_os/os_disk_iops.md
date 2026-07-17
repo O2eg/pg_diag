@@ -21,6 +21,11 @@ This instruction belongs to report item `snapshot_charts_os.os_disk_iops`. The i
 - Read and write IOPS share a denominator and are stacked per device.
 - No universal severity is assigned because acceptable IOPS depends on request size, latency, queueing, and storage tier.
 
+## Related report items
+- [snapshot_charts_os.os_disk_latency](#item-snapshot_charts_os.os_disk_latency) — Check response time at the observed operation rate.
+- [snapshot_charts_os.os_disk_read_throughput](#item-snapshot_charts_os.os_disk_read_throughput) — Compare operation count with read volume.
+- [snapshot_charts_os.os_disk_write_throughput](#item-snapshot_charts_os.os_disk_write_throughput) — Compare operation count with write volume.
+
 ## Checklist
 - Compare IOPS with throughput and latency.
 - Check storage tier limits.

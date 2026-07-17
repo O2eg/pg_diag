@@ -28,6 +28,11 @@ This instruction belongs to report item `snapshot_delta_workload.database_worklo
 - External statistics reset during collection.
 - `track_io_timing = off`, which leaves timing deltas at zero while block counters remain valid.
 
+## Related report items
+- [overview.database_stats](#item-overview.database_stats) — Compare the interval with cumulative database statistics.
+- [snapshot_charts_db.database_transaction_rate](#item-snapshot_charts_db.database_transaction_rate) — Inspect the time-series transaction rate.
+- [overview.stat_reset_times](#item-overview.stat_reset_times) — Validate the database statistics epoch.
+
 ## Checklist
 - Confirm capture duration and interval coverage before comparing rates.
 - Follow deadlocks into PostgreSQL logs and lock evidence.

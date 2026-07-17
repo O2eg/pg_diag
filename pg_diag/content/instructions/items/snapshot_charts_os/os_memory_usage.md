@@ -24,6 +24,11 @@ This instruction belongs to report item `snapshot_charts_os.os_memory_usage`. Th
 - This chart is informational; the residual application bucket is not per-process attribution.
 - The stack is constructed to remain bounded by `MemTotal`; it is not a Linux PSI signal.
 
+## Related report items
+- [os.memory_info](#item-os.memory_info) — Inspect the current Linux memory counters.
+- [snapshot_charts_os.os_memory_pressure](#item-snapshot_charts_os.os_memory_pressure) — Compare composition with RAM and swap usage.
+- [snapshot_delta_workload.sql_temp_io_delta](#item-snapshot_delta_workload.sql_temp_io_delta) — Check whether memory pressure coincides with SQL spills.
+
 ## Checklist
 - Compare with Memory Information.
 - Check PostgreSQL memory settings and connection count.

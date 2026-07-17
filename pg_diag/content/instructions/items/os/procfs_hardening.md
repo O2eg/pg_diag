@@ -1,6 +1,7 @@
 # procfs Hardening
 
-This instruction belongs to `os.procfs_hardening`, backed by local Python source `security.procfs_hardening`.
+This instruction belongs to report item `os.procfs_hardening`.
+It is backed by local Python source `security.procfs_hardening`.
 
 ## What this item shows
 - `kernel.yama.ptrace_scope`.
@@ -15,6 +16,11 @@ This instruction belongs to `os.procfs_hardening`, backed by local Python source
 
 ## Common fault causes
 - Distribution defaults, monitoring compatibility requirements, container procfs mounts, or hardening changes not persisted.
+
+## Related report items
+- [backend_os.backend_proc_cpu](#item-backend_os.backend_proc_cpu) — Understand whether procfs restrictions affect backend CPU collection.
+- [backend_os.backend_proc_io](#item-backend_os.backend_proc_io) — Understand whether procfs restrictions affect backend I/O collection.
+- [os.postgres_service_hardening](#item-os.postgres_service_hardening) — Compare kernel and service isolation controls.
 
 ## Checklist
 - Use `ptrace_scope` to limit same-user process inspection.

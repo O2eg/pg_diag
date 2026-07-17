@@ -1,6 +1,7 @@
 # Disk Encryption Evidence
 
-This instruction belongs to `os.disk_encryption_status`, backed by local Python source `security.disk_encryption_status`.
+This instruction belongs to report item `os.disk_encryption_status`.
+It is backed by local Python source `security.disk_encryption_status`.
 
 ## What this item shows
 - PGDATA, log, tablespace, and inferred archive mount points.
@@ -16,6 +17,11 @@ This instruction belongs to `os.disk_encryption_status`, backed by local Python 
 
 ## Common fault causes
 - Plain LVM, cloud-provider encryption outside the guest, SAN encryption, container mount namespaces, or sensitive paths placed on an unexpected filesystem.
+
+## Related report items
+- [cluster_inventory.tablespaces](#item-cluster_inventory.tablespaces) — Map PostgreSQL storage paths to encrypted devices.
+- [os.mounts](#item-os.mounts) — Inspect the backing mounts.
+- [os.backup_repository_permissions](#item-os.backup_repository_permissions) — Review protection of backup storage separately.
 
 ## Checklist
 - Use volume or OS encryption where physical media exposure is in scope.

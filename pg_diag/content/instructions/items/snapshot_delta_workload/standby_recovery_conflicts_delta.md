@@ -18,6 +18,11 @@ This instruction belongs to report item `snapshot_delta_workload.standby_recover
 ## Common fault causes
 - Long standby queries, vacuum cleanup on the primary, DDL replay, pinned buffers, and logical decoding horizons.
 
+## Related report items
+- [replication.standby_conflicts](#item-replication.standby_conflicts) — Compare interval conflicts with cumulative totals.
+- [replication.wal_receiver](#item-replication.wal_receiver) — Check receive and replay state on the standby.
+- [snapshot_delta_workload.physical_replication_progress_delta](#item-snapshot_delta_workload.physical_replication_progress_delta) — Inspect replication progress during conflicts.
+
 ## Checklist
 - Correlate the conflict category with standby logs and query workload.
 - Review feedback or recovery-delay settings only after considering retained-WAL and bloat impact.

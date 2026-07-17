@@ -21,6 +21,14 @@ This instruction belongs to report item `overview.tls_server_configuration`. The
 - Severity depends on whether untrusted or shared networks can reach PostgreSQL directly.
 - This SQL check cannot prove certificate validity, hostname matching, client verification, or effective HBA `hostssl` enforcement.
 
+## Automatic evaluation
+- Returned rows use the TLS setting severity described in What to watch; certificate and session validation remain manual checks.
+
+## Related report items
+- [os.tls_key_file_permissions](#item-os.tls_key_file_permissions) — Validate private-key file ownership and mode.
+- [cluster_inventory.pg_hba_tls_enforcement](#item-cluster_inventory.pg_hba_tls_enforcement) — Check whether HBA actually requires encrypted transport.
+- [overview.weak_tls_ciphers](#item-overview.weak_tls_ciphers) — Review configured TLS cipher policy.
+
 ## Checklist
 - Enable TLS where clients connect over untrusted networks.
 - Require TLSv1.2 or newer.

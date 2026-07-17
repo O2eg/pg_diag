@@ -26,6 +26,11 @@ This instruction belongs to report item `overview.database_stats`. The item is b
 - Missing indexes, cold cache, or workload larger than effective cache.
 - Transaction ordering problems causing deadlocks.
 
+## Related report items
+- [snapshot_delta_workload.database_workload_delta](#item-snapshot_delta_workload.database_workload_delta) — Use interval deltas for current database activity.
+- [snapshot_charts_db.database_transaction_rate](#item-snapshot_charts_db.database_transaction_rate) — Compare cumulative counters with transaction rates.
+- [overview.stat_reset_times](#item-overview.stat_reset_times) — Check counter reset epochs before interpreting totals.
+
 ## Checklist
 - Compare `stats_reset` between databases before interpreting cumulative totals.
 - Correlate cluster-level reset history with the separate Statistics Reset Times item.

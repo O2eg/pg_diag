@@ -341,3 +341,59 @@ def test_strip_meta_removes_item_action_buttons_in_browser(tmp_path: Path) -> No
         assert page.evaluate("artifact.runtime.strip_meta") is True
         assert page.evaluate("artifact.content.document.queries") == {}
         browser.close()
+
+
+def test_instruction_item_links_expand_present_targets_and_disable_missing_targets(
+    tmp_path: Path,
+) -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    artifact = _artifact()
+    artifact["items"]["charts.line"]["source_metadata"]["instructions"] = {
+        "format": "markdown",
+        "path": "instructions/items/charts/line.md",
+        "text": (
+            "# Line\n\n## Related report items\n"
+            "- [charts.columns](#item-charts.columns) — inspect columns.\n"
+            "- [charts.missing](#item-charts.missing) — unavailable in this report."
+        ),
+    }
+    artifact["items"]["charts.columns"]["state"] = "collapsed"
+    report_path = tmp_path / "instruction-links-report.html"
+    report_path.write_text(render_html(artifact, validate=False), encoding="utf-8")
+
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1200, "height": 800})
+        page.goto(report_path.as_uri(), wait_until="load")
+        page.locator('details.item[data-item-id="charts.line"]').evaluate(
+            "element => { element.open = true; }"
+        )
+        page.locator('details.item[data-item-id="charts.line"]').get_by_role(
+            "button", name="Show Instruction"
+        ).click()
+
+        active = page.locator('#instructionBody a[data-item-id="charts.columns"]')
+        unavailable = page.locator("#instructionBody .report-item-link.unavailable")
+        assert active.count() == 1
+        assert unavailable.count() == 1
+        assert unavailable.get_attribute("aria-disabled") == "true"
+        assert unavailable.inner_text() == "charts.missing"
+
+        page.locator('details.section[data-section-id="charts"]').evaluate(
+            "element => { element.open = false; }"
+        )
+        page.locator('details.item[data-item-id="charts.columns"]').evaluate(
+            "element => { element.open = false; }"
+        )
+        active.click()
+
+        page.wait_for_function(
+            """() => {
+              const section = document.querySelector('details.section[data-section-id="charts"]');
+              const item = document.querySelector('details.item[data-item-id="charts.columns"]');
+              return section && section.open && item && item.open;
+            }"""
+        )
+        assert page.locator("#instructionModal").is_hidden()
+        assert page.url.endswith("#item-charts.columns")
+        browser.close()

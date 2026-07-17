@@ -20,6 +20,11 @@ This instruction belongs to report item `replication.recovery_prefetch`. The ite
 - Feature disabled, workload already cached, full-page images, new/zero-initialized blocks, or unsuitable access patterns.
 - Storage saturation or low effective I/O concurrency.
 
+## Related report items
+- [replication.wal_receiver](#item-replication.wal_receiver) — Check receive and replay state.
+- [snapshot_charts_os.os_disk_latency](#item-snapshot_charts_os.os_disk_latency) — Correlate prefetch decisions with storage latency.
+- [snapshot_delta_workload.postgresql_io_delta](#item-snapshot_delta_workload.postgresql_io_delta) — Inspect PostgreSQL I/O during recovery.
+
 ## Checklist
 - Interpret only with confirmed recovery activity and repeated captures.
 - Use `prefetch_pct`/`hit_pct` as shares of recorded decisions, not cache hit ratios for normal SQL.

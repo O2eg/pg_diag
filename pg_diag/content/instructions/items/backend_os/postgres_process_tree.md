@@ -19,13 +19,18 @@ This instruction belongs to report item `backend_os.postgres_process_tree`. The 
 - Connection storm, runaway parallel query, long maintenance job, autovacuum pressure, backup, replication, or restore activity.
 - Collector running on a host different from the database server; in that case the item may be skipped or show the wrong local process tree.
 
+## Automatic evaluation
+- This item is informational because expected clusters, users, and process counts are deployment-specific.
+- Filtering uses the `comm` field, so collector commands merely containing the word `postgres` are not included.
+
+## Related report items
+- [backend_os.backend_activity](#item-backend_os.backend_activity) — Match process PIDs to PostgreSQL backend identity.
+- [backend_os.backend_proc_cpu](#item-backend_os.backend_proc_cpu) — Inspect CPU-heavy backend processes.
+- [backend_os.backend_proc_io](#item-backend_os.backend_proc_io) — Inspect I/O-heavy backend processes.
+
 ## Checklist
 - Confirm the main PostgreSQL process belongs to the expected cluster, data directory, service account, and port.
 - Match suspicious PIDs with `backend_os.backend_activity`, `backend_os.backend_proc_cpu`, and `backend_os.backend_proc_io`.
 - Group parallel worker PIDs with their leader backend before deciding which query is responsible.
 - Check whether WAL sender, WAL receiver, backup, autovacuum, or maintenance processes explain the workload spike.
 - Re-run a fresh local snapshot before terminating processes, because `ps` is a point-in-time view.
-
-## Automatic evaluation
-- This item is informational because expected clusters, users, and process counts are deployment-specific.
-- Filtering uses the `comm` field, so collector commands merely containing the word `postgres` are not included.

@@ -20,18 +20,28 @@ This instruction belongs to report item `backend_os.postgres_main_process_linked
 - Unexpected dependency paths, especially paths outside trusted system and PostgreSQL package directories.
 - An unsupported result indicating that the connected backend PID is not visible on the selected host, `/proc` permissions are insufficient, or `ldd` is unavailable.
 
+## Common fault causes
+- A PostgreSQL package or runtime-library upgrade was only partially completed.
+- Loader paths, container mounts, or host packages differ from the approved deployment baseline.
+- The collector is attached to a different PID namespace or PostgreSQL instance than expected.
+
 ## Interpretation limits
 - `ldd` reports how the executable's declared dynamic dependencies resolve. It is not a complete list of mappings currently loaded into process memory.
 - Libraries loaded later with `dlopen()`, extension libraries loaded by individual backends, and mappings visible only in `/proc/<pid>/maps` may not appear here.
 - `ldd_address` belongs to the loader invocation performed by `ldd`; it is not the address of that library in the already-running PostgreSQL main process. It commonly changes because of address-space randomization.
 - `ldd` is executed only for the verified running PostgreSQL main-process executable, not for an arbitrary path supplied by the database.
 
+## Automatic evaluation
+- This item is informational because the expected dependency set and trusted paths depend on the operating system and PostgreSQL build.
+- Unresolved rows are preserved with `link_status = not_found` and produce a warning diagnostic, but they do not assign an automatic report severity.
+
+## Related report items
+- [overview.server_version](#item-overview.server_version) — Confirm the expected PostgreSQL build and major version.
+- [os.postgres_binary_integrity](#item-os.postgres_binary_integrity) — Check executable ownership and permissions.
+- [os.extension_directory_permissions](#item-os.extension_directory_permissions) — Review directories that can supply loadable code.
+
 ## Checklist
 - Confirm that `server_port`, `backend_pid`, and `postgres_main_pid` match the intended PostgreSQL instance.
 - Compare `postgres_executable` with the expected PostgreSQL installation and major version.
 - Investigate every `not_found` row and any dependency resolved from an unexpected directory.
 - Use `/proc/<postgres_main_pid>/maps` when the diagnostic question is about mappings actually loaded at that moment rather than executable dependencies.
-
-## Automatic evaluation
-- This item is informational because the expected dependency set and trusted paths depend on the operating system and PostgreSQL build.
-- Unresolved rows are preserved with `link_status = not_found` and produce a warning diagnostic, but they do not assign an automatic report severity.

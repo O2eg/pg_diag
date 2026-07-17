@@ -17,6 +17,11 @@ This instruction belongs to report item `maintenance_progress.cluster_progress`.
 ## Common fault causes
 - Large relation, insufficient free space, slow storage, index rebuild cost, lock contention, or maintenance scheduled during traffic.
 
+## Related report items
+- [activity_locks.lock_waits](#item-activity_locks.lock_waits) — Check locks around the clustered relation.
+- [snapshot_charts_os.os_disk_read_throughput](#item-snapshot_charts_os.os_disk_read_throughput) — Inspect read throughput during table rewrite.
+- [snapshot_charts_os.os_disk_write_throughput](#item-snapshot_charts_os.os_disk_write_throughput) — Inspect write throughput during table rewrite.
+
 ## Checklist
 - Verify command owner, expected maintenance window, blocking sessions, and free disk space before intervention.
 - Compare later captures by PID/relation and phase; do not extrapolate completion time from one phase percentage.

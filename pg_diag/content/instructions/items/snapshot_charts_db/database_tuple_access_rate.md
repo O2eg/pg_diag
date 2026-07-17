@@ -24,6 +24,11 @@ This instruction belongs to report item `snapshot_charts_db.database_tuple_acces
 - The two counters are lines, not a stack: `tup_returned` and `tup_fetched` describe different executor/statistics stages and should not be added as total rows.
 - Collector catalog queries contribute some `tup_returned` activity; use object and SQL deltas for attribution.
 
+## Related report items
+- [snapshot_delta_workload.table_scan_delta](#item-snapshot_delta_workload.table_scan_delta) — Attribute tuple access to table scans.
+- [sql_workload.top_sql_by_total_time](#item-sql_workload.top_sql_by_total_time) — Find SQL associated with high tuple processing.
+- [snapshot_charts_db.database_block_access_rate](#item-snapshot_charts_db.database_block_access_rate) — Compare logical tuples with block activity.
+
 ## Checklist
 - Compare with Top SQL and table scan deltas.
 - Check whether high row access is expected.

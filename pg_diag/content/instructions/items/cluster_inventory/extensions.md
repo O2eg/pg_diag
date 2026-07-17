@@ -21,6 +21,12 @@ This instruction belongs to report item `cluster_inventory.extensions`. The item
 - This is an availability and installation inventory; no extension is automatically required or unsafe here.
 - `installed_version` is scoped to the connected database, while `default_version` describes server availability.
 
+## Related report items
+- [cluster_inventory.installed_risky_extensions](#item-cluster_inventory.installed_risky_extensions) — Review installed extensions with elevated capabilities.
+- [cluster_inventory.cryptographic_extensions](#item-cluster_inventory.cryptographic_extensions) — Check available cryptographic support.
+- [cluster_inventory.anonymization_extensions](#item-cluster_inventory.anonymization_extensions) — Check masking and anonymization support.
+- [os.extension_directory_permissions](#item-os.extension_directory_permissions) — Verify protection of extension binaries.
+
 ## Checklist
 - Compare with approved extension inventory.
 - Review extension release notes before update.

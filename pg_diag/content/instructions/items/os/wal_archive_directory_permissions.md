@@ -1,6 +1,7 @@
 # WAL Archive Directory Permissions
 
-This instruction belongs to `os.wal_archive_directory_permissions`, backed by local Python source `security.wal_archive_directory_permissions`.
+This instruction belongs to report item `os.wal_archive_directory_permissions`.
+It is backed by local Python source `security.wal_archive_directory_permissions`.
 
 ## What this item shows
 - Archive destination paths parsed from the command.
@@ -15,6 +16,11 @@ This instruction belongs to `os.wal_archive_directory_permissions`, backed by lo
 
 ## Common fault causes
 - Archive wrapper hides the destination, remote/object storage is used, a relative path depends on service cwd, or archive directory ownership drifted.
+
+## Related report items
+- [wal_io_checkpoints.wal_archiver](#item-wal_io_checkpoints.wal_archiver) — Check current archive status and failures.
+- [snapshot_delta_workload.wal_archiver_delta](#item-snapshot_delta_workload.wal_archiver_delta) — Measure archive progress during the capture.
+- [snapshot_charts_db.wal_growth_rate](#item-snapshot_charts_db.wal_growth_rate) — Compare archive capacity with WAL generation.
 
 ## Checklist
 - Keep WAL archive directories restricted to PostgreSQL and backup automation.

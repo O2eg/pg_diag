@@ -1,5 +1,7 @@
 # Buffer Cache Utilization
 
+This instruction belongs to report item `buffer_cache.utilization`.
+
 ## What this item shows
 - Used and unused PostgreSQL shared-buffer slots at each snapshot.
 - The occupancy trend of the configured shared-buffer pool.
@@ -18,6 +20,11 @@
 ## Automatic evaluation
 - No severity is assigned. A persistently full cache is normal under active workload.
 - A red error block means `pg_buffercache` could not be queried.
+
+## Related report items
+- [buffer_cache.usage_count_distribution](#item-buffer_cache.usage_count_distribution) — Inspect recency distribution inside used buffers.
+- [snapshot_charts_db.database_block_access_rate](#item-snapshot_charts_db.database_block_access_rate) — Compare occupancy with block-hit and read rates.
+- [snapshot_charts_os.os_disk_read_throughput](#item-snapshot_charts_os.os_disk_read_throughput) — Check physical reads during cache changes.
 
 ## Checklist
 - Correlate with cache churn and read I/O.

@@ -18,6 +18,11 @@ This instruction belongs to report item `snapshot_delta_workload.wal_archiver_de
 ## Common fault causes
 - Unavailable archive targets, permissions, capacity, command errors, network loss, and slow archival.
 
+## Related report items
+- [wal_io_checkpoints.wal_archiver](#item-wal_io_checkpoints.wal_archiver) — Compare interval progress with current archive state.
+- [snapshot_delta_workload.wal_activity_delta](#item-snapshot_delta_workload.wal_activity_delta) — Check whether archive throughput keeps pace with WAL.
+- [os.wal_archive_directory_permissions](#item-os.wal_archive_directory_permissions) — Verify archive-directory access when archiving fails.
+
 ## Checklist
 - Inspect archiver logs and target health.
 - Compare archive progress with WAL Activity Delta and pending-segment evidence.

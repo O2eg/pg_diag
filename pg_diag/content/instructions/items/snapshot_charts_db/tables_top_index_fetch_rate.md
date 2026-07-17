@@ -29,6 +29,11 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_index_fet
 - This chart is informational and ranks index-driven heap fetch deltas by stable relation OID.
 - Counter resets, changing bounded membership, and absent endpoints become missing evidence.
 
+## Related report items
+- [object_workload.index_workload](#item-object_workload.index_workload) — Inspect index activity on the table.
+- [sql_workload.top_sql_by_calls](#item-sql_workload.top_sql_by_calls) — Check high-frequency lookup statements.
+- [snapshot_charts_db.indexes_top_tuple_fetch_rate](#item-snapshot_charts_db.indexes_top_tuple_fetch_rate) — Resolve table fetches to indexes.
+
 ## Checklist
 - Compare with Top SQL by Calls.
 - Review whether caching/batching is possible.

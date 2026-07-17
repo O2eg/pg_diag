@@ -127,6 +127,26 @@ It is omitted from both report representations when collection uses
 `--strip-meta`. Keep these files focused on DBA interpretation: what the item
 can reveal, what to watch, common fault causes, and a short checklist.
 
+Each instruction starts with one level-one title and contains the exact
+ownership sentence `This instruction belongs to report item
+\`section.item\`.`. Source provenance may follow that sentence in the same
+paragraph. The instruction then contains
+exactly one of each required section: `What this item shows`, `What to watch`,
+`Common fault causes`, `Automatic evaluation`, and `Checklist`. Add `Related
+report items` when another item provides useful evidence for investigating the
+same symptom. References use this exact syntax:
+
+```markdown
+- [activity_locks.lock_waits](#item-activity_locks.lock_waits) — Identify blocking chains.
+```
+
+The label and fragment target must both equal a known report item id. A related
+item reference is clickable only when its target is present in the generated
+report. Clicking it closes the instruction dialog, resets active report filters
+when necessary, expands the target section and item, and scrolls to the item.
+When collection mode or launch filters omit the target, the renderer shows the
+reference as inactive text instead of a broken link.
+
 If an item needs a non-standard path, set it in `report.yaml`:
 
 ```yaml

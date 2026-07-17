@@ -21,6 +21,11 @@ This instruction belongs to report item `cluster_inventory.privileged_roles`. Th
 - This item is informational because cluster-level attributes require an organization-specific role baseline.
 - Login exposure and predefined-role inheritance are evaluated in dedicated items.
 
+## Related report items
+- [cluster_inventory.privileged_login_roles](#item-cluster_inventory.privileged_login_roles) — Distinguish login-capable privileged roles.
+- [cluster_inventory.predefined_admin_role_membership](#item-cluster_inventory.predefined_admin_role_membership) — Review inherited predefined administration roles.
+- [cluster_inventory.remote_superuser_access](#item-cluster_inventory.remote_superuser_access) — Check network paths to superusers.
+
 ## Checklist
 - Validate each privileged role owner and purpose.
 - Remove or restrict unused privileged roles.

@@ -10,13 +10,6 @@ This instruction belongs to report item `overview.database_volume`. The item is 
 - A row-local collection status when a database does not accept connections, the diagnostic role lacks `CONNECT`, or a catalog query fails.
 - A typed `Timeout` cell status for `database_size_bytes` when a size calculation exceeds 10 seconds; the numeric raw cell remains null.
 
-## Checklist
-
-1. Start with the largest databases and compare their sizes with available storage and expected retention.
-2. Compare table and index counts; investigate databases whose index inventory is unexpectedly large for their table count.
-3. Review databases with a non-`ok` collection status and grant only the minimum access required for diagnostics.
-4. Re-run the report outside peak load before acting on an isolated size timeout.
-
 ## What to watch
 
 - Rapid size growth, unexpectedly large databases, or object counts that approach operational tooling limits.
@@ -37,3 +30,14 @@ This item is informational. It preserves partial rows and collection errors but 
 
 User-object counts exclude `pg_catalog`, `information_schema`, temporary schemas, and TOAST schemas. Database size includes the complete database storage reported by PostgreSQL, including system catalogs and TOAST data.
 `tables` counts non-partition relations and top-level partitioned tables. `partitioned_tables` is the top-level parent-table subset; `partitions` is the physical child count, including leaf and nested partitioned relations. The three index columns follow the same rule. Triggers, constraints, row-security policies, and rules attached to child partitions are excluded from their logical totals.
+
+## Related report items
+- [storage_vacuum.table_size_detailed](#item-storage_vacuum.table_size_detailed) — Attribute database volume to the largest tables and indexes.
+- [overview.database_stats](#item-overview.database_stats) — Compare size with cumulative database workload.
+
+## Checklist
+
+1. Start with the largest databases and compare their sizes with available storage and expected retention.
+2. Compare table and index counts; investigate databases whose index inventory is unexpectedly large for their table count.
+3. Review databases with a non-`ok` collection status and grant only the minimum access required for diagnostics.
+4. Re-run the report outside peak load before acting on an isolated size timeout.

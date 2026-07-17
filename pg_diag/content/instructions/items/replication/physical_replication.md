@@ -22,6 +22,11 @@ This instruction belongs to report item `replication.physical_replication`. The 
 - Intentional asynchronous replication or a topology change.
 - Restricted statistics visibility can hide user or client details without hiding the row.
 
+## Related report items
+- [snapshot_delta_workload.physical_replication_progress_delta](#item-snapshot_delta_workload.physical_replication_progress_delta) — Measure sender progress across the capture window.
+- [replication.replication_slots](#item-replication.replication_slots) — Check slot retention associated with replication clients.
+- [snapshot_charts_os.os_network_transmit](#item-snapshot_charts_os.os_network_transmit) — Inspect host transmit throughput during WAL streaming.
+
 ## Checklist
 - Compare at least two captures; PostgreSQL lag intervals describe recent commit delay and are not a catch-up-time prediction.
 - Preserve LSN text when comparing timelines; byte gaps alone do not identify timeline history.

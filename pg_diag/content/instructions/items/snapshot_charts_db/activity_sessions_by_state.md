@@ -21,6 +21,11 @@ This instruction belongs to report item `snapshot_charts_db.activity_sessions_by
 - This chart is informational and partitions every series by database and state.
 - A session can be active and waiting simultaneously; use wait-profile and lock items for waits.
 
+## Related report items
+- [activity_locks.session_states](#item-activity_locks.session_states) — Inspect current sessions and application ownership.
+- [activity_locks.lock_waits](#item-activity_locks.lock_waits) — Resolve active waiting sessions to blockers.
+- [activity_locks.connection_pressure](#item-activity_locks.connection_pressure) — Compare state counts with connection capacity.
+
 ## Checklist
 - Correlate with lock waits and connection pressure.
 - Identify application_name owners.

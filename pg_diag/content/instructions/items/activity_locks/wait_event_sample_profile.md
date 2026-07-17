@@ -22,6 +22,11 @@ This instruction belongs to report item `activity_locks.wait_event_sample_profil
 - CPU saturation for repeated active-without-wait samples.
 - A capture interval too coarse or a capture window outside the incident.
 
+## Related report items
+- [activity_locks.wait_events](#item-activity_locks.wait_events) — Compare sampled groups with the current wait table.
+- [activity_locks.lock_waits](#item-activity_locks.lock_waits) — Resolve persistent lock waits to blockers.
+- [snapshot_charts_os.os_cpu_utilization](#item-snapshot_charts_os.os_cpu_utilization) — Separate CPU saturation from PostgreSQL wait states.
+
 ## Checklist
 - Correlate chart columns with host CPU/I/O and SQL delta charts at the same timestamps.
 - Inspect `Lock Waits` or SQL items for the dominant group.

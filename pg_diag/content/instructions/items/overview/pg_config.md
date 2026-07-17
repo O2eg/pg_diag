@@ -24,6 +24,10 @@ This instruction belongs to report item `overview.pg_config`. The item is backed
 - A source build and a distribution package coexist on the same host.
 - Extension compilation uses headers or libraries from a different PostgreSQL installation.
 
+## Related report items
+- [overview.server_version](#item-overview.server_version) — Confirm that pg_config belongs to the running server major version.
+- [cluster_inventory.extensions](#item-cluster_inventory.extensions) — Check extension availability for this PostgreSQL installation.
+
 ## Checklist
 - Compare `VERSION` with PostgreSQL Full Version directly above this item.
 - Verify `PG_CONFIG`, `BINDIR`, `PKGLIBDIR`, `INCLUDEDIR-SERVER`, and `SHAREDIR` against the intended installation.

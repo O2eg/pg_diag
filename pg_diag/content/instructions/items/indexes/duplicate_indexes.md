@@ -22,6 +22,11 @@ This instruction belongs to report item `indexes.duplicate_indexes`. The item is
 - Constraint and extension dependencies still decide which index, if any, can be removed.
 - Candidate groups are limited before exact size calculation.
 
+## Related report items
+- [indexes.redundant_indexes](#item-indexes.redundant_indexes) — Review broader prefix-overlap findings.
+- [indexes.unused_indexes](#item-indexes.unused_indexes) — Check whether duplicate definitions serve active workloads.
+- [object_workload.index_workload](#item-object_workload.index_workload) — Compare index usage before removal.
+
 ## Checklist
 - Confirm dependencies before drop.
 - Keep one valid index.

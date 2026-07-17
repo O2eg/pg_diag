@@ -1,6 +1,7 @@
 # Core Dump Policy
 
-This instruction belongs to `os.core_dump_policy`, backed by local Python source `security.core_dump_policy`.
+This instruction belongs to report item `os.core_dump_policy`.
+It is backed by local Python source `security.core_dump_policy`.
 
 ## What this item shows
 - `fs.suid_dumpable`.
@@ -15,6 +16,11 @@ This instruction belongs to `os.core_dump_policy`, backed by local Python source
 
 ## Common fault causes
 - Debugging enabled temporarily, distribution coredump defaults, service limits allowing dumps, or an unprotected crash collector.
+
+## Related report items
+- [os.postgres_env_secret_leaks](#item-os.postgres_env_secret_leaks) — Assess secrets that a core dump could expose.
+- [os.postgres_service_hardening](#item-os.postgres_service_hardening) — Review service-level dump restrictions.
+- [os.disk_encryption_status](#item-os.disk_encryption_status) — Check at-rest protection for dump storage.
 
 ## Checklist
 - Disable unsafe core dumps for PostgreSQL.

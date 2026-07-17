@@ -227,7 +227,12 @@ def test_host_source_timeouts_do_not_exceed_one_second(content_path: Path) -> No
 
 def test_os_capacity_scripts_emit_canonical_structured_values(content_path: Path) -> None:
     content = load_content(content_path)
-    for script_id in ("os.disk_usage", "os.memory_info", "os.total_ram"):
+    for script_id in (
+        "os.disk_usage",
+        "os.memory_info",
+        "os.huge_page_pools",
+        "os.total_ram",
+    ):
         assert content.scripts[script_id]["output"] == "table_json"
         script = content.path / "scripts" / content.scripts[script_id]["script_file"]
         completed = subprocess.run(
@@ -253,6 +258,46 @@ def test_os_capacity_scripts_emit_canonical_structured_values(content_path: Path
         isinstance(row[key], int)
         for row in disk_rows
         for key in ("total_bytes", "used_bytes", "available_bytes", "used_pct")
+    )
+
+    pool_rows = json.loads(
+        subprocess.run(
+            ["/bin/sh", str(content.path / "scripts/os/huge_page_pools.sh")],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        ).stdout
+    )
+    assert [row["page_size_bytes"] for row in pool_rows] == sorted(
+        row["page_size_bytes"] for row in pool_rows
+    )
+    assert all(
+        set(row)
+        == set(
+            content.presentation_catalog["presentation_catalog"]["source_overrides"][
+                "os.huge_page_pools"
+            ]
+        )
+        for row in pool_rows
+    )
+    assert all(
+        isinstance(row[key], int)
+        for row in pool_rows
+        for key in (
+            "page_size_bytes",
+            "total_pages",
+            "used_pages",
+            "free_pages",
+            "reserved_pages",
+            "free_unreserved_pages",
+            "surplus_pages",
+            "pool_total_bytes",
+            "pool_used_bytes",
+            "pool_reserved_bytes",
+            "pool_free_unreserved_bytes",
+            "numa_nodes_with_pages",
+        )
     )
 
     volume_text = (content.path / "scripts/os/lshw_volume.sh").read_text(encoding="utf-8")
@@ -472,15 +517,64 @@ def test_report_items_have_allowed_tags(content_path: Path) -> None:
 def test_report_items_have_markdown_instructions(content_path: Path) -> None:
     content = load_content(content_path)
     item_ids = []
+    item_links = re.compile(
+        r"\[([a-z][a-z0-9_.-]*)\]\(#item-([a-z][a-z0-9_.-]*)\)"
+    )
+    related_item_line = re.compile(
+        r"- \[([a-z][a-z0-9_.-]*)\]\(#item-\1\) — \S.*"
+    )
+    required_headings = (
+        "## What this item shows",
+        "## What to watch",
+        "## Common fault causes",
+        "## Automatic evaluation",
+        "## Checklist",
+    )
+    instructions_without_related_items = set()
     for _section_id, _item_key, item_id, _item in iter_report_items(content):
         item_ids.append(item_id)
         instruction = content.instructions.get(item_id)
         assert instruction, item_id
         assert instruction["format"] == "markdown"
         assert instruction["path"].endswith(".md")
-        assert "## What this item shows" in instruction["text"]
-        assert "## Checklist" in instruction["text"]
+        text = instruction["text"]
+        assert re.match(r"^# [^#\s].*", text), item_id
+        assert f"This instruction belongs to report item `{item_id}`." in text
+        for heading in required_headings:
+            assert text.splitlines().count(heading) == 1, (item_id, heading)
+
+        links = item_links.findall(text)
+        targets = [target for _label, target in links]
+        assert all(label == target for label, target in links), item_id
+        assert item_id not in targets
+        assert len(targets) == len(set(targets)), item_id
+        if "## Related report items" in text:
+            assert targets, item_id
+            lines = text.splitlines()
+            related_start = lines.index("## Related report items") + 1
+            related_end = next(
+                (
+                    index
+                    for index in range(related_start, len(lines))
+                    if lines[index].startswith("## ")
+                ),
+                len(lines),
+            )
+            related_lines = [line for line in lines[related_start:related_end] if line.strip()]
+            assert all(related_item_line.fullmatch(line) for line in related_lines), item_id
+        else:
+            instructions_without_related_items.add(item_id)
     assert set(content.instructions) == set(item_ids)
+    assert all(
+        target in item_ids
+        for instruction in content.instructions.values()
+        for _label, target in item_links.findall(instruction["text"])
+    )
+    assert instructions_without_related_items == {
+        "os.lshw_display",
+        "os.lshw_input",
+        "os.lshw_multimedia",
+    }
 
 
 def test_overview_instructions_have_interpretation_sections(content_path: Path) -> None:
@@ -504,7 +598,7 @@ def test_os_instructions_define_complete_interpretation_contract(content_path: P
         for section_id, _item_key, item_id, _item in iter_report_items(content)
         if section_id == "os"
     ]
-    assert len(os_item_ids) == 47
+    assert len(os_item_ids) == 49
     for item_id in os_item_ids:
         text = content.instructions[item_id]["text"]
         assert "This instruction belongs to" in text, item_id
@@ -1516,6 +1610,91 @@ def test_host_items_have_unique_self_contained_posix_scripts(content_path: Path)
         assert syntax.returncode == 0, f"{script_id}: {syntax.stderr}"
 
 
+def test_huge_page_items_are_independent_one_shot_sources(content_path: Path) -> None:
+    content = load_content(content_path)
+    plan = build_plan(content, 180000, mode=SNAPSHOTS_MODE)
+    by_id = {item.item_id: item for item in plan.items}
+
+    diagnostic = by_id["os.postgresql_huge_pages"]
+    pools = by_id["os.huge_page_pools"]
+    assert diagnostic.source_kind == "python"
+    assert diagnostic.source_id == "os.postgresql_huge_pages"
+    assert diagnostic.python_file == "os/postgresql_huge_pages.py"
+    assert diagnostic.collection_scope == "once"
+    assert pools.source_kind == "script"
+    assert pools.source_id == "os.huge_page_pools"
+    assert pools.script_file == "os/huge_page_pools.sh"
+    assert pools.collection_scope == "once"
+    assert content.pythons[diagnostic.source_id]["local_only"] is True
+    assert content.scripts[pools.source_id]["local_only"] is True
+
+    diagnostic_text = (content.path / "python" / diagnostic.python_file).read_text(
+        encoding="utf-8"
+    )
+    pools_text = (content.path / "scripts" / pools.script_file).read_text(
+        encoding="utf-8"
+    )
+    assert "sys_memory_total" not in diagnostic_text
+    assert "huge_page_pools.sh" not in diagnostic_text
+    assert "postgresql_huge_pages.py" not in pools_text
+    assert "sys_memory_total" not in pools_text
+    assert "/proc/meminfo" in diagnostic_text
+    assert "/sys/kernel/mm/hugepages" in pools_text
+
+    overrides = content.presentation_catalog["presentation_catalog"]["source_overrides"]
+    assert set(overrides["os.postgresql_huge_pages"]) == {
+        "server_version_num",
+        "huge_pages_requested",
+        "huge_pages_actual",
+        "huge_pages_status_source",
+        "postgresql_huge_page_size_bytes",
+        "shared_buffers_bytes",
+        "shared_memory_size_bytes",
+        "required_huge_pages",
+        "required_huge_pages_bytes",
+        "os_default_huge_page_size_bytes",
+        "default_pool_matches_postgresql_page_size",
+        "default_pool_total_pages",
+        "default_pool_used_pages",
+        "default_pool_free_pages",
+        "default_pool_reserved_pages",
+        "default_pool_free_unreserved_pages",
+        "default_pool_surplus_pages",
+        "default_pool_total_bytes",
+        "default_pool_shortfall_pages",
+        "host_ram_bytes",
+        "host_page_tables_bytes",
+        "host_page_tables_pct_ram",
+        "host_secondary_page_tables_bytes",
+        "host_hugetlb_bytes",
+        "postgres_instance_procfs_status",
+        "postgres_process_count",
+        "postgres_vmpte_bytes",
+        "postgres_vmpte_share_pct",
+        "postgres_main_hugetlb_bytes",
+        "transparent_huge_pages_mode",
+        "anonymous_huge_pages_bytes",
+        "risk_level",
+        "recommendation",
+    }
+    assert set(overrides["os.huge_page_pools"]) == {
+        "page_size_bytes",
+        "is_default_size",
+        "total_pages",
+        "used_pages",
+        "free_pages",
+        "reserved_pages",
+        "free_unreserved_pages",
+        "surplus_pages",
+        "pool_total_bytes",
+        "pool_used_bytes",
+        "pool_reserved_bytes",
+        "pool_free_unreserved_bytes",
+        "numa_distribution",
+        "numa_nodes_with_pages",
+    }
+
+
 def test_local_only_python_items_do_not_bypass_host_access(content_path: Path) -> None:
     content = load_content(content_path)
     filesystem_calls = {
@@ -1762,6 +1941,8 @@ def test_snapshot_collection_policy(content_path: Path) -> None:
     by_id = {item.item_id: item for item in plan.items}
     assert by_id["os.kernel_version"].status == "skipped"
     assert by_id["os.kernel_version"].reason == "no data because remote call"
+    assert by_id["os.postgresql_huge_pages"].status == "skipped"
+    assert by_id["os.huge_page_pools"].status == "skipped"
     assert by_id["backend_os.postgres_main_process_linked_libraries"].status == "skipped"
     assert by_id["backend_os.postgres_main_process_linked_libraries"].reason == (
         "no data because remote call"

@@ -25,6 +25,10 @@ This instruction belongs to report item `sql_workload.pg_stat_statements_capabil
 - Tracking disabled or entry churn exceeds `pg_stat_statements.max`.
 - Extension installed outside the restricted pg_diag search path.
 
+## Related report items
+- [sql_workload.top_sql_by_total_time](#item-sql_workload.top_sql_by_total_time) — Verify that cumulative Top SQL can be collected.
+- [snapshot_delta_workload.sql_time_delta](#item-snapshot_delta_workload.sql_time_delta) — Verify prerequisites for interval SQL deltas.
+
 ## Checklist
 - Fix activation gaps under the site's restart and change policy.
 - Grant `pg_read_all_stats` only when cross-user SQL-text visibility is approved.

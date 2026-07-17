@@ -22,6 +22,11 @@ This instruction belongs to report item `activity_locks.session_states`. The ite
 - Slow queries increasing the active population.
 - Missing commit or rollback paths.
 
+## Related report items
+- [activity_locks.wait_events](#item-activity_locks.wait_events) — Separate active work from instrumented waits.
+- [activity_locks.idle_in_transaction](#item-activity_locks.idle_in_transaction) — Inspect sessions retaining transactions while idle.
+- [snapshot_charts_db.activity_sessions_by_state](#item-snapshot_charts_db.activity_sessions_by_state) — Compare the point-in-time table with the session-state trend.
+
 ## Checklist
 - Compare application groups with configured pool limits.
 - Use `Active Wait Events` to separate running work from waits.

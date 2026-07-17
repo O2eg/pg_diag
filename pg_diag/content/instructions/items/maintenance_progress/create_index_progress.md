@@ -18,6 +18,11 @@ This instruction belongs to report item `maintenance_progress.create_index_progr
 ## Common fault causes
 - Large table/index, slow storage, low maintenance memory, long transactions or old snapshots, lock contention, and partition fan-out.
 
+## Related report items
+- [indexes.large_indexes](#item-indexes.large_indexes) — Review the size of indexes being built.
+- [activity_locks.lock_waits](#item-activity_locks.lock_waits) — Check whether index creation participates in blocking.
+- [snapshot_charts_os.os_disk_write_throughput](#item-snapshot_charts_os.os_disk_write_throughput) — Inspect host write throughput during the build.
+
 ## Checklist
 - Resolve `current_locker_pid` through Activity & Locks before cancelling either backend.
 - Compare later captures by PID/command and phase; counters can reset when the phase changes.

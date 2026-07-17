@@ -21,6 +21,11 @@ This instruction belongs to report item `replication.subscription_workers`. The 
 - Publisher connectivity/authentication failure, schema or constraint conflict, disabled subscription, worker limit exhaustion, or apply error.
 - Initial table copy, parallel apply lifecycle, or an idle publisher.
 
+## Related report items
+- [snapshot_delta_workload.subscription_errors_conflicts_delta](#item-snapshot_delta_workload.subscription_errors_conflicts_delta) — Measure subscription errors and conflicts in the window.
+- [snapshot_delta_workload.logical_decoding_slot_delta](#item-snapshot_delta_workload.logical_decoding_slot_delta) — Check related logical-slot progress.
+- [replication.replication_slots](#item-replication.replication_slots) — Inspect current slot retention.
+
 ## Checklist
 - Check subscriber logs and `pg_subscription.subenabled`, then compare error counters with their reset timestamp.
 - Treat `publisher_receive_lag_bytes` only as publisher-end versus received WAL; PostgreSQL does not expose the applied LSN here.

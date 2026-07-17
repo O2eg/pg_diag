@@ -1,6 +1,7 @@
 # PostgreSQL OS Group Members
 
-This instruction belongs to `os.postgres_os_group_members`, backed by local Python source `security.postgres_os_group_members`.
+This instruction belongs to report item `os.postgres_os_group_members`.
+It is backed by local Python source `security.postgres_os_group_members`.
 
 ## What this item shows
 - Additional users in the `postgres` group, including both supplemental members and accounts whose primary GID is the postgres group.
@@ -14,6 +15,10 @@ This instruction belongs to `os.postgres_os_group_members`, backed by local Pyth
 
 ## Common fault causes
 - Temporary maintenance access never removed, package/service account changes, or primary-group membership overlooked by `/etc/group` text inspection.
+
+## Related report items
+- [os.sudoers_postgres_escalation](#item-os.sudoers_postgres_escalation) — Review privilege-escalation paths for group members.
+- [os.postgres_service_hardening](#item-os.postgres_service_hardening) — Check service-account restrictions.
 
 ## Checklist
 - Keep the postgres group limited to the service account and controlled administrators.

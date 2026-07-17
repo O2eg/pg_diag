@@ -15,6 +15,11 @@ This instruction belongs to report item `storage_vacuum.table_size_detailed`. Th
 ## Common fault causes
 - Legitimate data growth, wide values, many indexes, retention drift, or bloat.
 
+## Related report items
+- [overview.database_volume](#item-overview.database_volume) — Compare relation size with total database volume.
+- [indexes.large_indexes](#item-indexes.large_indexes) — Identify index-heavy size amplification.
+- [buffer_cache.relation_coverage](#item-buffer_cache.relation_coverage) — Check how much of large relations is cached.
+
 ## Checklist
 - Candidate selection is deliberately bounded for databases with very many relations; stale `relpages` can omit a recently grown table.
 - Relations holding a granted AccessExclusiveLock are skipped to avoid blocking diagnostics.

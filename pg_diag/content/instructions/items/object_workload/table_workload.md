@@ -23,6 +23,11 @@ This instruction belongs to report item `object_workload.table_workload`. The it
 - The threshold is a review signal, not proof that an index is missing; use the delta item and query plans.
 - The query takes a bounded top 200 by cumulative DML before calculating exact relation sizes.
 
+## Related report items
+- [snapshot_delta_workload.table_dml_delta](#item-snapshot_delta_workload.table_dml_delta) — Measure current table changes instead of cumulative totals.
+- [snapshot_delta_workload.table_scan_delta](#item-snapshot_delta_workload.table_scan_delta) — Measure current table scans.
+- [snapshot_charts_db.tables_top_dml_rate](#item-snapshot_charts_db.tables_top_dml_rate) — Inspect write-hot tables over time.
+
 ## Checklist
 - Check stats_reset before interpreting totals.
 - Compare with table delta metrics for current activity.

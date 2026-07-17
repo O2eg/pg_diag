@@ -16,6 +16,11 @@ This instruction belongs to report item `storage_vacuum.xmin_horizon`. The item 
 ## Common fault causes
 - Long/idle transactions, autovacuum or other backend snapshots, lagging slots/standbys, and unresolved prepared transactions.
 
+## Related report items
+- [storage_vacuum.xmin_horizon_blockers](#item-storage_vacuum.xmin_horizon_blockers) — Resolve the oldest horizons to specific blockers.
+- [activity_locks.long_transactions](#item-activity_locks.long_transactions) — Inspect old active transactions.
+- [replication.replication_slots](#item-replication.replication_slots) — Check slots retaining transaction or WAL state.
+
 ## Checklist
 - Open Xmin Horizon Blockers for the concrete PID/slot/GID.
 - Compare captures; zero means no visible holder in that component.

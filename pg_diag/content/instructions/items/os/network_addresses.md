@@ -21,6 +21,11 @@ This instruction belongs to report item `os.network_addresses`. The item is back
 - No severity is assigned because expected interfaces and addresses require an environment baseline.
 - `unsupported` means the `ip` utility was unavailable. A failure of both `ip -br addr` and the compatible `ip addr show` fallback is an error rather than partial success.
 
+## Related report items
+- [overview.listen_addresses_exposure](#item-overview.listen_addresses_exposure) — Compare host addresses with PostgreSQL listeners.
+- [os.firewall_postgres_exposure](#item-os.firewall_postgres_exposure) — Check firewall evidence for the same interfaces.
+- [cluster_inventory.pg_hba_broad_network_ranges](#item-cluster_inventory.pg_hba_broad_network_ranges) — Review client networks admitted by PostgreSQL.
+
 ## Checklist
 - Compare with PostgreSQL listen_addresses, pg_hba, and replication configuration.
 - Confirm monitoring and application endpoints use the expected address.

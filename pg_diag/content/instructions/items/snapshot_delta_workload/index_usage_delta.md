@@ -23,6 +23,11 @@ This instruction belongs to report item `snapshot_delta_workload.index_usage_del
 ## Common fault causes
 - Low-selectivity index, bitmap or index-only plans, batch/report traffic, cold cache, or reset/selection churn.
 
+## Related report items
+- [object_workload.index_workload](#item-object_workload.index_workload) — Compare interval index activity with cumulative counters.
+- [indexes.unused_indexes](#item-indexes.unused_indexes) — Avoid treating an index as unused based on one window alone.
+- [snapshot_charts_db.indexes_top_scan_rate](#item-snapshot_charts_db.indexes_top_scan_rate) — Inspect the scan-rate ranking over time.
+
 ## Checklist
 - Review actual plans and the index definition before drawing efficiency conclusions.
 - Compare block reads with table/SQL I/O and OS evidence.

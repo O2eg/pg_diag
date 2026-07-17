@@ -30,6 +30,11 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_tuple_acc
 - This chart is informational and ranks interval deltas for stable relation OIDs present in both bounded samples.
 - Sequential reads plus index fetches are logical tuple counters, not physical I/O.
 
+## Related report items
+- [snapshot_delta_workload.table_scan_delta](#item-snapshot_delta_workload.table_scan_delta) — Inspect scan counters for hot tables.
+- [object_workload.table_workload](#item-object_workload.table_workload) — Compare with cumulative table activity.
+- [sql_workload.top_sql_by_total_time](#item-sql_workload.top_sql_by_total_time) — Find SQL accessing the tables.
+
 ## Checklist
 - Inspect top table queries.
 - Compare with table_scan_delta.

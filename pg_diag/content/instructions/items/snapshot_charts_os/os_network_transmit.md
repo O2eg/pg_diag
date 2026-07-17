@@ -24,6 +24,11 @@ This instruction belongs to report item `snapshot_charts_os.os_network_transmit`
 - Rates are counter deltas over monotonic elapsed time; counter rollback becomes missing data rather than zero.
 - The loopback interface is intentionally excluded.
 
+## Related report items
+- [replication.physical_replication](#item-replication.physical_replication) — Check whether WAL senders explain outbound throughput.
+- [activity_locks.wait_events](#item-activity_locks.wait_events) — Look for client-write waits during result transfer.
+- [os.network_addresses](#item-os.network_addresses) — Map the active series to host interfaces.
+
 ## Checklist
 - Compare with client wait events and replication sender lag.
 - Map interface to workload path.

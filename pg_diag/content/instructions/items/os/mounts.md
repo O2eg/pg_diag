@@ -21,6 +21,11 @@ This instruction belongs to report item `os.mounts`. The item is backed by `os.m
 - No severity is assigned because the intended mount layout and approved options are environment-specific.
 - The result is the collector mount namespace; containerized collection may not expose host mounts.
 
+## Related report items
+- [os.fstab](#item-os.fstab) — Compare active mounts with persistent configuration.
+- [os.disk_usage](#item-os.disk_usage) — Inspect capacity for each mounted filesystem.
+- [cluster_inventory.tablespaces](#item-cluster_inventory.tablespaces) — Map PostgreSQL tablespaces to mount points.
+
 ## Checklist
 - Compare with fstab and disk usage.
 - Confirm PGDATA, WAL, logs, and temp directories are on intended mounts.

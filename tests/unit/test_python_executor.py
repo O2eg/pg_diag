@@ -201,6 +201,204 @@ class PostgresMainLddHost:
         return SshCommandResult(self.returncode, stdout, self.stderr)
 
 
+class HugePagesConn:
+    def __init__(self, **overrides: Any) -> None:
+        self.context: dict[str, Any] = {
+            "server_version_num": 180004,
+            "backend_pid": 32117,
+            "huge_pages_requested": "try",
+            "huge_page_size_setting": "0",
+            "huge_page_size_unit": "B",
+            "huge_pages_status": "off",
+            "shared_buffers_setting": "131072",
+            "shared_buffers_unit": "8kB",
+            "shared_memory_size_setting": "16384",
+            "shared_memory_size_unit": "MB",
+            "required_huge_pages": "8192",
+        }
+        self.context.update(overrides)
+
+    def transaction(self, *, readonly: bool):
+        assert readonly is True
+        return FakeReadOnlyTransaction()
+
+    async def fetchrow(self, sql: str) -> dict[str, Any]:
+        assert "shared_memory_size_in_huge_pages" in sql
+        assert "pg_catalog.pg_backend_pid()" in sql
+        return self.context
+
+
+class HugePagesHost:
+    def __init__(
+        self,
+        *,
+        returncode: int = 0,
+        stdout: str | None = None,
+        stderr: str = "",
+    ) -> None:
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+        self.script: str | None = None
+        self.arguments: tuple[str, ...] | None = None
+
+    async def run_script(
+        self,
+        script: str,
+        *,
+        arguments: tuple[str, ...] = (),
+    ) -> SshCommandResult:
+        self.script = script
+        self.arguments = arguments
+        stdout = self.stdout
+        if stdout is None:
+            stdout = (
+                "MEM_TOTAL_BYTES=137438953472\n"
+                "PAGE_TABLES_BYTES=2147483648\n"
+                "SEC_PAGE_TABLES_BYTES=134217728\n"
+                "POOL_TOTAL_PAGES=4096\n"
+                "POOL_FREE_PAGES=1024\n"
+                "POOL_RESERVED_PAGES=256\n"
+                "POOL_SURPLUS_PAGES=0\n"
+                "OS_DEFAULT_HUGE_PAGE_SIZE_BYTES=2097152\n"
+                "HUGETLB_BYTES=8589934592\n"
+                "ANON_HUGE_PAGES_BYTES=268435456\n"
+                "THP_MODE=always\n"
+                "INSTANCE_STATUS=available\n"
+                "POSTGRES_PROCESS_COUNT=101\n"
+                "POSTGRES_VMPTE_BYTES=1610612736\n"
+                "POSTGRES_MAIN_HUGETLB_BYTES=0\n"
+            )
+        return SshCommandResult(self.returncode, stdout, self.stderr)
+
+
+def _table_row(item: dict[str, Any]) -> dict[str, Any]:
+    columns = [column["name"] for column in item["result"]["columns"]]
+    assert item["result"]["row_count"] == 1
+    return dict(zip(columns, item["result"]["rows"][0], strict=True))
+
+
+def test_postgresql_huge_pages_correlates_settings_pool_and_page_tables(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    plan = build_plan(content, 180004, collection_mode=LOCAL_COLLECTION_MODE)
+    planned = {item.item_id: item for item in plan.items}["os.postgresql_huge_pages"]
+    host = HugePagesHost()
+
+    item = asyncio.run(
+        execute_python_item(
+            content,
+            HugePagesConn(),
+            planned,
+            ssh_transport=SimpleNamespace(host_access=host),
+        )
+    )
+
+    assert item["collection_status"] == "ok"
+    assert item["severity_level"] == "medium"
+    assert planned.collection_scope == "once"
+    assert host.arguments == ("32117",)
+    assert "/proc/meminfo" in str(host.script)
+    assert "/proc/$backend_pid/status" in str(host.script)
+    assert "sys_memory_total" not in str(host.script)
+    row = _table_row(item)
+    assert set(row) == set(
+        content.presentation_catalog["presentation_catalog"]["source_overrides"][
+            "os.postgresql_huge_pages"
+        ]
+    )
+    assert row["huge_pages_requested"] == "try"
+    assert row["huge_pages_actual"] == "off"
+    assert row["shared_buffers_bytes"] == 1024**3
+    assert row["required_huge_pages"] == 8192
+    assert row["required_huge_pages_bytes"] == 16 * 1024**3
+    assert row["default_pool_shortfall_pages"] == 4096
+    assert row["default_pool_free_unreserved_pages"] == 768
+    assert row["host_page_tables_pct_ram"] == 1.5625
+    assert row["postgres_vmpte_share_pct"] == 75.0
+    assert row["risk_level"] == "medium"
+    assert "consider explicit PostgreSQL huge pages" in row["recommendation"]
+    titles = {issue["title"] for issue in item["issues"]["items"]}
+    assert titles == {
+        "PostgreSQL fell back to regular pages",
+        "Default HugeTLB pool is smaller than PostgreSQL requirement",
+        "Host page-table memory is elevated",
+        "Transparent Huge Pages are set to always",
+    }
+
+
+def test_postgresql_huge_pages_healthy_state_is_ok(content_path: Path) -> None:
+    content = load_content(content_path)
+    plan = build_plan(content, 180004, collection_mode=LOCAL_COLLECTION_MODE)
+    planned = {item.item_id: item for item in plan.items}["os.postgresql_huge_pages"]
+    host = HugePagesHost(
+        stdout=(
+            "MEM_TOTAL_BYTES=137438953472\n"
+            "PAGE_TABLES_BYTES=268435456\n"
+            "SEC_PAGE_TABLES_BYTES=0\n"
+            "POOL_TOTAL_PAGES=8192\n"
+            "POOL_FREE_PAGES=1024\n"
+            "POOL_RESERVED_PAGES=128\n"
+            "POOL_SURPLUS_PAGES=0\n"
+            "OS_DEFAULT_HUGE_PAGE_SIZE_BYTES=2097152\n"
+            "HUGETLB_BYTES=17179869184\n"
+            "ANON_HUGE_PAGES_BYTES=0\n"
+            "THP_MODE=madvise\n"
+            "INSTANCE_STATUS=available\n"
+            "POSTGRES_PROCESS_COUNT=50\n"
+            "POSTGRES_VMPTE_BYTES=67108864\n"
+            "POSTGRES_MAIN_HUGETLB_BYTES=17179869184\n"
+        )
+    )
+
+    item = asyncio.run(
+        execute_python_item(
+            content,
+            HugePagesConn(huge_pages_requested="on", huge_pages_status="on"),
+            planned,
+            ssh_transport=SimpleNamespace(host_access=host),
+        )
+    )
+
+    assert item["collection_status"] == "ok"
+    assert item["severity_level"] == "ok"
+    assert item["issues"]["items"] == []
+    row = _table_row(item)
+    assert row["huge_pages_actual"] == "on"
+    assert row["default_pool_shortfall_pages"] == 0
+    assert row["risk_level"] == "ok"
+
+
+def test_postgresql_huge_pages_host_probe_failure_is_unsupported(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    plan = build_plan(content, 180004, collection_mode=LOCAL_COLLECTION_MODE)
+    planned = {item.item_id: item for item in plan.items}["os.postgresql_huge_pages"]
+
+    item = asyncio.run(
+        execute_python_item(
+            content,
+            HugePagesConn(),
+            planned,
+            ssh_transport=SimpleNamespace(
+                host_access=HugePagesHost(
+                    returncode=3,
+                    stdout="",
+                    stderr="/proc/meminfo is unavailable",
+                )
+            ),
+        )
+    )
+
+    assert item["collection_status"] == "unsupported"
+    assert item["severity_level"] == "unknown"
+    assert item["result"]["row_count"] == 0
+    assert "/proc/meminfo is unavailable" in item["reason"]
+    assert item["diagnostics"][0]["code"] == "postgresql_huge_pages_host_probe_failed"
+
+
 def test_postgres_main_ldd_uses_connected_backend_parent_and_parses_dependencies(
     content_path: Path,
 ) -> None:

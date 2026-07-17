@@ -23,6 +23,11 @@ This instruction belongs to report item `os.disk_usage`. The item is backed by `
 - No fixed utilization threshold is assigned automatically because reserved blocks, growth rate, filesystem size, and operational headroom differ by environment.
 - This item uses byte capacity from `df -P -B1`; inode exhaustion must be checked separately.
 
+## Related report items
+- [os.mounts](#item-os.mounts) — Map filesystem usage to mounted devices.
+- [os.fstab](#item-os.fstab) — Compare live mounts with persistent configuration.
+- [storage_vacuum.table_size_detailed](#item-storage_vacuum.table_size_detailed) — Attribute database storage growth to relations.
+
 ## Checklist
 - Identify mount points that contain PGDATA, WAL, logs, archives, and backups.
 - Free or expand space before restarting write-heavy jobs.

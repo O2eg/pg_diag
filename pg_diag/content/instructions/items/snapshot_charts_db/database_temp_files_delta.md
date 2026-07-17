@@ -20,6 +20,11 @@ This instruction belongs to report item `snapshot_charts_db.database_temp_files_
 - Columns show newly created temp files per adjacent interval, not a rate.
 - Counter reset produces a missing interval; a file count alone does not reveal spill size.
 
+## Related report items
+- [sql_workload.top_sql_by_temp_io](#item-sql_workload.top_sql_by_temp_io) — Identify statements with cumulative temporary I/O.
+- [snapshot_delta_workload.sql_temp_io_delta](#item-snapshot_delta_workload.sql_temp_io_delta) — Measure statement spills in the capture window.
+- [snapshot_charts_db.database_temp_bytes_rate](#item-snapshot_charts_db.database_temp_bytes_rate) — Compare file count with spill volume.
+
 ## Checklist
 - Compare with Top SQL by Temp I/O.
 - Inspect EXPLAIN ANALYZE spill details.

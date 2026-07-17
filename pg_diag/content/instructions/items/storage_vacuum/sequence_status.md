@@ -19,6 +19,11 @@ This instruction belongs to report item `storage_vacuum.sequence_status`. The it
 ## Common fault causes
 - Narrow type/range, rapid allocation, manual `setval`, cache loss/gaps, or an unexpected start/min/max configuration.
 
+## Related report items
+- [object_workload.sequence_privileges](#item-object_workload.sequence_privileges) — Verify access to sequences approaching exhaustion.
+- [snapshot_delta_workload.table_dml_delta](#item-snapshot_delta_workload.table_dml_delta) — Check write activity associated with sequence consumption.
+- [storage_vacuum.table_size_detailed](#item-storage_vacuum.table_size_detailed) — Review growth of the owning application tables.
+
 ## Checklist
 - Estimate allocation rate from separate workload evidence.
 - Validate column/application type before altering range or sequence type.

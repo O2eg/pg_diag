@@ -1326,6 +1326,35 @@ __ECHARTS_JS__
       font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
 
+    .markdown-body .report-item-link {
+      border-radius: 4px;
+      color: var(--accent-fg);
+      font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      overflow-wrap: anywhere;
+      text-decoration: underline;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
+
+    .markdown-body a.report-item-link:hover,
+    .markdown-body a.report-item-link:focus-visible {
+      color: var(--accent);
+      outline: none;
+      text-decoration-thickness: 2px;
+    }
+
+    .markdown-body .report-item-link.unavailable {
+      color: var(--muted);
+      cursor: not-allowed;
+      text-decoration: line-through;
+      text-decoration-thickness: 1px;
+    }
+
+    details.item.report-item-link-target > summary {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
     .markdown-body pre {
       margin: 0 0 12px;
       overflow: auto;
@@ -2635,6 +2664,14 @@ __HIGHLIGHT_JS__
       }
       window.setTimeout(() => {
         target.scrollIntoView({behavior: scrollBehavior(), block: "start"});
+        const summary = directSummary(target);
+        if (summary && typeof summary.focus === "function") {
+          summary.focus({preventScroll: true});
+        }
+        if (targetKind === "item") {
+          target.classList.add("report-item-link-target");
+          window.setTimeout(() => target.classList.remove("report-item-link-target"), 1600);
+        }
       }, shouldReduceMotion() ? 0 : DETAILS_ANIMATION_MS);
     }
 
@@ -3046,6 +3083,7 @@ __HIGHLIGHT_JS__
       const itemCollectionStatus = collectionStatus(item);
       const severityLevel = itemSeverityLevel(item);
       details.className = "item";
+      details.id = reportItemAnchorId(item.item_id || "");
       details.dataset.itemId = item.item_id || "";
       details.dataset.collectionStatus = itemCollectionStatus;
       details.dataset.severityLevel = severityLevel;
@@ -3099,6 +3137,10 @@ __HIGHLIGHT_JS__
       body.appendChild(isErrorItem(item) ? renderItemError(item) : renderResult(item));
       details.appendChild(wrapDetailsContent(body));
       return details;
+    }
+
+    function reportItemAnchorId(itemId) {
+      return "item-" + String(itemId || "");
     }
 
     function wrapDetailsContent(content) {
@@ -4118,13 +4160,20 @@ __HIGHLIGHT_JS__
 
       function renderInline(text) {
         const fragment = document.createDocumentFragment();
-        const pattern = /(`[^`]+`|\*\*[^*]+\*\*)/g;
+        const pattern = /(\[[^\]\n]+\]\(#item-[a-z][a-z0-9_.-]*\)|`[^`]+`|\*\*[^*]+\*\*)/g;
         let lastIndex = 0;
         let match;
         while ((match = pattern.exec(text)) !== null) {
           appendText(fragment, text.slice(lastIndex, match.index));
           const token = match[0];
-          if (token.startsWith("`")) {
+          if (token.startsWith("[")) {
+            const link = /^\[([^\]]+)\]\(#item-([a-z][a-z0-9_.-]*)\)$/.exec(token);
+            if (link) {
+              fragment.appendChild(renderReportItemReference(link[1], link[2]));
+            } else {
+              appendText(fragment, token);
+            }
+          } else if (token.startsWith("`")) {
             const code = document.createElement("code");
             code.textContent = token.slice(1, -1);
             fragment.appendChild(code);
@@ -4137,6 +4186,32 @@ __HIGHLIGHT_JS__
         }
         appendText(fragment, text.slice(lastIndex));
         return fragment;
+      }
+
+      function renderReportItemReference(label, itemId) {
+        const target = findItemElement(itemId);
+        if (!items[itemId] || !target || !isVisibleItem(items[itemId])) {
+          const unavailable = document.createElement("span");
+          unavailable.className = "report-item-link unavailable";
+          unavailable.setAttribute("aria-disabled", "true");
+          unavailable.title = "This item is not included in the current report";
+          unavailable.textContent = label;
+          return unavailable;
+        }
+        const link = document.createElement("a");
+        link.className = "report-item-link";
+        link.href = "#" + reportItemAnchorId(itemId);
+        link.dataset.itemId = itemId;
+        link.textContent = label;
+        link.addEventListener("click", (event) => {
+          event.preventDefault();
+          closeInstructionModal();
+          if (window.history && typeof window.history.replaceState === "function") {
+            window.history.replaceState(null, "", "#" + reportItemAnchorId(itemId));
+          }
+          window.setTimeout(() => navigateToReportNode("item", itemId), 0);
+        });
+        return link;
       }
 
       function appendText(parent, text) {

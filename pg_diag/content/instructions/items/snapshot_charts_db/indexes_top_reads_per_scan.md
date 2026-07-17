@@ -22,6 +22,11 @@ This instruction belongs to report item `snapshot_charts_db.indexes_top_reads_pe
 - This chart is informational; the ratio does not measure cache misses, bloat, or physical read amplification.
 - Very small scan deltas can create unstable ratios, so confirm scan volume and representative plans.
 
+## Related report items
+- [snapshot_charts_db.indexes_top_scan_rate](#item-snapshot_charts_db.indexes_top_scan_rate) — Check whether the ratio is supported by meaningful scan volume.
+- [snapshot_charts_db.indexes_top_tuple_read_rate](#item-snapshot_charts_db.indexes_top_tuple_read_rate) — Inspect the numerator rate.
+- [sql_workload.top_sql_by_total_time](#item-sql_workload.top_sql_by_total_time) — Review statements using inefficient access paths.
+
 ## Checklist
 - Review predicates, index column order, scan count, and expected result cardinality.
 - Use block-read and latency items for physical I/O conclusions.

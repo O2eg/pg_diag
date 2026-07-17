@@ -21,6 +21,13 @@ This instruction belongs to report item `overview.password_complexity`. The item
 - Do not treat this item as a failure when local PostgreSQL password creation is prohibited or controlled externally.
 - The query recognizes only exact `passwordcheck` and `credcheck` preload entries.
 
+## Automatic evaluation
+- A missing recognized password hook is reported as `medium`; applicability must be evaluated against external identity controls.
+
+## Related report items
+- [cluster_inventory.role_password_hashes](#item-cluster_inventory.role_password_hashes) — Review the stored verifier population.
+- [overview.password_encryption](#item-overview.password_encryption) — Check the hashing policy used for newly set passwords.
+
 ## Checklist
 - Use `passwordcheck`, `credcheck`, or an equivalent password policy mechanism for local PostgreSQL passwords.
 - Add the chosen module to `shared_preload_libraries` and restart PostgreSQL when required.

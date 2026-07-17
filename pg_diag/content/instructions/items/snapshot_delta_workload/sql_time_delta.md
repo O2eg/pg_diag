@@ -24,6 +24,11 @@ This instruction belongs to report item `snapshot_delta_workload.sql_time_delta`
 ## Common fault causes
 - Incident workload differs from historical Top SQL, a batch burst, waits inside statement execution, or external pg_stat_statements reset/eviction.
 
+## Related report items
+- [sql_workload.top_sql_by_total_time](#item-sql_workload.top_sql_by_total_time) — Compare incident-window SQL with cumulative Top SQL.
+- [snapshot_delta_workload.sql_io_delta](#item-snapshot_delta_workload.sql_io_delta) — Check shared-block work for the same statement identity.
+- [snapshot_delta_workload.sql_wal_delta](#item-snapshot_delta_workload.sql_wal_delta) — Check WAL generation for the same statement identity.
+
 ## Checklist
 - Correlate the four-part identity with cumulative Top SQL and wait evidence.
 - Account for Top-50 candidate selection before claiming a global incident-window ranking.

@@ -20,6 +20,11 @@ This instruction belongs to report item `os.total_ram`. The item is backed by `o
 - No severity is assigned because adequate capacity depends on workload and PostgreSQL configuration.
 - `/proc/meminfo` may describe the host rather than a container cgroup limit; validate container quotas separately.
 
+## Related report items
+- [os.memory_info](#item-os.memory_info) — Compare installed capacity with current availability.
+- [os.postgresql_huge_pages](#item-os.postgresql_huge_pages) — Review HugeTLB sizing and host PageTables as a percentage of this capacity.
+- [snapshot_charts_os.os_memory_usage](#item-snapshot_charts_os.os_memory_usage) — Inspect how the capacity is used during the capture.
+
 ## Checklist
 - Confirm instance size or physical RAM inventory.
 - Recalculate worst-case memory with max_connections and work_mem.

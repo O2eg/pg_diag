@@ -23,6 +23,11 @@ This instruction belongs to report item `backend_os.backend_proc_cpu`. The item 
 - PID reuse is rejected by matching the Linux process start time at both endpoints.
 - A single process can exceed 100% on reporting conventions only if the underlying counter represents more than one execution context; PostgreSQL server processes normally represent one process.
 
+## Related report items
+- [backend_os.backend_activity](#item-backend_os.backend_activity) — Map sampled PIDs to database, user, state, and query.
+- [sql_workload.top_sql_by_total_time](#item-sql_workload.top_sql_by_total_time) — Compare backend CPU with cumulative expensive SQL.
+- [snapshot_charts_os.os_cpu_utilization](#item-snapshot_charts_os.os_cpu_utilization) — Place per-backend CPU in host-wide context.
+
 ## Checklist
 - Use the PID and command to correlate with Backend Activity; this item does not contain a query ID.
 - Group leader and parallel worker PIDs together.

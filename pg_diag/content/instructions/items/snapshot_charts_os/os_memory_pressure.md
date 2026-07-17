@@ -21,6 +21,11 @@ This instruction belongs to report item `snapshot_charts_os.os_memory_pressure`.
 - The chart is informational because a healthy Linux host normally uses most RAM for reclaimable cache.
 - Swap usage alone does not prove active swapping; confirm with paging counters or OS tools.
 
+## Related report items
+- [snapshot_charts_os.os_memory_usage](#item-snapshot_charts_os.os_memory_usage) — Inspect reclaimable and application-memory composition.
+- [snapshot_delta_workload.sql_temp_io_delta](#item-snapshot_delta_workload.sql_temp_io_delta) — Check whether pressure coincides with temporary I/O.
+- [snapshot_charts_db.database_backends](#item-snapshot_charts_db.database_backends) — Check backend concurrency during pressure.
+
 ## Checklist
 - Compare with the memory composition chart, temp I/O, connection count, and workload timing.
 - Check cgroup/container limits where applicable.

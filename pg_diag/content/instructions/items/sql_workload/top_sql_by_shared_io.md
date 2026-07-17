@@ -22,6 +22,11 @@ This instruction belongs to report item `sql_workload.top_sql_by_shared_io`. The
 - `track_io_timing = off`, which leaves timing at zero while block counters remain valid.
 - Long statistics windows or entry churn distorting comparisons.
 
+## Related report items
+- [snapshot_delta_workload.sql_io_delta](#item-snapshot_delta_workload.sql_io_delta) — Measure statement I/O in the capture window.
+- [snapshot_delta_workload.table_io_delta](#item-snapshot_delta_workload.table_io_delta) — Attribute shared I/O to relations.
+- [snapshot_charts_os.os_disk_latency](#item-snapshot_charts_os.os_disk_latency) — Check whether PostgreSQL I/O coincides with storage latency.
+
 ## Checklist
 - Normalize counters by calls and entry age before comparing query shapes.
 - Review plans with `BUFFERS` and correlate with table and host I/O evidence.

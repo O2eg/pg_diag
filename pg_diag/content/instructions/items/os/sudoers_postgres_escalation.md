@@ -1,6 +1,7 @@
 # sudoers PostgreSQL Escalation
 
-This instruction belongs to `os.sudoers_postgres_escalation`, backed by local Python source `security.sudoers_postgres_escalation`.
+This instruction belongs to report item `os.sudoers_postgres_escalation`.
+It is backed by local Python source `security.sudoers_postgres_escalation`.
 
 ## What this item shows
 - Sudoers files and lines that mention postgres with broad commands or `NOPASSWD`.
@@ -15,6 +16,11 @@ This instruction belongs to `os.sudoers_postgres_escalation`, backed by local Py
 
 ## Common fault causes
 - Emergency access left in place, overly broad command aliases, included files unreadable to the collector, or wrapper scripts that permit command injection.
+
+## Related report items
+- [os.postgres_os_group_members](#item-os.postgres_os_group_members) — Identify OS principals that may inherit escalation paths.
+- [os.postgres_service_hardening](#item-os.postgres_service_hardening) — Compare sudo policy with service restrictions.
+- [os.postgres_cron_timer_scripts](#item-os.postgres_cron_timer_scripts) — Review scheduled commands that may invoke privileged tools.
 
 ## Checklist
 - Avoid broad passwordless escalation to postgres.

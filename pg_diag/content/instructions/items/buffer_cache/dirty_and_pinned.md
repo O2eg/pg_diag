@@ -1,5 +1,7 @@
 # Dirty And Pinned Buffers
 
+This instruction belongs to report item `buffer_cache.dirty_and_pinned`.
+
 ## What this item shows
 - Dirty buffers and buffers pinned by one or more backends.
 - Two overlapping gauges that must not be summed.
@@ -16,6 +18,11 @@
 
 ## Automatic evaluation
 - No severity is assigned because workload and pool size determine acceptable levels.
+
+## Related report items
+- [buffer_cache.top_dirty_relations](#item-buffer_cache.top_dirty_relations) — Identify relations contributing dirty buffers.
+- [snapshot_delta_workload.checkpointer_delta](#item-snapshot_delta_workload.checkpointer_delta) — Check checkpoint writeback.
+- [activity_locks.wait_events](#item-activity_locks.wait_events) — Look for buffer-pin and I/O waits.
 
 ## Checklist
 - Correlate with sessions, waits, checkpoints, and PostgreSQL I/O.

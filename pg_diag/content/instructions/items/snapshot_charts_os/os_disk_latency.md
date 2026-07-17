@@ -24,6 +24,11 @@ This instruction belongs to report item `snapshot_charts_os.os_disk_latency`. Th
 - `await` is the combined average and read/write await are separate line series; they are not added.
 - No fixed severity is assigned because latency targets depend on device and workload.
 
+## Related report items
+- [snapshot_charts_os.os_disk_utilization](#item-snapshot_charts_os.os_disk_utilization) — Check whether latency accompanies sustained busy time.
+- [wal_io_checkpoints.pg_stat_io](#item-wal_io_checkpoints.pg_stat_io) — Attribute PostgreSQL I/O by backend and context.
+- [snapshot_delta_workload.sql_io_delta](#item-snapshot_delta_workload.sql_io_delta) — Identify statements doing shared-block I/O.
+
 ## Checklist
 - Map device to WAL/data/archive paths.
 - Compare with checkpointer, WAL, and pg_stat_io.

@@ -18,6 +18,11 @@ This instruction belongs to report item `wal_io_checkpoints.checkpointer`. The i
 ## Common fault causes
 - Low `max_wal_size`, short checkpoint timeout, write bursts, slow fsyncs, or recovery restartpoint constraints.
 
+## Related report items
+- [snapshot_delta_workload.checkpointer_delta](#item-snapshot_delta_workload.checkpointer_delta) — Measure checkpoint changes during the capture.
+- [wal_io_checkpoints.bgwriter](#item-wal_io_checkpoints.bgwriter) — Compare checkpointer work with background writing.
+- [snapshot_charts_os.os_disk_latency](#item-snapshot_charts_os.os_disk_latency) — Check storage latency during checkpoint writes.
+
 ## Checklist
 - Calculate deltas and average write/sync time per completed event where the version exposes completion.
 - Correlate with WAL generation, background writer, `pg_stat_io`, and OS latency.

@@ -23,6 +23,11 @@ This instruction belongs to report item `sql_workload.top_sql_by_total_time`. Th
 - A high-frequency application path, long lock/I/O waits, or legitimate analytical work.
 - Entry eviction caused by insufficient `pg_stat_statements.max`.
 
+## Related report items
+- [sql_workload.top_sql_by_mean_time](#item-sql_workload.top_sql_by_mean_time) — Distinguish aggregate cost from expensive individual calls.
+- [sql_workload.top_sql_by_calls](#item-sql_workload.top_sql_by_calls) — Check whether call volume drives total time.
+- [snapshot_delta_workload.sql_time_delta](#item-snapshot_delta_workload.sql_time_delta) — Compare cumulative ranking with the incident-window delta.
+
 ## Checklist
 - Check capability, visibility, `stats_reset`, and entry age first.
 - Compare calls, mean/max time, rows, I/O, and WAL before choosing a tuning target.

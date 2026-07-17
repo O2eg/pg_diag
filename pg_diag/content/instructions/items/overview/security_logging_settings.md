@@ -22,6 +22,14 @@ This instruction belongs to report item `overview.security_logging_settings`. Th
 - `log_statement=none` can be intentional when equivalent statement auditing is provided elsewhere.
 - Richer logging can expose sensitive SQL values and increase storage volume; apply the local retention and redaction policy.
 
+## Automatic evaluation
+- Returned rows use the `risk_level` described in What to watch. An empty result means only that the selected settings match the bundled posture.
+
+## Related report items
+- [cluster_inventory.pgaudit_configuration](#item-cluster_inventory.pgaudit_configuration) — Check whether pgAudit supplies additional audit coverage.
+- [os.log_file_permissions](#item-os.log_file_permissions) — Verify that generated logs are protected on the host.
+- [replication.log_replication_commands](#item-replication.log_replication_commands) — Check replication-command logging separately.
+
 ## Checklist
 - Enable `log_connections` and `log_disconnections` when audit policy requires login tracing.
 - Keep `log_line_prefix` rich enough to identify user, database, app, client, process, and timestamp.

@@ -22,6 +22,10 @@ This instruction belongs to report item `activity_locks.lock_modes`. The item is
 - Long transactions and high-concurrency access to the same objects.
 - Advisory-lock coordination or prepared transactions.
 
+## Related report items
+- [activity_locks.lock_waits](#item-activity_locks.lock_waits) — Resolve lock-count pressure to exact blocking chains.
+- [activity_locks.long_transactions](#item-activity_locks.long_transactions) — Check whether long transactions explain retained locks.
+
 ## Checklist
 - Use `Lock Waits` to identify exact blockers and wait duration.
 - Check DDL and maintenance windows and compare with long transactions.

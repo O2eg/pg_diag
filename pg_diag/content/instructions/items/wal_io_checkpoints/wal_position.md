@@ -17,6 +17,11 @@ This instruction belongs to report item `wal_io_checkpoints.wal_position`. The i
 ## Common fault causes
 - Idle workload, archive-only recovery, paused/delayed replay, wrong instance, promotion, restore, or upstream interruption.
 
+## Related report items
+- [snapshot_charts_db.wal_growth_rate](#item-snapshot_charts_db.wal_growth_rate) — Measure WAL movement over time.
+- [replication.physical_replication](#item-replication.physical_replication) — Compare the primary position with sender positions.
+- [replication.wal_receiver](#item-replication.wal_receiver) — Compare receive and replay positions on a standby.
+
 ## Checklist
 - Compare textual LSNs only within the appropriate timeline and use byte gaps for arithmetic.
 - Do not treat `seconds_since_last_replayed_xact` as replay lag when the primary is idle.

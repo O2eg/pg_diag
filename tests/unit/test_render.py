@@ -481,6 +481,12 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "openMetaModal(item)" in html
     assert "openInstructionModal(item)" in html
     assert "PgDiagMarkdown" in html
+    assert "renderReportItemReference" in html
+    assert 'link.href = "#" + reportItemAnchorId(itemId)' in html
+    assert 'navigateToReportNode("item", itemId)' in html
+    assert 'unavailable.className = "report-item-link unavailable"' in html
+    assert 'unavailable.setAttribute("aria-disabled", "true")' in html
+    assert 'details.id = reportItemAnchorId(item.item_id || "")' in html
     assert "source.instructions.text_chars" in html
     assert '"path":"instructions/items/s/i.md"' in html
     assert "Item instruction" in html

@@ -23,6 +23,11 @@ This instruction belongs to report item `indexes.invalid_indexes`. The item is b
 - `medium`: any other invalid index requires failed-DDL or rebuild review.
 - The query limits candidates by catalog pages before calculating exact size and does not issue DDL.
 
+## Related report items
+- [maintenance_progress.create_index_progress](#item-maintenance_progress.create_index_progress) — Check whether an index build is still active.
+- [indexes.redundant_indexes](#item-indexes.redundant_indexes) — Review overlap only after invalid-index state is resolved.
+- [object_workload.index_workload](#item-object_workload.index_workload) — Check whether the index has recorded activity.
+
 ## Checklist
 - Check whether a valid equivalent index exists.
 - Rebuild or drop invalid indexes in a maintenance-safe way.

@@ -27,6 +27,10 @@ This instruction belongs to report item `overview.pg_controldata`. The item is b
 - Failure to resolve a matching binary, execute `pg_controldata`, or read the data directory is reported as an item error with the original reason.
 - The item never modifies the data directory and runs only once per report.
 
+## Related report items
+- [storage_vacuum.data_checksums](#item-storage_vacuum.data_checksums) — Cross-check the data-checksum state.
+- [wal_io_checkpoints.wal_position](#item-wal_io_checkpoints.wal_position) — Relate control-file WAL state to the live cluster position.
+
 ## Checklist
 - Compare the system identifier and format constants across primary and standby hosts.
 - Confirm that `DATA_DIRECTORY` and `PG_CONTROLDATA` refer to the intended PostgreSQL instance.

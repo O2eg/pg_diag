@@ -19,6 +19,11 @@ This instruction belongs to report item `snapshot_delta_workload.physical_replic
 ## Common fault causes
 - Network throughput, receiver or replay stalls, storage latency, recovery conflicts, and intentional replay delay.
 
+## Related report items
+- [replication.physical_replication](#item-replication.physical_replication) — Compare interval progress with current sender state.
+- [replication.wal_receiver](#item-replication.wal_receiver) — Check the standby receiver state.
+- [snapshot_charts_os.os_network_transmit](#item-snapshot_charts_os.os_network_transmit) — Inspect network throughput during WAL streaming.
+
 ## Checklist
 - Compare progress with current byte lag, receiver state, slots, and standby logs.
 - Confirm topology and synchronous-commit expectations before remediation.

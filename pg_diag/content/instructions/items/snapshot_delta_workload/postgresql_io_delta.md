@@ -19,6 +19,11 @@ This instruction belongs to report item `snapshot_delta_workload.postgresql_io_d
 ## Common fault causes
 - Checkpoint pressure, insufficient cache, bulk scans, COPY, autovacuum, temporary relations, and slow storage.
 
+## Related report items
+- [wal_io_checkpoints.pg_stat_io](#item-wal_io_checkpoints.pg_stat_io) — Compare interval deltas with the point-in-time cumulative table.
+- [snapshot_charts_os.os_disk_latency](#item-snapshot_charts_os.os_disk_latency) — Check host storage latency.
+- [snapshot_charts_db.io_read_write_rate](#item-snapshot_charts_db.io_read_write_rate) — Inspect PostgreSQL byte rates by backend type.
+
 ## Checklist
 - Compare byte rates with OS disk throughput and latency.
 - Verify `track_io_timing` and `track_wal_io_timing` before interpreting zero timing values.

@@ -21,6 +21,13 @@ This instruction belongs to report item `overview.password_encryption`. The item
 - The check matters only for roles using PostgreSQL-managed passwords.
 - Certificate, GSSAPI, LDAP, PAM, OAuth, and other external authentication paths have different password controls.
 
+## Automatic evaluation
+- Returned rows use the `risk_level` described in What to watch. An empty result does not verify existing role password hashes.
+
+## Related report items
+- [cluster_inventory.role_password_hashes](#item-cluster_inventory.role_password_hashes) — Verify the hashes already stored for login roles.
+- [cluster_inventory.pg_hba_insecure_auth_methods](#item-cluster_inventory.pg_hba_insecure_auth_methods) — Check whether HBA rules still permit weak authentication.
+
 ## Checklist
 - Set `password_encryption = 'scram-sha-256'`.
 - Rotate or reset old MD5 password hashes where possible.

@@ -1,6 +1,7 @@
 # Log File Permissions
 
-This instruction belongs to `os.log_file_permissions`, backed by local Python source `security.log_file_permissions`.
+This instruction belongs to report item `os.log_file_permissions`.
+It is backed by local Python source `security.log_file_permissions`.
 
 ## What this item shows
 - Active log directory from PostgreSQL settings.
@@ -16,6 +17,11 @@ This instruction belongs to `os.log_file_permissions`, backed by local Python so
 
 ## Common fault causes
 - Permissive `log_file_mode`, logrotate ownership drift, shared log directories, or logs mounted from another namespace.
+
+## Related report items
+- [overview.security_logging_settings](#item-overview.security_logging_settings) — Confirm that required events are logged.
+- [cluster_inventory.pgaudit_configuration](#item-cluster_inventory.pgaudit_configuration) — Check audit-extension configuration.
+- [replication.log_replication_commands](#item-replication.log_replication_commands) — Review replication-command logging.
 
 ## Checklist
 - Keep log directories inaccessible to untrusted users.

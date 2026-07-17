@@ -20,6 +20,10 @@ This instruction belongs to report item `activity_locks.pg_wait_sampling_capabil
 - Host package not installed, `CREATE EXTENSION` not run, or extension disallowed by the provider.
 - Extension installed outside `public` while pg_diag uses a restricted search path.
 
+## Related report items
+- [activity_locks.pg_wait_sampling_profile](#item-activity_locks.pg_wait_sampling_profile) — Open the extension profile when the capability check succeeds.
+- [activity_locks.wait_event_sample_profile](#item-activity_locks.wait_event_sample_profile) — Use built-in activity sampling when the extension is unavailable.
+
 ## Checklist
 - Use the built-in snapshot wait chart when the extension is unavailable.
 - Install or relocate the extension only under the site's change and security policy.

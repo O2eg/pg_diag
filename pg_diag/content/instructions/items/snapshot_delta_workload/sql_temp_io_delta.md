@@ -20,6 +20,11 @@ This instruction belongs to report item `snapshot_delta_workload.sql_temp_io_del
 ## Common fault causes
 - Underestimated row counts, insufficient per-operation memory, wide rows, large aggregates, and concurrent analytical queries.
 
+## Related report items
+- [sql_workload.top_sql_by_temp_io](#item-sql_workload.top_sql_by_temp_io) — Compare interval spills with cumulative statement history.
+- [snapshot_charts_db.database_temp_bytes_rate](#item-snapshot_charts_db.database_temp_bytes_rate) — Check database-level temp throughput.
+- [snapshot_charts_os.os_disk_latency](#item-snapshot_charts_os.os_disk_latency) — Inspect storage latency during spills.
+
 ## Checklist
 - Resolve the query ID in the cumulative SQL items and inspect its execution plan.
 - Correlate temporary bytes with database and operating-system I/O before changing memory settings.

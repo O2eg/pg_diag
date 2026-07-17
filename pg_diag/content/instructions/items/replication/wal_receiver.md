@@ -21,6 +21,11 @@ This instruction belongs to report item `replication.wal_receiver`. The item is 
 - Primary/network/authentication/TLS failure, wrong `primary_conninfo`, missing sender capacity, or a disabled receiver.
 - Archive-only recovery, promotion, or a standby that has not started streaming yet.
 
+## Related report items
+- [replication.physical_replication](#item-replication.physical_replication) — Compare receiver state with the upstream sender.
+- [snapshot_delta_workload.physical_replication_progress_delta](#item-snapshot_delta_workload.physical_replication_progress_delta) — Measure receive and replay progress.
+- [snapshot_charts_os.os_network_receive](#item-snapshot_charts_os.os_network_receive) — Inspect host receive throughput.
+
 ## Checklist
 - Confirm `pg_is_in_recovery()`, intended upstream, receiver logs, and the sender row on the upstream.
 - Treat `receive_lag_bytes` as the gap between the last upstream end reported and locally flushed WAL, not SQL apply latency.

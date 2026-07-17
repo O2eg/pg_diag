@@ -30,6 +30,11 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_index_blo
 - This chart ranks physical index-block read counter deltas by stable relation OID.
 - It aggregates all indexes of a table; use index-level and SQL evidence for attribution.
 
+## Related report items
+- [object_workload.index_workload](#item-object_workload.index_workload) — Inspect index usage for affected tables.
+- [snapshot_delta_workload.index_usage_delta](#item-snapshot_delta_workload.index_usage_delta) — Measure current index activity.
+- [indexes.large_indexes](#item-indexes.large_indexes) — Check whether large indexes drive read pressure.
+
 ## Checklist
 - Inspect index_workload for top table.
 - Review query predicates and index design.

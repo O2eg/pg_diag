@@ -24,6 +24,11 @@ This instruction belongs to report item `snapshot_charts_db.database_block_acces
 - Read and buffer-hit deltas are distinct block access outcomes and are stacked per database.
 - pg_diag's own catalog reads contribute observer overhead; use object/SQL I/O deltas for attribution.
 
+## Related report items
+- [snapshot_delta_workload.sql_io_delta](#item-snapshot_delta_workload.sql_io_delta) — Identify statements doing shared-block work.
+- [snapshot_delta_workload.table_io_delta](#item-snapshot_delta_workload.table_io_delta) — Attribute block activity to relations.
+- [snapshot_charts_os.os_disk_read_throughput](#item-snapshot_charts_os.os_disk_read_throughput) — Check physical device impact.
+
 ## Checklist
 - Compare with SQL shared I/O and table I/O.
 - Use OS disk read charts for storage impact.

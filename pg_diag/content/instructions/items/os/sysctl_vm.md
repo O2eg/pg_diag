@@ -20,6 +20,10 @@ This instruction belongs to report item `os.sysctl_vm`. The item is backed by `o
 - No severity is assigned: safe VM values depend on RAM, storage latency, kernel release, and workload.
 - Only readable runtime `vm.*` keys are shown; this does not verify persistence in sysctl configuration files.
 
+## Related report items
+- [snapshot_charts_os.os_memory_pressure](#item-snapshot_charts_os.os_memory_pressure) — Compare VM settings with RAM and swap pressure.
+- [snapshot_charts_os.os_memory_usage](#item-snapshot_charts_os.os_memory_usage) — Inspect memory composition under the configured policy.
+
 ## Checklist
 - Compare VM sysctl values with platform baseline.
 - Relate dirty/writeback settings to checkpoint and disk latency evidence.

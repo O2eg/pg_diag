@@ -23,6 +23,11 @@ This instruction belongs to report item `backend_os.backend_proc_io`. The item i
 - Rates remain null unless `/proc/<pid>/io` was readable at both endpoints; `io_access=false` is not converted into zero activity.
 - PID reuse is rejected by matching process start time.
 
+## Related report items
+- [backend_os.backend_activity](#item-backend_os.backend_activity) — Map sampled PIDs to database, user, state, and query.
+- [wal_io_checkpoints.pg_stat_io](#item-wal_io_checkpoints.pg_stat_io) — Compare process I/O with PostgreSQL I/O contexts.
+- [snapshot_charts_os.os_disk_latency](#item-snapshot_charts_os.os_disk_latency) — Check host storage latency.
+
 ## Checklist
 - Check `io_access` before interpreting the rates.
 - Use the PID and command to correlate with Backend Activity and SQL text.

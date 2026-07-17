@@ -23,6 +23,10 @@ This instruction belongs to report item `object_workload.function_workload`. The
 - Counters are cumulative from `stats_reset`; an empty result is expected when `track_functions=none`.
 - Overloaded functions are distinguished by OID and identity arguments, and output is limited to 100 rows.
 
+## Related report items
+- [snapshot_delta_workload.function_time_delta](#item-snapshot_delta_workload.function_time_delta) — Measure function activity during the capture window.
+- [sql_workload.top_sql_by_total_time](#item-sql_workload.top_sql_by_total_time) — Check statements that may invoke expensive functions.
+
 ## Checklist
 - Confirm track_functions setting.
 - Profile functions with high self time.

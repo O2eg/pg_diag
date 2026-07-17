@@ -5,6 +5,14 @@ python_catalog:
     local_only: false
 
 python_sources:
+  os.postgresql_huge_pages:
+    title: PostgreSQL Huge Pages
+    description: Correlate PostgreSQL huge-page settings and actual use with the matching OS pool, host page-table memory, and connected-instance process evidence.
+    python_file: os/postgresql_huge_pages.py
+    function: collect
+    timeout_ms: 1000
+    local_only: true
+
   backend.postgres_main_process_linked_libraries:
     title: PostgreSQL Main Process ldd Dependencies
     description: Resolve the PostgreSQL main process that owns the current database backend and capture the dynamic dependencies reported by ldd for that exact executable.

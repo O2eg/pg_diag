@@ -19,6 +19,9 @@ This instruction belongs to report item `os.lshw_power`. The item is backed by `
 - No severity is assigned because lshw does not provide authoritative health telemetry.
 - Empty output is expected in VMs; use BMC/cloud monitoring for actual power health.
 
+## Related report items
+- [os.lshw_system](#item-os.lshw_system) — Place power components in the overall system inventory.
+
 ## Checklist
 - Use platform monitoring for real power health.
 - Treat virtual power devices as inventory noise.

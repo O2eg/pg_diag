@@ -26,6 +26,10 @@ This instruction belongs to report item `overview.pg_settings`. The item is back
 - Package upgrade or restore copied an old configuration file.
 - Manual ALTER SYSTEM changes made outside change control.
 
+## Related report items
+- [cluster_inventory.pending_restart_settings](#item-cluster_inventory.pending_restart_settings) — Find settings whose requested values are not active yet.
+- [overview.stat_reset_times](#item-overview.stat_reset_times) — Separate configuration changes from statistics-reset effects.
+
 ## Checklist
 - Filter by changed settings first, then compare with baseline.
 - Check `context` before deciding whether reload or restart is required.

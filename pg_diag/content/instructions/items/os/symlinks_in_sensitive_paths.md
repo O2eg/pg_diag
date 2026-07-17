@@ -1,6 +1,7 @@
 # Symlinks In Sensitive Paths
 
-This instruction belongs to `os.symlinks_in_sensitive_paths`, backed by local Python source `security.symlinks_in_sensitive_paths`.
+This instruction belongs to report item `os.symlinks_in_sensitive_paths`.
+It is backed by local Python source `security.symlinks_in_sensitive_paths`.
 
 ## What this item shows
 - Symlink path, root path, and target.
@@ -15,6 +16,11 @@ This instruction belongs to `os.symlinks_in_sensitive_paths`, backed by local Py
 
 ## Common fault causes
 - Storage migration, package layout, tablespace indirection, log relocation, or a malicious/wrongly owned replacement target.
+
+## Related report items
+- [os.world_writable_paths_in_pg_tree](#item-os.world_writable_paths_in_pg_tree) — Check write access along symlink targets.
+- [os.postgres_config_file_permissions](#item-os.postgres_config_file_permissions) — Review configuration paths reached through symlinks.
+- [cluster_inventory.pgdata_permissions](#item-cluster_inventory.pgdata_permissions) — Check the containing data-directory permissions.
 
 ## Checklist
 - Confirm each symlink is intentional.

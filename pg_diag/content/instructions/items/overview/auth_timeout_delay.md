@@ -21,6 +21,13 @@ This instruction belongs to report item `overview.auth_timeout_delay`. The item 
 - Failed-auth delay is a policy choice and can consume server resources during abusive connection storms.
 - Evaluate connection pooling, network rate limiting, lockout policy, and denial-of-service risk before enabling delay.
 
+## Automatic evaluation
+- Returned rows use the `risk_level` described in What to watch; external throttling controls are not evaluated automatically.
+
+## Related report items
+- [activity_locks.connection_pressure](#item-activity_locks.connection_pressure) — Correlate authentication controls with connection pressure.
+- [cluster_inventory.login_roles_without_connection_limit](#item-cluster_inventory.login_roles_without_connection_limit) — Find login roles without a per-role connection bound.
+
 ## Checklist
 - Keep `authentication_timeout` enabled and reasonably short.
 - Configure a failed-authentication delay with `auth_delay` or the server's available equivalent.

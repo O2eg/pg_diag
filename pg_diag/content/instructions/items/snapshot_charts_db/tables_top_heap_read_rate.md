@@ -30,6 +30,11 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_heap_read
 - This chart ranks physical heap-block read counter deltas by stable relation OID.
 - Changing bounded membership and counter resets become missing evidence; correlate with OS latency and cache state.
 
+## Related report items
+- [snapshot_delta_workload.table_io_delta](#item-snapshot_delta_workload.table_io_delta) — Inspect relation heap-block reads.
+- [snapshot_charts_os.os_disk_read_throughput](#item-snapshot_charts_os.os_disk_read_throughput) — Check host read throughput.
+- [buffer_cache.relation_coverage](#item-buffer_cache.relation_coverage) — Review cache coverage for the affected tables.
+
 ## Checklist
 - Review SQL touching top tables.
 - Compare with OS disk reads.

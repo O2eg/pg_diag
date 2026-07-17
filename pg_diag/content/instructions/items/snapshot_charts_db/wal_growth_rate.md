@@ -21,6 +21,11 @@ This instruction belongs to report item `snapshot_charts_db.wal_growth_rate`. Th
 - The source is cluster-wide `pg_stat_wal`; counter decreases after a stats reset become missing points.
 - No fixed severity is assigned because archive and replication capacity define the safe rate.
 
+## Related report items
+- [sql_workload.top_sql_by_wal](#item-sql_workload.top_sql_by_wal) — Attribute cumulative WAL generation to statements.
+- [snapshot_delta_workload.sql_wal_delta](#item-snapshot_delta_workload.sql_wal_delta) — Attribute WAL inside the capture window.
+- [snapshot_delta_workload.wal_archiver_delta](#item-snapshot_delta_workload.wal_archiver_delta) — Check whether archiving keeps pace.
+
 ## Checklist
 - Compare with Top SQL by WAL and SQL WAL Delta.
 - Check archive/replication capacity.

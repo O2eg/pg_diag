@@ -21,6 +21,11 @@ This instruction belongs to report item `snapshot_charts_os.os_network_packets`.
 - Receive and transmit packet rates are stacked per interface and use the same packets/second unit.
 - Loopback is excluded and counter rollback becomes missing data rather than zero.
 
+## Related report items
+- [activity_locks.connection_pressure](#item-activity_locks.connection_pressure) — Check whether connection churn drives packet rate.
+- [os.sysctl_tcp](#item-os.sysctl_tcp) — Review TCP queue and timeout settings.
+- [os.network_addresses](#item-os.network_addresses) — Identify interfaces carrying database traffic.
+
 ## Checklist
 - Compare with connection pressure.
 - Check pooler behavior.

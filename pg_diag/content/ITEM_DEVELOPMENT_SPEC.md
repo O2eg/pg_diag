@@ -911,6 +911,33 @@ Unit tests MUST cover:
 Browser screenshots are not required. Unit tests and JSON artifact assertions
 are authoritative.
 
+### 18.1 Item instruction contract
+
+Every visible report item MUST have a Markdown instruction. The instruction
+MUST begin with one level-one title, contain the exact ownership sentence
+`This instruction belongs to report item \`section.item\`.` (optionally followed
+by source provenance in the same paragraph), and contain exactly
+one of each of these level-two sections:
+
+- `What this item shows`;
+- `What to watch`;
+- `Common fault causes`;
+- `Automatic evaluation`;
+- `Checklist`.
+
+When another report item provides evidence useful for causal investigation,
+the instruction SHOULD include `Related report items`. Each reference MUST use
+`[section.item](#item-section.item)`, with the label and fragment target equal
+to the known destination item id. Self-references and duplicate destinations
+are forbidden.
+
+The renderer MUST create an active link only when the destination item is
+present and visible in the current artifact. Activation closes the instruction
+dialog, resets report filters when needed, expands the destination section and
+item, scrolls to it, and moves focus to its summary. If collection mode or
+launch parameters omitted the destination, the renderer MUST preserve the
+label as visibly inactive, non-focusable text rather than expose a broken link.
+
 ## 19. Current Implementation Status And Remaining Migration
 
 Schema version 4 already provides the unified content document, resolved table

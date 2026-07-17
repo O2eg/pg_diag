@@ -1,6 +1,7 @@
 # PostgreSQL Service Hardening
 
-This instruction belongs to `os.postgres_service_hardening`, backed by local Python source `security.postgres_service_hardening`.
+This instruction belongs to report item `os.postgres_service_hardening`.
+It is backed by local Python source `security.postgres_service_hardening`.
 
 ## What this item shows
 - PostgreSQL systemd unit name and effective properties from `systemctl show`.
@@ -15,6 +16,11 @@ This instruction belongs to `os.postgres_service_hardening`, backed by local Pyt
 
 ## Common fault causes
 - Distribution unit defaults, custom overrides, package upgrades, or hardening disabled to accommodate filesystem/tooling access.
+
+## Related report items
+- [os.sudoers_postgres_escalation](#item-os.sudoers_postgres_escalation) — Review external privilege-escalation paths.
+- [os.core_dump_policy](#item-os.core_dump_policy) — Check whether the service can expose memory through dumps.
+- [os.postgres_env_secret_leaks](#item-os.postgres_env_secret_leaks) — Check secrets visible in the service environment.
 
 ## Checklist
 - Apply compatible systemd hardening options.

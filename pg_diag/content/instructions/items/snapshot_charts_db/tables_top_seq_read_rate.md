@@ -29,6 +29,11 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_seq_read_
 - This chart is informational and ranks `seq_tup_read` interval deltas by stable relation OID.
 - A high rate is not proof of a missing index; validate scan count, workload intent, and plans.
 
+## Related report items
+- [snapshot_delta_workload.table_scan_delta](#item-snapshot_delta_workload.table_scan_delta) — Inspect sequential scan counts and tuples.
+- [indexes.tables_without_pk_or_unique](#item-indexes.tables_without_pk_or_unique) — Review key-design gaps on scanned tables.
+- [sql_workload.top_sql_by_total_time](#item-sql_workload.top_sql_by_total_time) — Find SQL responsible for broad scans.
+
 ## Checklist
 - Check table size and row counts.
 - Review plans for queries touching the table.

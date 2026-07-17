@@ -24,6 +24,11 @@ This instruction belongs to report item `backend_os.backend_activity`. The item 
 - `CPU` is reported only for an active backend with no wait event; idle sessions are not classified as CPU work.
 - Query age is populated only for active rows, while transaction age can also expose idle-in-transaction sessions.
 
+## Related report items
+- [backend_os.backend_proc_cpu](#item-backend_os.backend_proc_cpu) — Join backend PIDs to host CPU deltas.
+- [backend_os.backend_proc_io](#item-backend_os.backend_proc_io) — Join backend PIDs to host I/O deltas.
+- [activity_locks.wait_events](#item-activity_locks.wait_events) — Compare backend state with PostgreSQL waits.
+
 ## Checklist
 - Map PID to backend_proc_cpu and backend_proc_io items.
 - Compare `backend_start` as well as PID when correlating evidence collected at different times.

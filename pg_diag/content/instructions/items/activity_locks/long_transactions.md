@@ -22,6 +22,11 @@ This instruction belongs to report item `activity_locks.long_transactions`. The 
 - Batch/report queries with broad transaction scope.
 - Application or job timeouts that do not cancel the database transaction.
 
+## Related report items
+- [activity_locks.lock_waits](#item-activity_locks.lock_waits) — Check whether a long transaction blocks other sessions.
+- [storage_vacuum.xmin_horizon_blockers](#item-storage_vacuum.xmin_horizon_blockers) — Check whether it holds back the xmin horizon.
+- [activity_locks.idle_in_transaction](#item-activity_locks.idle_in_transaction) — Identify long transactions that are currently idle.
+
 ## Checklist
 - Confirm ownership, workload expectations, blocker impact, and xmin impact before cancellation.
 - Prefer `pg_cancel_backend` for active work; terminate a session only when cancellation cannot resolve the open transaction and operational policy permits it.

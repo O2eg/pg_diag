@@ -20,6 +20,11 @@ This instruction belongs to report item `os.lshw_network`. The item is backed by
 - No severity is assigned without expected NIC, driver, speed, and bonding policy.
 - Missing link details can result from permissions or virtualization; correlate with runtime addresses and network monitoring.
 
+## Related report items
+- [os.network_addresses](#item-os.network_addresses) — Map hardware interfaces to runtime addresses.
+- [snapshot_charts_os.os_network_receive](#item-snapshot_charts_os.os_network_receive) — Inspect inbound traffic by interface.
+- [snapshot_charts_os.os_network_transmit](#item-snapshot_charts_os.os_network_transmit) — Inspect outbound traffic by interface.
+
 ## Checklist
 - Compare with `Network Addresses And Hosts`
 - Check NIC speed and driver when network throughput or replication lag is suspected.

@@ -16,6 +16,12 @@ This instruction belongs to report item `storage_vacuum.xmin_horizon_blockers`. 
 ## Common fault causes
 - Long transactions, background-worker snapshots, logical decoding, standby feedback, inactive slots, and failed two-phase workflows.
 
+## Related report items
+- [activity_locks.long_transactions](#item-activity_locks.long_transactions) — Inspect long-running transaction blockers.
+- [activity_locks.idle_in_transaction](#item-activity_locks.idle_in_transaction) — Find idle sessions retaining xmin.
+- [storage_vacuum.prepared_xacts](#item-storage_vacuum.prepared_xacts) — Check prepared transactions retaining horizons.
+- [replication.replication_slots](#item-replication.replication_slots) — Inspect replication-slot retention.
+
 ## Checklist
 - Verify owner and downstream dependency before intervention.
 - Never drop/advance slots or finish prepared transactions solely from this row.

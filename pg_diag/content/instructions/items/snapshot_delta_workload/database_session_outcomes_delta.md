@@ -19,6 +19,11 @@ This instruction belongs to report item `snapshot_delta_workload.database_sessio
 ## Common fault causes
 - Network loss, client crashes, server errors, pool churn, and missing transaction boundaries.
 
+## Related report items
+- [activity_locks.connection_pressure](#item-activity_locks.connection_pressure) — Check whether session churn accompanies pressure.
+- [snapshot_charts_db.activity_sessions_by_state](#item-snapshot_charts_db.activity_sessions_by_state) — Inspect concurrent session states.
+- [snapshot_charts_db.database_backends](#item-snapshot_charts_db.database_backends) — Compare outcomes with backend counts.
+
 ## Checklist
 - Correlate abnormal outcomes with PostgreSQL, pooler, application, and network logs.
 - Compare session creation with connection pressure and sessions-by-state charts.

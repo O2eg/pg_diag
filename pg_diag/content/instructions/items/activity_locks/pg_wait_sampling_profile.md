@@ -22,6 +22,10 @@ This instruction belongs to report item `activity_locks.pg_wait_sampling_profile
 - A recent extension restart/reset, disabled sampling, or unavailable query-ID computation.
 - An incident outside the cumulative profile's relevant time window.
 
+## Related report items
+- [activity_locks.pg_wait_sampling_capabilities](#item-activity_locks.pg_wait_sampling_capabilities) — Verify extension availability and configuration.
+- [activity_locks.wait_event_sample_profile](#item-activity_locks.wait_event_sample_profile) — Compare extension history with pg_stat_activity sampling.
+
 ## Checklist
 - Check the capability item first when this item is unsupported.
 - Correlate query IDs with SQL workload, but validate timing because the profile has no per-row timestamp.

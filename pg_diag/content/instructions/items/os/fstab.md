@@ -21,6 +21,10 @@ This instruction belongs to report item `os.fstab`. The item is backed by `os.fs
 - No severity is assigned; comments, templates, automounts, containers, and non-fstab storage managers require manual comparison with runtime mounts.
 - `unsupported` means `/etc/fstab` was unreadable, not that persistent mounts are absent.
 
+## Related report items
+- [os.mounts](#item-os.mounts) — Compare configured filesystems with current mounts.
+- [os.disk_usage](#item-os.disk_usage) — Check capacity on configured PostgreSQL filesystems.
+
 ## Checklist
 - Compare fstab with currently mounted filesystems.
 - Prefer stable UUID/LABEL/device mapper names where appropriate.

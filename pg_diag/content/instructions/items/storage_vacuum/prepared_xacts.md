@@ -14,6 +14,11 @@ This instruction belongs to report item `storage_vacuum.prepared_xacts`. The ite
 ## Common fault causes
 - Coordinator/application failure, lost commit decision, network partition, or manual testing.
 
+## Related report items
+- [storage_vacuum.xmin_horizon_blockers](#item-storage_vacuum.xmin_horizon_blockers) — Check whether prepared transactions retain xmin.
+- [activity_locks.lock_waits](#item-activity_locks.lock_waits) — Investigate locks retained by prepared transactions.
+- [overview.stat_reset_times](#item-overview.stat_reset_times) — Separate old prepared state from recently reset statistics.
+
 ## Checklist
 - Recover the authoritative commit/rollback decision from the coordinator.
 - Do not guess the outcome or resolve another database's GID without owner confirmation.

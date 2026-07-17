@@ -21,6 +21,11 @@ This instruction belongs to report item `snapshot_charts_os.os_disk_utilization`
 - This chart is informational; `%util` saturation semantics differ for rotating, SSD, virtual, and parallel devices.
 - Always interpret utilization with latency and queue depth.
 
+## Related report items
+- [snapshot_charts_os.os_disk_latency](#item-snapshot_charts_os.os_disk_latency) — Interpret busy time together with response time.
+- [snapshot_charts_os.os_disk_iops](#item-snapshot_charts_os.os_disk_iops) — Compare utilization with operation rate.
+- [wal_io_checkpoints.pg_stat_io](#item-wal_io_checkpoints.pg_stat_io) — Check PostgreSQL I/O contexts using the device.
+
 ## Checklist
 - Correlate with disk latency and PostgreSQL I/O.
 - Identify which PostgreSQL path is on the saturated device.

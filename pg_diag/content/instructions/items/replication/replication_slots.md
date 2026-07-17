@@ -22,6 +22,11 @@ This instruction belongs to report item `replication.replication_slots`. The ite
 - Long or prepared transactions in logical decoding.
 - Promotion/failover state and version-specific slot synchronization behavior.
 
+## Related report items
+- [snapshot_delta_workload.logical_decoding_slot_delta](#item-snapshot_delta_workload.logical_decoding_slot_delta) — Measure logical-slot progress and retention.
+- [snapshot_charts_db.wal_growth_rate](#item-snapshot_charts_db.wal_growth_rate) — Compare retained WAL with cluster generation rate.
+- [replication.physical_replication](#item-replication.physical_replication) — Check active physical senders using slots.
+
 ## Checklist
 - Compare retained bytes with free space and `max_slot_wal_keep_size`.
 - Confirm the owning replica, subscription, CDC connector, or backup process.

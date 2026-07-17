@@ -41,6 +41,20 @@ VALID_COLLECTION_SCOPES = {
 }
 VALID_SCRIPT_OUTPUTS = {"plain_text", "table_json"}
 IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+REPORT_ITEM_LINK_RE = re.compile(
+    r"\[([a-z][a-z0-9_.-]*)\]\(#item-([a-z][a-z0-9_.-]*)\)"
+)
+REPORT_ITEM_FRAGMENT_LINK_RE = re.compile(r"\[([^\]\n]+)\]\(#item-([^\s)]*)\)")
+REPORT_ITEM_LINK_LINE_RE = re.compile(
+    r"- \[([a-z][a-z0-9_.-]*)\]\(#item-\1\) — \S.*"
+)
+REQUIRED_INSTRUCTION_HEADINGS = (
+    "## What this item shows",
+    "## What to watch",
+    "## Common fault causes",
+    "## Automatic evaluation",
+    "## Checklist",
+)
 REQUIRED_RESOLVED_FIELD_REFERENCE_PATHS = {
     "resolved",
     "resolved/item_id",
@@ -1546,6 +1560,9 @@ def _validate_instructions(content: ContentPack, issues: list[ValidationIssue]) 
     except ContentLoadError as exc:
         _issue(issues, "instruction_file", str(exc), "report.yaml:report.catalogs.instructions")
         return
+    report_item_ids = {
+        item_id for _section_id, _item_key, item_id, _item in iter_report_items(content)
+    }
     for section_id, item_key, item_id, item in iter_report_items(content):
         location = f"report.yaml:sections.{section_id}.items.{item_key}"
         try:
@@ -1583,6 +1600,110 @@ def _validate_instructions(content: ContentPack, issues: list[ValidationIssue]) 
             continue
         if item_id not in content.instructions:
             _issue(issues, "instruction_file", "Instruction file was not loaded", location)
+        first_line = instruction_text.lstrip().splitlines()[0]
+        if not re.fullmatch(r"# [^#\s].*", first_line):
+            _issue(
+                issues,
+                "instruction_contract",
+                "Instruction must begin with one level-one Markdown title",
+                location,
+            )
+        ownership_line = f"This instruction belongs to report item `{item_id}`."
+        if ownership_line not in instruction_text:
+            _issue(
+                issues,
+                "instruction_contract",
+                f"Instruction must contain the exact ownership sentence: {ownership_line}",
+                location,
+            )
+        for heading in REQUIRED_INSTRUCTION_HEADINGS:
+            if instruction_text.splitlines().count(heading) != 1:
+                _issue(
+                    issues,
+                    "instruction_contract",
+                    f"Instruction must contain exactly one {heading!r} section",
+                    location,
+                )
+        related_targets: list[str] = []
+        for match in REPORT_ITEM_FRAGMENT_LINK_RE.finditer(instruction_text):
+            exact_match = REPORT_ITEM_LINK_RE.fullmatch(match.group(0))
+            if exact_match is None:
+                _issue(
+                    issues,
+                    "instruction_link",
+                    "Report item links must use exact [section.item](#item-section.item) syntax",
+                    location,
+                )
+                continue
+            label, target = exact_match.groups()
+            related_targets.append(target)
+            if label != target:
+                _issue(
+                    issues,
+                    "instruction_link",
+                    "Related report item link label must equal its report item id",
+                    location,
+                )
+            if target not in report_item_ids:
+                _issue(
+                    issues,
+                    "instruction_link",
+                    f"Related report item link references unknown item {target!r}",
+                    location,
+                )
+            if target == item_id:
+                _issue(
+                    issues,
+                    "instruction_link",
+                    "Instruction must not link to its own report item",
+                    location,
+                )
+        if len(related_targets) != len(set(related_targets)):
+            _issue(
+                issues,
+                "instruction_link",
+                "Related report item links must not contain duplicate targets",
+                location,
+            )
+        related_heading_count = instruction_text.splitlines().count("## Related report items")
+        if related_heading_count > 1:
+            _issue(
+                issues,
+                "instruction_contract",
+                "Instruction must contain at most one '## Related report items' section",
+                location,
+            )
+        if related_heading_count == 1:
+            instruction_lines = instruction_text.splitlines()
+            related_start = instruction_lines.index("## Related report items") + 1
+            related_end = next(
+                (
+                    index
+                    for index in range(related_start, len(instruction_lines))
+                    if instruction_lines[index].startswith("## ")
+                ),
+                len(instruction_lines),
+            )
+            related_lines = [
+                line for line in instruction_lines[related_start:related_end] if line.strip()
+            ]
+            if not related_targets:
+                _issue(
+                    issues,
+                    "instruction_link",
+                    "Related report items section must contain at least one item link",
+                    location,
+                )
+            if not related_lines or any(
+                REPORT_ITEM_LINK_LINE_RE.fullmatch(line) is None for line in related_lines
+            ):
+                _issue(
+                    issues,
+                    "instruction_link",
+                    "Each related item must be a bullet link followed by an em dash "
+                    "and investigation reason",
+                    location,
+                )
 
 
 def _is_hex_color(value: str) -> bool:

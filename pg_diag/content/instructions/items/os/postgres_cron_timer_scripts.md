@@ -1,6 +1,7 @@
 # PostgreSQL Cron And Timer Scripts
 
-This instruction belongs to `os.postgres_cron_timer_scripts`, backed by local Python source `security.postgres_cron_timer_scripts`.
+This instruction belongs to report item `os.postgres_cron_timer_scripts`.
+It is backed by local Python source `security.postgres_cron_timer_scripts`.
 
 ## What this item shows
 - Cron or systemd file path.
@@ -16,6 +17,11 @@ This instruction belongs to `os.postgres_cron_timer_scripts`, backed by local Py
 
 ## Common fault causes
 - Maintenance script deployed with permissive mode, shared automation group, package/custom timer drift, or a command pointing to a writable wrapper.
+
+## Related report items
+- [os.sudoers_postgres_escalation](#item-os.sudoers_postgres_escalation) — Review privileges used by scheduled commands.
+- [os.world_writable_paths_in_pg_tree](#item-os.world_writable_paths_in_pg_tree) — Check scripts located under writable paths.
+- [os.backup_repository_permissions](#item-os.backup_repository_permissions) — Review repositories used by backup schedules.
 
 ## Checklist
 - Keep scheduled maintenance files writable only by trusted administrators.

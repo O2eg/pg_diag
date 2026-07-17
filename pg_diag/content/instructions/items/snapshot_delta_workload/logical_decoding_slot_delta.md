@@ -18,6 +18,11 @@ This instruction belongs to report item `snapshot_delta_workload.logical_decodin
 ## Common fault causes
 - Large transactions, insufficient `logical_decoding_work_mem`, slow consumers, and output-plugin behavior.
 
+## Related report items
+- [replication.replication_slots](#item-replication.replication_slots) — Inspect current logical-slot state and retained WAL.
+- [snapshot_charts_db.wal_growth_rate](#item-snapshot_charts_db.wal_growth_rate) — Compare slot retention with WAL growth.
+- [snapshot_delta_workload.subscription_errors_conflicts_delta](#item-snapshot_delta_workload.subscription_errors_conflicts_delta) — Check downstream subscription failures.
+
 ## Checklist
 - Compare spill and stream bytes with transaction size and consumer throughput.
 - Review retained WAL and slot activity before tuning or dropping a slot.

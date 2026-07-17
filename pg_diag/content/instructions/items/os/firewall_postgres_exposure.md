@@ -1,6 +1,7 @@
 # Firewall PostgreSQL Exposure
 
-This instruction belongs to `os.firewall_postgres_exposure`, backed by local Python source `security.firewall_postgres_exposure`.
+This instruction belongs to report item `os.firewall_postgres_exposure`.
+It is backed by local Python source `security.firewall_postgres_exposure`.
 
 ## What this item shows
 - PostgreSQL port and listen addresses.
@@ -16,6 +17,11 @@ This instruction belongs to `os.firewall_postgres_exposure`, backed by local Pyt
 
 ## Common fault causes
 - Firewall managed outside the host, root-only ruleset access, NAT/container namespaces, rule aliases, or PostgreSQL bound broadly for replication/application access.
+
+## Related report items
+- [overview.listen_addresses_exposure](#item-overview.listen_addresses_exposure) — Compare firewall evidence with PostgreSQL listeners.
+- [cluster_inventory.pg_hba_broad_network_ranges](#item-cluster_inventory.pg_hba_broad_network_ranges) — Review database-level network admission.
+- [cluster_inventory.remote_superuser_access](#item-cluster_inventory.remote_superuser_access) — Check whether exposed paths can reach superusers.
 
 ## Checklist
 - Bind PostgreSQL only to trusted interfaces when possible.

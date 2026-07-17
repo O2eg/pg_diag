@@ -1,5 +1,7 @@
 # Buffer Usage Count Distribution
 
+This instruction belongs to report item `buffer_cache.usage_count_distribution`.
+
 ## What this item shows
 - Buffer counts at each clock-sweep usage count from 0 through 5.
 - How strongly cached pages have recently been reused.
@@ -17,6 +19,11 @@
 
 ## Automatic evaluation
 - No severity is assigned; this is not a hit ratio.
+
+## Related report items
+- [buffer_cache.top_relations](#item-buffer_cache.top_relations) — Identify relations occupying the cache.
+- [buffer_cache.relation_residency_delta](#item-buffer_cache.relation_residency_delta) — Inspect relation-level cache gains and losses.
+- [snapshot_charts_db.database_block_access_rate](#item-snapshot_charts_db.database_block_access_rate) — Compare usage counts with block activity.
 
 ## Checklist
 - Interpret the distribution over time and alongside physical reads.

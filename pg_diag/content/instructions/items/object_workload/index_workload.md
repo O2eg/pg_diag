@@ -23,6 +23,11 @@ This instruction belongs to report item `object_workload.index_workload`. The it
 - Counters are cumulative from `stats_reset`, and the bounded result contains the top 100 indexes by scan count.
 - Exact index size is calculated only after the candidate limit.
 
+## Related report items
+- [snapshot_delta_workload.index_usage_delta](#item-snapshot_delta_workload.index_usage_delta) — Measure index use during the capture window.
+- [indexes.unused_indexes](#item-indexes.unused_indexes) — Review indexes with no recorded scans.
+- [indexes.redundant_indexes](#item-indexes.redundant_indexes) — Check overlapping index definitions.
+
 ## Checklist
 - Use with index health findings.
 - Review plans for indexes with high reads per useful fetch.

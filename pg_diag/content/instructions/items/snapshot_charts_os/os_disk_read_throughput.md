@@ -24,6 +24,11 @@ This instruction belongs to report item `snapshot_charts_os.os_disk_read_through
 - Values come from interval `iostat -dxk` reports and are informational; storage limits and topology are external context.
 - The first since-boot iostat report is discarded.
 
+## Related report items
+- [snapshot_charts_os.os_disk_latency](#item-snapshot_charts_os.os_disk_latency) — Determine whether read throughput is accompanied by latency.
+- [snapshot_delta_workload.sql_io_delta](#item-snapshot_delta_workload.sql_io_delta) — Find SQL shared-block reads in the same window.
+- [snapshot_delta_workload.table_io_delta](#item-snapshot_delta_workload.table_io_delta) — Attribute reads to relations.
+
 ## Checklist
 - Map device to PostgreSQL mount.
 - Compare with SQL shared I/O and table I/O.

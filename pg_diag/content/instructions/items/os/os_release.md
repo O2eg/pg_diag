@@ -20,6 +20,10 @@ This instruction belongs to report item `os.os_release`. The item is backed by `
 - No severity is assigned because release support and EOL dates require an external vendor lifecycle baseline.
 - `unsupported` means neither standard os-release file was readable; it does not identify the distribution as unsupported.
 
+## Related report items
+- [os.kernel_version](#item-os.kernel_version) — Compare distribution release with the running kernel.
+- [overview.server_version](#item-overview.server_version) — Place PostgreSQL supportability in OS context.
+
 ## Checklist
 - Verify OS support lifecycle.
 - Confirm PostgreSQL repository matches the OS release.

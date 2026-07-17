@@ -19,6 +19,10 @@ This instruction belongs to report item `snapshot_delta_workload.sql_planning_de
 ## Common fault causes
 - Complex joins, partition pruning, many relations, unprepared dynamic SQL, and frequent invalidation.
 
+## Related report items
+- [snapshot_delta_workload.sql_time_delta](#item-snapshot_delta_workload.sql_time_delta) — Compare planning and execution time for the same statements.
+- [sql_workload.pg_stat_statements_capabilities](#item-sql_workload.pg_stat_statements_capabilities) — Verify planning-counter availability.
+
 ## Checklist
 - Confirm `track_planning` in the table before interpreting an empty result.
 - Compare planning time with SQL Time Delta and application statement reuse.

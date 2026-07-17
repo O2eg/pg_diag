@@ -21,6 +21,10 @@ This instruction belongs to report item `os.lshw_volume`. The item is backed by 
 - No severity is assigned without an expected partition/LVM layout.
 - `unsupported` means neither usable lshw data nor the `lsblk` fallback was available. Older util-linux versions use a reduced fallback column set.
 
+## Related report items
+- [os.mounts](#item-os.mounts) — Map partitions and volumes to active mount points.
+- [os.disk_usage](#item-os.disk_usage) — Inspect capacity for those filesystems.
+
 ## Checklist
 - Compare with `Mounted Filesystems` and `Filesystem Usage`
 - Check volume size before blaming PostgreSQL growth.

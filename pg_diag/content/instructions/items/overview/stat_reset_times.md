@@ -24,6 +24,11 @@ This instruction belongs to report item `overview.stat_reset_times`. The item is
 - `not_reported` means the view returned no timestamp; it is not converted to a pass, failure, or zero age.
 - pg_diag only reads these timestamps and never invokes statistics reset functions.
 
+## Related report items
+- [overview.database_stats](#item-overview.database_stats) — Interpret cumulative database counters against their reset epoch.
+- [object_workload.table_workload](#item-object_workload.table_workload) — Interpret cumulative table counters against reset history.
+- [object_workload.index_workload](#item-object_workload.index_workload) — Interpret cumulative index counters against reset history.
+
 ## Checklist
 - Check this item before relying on cumulative totals in database, WAL, table, index, and function workload sections.
 - Prefer snapshot delta items when a reset happened shortly before or during the capture window.

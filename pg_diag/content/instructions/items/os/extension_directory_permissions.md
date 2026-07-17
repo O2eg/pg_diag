@@ -1,6 +1,7 @@
 # Extension Directory Permissions
 
-This instruction belongs to `os.extension_directory_permissions`, backed by local Python source `security.extension_directory_permissions`.
+This instruction belongs to report item `os.extension_directory_permissions`.
+It is backed by local Python source `security.extension_directory_permissions`.
 
 ## What this item shows
 - Common PostgreSQL extension and library directories.
@@ -15,6 +16,11 @@ This instruction belongs to `os.extension_directory_permissions`, backed by loca
 
 ## Common fault causes
 - Manual extension deployment, permissive package extraction, custom prefixes, or ownership drift during upgrades.
+
+## Related report items
+- [cluster_inventory.extensions](#item-cluster_inventory.extensions) — Review extensions available to the cluster.
+- [cluster_inventory.installed_risky_extensions](#item-cluster_inventory.installed_risky_extensions) — Check installed extensions with elevated risk.
+- [os.postgres_binary_integrity](#item-os.postgres_binary_integrity) — Review the base server executable permissions.
 
 ## Checklist
 - Keep extension directories writable only by trusted package administrators.

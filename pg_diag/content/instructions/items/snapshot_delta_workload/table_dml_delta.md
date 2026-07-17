@@ -22,6 +22,11 @@ This instruction belongs to report item `snapshot_delta_workload.table_dml_delta
 ## Common fault causes
 - Application hotspot, batch processing, retention purge, HOT-unfriendly indexes/fillfactor, or external statistics reset.
 
+## Related report items
+- [snapshot_charts_db.tables_top_dml_rate](#item-snapshot_charts_db.tables_top_dml_rate) — Inspect per-interval table write hotspots.
+- [snapshot_delta_workload.table_maintenance_delta](#item-snapshot_delta_workload.table_maintenance_delta) — Check maintenance work following DML.
+- [snapshot_delta_workload.sql_wal_delta](#item-snapshot_delta_workload.sql_wal_delta) — Relate table changes to WAL-producing SQL.
+
 ## Checklist
 - Correlate hot relations with WAL, autovacuum, and statement deltas.
 - Inspect update/index patterns before changing fillfactor or indexes.

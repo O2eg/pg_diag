@@ -1,6 +1,7 @@
 # PostgreSQL Environment Secret Leaks
 
-This instruction belongs to `os.postgres_env_secret_leaks`, backed by local Python source `security.postgres_env_secret_leaks`.
+This instruction belongs to report item `os.postgres_env_secret_leaks`.
+It is backed by local Python source `security.postgres_env_secret_leaks`.
 
 ## What this item shows
 - Process id and command line for environments that appear to contain PostgreSQL secrets.
@@ -15,6 +16,11 @@ This instruction belongs to `os.postgres_env_secret_leaks`, backed by local Pyth
 
 ## Common fault causes
 - Service environment files, shell exports, CI jobs, connection URLs passed to long-lived agents, or secrets inherited by child processes.
+
+## Related report items
+- [cluster_inventory.postgres_client_secret_files](#item-cluster_inventory.postgres_client_secret_files) — Check persistent PostgreSQL credential files.
+- [os.postgres_history_files](#item-os.postgres_history_files) — Inspect shell and client history for leaked secrets.
+- [os.postgres_service_hardening](#item-os.postgres_service_hardening) — Review service-environment restrictions.
 
 ## Checklist
 - Avoid long-lived `PGPASSWORD` environment variables.

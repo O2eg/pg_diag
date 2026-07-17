@@ -20,6 +20,10 @@ This instruction belongs to report item `os.lshw_bus`. The item is backed by `os
 - No severity is assigned without an expected hardware topology.
 - Empty class output is valid; an lshw warning means the inventory may be partial.
 
+## Related report items
+- [os.lshw_storage](#item-os.lshw_storage) — Relate storage controllers to system buses.
+- [os.lshw_network](#item-os.lshw_network) — Relate network adapters to system buses.
+
 ## Checklist
 - Use with network/storage lshw sections for device-specific checks.
 - Confirm device topology after hardware or VM changes.

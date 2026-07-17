@@ -22,6 +22,11 @@ This instruction belongs to report item `activity_locks.lock_waits`. The item is
 - DDL during traffic, foreign-key contention, or hot-row updates.
 - An abandoned prepared transaction.
 
+## Related report items
+- [activity_locks.long_transactions](#item-activity_locks.long_transactions) — Check whether the blocker is a long-running transaction.
+- [activity_locks.wait_events](#item-activity_locks.wait_events) — Compare blocker detail with the current wait population.
+- [sql_workload.top_sql_by_total_time](#item-sql_workload.top_sql_by_total_time) — Find cumulative SQL evidence for involved query IDs.
+
 ## Checklist
 - Follow the blocker chain to a root session or prepared transaction before taking action.
 - Confirm owner, transaction age, and business impact; query text can be the blocker's latest statement rather than the statement that acquired the lock.

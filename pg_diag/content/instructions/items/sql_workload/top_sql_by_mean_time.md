@@ -22,6 +22,11 @@ This instruction belongs to report item `sql_workload.top_sql_by_mean_time`. The
 - Too few calls for a stable average.
 - A min/max-only reset making max and mean cover different periods on PostgreSQL 17+.
 
+## Related report items
+- [sql_workload.top_sql_by_total_time](#item-sql_workload.top_sql_by_total_time) — Check the statement's aggregate contribution.
+- [sql_workload.top_sql_by_calls](#item-sql_workload.top_sql_by_calls) — Determine whether the mean is based on significant call volume.
+- [snapshot_delta_workload.sql_time_delta](#item-snapshot_delta_workload.sql_time_delta) — Check whether it remained expensive during the capture.
+
 ## Checklist
 - Check calls, total time, `stats_since`, and `minmax_stats_since` before prioritizing a row.
 - Test representative parameters and compare plan estimates with actual rows.

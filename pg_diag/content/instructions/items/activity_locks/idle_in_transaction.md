@@ -22,6 +22,11 @@ This instruction belongs to report item `activity_locks.idle_in_transaction`. Th
 - A client paused or disconnected while its server session remained alive.
 - Pooler/session reuse with an open transaction.
 
+## Related report items
+- [activity_locks.long_transactions](#item-activity_locks.long_transactions) — Measure the transaction age retained by the idle session.
+- [storage_vacuum.xmin_horizon_blockers](#item-storage_vacuum.xmin_horizon_blockers) — Check vacuum-horizon impact.
+- [storage_vacuum.autovacuum_queue](#item-storage_vacuum.autovacuum_queue) — Look for maintenance pressure caused by retained tuples.
+
 ## Checklist
 - Confirm the owner and transaction impact before terminating a backend.
 - Fix application cleanup and rollback paths.

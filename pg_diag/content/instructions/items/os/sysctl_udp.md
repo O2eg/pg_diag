@@ -19,6 +19,10 @@ This instruction belongs to report item `os.sysctl_udp`. The item is backed by `
 - No severity is assigned because PostgreSQL itself does not normally use UDP and adjacent services differ by deployment.
 - Only readable runtime `net.ipv4.udp*` keys are shown; IPv6 and persistence are outside this item.
 
+## Related report items
+- [snapshot_charts_os.os_network_packets](#item-snapshot_charts_os.os_network_packets) — Inspect packet-rate behavior on database interfaces.
+- [os.network_addresses](#item-os.network_addresses) — Identify relevant host interfaces.
+
 ## Checklist
 - Confirm whether PostgreSQL-adjacent tooling uses UDP on this host.
 - Compare with packet-drop evidence outside this report.

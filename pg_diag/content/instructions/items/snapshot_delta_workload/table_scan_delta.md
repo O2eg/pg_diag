@@ -22,6 +22,11 @@ This instruction belongs to report item `snapshot_delta_workload.table_scan_delt
 ## Common fault causes
 - Missing/ineffective index, low-selectivity predicate, deliberate batch scan, small lookup table, or reset/selection churn.
 
+## Related report items
+- [snapshot_delta_workload.table_io_delta](#item-snapshot_delta_workload.table_io_delta) — Check block I/O for heavily scanned tables.
+- [snapshot_delta_workload.sql_time_delta](#item-snapshot_delta_workload.sql_time_delta) — Find SQL active during the same window.
+- [indexes.foreign_keys_without_index](#item-indexes.foreign_keys_without_index) — Review one source of repeated table scans.
+
 ## Checklist
 - Check relation size, cache behavior, query predicates, and representative plans.
 - Do not create an index from this summary alone.

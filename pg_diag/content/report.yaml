@@ -163,6 +163,14 @@ sections:
         script: os.memory_info
         tags: [Memory]
         state: expanded
+      postgresql_huge_pages:
+        python: os.postgresql_huge_pages
+        tags: [Memory, Kernel, Configuration]
+        state: collapsed
+      huge_page_pools:
+        script: os.huge_page_pools
+        tags: [Memory, Kernel]
+        state: collapsed
       total_ram:
         script: os.total_ram
         tags: [Memory, Hardware]

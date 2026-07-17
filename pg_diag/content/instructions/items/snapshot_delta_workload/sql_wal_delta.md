@@ -22,6 +22,11 @@ This instruction belongs to report item `snapshot_delta_workload.sql_wal_delta`.
 ## Common fault causes
 - Bulk writes, indexed-column updates, full-page images, large transactions, reset, or entry eviction.
 
+## Related report items
+- [snapshot_delta_workload.sql_time_delta](#item-snapshot_delta_workload.sql_time_delta) — Relate WAL generation to statement execution.
+- [snapshot_charts_db.wal_growth_rate](#item-snapshot_charts_db.wal_growth_rate) — Compare statement WAL with the cluster-wide rate.
+- [snapshot_delta_workload.checkpointer_delta](#item-snapshot_delta_workload.checkpointer_delta) — Check checkpoint activity during WAL generation.
+
 ## Checklist
 - Correlate with WAL growth, checkpoints, archiver, and replication items.
 - Normalize WAL by calls/rows using the matching SQL identity where useful.

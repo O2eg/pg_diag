@@ -26,6 +26,11 @@ This instruction belongs to report item `snapshot_charts_db.io_read_write_rate`.
 - PostgreSQL 16-17 derives bytes from operation counts and `op_bytes`; PostgreSQL 18+ uses byte counters directly.
 - Counter resets become missing points; the chart is unavailable before PostgreSQL 16.
 
+## Related report items
+- [wal_io_checkpoints.pg_stat_io](#item-wal_io_checkpoints.pg_stat_io) — Inspect backend and context-level I/O counters.
+- [snapshot_charts_os.os_disk_latency](#item-snapshot_charts_os.os_disk_latency) — Check host storage response time.
+- [snapshot_charts_os.os_disk_read_throughput](#item-snapshot_charts_os.os_disk_read_throughput) — Compare PostgreSQL reads with device throughput.
+
 ## Checklist
 - Group by backend type before tuning.
 - Compare with OS disk throughput and latency.

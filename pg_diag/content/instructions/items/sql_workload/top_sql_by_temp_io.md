@@ -22,6 +22,11 @@ This instruction belongs to report item `sql_workload.top_sql_by_temp_io`. The i
 - Expected analytical processing.
 - Long statistics windows or entry eviction/recreation.
 
+## Related report items
+- [snapshot_delta_workload.sql_temp_io_delta](#item-snapshot_delta_workload.sql_temp_io_delta) — Measure temporary I/O in the capture window.
+- [snapshot_charts_db.database_temp_bytes_rate](#item-snapshot_charts_db.database_temp_bytes_rate) — Compare SQL spills with database temp-byte rate.
+- [snapshot_charts_os.os_disk_latency](#item-snapshot_charts_os.os_disk_latency) — Check the storage impact of spills.
+
 ## Checklist
 - Divide temp blocks by calls and account for entry age before tuning.
 - Inspect safe representative plans for sort method, disk usage, and hash batches.

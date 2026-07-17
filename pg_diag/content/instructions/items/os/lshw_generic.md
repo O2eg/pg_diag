@@ -20,6 +20,9 @@ This instruction belongs to report item `os.lshw_generic`. The item is backed by
 - No severity is assigned; generic devices require platform-specific identification.
 - Empty output is valid and unknown devices are not automatically security or performance findings.
 
+## Related report items
+- [os.lshw_system](#item-os.lshw_system) — Review generic devices in the full hardware inventory.
+
 ## Checklist
 - Review only entries related to database storage, network, or security policy.
 - Compare before/after hardware maintenance.

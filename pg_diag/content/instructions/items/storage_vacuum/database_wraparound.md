@@ -18,6 +18,11 @@ This instruction belongs to report item `storage_vacuum.database_wraparound`. Th
 ## Common fault causes
 - Autovacuum backlog/disablement, old transactions or slots, unresolved prepared transactions, and databases not vacuumed regularly.
 
+## Related report items
+- [storage_vacuum.xmin_horizon](#item-storage_vacuum.xmin_horizon) — Compare database age with current cluster horizons.
+- [storage_vacuum.xmin_horizon_blockers](#item-storage_vacuum.xmin_horizon_blockers) — Identify sessions, slots, or prepared transactions retaining xmin.
+- [storage_vacuum.autovacuum_queue](#item-storage_vacuum.autovacuum_queue) — Check whether wraparound work is queued.
+
 ## Checklist
 - Identify blockers before manual vacuum and verify age decreases afterward.
 - Treat failsafe findings as urgent; do not reset counters or disable safeguards.

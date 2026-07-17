@@ -19,6 +19,10 @@ This instruction belongs to report item `os.lshw_memory`. The item is backed by 
 - No severity is assigned; absent module details are common in VMs and unprivileged collection.
 - Compare capacity with `/proc/meminfo`; an empty table is not proof that memory hardware is missing.
 
+## Related report items
+- [os.total_ram](#item-os.total_ram) — Compare hardware inventory with usable RAM capacity.
+- [os.memory_info](#item-os.memory_info) — Compare installed memory with current Linux accounting.
+
 ## Checklist
 - Compare with `Total RAM Capacity`
 - Check hardware monitoring for memory faults.

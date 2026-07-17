@@ -24,6 +24,11 @@ This instruction belongs to report item `snapshot_charts_os.os_network_receive`.
 - Rates are counter deltas over monotonic elapsed time; counter rollback becomes missing data rather than zero.
 - The loopback interface is intentionally excluded, so local TCP traffic may not appear.
 
+## Related report items
+- [replication.wal_receiver](#item-replication.wal_receiver) — Check whether WAL receive traffic explains inbound throughput.
+- [maintenance_progress.copy_progress](#item-maintenance_progress.copy_progress) — Check COPY FROM activity.
+- [os.network_addresses](#item-os.network_addresses) — Map the active series to host interfaces.
+
 ## Checklist
 - Map interface to client/replication network.
 - Compare with replication lag and client waits.

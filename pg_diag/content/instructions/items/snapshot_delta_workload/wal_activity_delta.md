@@ -17,6 +17,11 @@ This instruction belongs to report item `snapshot_delta_workload.wal_activity_de
 ## Common fault causes
 - Bulk DML, index maintenance, full-page writes after checkpoints, logical decoding, and undersized WAL buffers.
 
+## Related report items
+- [snapshot_delta_workload.sql_wal_delta](#item-snapshot_delta_workload.sql_wal_delta) — Attribute WAL to statements where possible.
+- [snapshot_delta_workload.checkpointer_delta](#item-snapshot_delta_workload.checkpointer_delta) — Check checkpoint response to WAL volume.
+- [snapshot_delta_workload.wal_archiver_delta](#item-snapshot_delta_workload.wal_archiver_delta) — Verify that archive progress keeps pace.
+
 ## Checklist
 - Compare WAL bytes with SQL WAL Delta and checkpoint activity.
 - Confirm whether the observed volume matches expected transaction throughput.

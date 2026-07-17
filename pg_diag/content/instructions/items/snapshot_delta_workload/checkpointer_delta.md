@@ -20,6 +20,11 @@ This instruction belongs to report item `snapshot_delta_workload.checkpointer_de
 ## Common fault causes
 - WAL volume, manual CHECKPOINT, small `max_wal_size`, bulk writes, and slow checkpoint storage.
 
+## Related report items
+- [snapshot_delta_workload.wal_activity_delta](#item-snapshot_delta_workload.wal_activity_delta) — Relate checkpoint activity to WAL generation.
+- [snapshot_delta_workload.background_writer_delta](#item-snapshot_delta_workload.background_writer_delta) — Separate checkpointer and background-writer work.
+- [snapshot_charts_os.os_disk_latency](#item-snapshot_charts_os.os_disk_latency) — Check host write latency.
+
 ## Checklist
 - Correlate with WAL Activity Delta, Background Writer Delta, PostgreSQL I/O Delta, and OS latency.
 - Review checkpoint settings only after confirming the observed workload phase.

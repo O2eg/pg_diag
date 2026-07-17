@@ -17,6 +17,11 @@ This instruction belongs to report item `wal_io_checkpoints.wal_statistics`. The
 ## Common fault causes
 - Write-heavy or small-transaction workload, bulk loads, full-page images after checkpoints, logical WAL level, or undersized WAL buffers during bursts.
 
+## Related report items
+- [snapshot_delta_workload.wal_activity_delta](#item-snapshot_delta_workload.wal_activity_delta) — Measure WAL counter changes in the capture window.
+- [sql_workload.top_sql_by_wal](#item-sql_workload.top_sql_by_wal) — Attribute cumulative WAL to statements.
+- [wal_io_checkpoints.checkpointer](#item-wal_io_checkpoints.checkpointer) — Check checkpoint activity associated with WAL.
+
 ## Checklist
 - Calculate deltas using the same reset epoch; do not compare raw totals across resets.
 - Use WAL growth and Top SQL by WAL for rates and attribution.

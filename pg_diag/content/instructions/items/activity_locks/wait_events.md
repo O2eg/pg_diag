@@ -22,6 +22,11 @@ This instruction belongs to report item `activity_locks.wait_events`. The item i
 - Client backpressure or synchronous replication.
 - CPU saturation, scheduler delay, or active computation for rows with no wait event.
 
+## Related report items
+- [activity_locks.lock_waits](#item-activity_locks.lock_waits) — Resolve lock waits to blocker and blocked sessions.
+- [activity_locks.wait_event_sample_profile](#item-activity_locks.wait_event_sample_profile) — Check whether the wait persists across the snapshot window.
+- [sql_workload.top_sql_by_total_time](#item-sql_workload.top_sql_by_total_time) — Look for cumulative SQL associated with the wait class.
+
 ## Checklist
 - Start with the largest group and correlate its timestamp with host and workload evidence.
 - Use `Lock Waits` for lock blockers and SQL workload items for query history.

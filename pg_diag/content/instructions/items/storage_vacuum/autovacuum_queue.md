@@ -19,6 +19,11 @@ This instruction belongs to report item `storage_vacuum.autovacuum_queue`. The i
 ## Common fault causes
 - Worker saturation, long transactions/slots, disabled or conservative table settings, high DML, or stale statistics estimates.
 
+## Related report items
+- [maintenance_progress.vacuum_progress](#item-maintenance_progress.vacuum_progress) — Inspect vacuum operations already running.
+- [storage_vacuum.xmin_horizon_blockers](#item-storage_vacuum.xmin_horizon_blockers) — Find transactions or slots preventing cleanup.
+- [snapshot_delta_workload.table_maintenance_delta](#item-snapshot_delta_workload.table_maintenance_delta) — Measure recent vacuum and analyze activity.
+
 ## Checklist
 - Check active Vacuum Progress, xmin blockers, worker slots, and logs.
 - Preserve SQL `LIMIT 200`; this is a bounded candidate list, not proof that no lower-ranked table is due.

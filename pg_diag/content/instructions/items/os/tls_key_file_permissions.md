@@ -1,6 +1,7 @@
 # TLS Key File Permissions
 
-This instruction belongs to `os.tls_key_file_permissions`, backed by local Python source `security.tls_key_file_permissions`.
+This instruction belongs to report item `os.tls_key_file_permissions`.
+It is backed by local Python source `security.tls_key_file_permissions`.
 
 ## What this item shows
 - Active TLS key, certificate, CA, and CRL files when configured.
@@ -15,6 +16,11 @@ This instruction belongs to `os.tls_key_file_permissions`, backed by local Pytho
 
 ## Common fault causes
 - Key copied with a permissive mode, wrong service-account ownership, certificate automation changing permissions, or inaccessible container mounts.
+
+## Related report items
+- [overview.tls_server_configuration](#item-overview.tls_server_configuration) — Confirm that server TLS is enabled and configured.
+- [cluster_inventory.pg_hba_tls_enforcement](#item-cluster_inventory.pg_hba_tls_enforcement) — Check whether HBA requires TLS.
+- [overview.weak_tls_ciphers](#item-overview.weak_tls_ciphers) — Review the cipher policy using the key.
 
 ## Checklist
 - Keep private keys owner-only readable, or use the documented root-owned group-read-only pattern when OS certificate management requires it.

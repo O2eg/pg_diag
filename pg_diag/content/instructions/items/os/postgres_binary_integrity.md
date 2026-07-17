@@ -1,6 +1,7 @@
 # PostgreSQL Binary Permissions
 
-This instruction belongs to `os.postgres_binary_integrity`, backed by local Python source `security.postgres_binary_integrity`.
+This instruction belongs to report item `os.postgres_binary_integrity`.
+It is backed by local Python source `security.postgres_binary_integrity`.
 
 ## What this item shows
 - Visible PostgreSQL command paths such as `postgres`, `psql`, and backup tools.
@@ -16,6 +17,11 @@ This instruction belongs to `os.postgres_binary_integrity`, backed by local Pyth
 
 ## Common fault causes
 - Manual installation, extracted vendor archives, compromised package ownership, or PATH pointing to an unintended client binary.
+
+## Related report items
+- [backend_os.postgres_main_process_linked_libraries](#item-backend_os.postgres_main_process_linked_libraries) — Inspect dependencies of the running PostgreSQL executable.
+- [overview.server_version](#item-overview.server_version) — Confirm the expected server build.
+- [os.extension_directory_permissions](#item-os.extension_directory_permissions) — Review other executable code loaded by PostgreSQL.
 
 ## Checklist
 - Keep binaries owned by root or postgres.
