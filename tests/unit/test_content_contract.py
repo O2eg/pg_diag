@@ -662,7 +662,7 @@ def test_sql_workload_instructions_define_complete_interpretation_contract(
         for section_id, _item_key, item_id, _item in iter_report_items(content)
         if section_id == "sql_workload"
     ]
-    assert len(item_ids) == 7
+    assert len(item_ids) == 8
     for item_id in item_ids:
         text = content.instructions[item_id]["text"]
         assert "This instruction belongs to" in text, item_id
@@ -775,7 +775,7 @@ def test_snapshot_delta_workload_defines_complete_interval_contract(
         if section_id == "snapshot_delta_workload"
     ]
 
-    assert len(item_ids) == 23
+    assert len(item_ids) == 30
     for item_id in item_ids:
         text = content.instructions[item_id]["text"]
         assert "This instruction belongs to" in text, item_id
@@ -1821,7 +1821,7 @@ def test_high_cardinality_metric_sources_keep_order_and_limit(content_path: Path
             or ((metric.get("table") or {}).get("limit"))
         )
     }
-    assert len(bounded_metrics) == 30
+    assert len(bounded_metrics) == 37
 
     for metric_id, metric in bounded_metrics.items():
         query = content.queries[metric["source_query"]]
@@ -1829,6 +1829,79 @@ def test_high_cardinality_metric_sources_keep_order_and_limit(content_path: Path
             sql = (content.path / "queries" / variant["sql_file"]).read_text(encoding="utf-8")
             assert re.search(r"\border\s+by\b", sql, re.IGNORECASE), metric_id
             assert re.search(r"\blimit\s+\d+\b", sql, re.IGNORECASE), metric_id
+
+
+def test_pg_stat_kcache_metrics_use_independent_reset_safe_sources(content_path: Path) -> None:
+    content = load_content(content_path)
+    table_metrics = {
+        "statements.kernel_cpu_delta",
+        "statements.filesystem_io_delta",
+        "statements.cpu_efficiency_delta",
+        "statements.context_switches_delta",
+        "statements.page_faults_delta",
+        "statements.io_attribution_delta",
+        "statements.planning_kernel_delta",
+    }
+    chart_metrics = {
+        "database.kernel_cpu_rate",
+        "database.filesystem_io_rate",
+        "database.page_fault_rate",
+    }
+    source_ids = {
+        content.metrics[metric_id]["source_query"]
+        for metric_id in table_metrics | chart_metrics
+    }
+    sql_files = {
+        content.queries[source_id]["variants"][0]["sql_file"]
+        for source_id in source_ids
+    }
+
+    assert len(source_ids) == 10
+    assert len(sql_files) == 10
+    for metric_id in table_metrics:
+        metric = content.metrics[metric_id]
+        assert metric["table"]["epoch_refs"] == ["dimensions.kcache_stats_since"]
+        source = content.queries[metric["source_query"]]
+        assert source["optional"] is True
+        sql = (content.path / "queries" / source["variants"][0]["sql_file"]).read_text(
+            encoding="utf-8"
+        ).lower()
+        assert "from pg_stat_kcache()" in sql
+        assert "k.top is true" in sql
+        assert "k.stats_since as kcache_stats_since" in sql
+        assert "s.query as query" in sql
+        assert "limit 250" in sql
+
+    for metric_id in chart_metrics:
+        metric = content.metrics[metric_id]
+        assert metric["epoch_refs"] == ["dimensions.kcache_stats_since"]
+        source = content.queries[metric["source_query"]]
+        assert source["optional"] is True
+        sql = (content.path / "queries" / source["variants"][0]["sql_file"]).read_text(
+            encoding="utf-8"
+        ).lower()
+        assert "from pg_stat_kcache()" in sql
+        assert "k.top is true" in sql
+        assert "min(k.stats_since) as kcache_stats_since" in sql
+
+
+def test_pg_stat_kcache_chart_units_and_kinds_are_explicit(content_path: Path) -> None:
+    content = load_content(content_path)
+
+    cpu = content.metrics["database.kernel_cpu_rate"]
+    filesystem = content.metrics["database.filesystem_io_rate"]
+    faults = content.metrics["database.page_fault_rate"]
+
+    assert cpu["chart"] == {
+        "kind": "stacked_area",
+        "series_order": "configured",
+        "unit": "cpu_seconds/s",
+    }
+    assert filesystem["chart"]["kind"] == "line"
+    assert filesystem["chart"]["unit"] == "bytes/s"
+    assert faults["chart"]["kind"] == "stacked_area"
+    assert faults["chart"]["unit"] == "count/s"
+    assert content.presentation_catalog["presentation_catalog"]["units"]["cpu_seconds/s"]["symbol"] == "CPU-s/s"
 
 
 def test_overview_automatic_checks_expose_severity_evidence(content_path: Path) -> None:
@@ -2201,7 +2274,7 @@ def test_remaining_chart_sections_have_complete_and_consistent_contracts(
         for section_id, _item_key, item_id, _item in iter_report_items(content)
         if section_id in {"snapshot_charts_os", "snapshot_charts_db"}
     ]
-    assert len(chart_items) == 40
+    assert len(chart_items) == 43
     for item_id in chart_items:
         assert "## Automatic evaluation" in content.instructions[item_id]["text"], item_id
 

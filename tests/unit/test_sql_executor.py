@@ -27,6 +27,10 @@ class UndefinedColumnError(Exception):
     sqlstate = "42703"
 
 
+class UndefinedFunctionError(Exception):
+    sqlstate = "42883"
+
+
 class FakeTransaction:
     async def __aenter__(self):
         return self
@@ -57,6 +61,14 @@ class MissingColumnPrepared:
 
     async def fetch(self):
         raise UndefinedColumnError('column "stats_since" does not exist')
+
+
+class MissingFunctionPrepared:
+    def get_attributes(self):
+        return []
+
+    async def fetch(self):
+        raise UndefinedFunctionError('function pg_stat_kcache() does not exist')
 
 
 class FakeAttribute:
@@ -390,6 +402,33 @@ def test_optional_extension_shape_mismatch_is_recorded_as_unsupported(tmp_path) 
     assert item["collection_status"] == "unsupported"
     assert item["diagnostics"][0]["level"] == "warning"
     assert item["diagnostics"][0]["code"] == "unsupported"
+
+
+def test_optional_missing_extension_function_is_recorded_as_unsupported(tmp_path) -> None:
+    queries = tmp_path / "queries"
+    queries.mkdir()
+    (queries / "kcache.sql").write_text("select * from pg_stat_kcache()", encoding="utf-8")
+    content = SimpleNamespace(
+        path=tmp_path,
+        query_catalog={"query_catalog": {"sql_root": "queries"}},
+        report={"runtime_policy": {"default_sql_timeout_ms": 3000}},
+    )
+    planned = PlannedItem(
+        item_id="__metric_sources.sql_kernel_cpu_delta",
+        section_id="__metric_sources",
+        item_key="sql_kernel_cpu_delta",
+        title="SQL Kernel CPU Delta Source",
+        source_kind="query",
+        status="planned",
+        source_id="metrics.sql_kernel_cpu_delta",
+        sql_file="kcache.sql",
+        source_metadata={"query_id": "metrics.sql_kernel_cpu_delta", "optional": True},
+    )
+
+    item = asyncio.run(execute_query_item(content, TimeoutConn(MissingFunctionPrepared()), planned))
+
+    assert item["collection_status"] == "unsupported"
+    assert item["diagnostics"][0]["level"] == "warning"
 
 
 def test_sql_result_risk_level_sets_item_severity(tmp_path) -> None:

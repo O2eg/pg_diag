@@ -97,6 +97,12 @@ Only `counter` values may use the `delta` and `rate` transforms. A source gauge
 must not be treated as a cumulative counter merely because its physical type is
 numeric.
 
+The `delta_ratio` endpoint-table transform accepts counter refs on both sides,
+computes each side from comparable endpoint deltas, rejects reset/decrease
+intervals, and divides only when the denominator delta is positive. `scale`
+converts the dimensionless result to units such as percent or milliseconds per
+call without changing the raw source counters.
+
 ### 3.3 `quantity`
 
 `quantity` describes what is measured and does not control numeric scaling.
@@ -457,11 +463,17 @@ registry.
 | `count/s` | decimal | Grouped decimal plus `/s` when needed for clarity |
 | `bytes` | exact integer bytes | Adaptive IEC value such as `485.19 MiB` |
 | `bytes/s` | decimal bytes per second | Adaptive IEC value such as `15.91 MiB/s` |
+| `bytes/call` | decimal bytes per call | Adaptive IEC value plus `B/call` |
 | `blocks` | integer blocks | Adaptive SI count such as `34.603 M`; the column label states blocks |
 | `blocks/s` | decimal blocks per second | Decimal plus `blocks/s` |
 | `milliseconds` | decimal milliseconds | Adaptive duration such as `842 ms`, `12.5 s`, `6 min 44.961 s`, or `2 h 7 min 3 s` |
 | `milliseconds/s` | decimal milliseconds per second | Decimal plus `ms/s` |
+| `milliseconds/call` | decimal milliseconds per call | Decimal plus `ms/call` |
+| `milliseconds/plan` | decimal milliseconds per plan | Decimal plus `ms/plan` |
 | `seconds` | decimal seconds | Decimal plus `s` |
+| `cpu_seconds/s` | decimal CPU seconds per wall-clock second | Decimal plus `CPU-s/s`; `1.0` equals one fully occupied logical CPU |
+| `count/call` | decimal count per call | Decimal plus `/call`; quantity is stated by the label |
+| `count/cpu_second` | decimal count per CPU second | Decimal plus `/CPU-s`; quantity is stated by the label |
 | `percent` | decimal in `[0, 100]` | Decimal plus `%` |
 | `ratio` | decimal ratio | Decimal with no suffix |
 | `operations/s` | decimal operations per second | Decimal plus `ops/s` |

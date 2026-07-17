@@ -916,6 +916,239 @@ metrics:
           transform: delta
           pg_type: float8
 
+  statements.kernel_cpu_delta:
+    title: SQL Kernel CPU Delta
+    database_scope: current_database
+    source_query: metrics.sql_kernel_cpu_delta
+    requires_collection: window_endpoints
+    result: table
+    display: {default_sort: {column: cpu_seconds_per_sec, direction: desc}}
+    table:
+      key_refs: [dimensions.database_id, dimensions.user_id, dimensions.query_id, dimensions.toplevel]
+      epoch_refs: [dimensions.kcache_stats_since]
+      limit: 50
+      sort: {column: cpu_seconds_per_sec, direction: desc}
+      columns:
+        - {name: datname, value_ref: dimensions.database, transform: last, pg_type: text}
+        - {name: rolname, value_ref: dimensions.user, transform: last, pg_type: text}
+        - {name: dbid, role: key, key_index: 0, pg_type: oid}
+        - {name: userid, role: key, key_index: 1, pg_type: oid}
+        - {name: query_id, role: key, key_index: 2, pg_type: int8}
+        - {name: toplevel, role: key, key_index: 3, pg_type: bool}
+        - {name: user_cpu_seconds_delta, value_ref: counters.exec_user_time, transform: delta, pg_type: numeric, unit: seconds}
+        - {name: system_cpu_seconds_delta, value_ref: counters.exec_system_time, transform: delta, pg_type: numeric, unit: seconds}
+        - {name: cpu_seconds_delta, value_ref: counters.exec_cpu_time, transform: delta, pg_type: numeric, unit: seconds}
+        - {name: cpu_seconds_per_sec, value_ref: counters.exec_cpu_time, transform: rate, pg_type: float8, unit: cpu_seconds/s}
+        - {name: system_cpu_pct, transform: delta_ratio, numerator_ref: counters.exec_system_time, denominator_ref: counters.exec_cpu_time, scale: 100, pg_type: float8, unit: percent}
+
+  statements.filesystem_io_delta:
+    title: SQL Filesystem I/O Delta
+    database_scope: current_database
+    source_query: metrics.sql_filesystem_io_delta
+    requires_collection: window_endpoints
+    result: table
+    display: {default_sort: {column: filesystem_bytes_per_sec, direction: desc}}
+    table:
+      key_refs: [dimensions.database_id, dimensions.user_id, dimensions.query_id, dimensions.toplevel]
+      epoch_refs: [dimensions.kcache_stats_since]
+      limit: 50
+      sort: {column: filesystem_bytes_per_sec, direction: desc}
+      columns:
+        - {name: datname, value_ref: dimensions.database, transform: last, pg_type: text}
+        - {name: rolname, value_ref: dimensions.user, transform: last, pg_type: text}
+        - {name: dbid, role: key, key_index: 0, pg_type: oid}
+        - {name: userid, role: key, key_index: 1, pg_type: oid}
+        - {name: query_id, role: key, key_index: 2, pg_type: int8}
+        - {name: toplevel, role: key, key_index: 3, pg_type: bool}
+        - {name: filesystem_read_bytes_delta, value_ref: counters.exec_reads, transform: delta, optional: true, pg_type: int8, unit: bytes}
+        - {name: filesystem_write_bytes_delta, value_ref: counters.exec_writes, transform: delta, optional: true, pg_type: int8, unit: bytes}
+        - {name: filesystem_bytes_delta, value_ref: counters.exec_io_bytes, transform: delta, optional: true, pg_type: int8, unit: bytes}
+        - {name: filesystem_read_bytes_per_sec, value_ref: counters.exec_reads, transform: rate, optional: true, pg_type: float8, unit: bytes/s}
+        - {name: filesystem_write_bytes_per_sec, value_ref: counters.exec_writes, transform: rate, optional: true, pg_type: float8, unit: bytes/s}
+        - {name: filesystem_bytes_per_sec, value_ref: counters.exec_io_bytes, transform: rate, optional: true, pg_type: float8, unit: bytes/s}
+        - {name: filesystem_bytes_per_call, transform: delta_ratio, numerator_ref: counters.exec_io_bytes, denominator_ref: counters.calls, optional: true, pg_type: float8, unit: bytes/call}
+
+  statements.cpu_efficiency_delta:
+    title: SQL CPU Efficiency Delta
+    database_scope: current_database
+    source_query: metrics.sql_cpu_efficiency_delta
+    requires_collection: window_endpoints
+    result: table
+    display: {default_sort: {column: cpu_seconds_per_sec, direction: desc}}
+    table:
+      key_refs: [dimensions.database_id, dimensions.user_id, dimensions.query_id, dimensions.toplevel]
+      epoch_refs: [dimensions.kcache_stats_since]
+      limit: 50
+      sort: {column: cpu_seconds_per_sec, direction: desc}
+      columns:
+        - {name: datname, value_ref: dimensions.database, transform: last, pg_type: text}
+        - {name: rolname, value_ref: dimensions.user, transform: last, pg_type: text}
+        - {name: dbid, role: key, key_index: 0, pg_type: oid}
+        - {name: userid, role: key, key_index: 1, pg_type: oid}
+        - {name: query_id, role: key, key_index: 2, pg_type: int8}
+        - {name: toplevel, role: key, key_index: 3, pg_type: bool}
+        - {name: calls_delta, value_ref: counters.calls, transform: delta, pg_type: int8}
+        - {name: calls_per_sec, value_ref: counters.calls, transform: rate, pg_type: float8, unit: count/s}
+        - {name: cpu_seconds_per_sec, value_ref: counters.exec_cpu_time, transform: rate, pg_type: float8, unit: cpu_seconds/s}
+        - {name: cpu_ms_per_call, transform: delta_ratio, numerator_ref: counters.exec_cpu_time, denominator_ref: counters.calls, scale: 1000, pg_type: float8, unit: milliseconds/call}
+        - {name: exec_ms_per_call, transform: delta_ratio, numerator_ref: counters.total_exec_time_ms, denominator_ref: counters.calls, pg_type: float8, unit: milliseconds/call}
+        - {name: cpu_to_elapsed_pct, transform: delta_ratio, numerator_ref: counters.exec_cpu_time, denominator_ref: counters.total_exec_time_ms, scale: 100000, pg_type: float8, unit: percent}
+        - {name: user_cpu_pct, transform: delta_ratio, numerator_ref: counters.exec_user_time, denominator_ref: counters.exec_cpu_time, scale: 100, pg_type: float8, unit: percent}
+        - {name: system_cpu_pct, transform: delta_ratio, numerator_ref: counters.exec_system_time, denominator_ref: counters.exec_cpu_time, scale: 100, pg_type: float8, unit: percent}
+
+  statements.context_switches_delta:
+    title: SQL Context Switches Delta
+    database_scope: current_database
+    source_query: metrics.sql_context_switches_delta
+    requires_collection: window_endpoints
+    result: table
+    display: {default_sort: {column: involuntary_switches_per_sec, direction: desc}}
+    table:
+      key_refs: [dimensions.database_id, dimensions.user_id, dimensions.query_id, dimensions.toplevel]
+      epoch_refs: [dimensions.kcache_stats_since]
+      limit: 50
+      sort: {column: involuntary_switches_per_sec, direction: desc}
+      columns:
+        - {name: datname, value_ref: dimensions.database, transform: last, pg_type: text}
+        - {name: rolname, value_ref: dimensions.user, transform: last, pg_type: text}
+        - {name: dbid, role: key, key_index: 0, pg_type: oid}
+        - {name: userid, role: key, key_index: 1, pg_type: oid}
+        - {name: query_id, role: key, key_index: 2, pg_type: int8}
+        - {name: toplevel, role: key, key_index: 3, pg_type: bool}
+        - {name: voluntary_switches_delta, value_ref: counters.exec_nvcsws, transform: delta, optional: true, pg_type: int8}
+        - {name: involuntary_switches_delta, value_ref: counters.exec_nivcsws, transform: delta, optional: true, pg_type: int8}
+        - {name: context_switches_delta, value_ref: counters.exec_context_switches, transform: delta, optional: true, pg_type: int8}
+        - {name: voluntary_switches_per_sec, value_ref: counters.exec_nvcsws, transform: rate, optional: true, pg_type: float8, unit: count/s}
+        - {name: involuntary_switches_per_sec, value_ref: counters.exec_nivcsws, transform: rate, optional: true, pg_type: float8, unit: count/s}
+        - {name: switches_per_call, transform: delta_ratio, numerator_ref: counters.exec_context_switches, denominator_ref: counters.calls, optional: true, pg_type: float8, unit: count/call}
+        - {name: involuntary_switches_per_cpu_second, transform: delta_ratio, numerator_ref: counters.exec_nivcsws, denominator_ref: counters.exec_cpu_time, optional: true, pg_type: float8, unit: count/cpu_second}
+
+  statements.page_faults_delta:
+    title: SQL Page Faults Delta
+    database_scope: current_database
+    source_query: metrics.sql_page_faults_delta
+    requires_collection: window_endpoints
+    result: table
+    display: {default_sort: {column: major_faults_delta, direction: desc}}
+    table:
+      key_refs: [dimensions.database_id, dimensions.user_id, dimensions.query_id, dimensions.toplevel]
+      epoch_refs: [dimensions.kcache_stats_since]
+      limit: 50
+      sort: {column: major_faults_delta, direction: desc}
+      columns:
+        - {name: datname, value_ref: dimensions.database, transform: last, pg_type: text}
+        - {name: rolname, value_ref: dimensions.user, transform: last, pg_type: text}
+        - {name: dbid, role: key, key_index: 0, pg_type: oid}
+        - {name: userid, role: key, key_index: 1, pg_type: oid}
+        - {name: query_id, role: key, key_index: 2, pg_type: int8}
+        - {name: toplevel, role: key, key_index: 3, pg_type: bool}
+        - {name: minor_faults_delta, value_ref: counters.exec_minflts, transform: delta, optional: true, pg_type: int8}
+        - {name: major_faults_delta, value_ref: counters.exec_majflts, transform: delta, optional: true, pg_type: int8}
+        - {name: page_faults_delta, value_ref: counters.exec_page_faults, transform: delta, optional: true, pg_type: int8}
+        - {name: minor_faults_per_sec, value_ref: counters.exec_minflts, transform: rate, optional: true, pg_type: float8, unit: count/s}
+        - {name: major_faults_per_sec, value_ref: counters.exec_majflts, transform: rate, optional: true, pg_type: float8, unit: count/s}
+        - {name: minor_faults_per_call, transform: delta_ratio, numerator_ref: counters.exec_minflts, denominator_ref: counters.calls, optional: true, pg_type: float8, unit: count/call}
+        - {name: major_faults_per_call, transform: delta_ratio, numerator_ref: counters.exec_majflts, denominator_ref: counters.calls, optional: true, pg_type: float8, unit: count/call}
+
+  statements.io_attribution_delta:
+    title: SQL I/O Attribution Delta
+    database_scope: current_database
+    source_query: metrics.sql_io_attribution_delta
+    requires_collection: window_endpoints
+    result: table
+    display: {default_sort: {column: filesystem_bytes_per_sec, direction: desc}}
+    table:
+      key_refs: [dimensions.database_id, dimensions.user_id, dimensions.query_id, dimensions.toplevel]
+      epoch_refs: [dimensions.kcache_stats_since]
+      limit: 50
+      sort: {column: filesystem_bytes_per_sec, direction: desc}
+      columns:
+        - {name: datname, value_ref: dimensions.database, transform: last, pg_type: text}
+        - {name: rolname, value_ref: dimensions.user, transform: last, pg_type: text}
+        - {name: dbid, role: key, key_index: 0, pg_type: oid}
+        - {name: userid, role: key, key_index: 1, pg_type: oid}
+        - {name: query_id, role: key, key_index: 2, pg_type: int8}
+        - {name: toplevel, role: key, key_index: 3, pg_type: bool}
+        - {name: filesystem_read_bytes_delta, value_ref: counters.exec_reads, transform: delta, optional: true, pg_type: int8, unit: bytes}
+        - {name: filesystem_write_bytes_delta, value_ref: counters.exec_writes, transform: delta, optional: true, pg_type: int8, unit: bytes}
+        - {name: filesystem_bytes_delta, value_ref: counters.exec_io_bytes, transform: delta, optional: true, pg_type: int8, unit: bytes}
+        - {name: pg_blocks_read_bytes_delta, value_ref: counters.pg_read_bytes, transform: delta, pg_type: numeric, unit: bytes}
+        - {name: pg_blocks_write_bytes_delta, value_ref: counters.pg_write_bytes, transform: delta, pg_type: numeric, unit: bytes}
+        - {name: pg_blocks_bytes_delta, value_ref: counters.pg_io_bytes, transform: delta, pg_type: numeric, unit: bytes}
+        - {name: filesystem_bytes_per_sec, value_ref: counters.exec_io_bytes, transform: rate, optional: true, pg_type: float8, unit: bytes/s}
+        - {name: pg_blocks_bytes_per_sec, value_ref: counters.pg_io_bytes, transform: rate, pg_type: float8, unit: bytes/s}
+        - {name: filesystem_to_pg_read_pct, transform: delta_ratio, numerator_ref: counters.exec_reads, denominator_ref: counters.pg_read_bytes, scale: 100, optional: true, pg_type: float8, unit: percent}
+        - {name: filesystem_to_pg_write_pct, transform: delta_ratio, numerator_ref: counters.exec_writes, denominator_ref: counters.pg_write_bytes, scale: 100, optional: true, pg_type: float8, unit: percent}
+        - {name: filesystem_to_pg_io_pct, transform: delta_ratio, numerator_ref: counters.exec_io_bytes, denominator_ref: counters.pg_io_bytes, scale: 100, optional: true, pg_type: float8, unit: percent}
+
+  statements.planning_kernel_delta:
+    title: SQL Planning Kernel Delta
+    database_scope: current_database
+    source_query: metrics.sql_planning_kernel_delta
+    requires_collection: window_endpoints
+    result: table
+    display: {default_sort: {column: planning_cpu_seconds_per_sec, direction: desc}}
+    table:
+      key_refs: [dimensions.database_id, dimensions.user_id, dimensions.query_id, dimensions.toplevel]
+      epoch_refs: [dimensions.kcache_stats_since]
+      limit: 50
+      sort: {column: planning_cpu_seconds_per_sec, direction: desc}
+      columns:
+        - {name: datname, value_ref: dimensions.database, transform: last, pg_type: text}
+        - {name: rolname, value_ref: dimensions.user, transform: last, pg_type: text}
+        - {name: dbid, role: key, key_index: 0, pg_type: oid}
+        - {name: userid, role: key, key_index: 1, pg_type: oid}
+        - {name: query_id, role: key, key_index: 2, pg_type: int8}
+        - {name: toplevel, role: key, key_index: 3, pg_type: bool}
+        - {name: plans_delta, value_ref: counters.plans, transform: delta, pg_type: int8}
+        - {name: planning_user_cpu_seconds_delta, value_ref: counters.plan_user_time, transform: delta, pg_type: numeric, unit: seconds}
+        - {name: planning_system_cpu_seconds_delta, value_ref: counters.plan_system_time, transform: delta, pg_type: numeric, unit: seconds}
+        - {name: planning_cpu_seconds_delta, value_ref: counters.plan_cpu_time, transform: delta, pg_type: numeric, unit: seconds}
+        - {name: planning_cpu_seconds_per_sec, value_ref: counters.plan_cpu_time, transform: rate, pg_type: float8, unit: cpu_seconds/s}
+        - {name: planning_cpu_ms_per_plan, transform: delta_ratio, numerator_ref: counters.plan_cpu_time, denominator_ref: counters.plans, scale: 1000, pg_type: float8, unit: milliseconds/plan}
+        - {name: planning_read_bytes_delta, value_ref: counters.plan_reads, transform: delta, optional: true, pg_type: int8, unit: bytes}
+        - {name: planning_write_bytes_delta, value_ref: counters.plan_writes, transform: delta, optional: true, pg_type: int8, unit: bytes}
+        - {name: planning_minor_faults_delta, value_ref: counters.plan_minflts, transform: delta, optional: true, pg_type: int8}
+        - {name: planning_major_faults_delta, value_ref: counters.plan_majflts, transform: delta, optional: true, pg_type: int8}
+        - {name: planning_voluntary_switches_delta, value_ref: counters.plan_nvcsws, transform: delta, optional: true, pg_type: int8}
+        - {name: planning_involuntary_switches_delta, value_ref: counters.plan_nivcsws, transform: delta, optional: true, pg_type: int8}
+
+  database.kernel_cpu_rate:
+    title: Database Kernel CPU Rate
+    database_scope: all_databases
+    source_query: metrics.database_kernel_cpu_rate
+    requires_collection: every_snapshot
+    partition_by: [dimensions.database]
+    epoch_refs: [dimensions.kcache_stats_since]
+    series:
+      - {name: user CPU, value_ref: counters.exec_user_time, transform: rate, unit: cpu_seconds/s, color: "#93d083"}
+      - {name: system CPU, value_ref: counters.exec_system_time, transform: rate, unit: cpu_seconds/s, color: "#e98996"}
+    chart: {kind: stacked_area, series_order: configured, unit: cpu_seconds/s}
+
+  database.filesystem_io_rate:
+    title: Database Filesystem I/O Rate
+    database_scope: all_databases
+    source_query: metrics.database_filesystem_io_rate
+    requires_collection: every_snapshot
+    partition_by: [dimensions.database]
+    epoch_refs: [dimensions.kcache_stats_since]
+    series:
+      - {name: reads, value_ref: counters.exec_reads, transform: rate, optional: true, unit: bytes/s, color: "#84c8e7"}
+      - {name: writes, value_ref: counters.exec_writes, transform: rate, optional: true, unit: bytes/s, color: "#e7a764"}
+    chart: {kind: line, series_order: configured, unit: bytes/s}
+
+  database.page_fault_rate:
+    title: Database Page Fault Rate
+    database_scope: all_databases
+    source_query: metrics.database_page_fault_rate
+    requires_collection: every_snapshot
+    partition_by: [dimensions.database]
+    epoch_refs: [dimensions.kcache_stats_since]
+    series:
+      - {name: minor faults, value_ref: counters.exec_minflts, transform: rate, optional: true, unit: count/s, color: "#efd05f"}
+      - {name: major faults, value_ref: counters.exec_majflts, transform: rate, optional: true, unit: count/s, color: "#e45756"}
+    chart: {kind: stacked_area, series_order: configured, unit: count/s}
+
   statements.total_time_delta:
     title: SQL Time Delta
     database_scope: current_database

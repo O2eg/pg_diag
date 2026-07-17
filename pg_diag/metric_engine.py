@@ -342,6 +342,7 @@ def build_chart_result(
     sorted_samples = sorted(samples, key=lambda sample: str(sample.get("timestamp") or ""))
     sample_timestamps = [_sample_timestamp(sample) for sample in sorted_samples]
     partition_refs = metric.get("partition_by") or []
+    epoch_refs = metric.get("epoch_refs") or []
 
     for sample_index, sample in enumerate(sorted_samples):
         sample_timestamp = sample_timestamps[sample_index]
@@ -368,7 +369,14 @@ def build_chart_result(
                         "raw_points": {},
                     },
                 )
-                raw["raw_points"][sample_index] = {"t": timestamp, "value": value}
+                raw["raw_points"][sample_index] = {
+                    "t": timestamp,
+                    "value": value,
+                    "epochs": [
+                        _resolve_ref(row, semantic_columns, epoch_ref)
+                        for epoch_ref in epoch_refs
+                    ],
+                }
 
     series = []
     interval_counts: Counter[str] = Counter()
@@ -1071,7 +1079,41 @@ def _table_column_value(
         previous = first_value or 0.0
         delta = _counter_delta_value(first_value, last_value).value
         return float(delta) * 100.0 / float(previous) if delta is not None and previous > 0 else None
+    if transform == "delta_ratio":
+        numerator = _counter_delta_sum(
+            first_row,
+            last_row,
+            semantic_columns,
+            _table_column_refs(column, "numerator"),
+        )
+        denominator = _counter_delta_sum(
+            first_row,
+            last_row,
+            semantic_columns,
+            _table_column_refs(column, "denominator"),
+        )
+        if (
+            numerator.status != INTERVAL_OK
+            or denominator.status != INTERVAL_OK
+            or denominator.value is None
+            or denominator.value <= 0
+        ):
+            return None
+        scale = _number_or_none(column.get("scale"))
+        return (
+            float(numerator.value or 0.0)
+            / float(denominator.value)
+            * float(scale if scale is not None else 1.0)
+        )
     return _resolve_ref(last_row, semantic_columns, ref) if ref else None
+
+
+def _table_column_refs(column: dict[str, Any], prefix: str) -> list[str]:
+    refs = column.get(f"{prefix}_refs")
+    if isinstance(refs, list):
+        return [str(ref) for ref in refs if ref]
+    ref = column.get(f"{prefix}_ref")
+    return [str(ref)] if ref else []
 
 
 def _counter_delta_value(
@@ -1107,20 +1149,28 @@ def _table_row_interval_status(
         output_name = str(column.get("name") or column.get("ref") or "value")
         if output_name in (unavailable_output_columns or set()):
             continue
-        if column.get("transform") not in {
-            "delta", "rate", "pct_delta"
-        }:
+        transform = column.get("transform")
+        if transform not in {"delta", "rate", "pct_delta", "delta_ratio"}:
             continue
-        ref = column.get("value_ref") or column.get("ref")
-        if not ref:
+        refs = (
+            _table_column_refs(column, "numerator")
+            + _table_column_refs(column, "denominator")
+            if transform == "delta_ratio"
+            else [column.get("value_ref") or column.get("ref")]
+        )
+        if not refs:
             statuses.append(INTERVAL_INVALID_VALUE)
             continue
-        first_value = _number_or_none(_resolve_ref(first_row, semantic_columns, ref))
-        last_value = _number_or_none(_resolve_ref(last_row, semantic_columns, ref))
-        status = _counter_delta_value(first_value, last_value).status
-        if column.get("optional") is True and status == INTERVAL_INVALID_VALUE:
-            continue
-        statuses.append(status)
+        for ref in refs:
+            if not ref:
+                statuses.append(INTERVAL_INVALID_VALUE)
+                continue
+            first_value = _number_or_none(_resolve_ref(first_row, semantic_columns, ref))
+            last_value = _number_or_none(_resolve_ref(last_row, semantic_columns, ref))
+            status = _counter_delta_value(first_value, last_value).status
+            if column.get("optional") is True and status == INTERVAL_INVALID_VALUE:
+                continue
+            statuses.append(status)
     return _combined_interval_status(statuses)
 
 
@@ -1131,9 +1181,20 @@ def _metric_result_column_statuses(
 ) -> dict[str, dict[str, str]]:
     statuses: dict[str, dict[str, str]] = {}
     for column in table.get("columns") or []:
-        ref = str(column.get("value_ref") or column.get("ref") or "")
-        source_column = _source_column_for_ref(ref, semantic_columns)
-        status = source_column_statuses.get(source_column)
+        refs = [str(column.get("value_ref") or column.get("ref") or "")]
+        if column.get("transform") == "delta_ratio":
+            refs = _table_column_refs(column, "numerator") + _table_column_refs(column, "denominator")
+        status = next(
+            (
+                source_column_statuses.get(_source_column_for_ref(ref, semantic_columns))
+                for ref in refs
+                if isinstance(
+                    source_column_statuses.get(_source_column_for_ref(ref, semantic_columns)),
+                    dict,
+                )
+            ),
+            None,
+        )
         if not isinstance(status, dict):
             continue
         output_name = str(column.get("name") or column.get("ref") or "value")
@@ -1360,8 +1421,12 @@ def _transform_interval_points(
             previous = point
             continue
 
+        epoch_status = _chart_epoch_status(previous, point)
         seconds = _seconds_between(str(previous["t"]), str(point["t"]))
-        if seconds <= 0:
+        if epoch_status != INTERVAL_OK:
+            interval_counts[epoch_status] += 1
+            points.append({"t": point["t"], "value": None})
+        elif seconds <= 0:
             interval_counts[INTERVAL_INVALID_INTERVAL] += 1
             points.append({"t": point["t"], "value": None})
         else:
@@ -1385,6 +1450,21 @@ def _transform_interval_points(
                 points.append({"t": point["t"], "value": transformed})
         previous = point
     return points, interval_counts
+
+
+def _chart_epoch_status(previous: dict[str, Any], current: dict[str, Any]) -> str:
+    previous_epochs = previous.get("epochs") or []
+    current_epochs = current.get("epochs") or []
+    if len(previous_epochs) != len(current_epochs):
+        return INTERVAL_INVALID_VALUE
+    for first_epoch, last_epoch in zip(previous_epochs, current_epochs):
+        if first_epoch in (None, "") and last_epoch in (None, ""):
+            continue
+        if first_epoch in (None, "") or last_epoch in (None, ""):
+            return INTERVAL_INVALID_VALUE
+        if str(first_epoch) != str(last_epoch):
+            return INTERVAL_EPOCH_CHANGED
+    return INTERVAL_OK
 
 
 def _seconds_between(start: str, end: str) -> float:

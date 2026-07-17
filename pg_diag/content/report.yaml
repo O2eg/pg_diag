@@ -401,12 +401,16 @@ sections:
 
   sql_workload:
     title: SQL Workload
-    description: pg_stat_statements capability checks and top SQL by time, calls, I/O, temporary I/O, and WAL.
+    description: pg_stat_statements and pg_stat_kcache capability checks plus top SQL by time, calls, I/O, temporary I/O, and WAL.
     items:
       pg_stat_statements_capabilities:
         query: statements.pg_stat_statements_capabilities
         tags: [Configuration, SQL]
         state: expanded
+      pg_stat_kcache_capabilities:
+        query: statements.pg_stat_kcache_capabilities
+        tags: [Configuration, SQL, Kernel]
+        state: collapsed
       top_sql_by_total_time:
         query: statements.top_by_total_time
         tags: [SQL]
@@ -476,6 +480,34 @@ sections:
       sql_temp_io_delta:
         metric: statements.temp_io_delta
         tags: [SQL, "I/O", Storage]
+        state: collapsed
+      sql_kernel_cpu_delta:
+        metric: statements.kernel_cpu_delta
+        tags: [SQL, CPU, Kernel]
+        state: collapsed
+      sql_filesystem_io_delta:
+        metric: statements.filesystem_io_delta
+        tags: [SQL, "I/O", Filesystem]
+        state: collapsed
+      sql_cpu_efficiency_delta:
+        metric: statements.cpu_efficiency_delta
+        tags: [SQL, CPU]
+        state: collapsed
+      sql_context_switches_delta:
+        metric: statements.context_switches_delta
+        tags: [SQL, CPU, Kernel]
+        state: collapsed
+      sql_page_faults_delta:
+        metric: statements.page_faults_delta
+        tags: [SQL, Memory, Kernel]
+        state: collapsed
+      sql_io_attribution_delta:
+        metric: statements.io_attribution_delta
+        tags: [SQL, "I/O", Filesystem]
+        state: collapsed
+      sql_planning_kernel_delta:
+        metric: statements.planning_kernel_delta
+        tags: [SQL, CPU, Kernel]
         state: collapsed
       postgresql_io_delta:
         metric: io.activity_delta
@@ -1126,6 +1158,18 @@ sections:
       database_io_time_rate:
         metric: database.io_time_rate
         tags: [Databases, "I/O"]
+        state: collapsed
+      database_kernel_cpu_rate:
+        metric: database.kernel_cpu_rate
+        tags: [Databases, CPU, Kernel]
+        state: collapsed
+      database_filesystem_io_rate:
+        metric: database.filesystem_io_rate
+        tags: [Databases, "I/O", Filesystem]
+        state: collapsed
+      database_page_fault_rate:
+        metric: database.page_fault_rate
+        tags: [Databases, Memory, Kernel]
         state: collapsed
       database_backends:
         metric: database.backends

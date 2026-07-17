@@ -430,7 +430,8 @@ def _is_missing_optional_source_shape(exc: Exception, planned: PlannedEntry) -> 
     return bool(planned.source_metadata.get("optional")) and (
         "UndefinedTable" in name
         or "UndefinedColumn" in name
-        or sqlstate in {"42P01", "42703"}
+        or "UndefinedFunction" in name
+        or sqlstate in {"42P01", "42703", "42883"}
     )
 
 

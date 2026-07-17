@@ -794,6 +794,16 @@ contain different keys. Deltas are calculated only for their intersection;
 unmatched keys are counted in compact `interval_coverage` metadata and are not
 treated as zero. Counter decreases or invalid values create a gap and warning.
 
+Optional `pg_stat_kcache` 2.3+ support adds per-SQL kernel CPU, filesystem I/O,
+CPU-efficiency, context-switch, page-fault, I/O-attribution, and planning delta
+tables plus database CPU, filesystem-I/O, and page-fault charts. Every item has
+its own bounded SQL source. Top-level entries avoid nested-statement double
+counting, `stats_since` protects table and chart intervals from reset/entry
+reuse, and statement tables retain clickable query IDs. Run the
+`sql_workload.pg_stat_kcache_capabilities` item to verify extension version,
+preload order, execution tracking, and optional planning tracking. Missing or
+older extension APIs mark only these optional sources as unsupported.
+
 The examples below collect for 60 seconds with a 5 second interval.
 
 ### Local

@@ -1,4 +1,79 @@
 queries:
+  metrics.database_kernel_cpu_rate:
+    title: Database Kernel CPU Rate Source
+    database_scope: all_databases
+    group: Metric Sources
+    main_view: pg_stat_kcache
+    description: Independent database-level pg_stat_kcache execution CPU counters used only by Database Kernel CPU Rate.
+    source: pg_diag
+    optional: true
+    cost: medium
+    display: {default_sort: {column: datname, direction: asc}}
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_database_kernel_cpu_rate_pg10_plus
+        min_pg_version: 100000
+        sql_file: metrics/database_kernel_cpu_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            kcache_stats_since: kcache_stats_since
+          counters:
+            exec_user_time: exec_user_time
+            exec_system_time: exec_system_time
+
+  metrics.database_filesystem_io_rate:
+    title: Database Filesystem I/O Rate Source
+    database_scope: all_databases
+    group: Metric Sources
+    main_view: pg_stat_kcache
+    description: Independent database-level pg_stat_kcache filesystem counters used only by Database Filesystem I/O Rate.
+    source: pg_diag
+    optional: true
+    cost: medium
+    display: {default_sort: {column: datname, direction: asc}}
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_database_filesystem_io_rate_pg10_plus
+        min_pg_version: 100000
+        sql_file: metrics/database_filesystem_io_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            kcache_stats_since: kcache_stats_since
+          counters:
+            exec_reads: exec_reads
+            exec_writes: exec_writes
+
+  metrics.database_page_fault_rate:
+    title: Database Page Fault Rate Source
+    database_scope: all_databases
+    group: Metric Sources
+    main_view: pg_stat_kcache
+    description: Independent database-level pg_stat_kcache execution page-fault counters used only by Database Page Fault Rate.
+    source: pg_diag
+    optional: true
+    cost: medium
+    display: {default_sort: {column: datname, direction: asc}}
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_database_page_fault_rate_pg10_plus
+        min_pg_version: 100000
+        sql_file: metrics/database_page_fault_rate.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            kcache_stats_since: kcache_stats_since
+          counters:
+            exec_minflts: exec_minflts
+            exec_majflts: exec_majflts
+
   metrics.database_transaction_rate:
     title: Database Transaction Rate Chart Source
     database_scope: all_databases

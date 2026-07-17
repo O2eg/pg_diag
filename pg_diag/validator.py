@@ -1421,6 +1421,20 @@ def _validate_metrics(content: ContentPack, issues: list[ValidationIssue]) -> No
         for ref in partition_by:
             if not _semantic_ref_exists(supported_variants, ref):
                 _issue(issues, "metric_ref", f"Unresolvable partition_by ref {ref!r}", location)
+        epoch_refs = metric.get("epoch_refs") or []
+        if not isinstance(epoch_refs, list) or any(
+            not isinstance(ref, str) or not ref for ref in epoch_refs
+        ):
+            _issue(
+                issues,
+                "metric_ref",
+                "metric epoch_refs must be a list of non-empty strings",
+                location,
+            )
+        else:
+            for ref in epoch_refs:
+                if not _semantic_ref_exists(supported_variants, ref):
+                    _issue(issues, "metric_ref", f"Unresolvable metric epoch_refs ref {ref!r}", location)
         for series in valid_series:
             value_ref = series.get("value_ref")
             if value_ref is not None and (not isinstance(value_ref, str) or not value_ref):
@@ -1452,12 +1466,19 @@ def _validate_metrics(content: ContentPack, issues: list[ValidationIssue]) -> No
             for column in table.get("columns") or []:
                 if not isinstance(column, dict):
                     continue
-                ref = column.get("value_ref") or column.get("ref")
-                if isinstance(ref, str) and "." in ref and not _semantic_ref_exists(
-                    supported_variants,
-                    ref,
-                ):
-                    _issue(issues, "metric_ref", f"Unresolvable table column ref {ref!r}", location)
+                refs = [column.get("value_ref") or column.get("ref")]
+                for key in ("numerator_ref", "denominator_ref"):
+                    refs.append(column.get(key))
+                for key in ("numerator_refs", "denominator_refs"):
+                    value = column.get(key)
+                    if isinstance(value, list):
+                        refs.extend(value)
+                for ref in refs:
+                    if isinstance(ref, str) and "." in ref and not _semantic_ref_exists(
+                        supported_variants,
+                        ref,
+                    ):
+                        _issue(issues, "metric_ref", f"Unresolvable table column ref {ref!r}", location)
         _validate_metric_result_shape(metric, issues, location)
 
 
@@ -1514,6 +1535,41 @@ def _validate_metric_result_shape(
                         "Metric table column optional must be boolean",
                         column_location,
                     )
+                transform = column.get("transform") or "last"
+                if transform not in {
+                    "last", "first", "delta", "rate", "pct_delta", "delta_ratio",
+                    "sample_count", "sum", "avg", "max",
+                }:
+                    _issue(
+                        issues,
+                        "metric_result",
+                        f"Unsupported metric table transform {transform!r}",
+                        column_location,
+                    )
+                if transform == "delta_ratio":
+                    for prefix in ("numerator", "denominator"):
+                        singular = column.get(f"{prefix}_ref")
+                        plural = column.get(f"{prefix}_refs")
+                        valid_singular = isinstance(singular, str) and bool(singular)
+                        valid_plural = (
+                            isinstance(plural, list)
+                            and bool(plural)
+                            and all(isinstance(ref, str) and ref for ref in plural)
+                        )
+                        if valid_singular == valid_plural:
+                            _issue(
+                                issues,
+                                "metric_result",
+                                f"delta_ratio must define exactly one of {prefix}_ref or {prefix}_refs",
+                                column_location,
+                            )
+                    if "scale" in column and not isinstance(column["scale"], (int, float)):
+                        _issue(
+                            issues,
+                            "metric_result",
+                            "delta_ratio scale must be numeric",
+                            column_location,
+                        )
     evaluation = metric.get("evaluation")
     if evaluation is None:
         return

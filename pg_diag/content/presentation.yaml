@@ -24,11 +24,17 @@ presentation_catalog:
     count/s: {symbol: /s, family: count_rate}
     bytes: {symbol: B, family: bytes, scale: iec}
     bytes/s: {symbol: B/s, family: bytes_rate, scale: iec}
+    bytes/call: {symbol: B/call, family: bytes_per_call, scale: iec}
     blocks: {symbol: blocks, family: blocks}
     blocks/s: {symbol: blocks/s, family: blocks_rate}
     milliseconds: {symbol: ms, family: duration}
     milliseconds/s: {symbol: ms/s, family: duration_rate}
+    milliseconds/call: {symbol: ms/call, family: duration_per_call}
+    milliseconds/plan: {symbol: ms/plan, family: duration_per_plan}
     seconds: {symbol: s, family: duration}
+    cpu_seconds/s: {symbol: CPU-s/s, family: cpu_rate}
+    count/call: {symbol: /call, family: count_per_call}
+    count/cpu_second: {symbol: /CPU-s, family: count_per_cpu_time}
     percent: {symbol: "%", family: percent}
     ratio: {symbol: "", family: ratio}
     operations/s: {symbol: ops/s, family: count_rate}
@@ -44,12 +50,19 @@ presentation_catalog:
     ratio: ratio
     bytes: bytes
     bytes/s: bytes/s
+    bytes/call: bytes/call
     blocks: blocks
     blocks/s: blocks/s
     ms: milliseconds
     ms/s: milliseconds/s
+    ms/call: milliseconds/call
+    ms/plan: milliseconds/plan
     seconds: seconds
     s: seconds
+    CPU-s/s: cpu_seconds/s
+    cpu_seconds/s: cpu_seconds/s
+    count/call: count/call
+    count/cpu_second: count/cpu_second
     sessions: count
     backends: count
     deadlocks: count
@@ -80,10 +93,19 @@ presentation_catalog:
     blocks/s: blocks
     bytes: data_volume
     bytes/s: data_volume
+    bytes/call: data_volume
     bits: bit_width
     bits/s: bandwidth
     ms: milliseconds
     ms/s: milliseconds
+    ms/call: milliseconds
+    ms/plan: milliseconds
+    milliseconds/call: milliseconds
+    milliseconds/plan: milliseconds
+    CPU-s/s: cpu_time
+    cpu_seconds/s: cpu_time
+    count/call: count
+    count/cpu_second: count
     "%": percentage
     ratio: ratio
     iops: operations

@@ -165,6 +165,8 @@ field_reference:
     metrics/*/result: Derived result kind when the metric produces a table.
     metrics/*/partition_by: Semantic dimensions separating chart series.
     metrics/*/partition_by[]: One semantic dimension in the chart-series identity.
+    metrics/*/epoch_refs: Semantic reset markers that must stay equal across adjacent chart samples.
+    metrics/*/epoch_refs[]: One reset marker checked before a chart delta or rate is calculated.
     metrics/*/series: Series calculated for an ordinary chart metric.
     metrics/*/series[]: One configured chart series.
     metrics/*/series[]/name: Fixed human-readable series name.
@@ -217,9 +219,17 @@ field_reference:
     metrics/*/table/columns[]/key_index: Position of the value in the matched key tuple.
     metrics/*/table/columns[]/value_ref: Semantic value used by the column calculation.
     metrics/*/table/columns[]/ref: Direct source field used by a sampler-backed column.
+    metrics/*/table/columns[]/numerator_ref: Semantic counter used as the numerator of an interval delta ratio.
+    metrics/*/table/columns[]/numerator_refs: Semantic counters summed as the numerator of an interval delta ratio.
+    metrics/*/table/columns[]/numerator_refs[]: One semantic counter included in the interval ratio numerator.
+    metrics/*/table/columns[]/denominator_ref: Semantic counter used as the denominator of an interval delta ratio.
+    metrics/*/table/columns[]/denominator_refs: Semantic counters summed as the denominator of an interval delta ratio.
+    metrics/*/table/columns[]/denominator_refs[]: One semantic counter included in the interval ratio denominator.
+    metrics/*/table/columns[]/scale: Numeric factor applied after calculating an interval delta ratio.
     metrics/*/table/columns[]/transform: Calculation applied to the source value.
     metrics/*/table/columns[]/optional: Whether a null endpoint leaves only this derived cell null instead of invalidating the row.
     metrics/*/table/columns[]/pg_type: PostgreSQL-like type hint used by table formatting.
+    metrics/*/table/columns[]/unit: Canonical display unit of the derived column.
     metrics/*/evaluation: Automatic evaluation applied to derived metric rows.
     metrics/*/evaluation/summary_title: Finding-summary title displayed above matching rows.
     metrics/*/evaluation/recommendation: Recommended operator action for the finding.

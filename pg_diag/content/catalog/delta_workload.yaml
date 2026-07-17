@@ -1,4 +1,229 @@
 queries:
+  metrics.sql_kernel_cpu_delta:
+    title: SQL Kernel CPU Delta Source
+    database_scope: current_database
+    group: Metric Sources
+    main_view: pg_stat_kcache
+    description: Bounded pg_stat_kcache execution CPU counters used only by SQL Kernel CPU Delta.
+    source: pg_diag
+    optional: true
+    cost: medium
+    display: {default_sort: {column: exec_cpu_time, direction: desc}}
+    collection: &kcache_window_endpoints
+      default: window_endpoints
+      supports: [once, window_endpoints]
+    variants:
+      - id: metrics_sql_kernel_cpu_delta_pg10_plus
+        min_pg_version: 100000
+        sql_file: metrics/sql_kernel_cpu_delta.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            user: rolname
+            database_id: dbid
+            user_id: userid
+            query_id: query_id
+            toplevel: toplevel
+            kcache_stats_since: kcache_stats_since
+          counters:
+            calls: calls
+            exec_user_time: exec_user_time
+            exec_system_time: exec_system_time
+            exec_cpu_time: exec_cpu_time
+
+  metrics.sql_filesystem_io_delta:
+    title: SQL Filesystem I/O Delta Source
+    database_scope: current_database
+    group: Metric Sources
+    main_view: pg_stat_kcache
+    description: Bounded pg_stat_kcache execution filesystem counters used only by SQL Filesystem I/O Delta.
+    source: pg_diag
+    optional: true
+    cost: medium
+    display: {default_sort: {column: exec_io_bytes, direction: desc}}
+    collection: *kcache_window_endpoints
+    variants:
+      - id: metrics_sql_filesystem_io_delta_pg10_plus
+        min_pg_version: 100000
+        sql_file: metrics/sql_filesystem_io_delta.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            user: rolname
+            database_id: dbid
+            user_id: userid
+            query_id: query_id
+            toplevel: toplevel
+            kcache_stats_since: kcache_stats_since
+          counters:
+            calls: calls
+            exec_reads: exec_reads
+            exec_writes: exec_writes
+            exec_io_bytes: exec_io_bytes
+
+  metrics.sql_cpu_efficiency_delta:
+    title: SQL CPU Efficiency Delta Source
+    database_scope: current_database
+    group: Metric Sources
+    main_view: pg_stat_kcache
+    description: Bounded pg_stat_kcache CPU and pg_stat_statements elapsed-time counters used only by SQL CPU Efficiency Delta.
+    source: pg_diag
+    optional: true
+    cost: medium
+    display: {default_sort: {column: exec_cpu_time, direction: desc}}
+    collection: *kcache_window_endpoints
+    variants:
+      - id: metrics_sql_cpu_efficiency_delta_pg10_plus
+        min_pg_version: 100000
+        sql_file: metrics/sql_cpu_efficiency_delta.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            user: rolname
+            database_id: dbid
+            user_id: userid
+            query_id: query_id
+            toplevel: toplevel
+            kcache_stats_since: kcache_stats_since
+          counters:
+            calls: calls
+            total_exec_time_ms: total_exec_time_ms
+            exec_user_time: exec_user_time
+            exec_system_time: exec_system_time
+            exec_cpu_time: exec_cpu_time
+
+  metrics.sql_context_switches_delta:
+    title: SQL Context Switches Delta Source
+    database_scope: current_database
+    group: Metric Sources
+    main_view: pg_stat_kcache
+    description: Bounded pg_stat_kcache execution context-switch counters used only by SQL Context Switches Delta.
+    source: pg_diag
+    optional: true
+    cost: medium
+    display: {default_sort: {column: exec_context_switches, direction: desc}}
+    collection: *kcache_window_endpoints
+    variants:
+      - id: metrics_sql_context_switches_delta_pg10_plus
+        min_pg_version: 100000
+        sql_file: metrics/sql_context_switches_delta.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            user: rolname
+            database_id: dbid
+            user_id: userid
+            query_id: query_id
+            toplevel: toplevel
+            kcache_stats_since: kcache_stats_since
+          counters:
+            calls: calls
+            exec_nvcsws: exec_nvcsws
+            exec_nivcsws: exec_nivcsws
+            exec_context_switches: exec_context_switches
+            exec_cpu_time: exec_cpu_time
+
+  metrics.sql_page_faults_delta:
+    title: SQL Page Faults Delta Source
+    database_scope: current_database
+    group: Metric Sources
+    main_view: pg_stat_kcache
+    description: Bounded pg_stat_kcache execution page-fault counters used only by SQL Page Faults Delta.
+    source: pg_diag
+    optional: true
+    cost: medium
+    display: {default_sort: {column: exec_majflts, direction: desc}}
+    collection: *kcache_window_endpoints
+    variants:
+      - id: metrics_sql_page_faults_delta_pg10_plus
+        min_pg_version: 100000
+        sql_file: metrics/sql_page_faults_delta.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            user: rolname
+            database_id: dbid
+            user_id: userid
+            query_id: query_id
+            toplevel: toplevel
+            kcache_stats_since: kcache_stats_since
+          counters:
+            calls: calls
+            exec_minflts: exec_minflts
+            exec_majflts: exec_majflts
+            exec_page_faults: exec_page_faults
+
+  metrics.sql_io_attribution_delta:
+    title: SQL I/O Attribution Delta Source
+    database_scope: current_database
+    group: Metric Sources
+    main_view: pg_stat_kcache
+    description: Bounded independent pg_stat_kcache and pg_stat_statements I/O counters used only by SQL I/O Attribution Delta.
+    source: pg_diag
+    optional: true
+    cost: medium
+    display: {default_sort: {column: exec_io_bytes, direction: desc}}
+    collection: *kcache_window_endpoints
+    variants:
+      - id: metrics_sql_io_attribution_delta_pg10_plus
+        min_pg_version: 100000
+        sql_file: metrics/sql_io_attribution_delta.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            user: rolname
+            database_id: dbid
+            user_id: userid
+            query_id: query_id
+            toplevel: toplevel
+            kcache_stats_since: kcache_stats_since
+          counters:
+            calls: calls
+            exec_reads: exec_reads
+            exec_writes: exec_writes
+            exec_io_bytes: exec_io_bytes
+            pg_read_bytes: pg_read_bytes
+            pg_write_bytes: pg_write_bytes
+            pg_io_bytes: pg_io_bytes
+
+  metrics.sql_planning_kernel_delta:
+    title: SQL Planning Kernel Delta Source
+    database_scope: current_database
+    group: Metric Sources
+    main_view: pg_stat_kcache
+    description: Bounded pg_stat_kcache planning counters used only by SQL Planning Kernel Delta.
+    source: pg_diag
+    optional: true
+    cost: medium
+    display: {default_sort: {column: plan_cpu_time, direction: desc}}
+    collection: *kcache_window_endpoints
+    requirements:
+      unsupported_versions_reason: Planning kernel counters require PostgreSQL 13 or newer.
+    variants:
+      - id: metrics_sql_planning_kernel_delta_pg13_plus
+        min_pg_version: 130000
+        sql_file: metrics/sql_planning_kernel_delta.sql
+        semantic_columns:
+          dimensions:
+            database: datname
+            user: rolname
+            database_id: dbid
+            user_id: userid
+            query_id: query_id
+            toplevel: toplevel
+            kcache_stats_since: kcache_stats_since
+          counters:
+            plans: plans
+            plan_user_time: plan_user_time
+            plan_system_time: plan_system_time
+            plan_cpu_time: plan_cpu_time
+            plan_reads: plan_reads
+            plan_writes: plan_writes
+            plan_minflts: plan_minflts
+            plan_majflts: plan_majflts
+            plan_nvcsws: plan_nvcsws
+            plan_nivcsws: plan_nivcsws
+
   metrics.statements_temp_io_delta:
     title: SQL Temp I/O Delta Source
     database_scope: current_database

@@ -15,6 +15,13 @@ from pg_diag.versioning import select_query_variant
 
 
 NEW_DELTA_METRICS = {
+    "statements.kernel_cpu_delta",
+    "statements.filesystem_io_delta",
+    "statements.cpu_efficiency_delta",
+    "statements.context_switches_delta",
+    "statements.page_faults_delta",
+    "statements.io_attribution_delta",
+    "statements.planning_kernel_delta",
     "statements.temp_io_delta",
     "io.activity_delta",
     "checkpoints.checkpointer_delta",
@@ -91,6 +98,71 @@ def test_delta_table_metric_uses_first_and_last_samples() -> None:
     result = build_table_result(metric, samples, semantic_columns)
 
     assert result["rows"] == [["db", 20.0, 4.0]]
+
+
+def test_delta_table_ratio_uses_counter_deltas_and_scale() -> None:
+    metric = {
+        "table": {
+            "key_refs": ["dimensions.query_id"],
+            "columns": [
+                {"name": "query_id", "role": "key", "key_index": 0},
+                {
+                    "name": "cpu_ms_per_call",
+                    "transform": "delta_ratio",
+                    "numerator_refs": ["counters.user_cpu", "counters.system_cpu"],
+                    "denominator_ref": "counters.calls",
+                    "scale": 1000,
+                },
+            ],
+        }
+    }
+    semantics = {
+        "dimensions": {"query_id": "query_id"},
+        "counters": {
+            "user_cpu": "user_cpu",
+            "system_cpu": "system_cpu",
+            "calls": "calls",
+        },
+    }
+    samples = [
+        {
+            "timestamp": "2026-07-05T00:00:00+00:00",
+            "rows": [{"query_id": "1", "user_cpu": 10.0, "system_cpu": 2.0, "calls": 100}],
+        },
+        {
+            "timestamp": "2026-07-05T00:00:10+00:00",
+            "rows": [{"query_id": "1", "user_cpu": 11.5, "system_cpu": 2.5, "calls": 110}],
+        },
+    ]
+
+    result = build_table_result(metric, samples, semantics)
+
+    assert result["rows"] == [["1", 200.0]]
+
+
+def test_delta_table_ratio_omits_row_when_denominator_has_no_activity() -> None:
+    metric = {
+        "table": {
+            "key_refs": ["query_id"],
+            "columns": [
+                {"name": "query_id", "role": "key", "key_index": 0},
+                {
+                    "name": "bytes_per_call",
+                    "transform": "delta_ratio",
+                    "numerator_ref": "bytes",
+                    "denominator_ref": "calls",
+                },
+            ],
+        }
+    }
+    samples = [
+        {"timestamp": "2026-07-05T00:00:00+00:00", "rows": [{"query_id": "1", "bytes": 10, "calls": 5}]},
+        {"timestamp": "2026-07-05T00:00:05+00:00", "rows": [{"query_id": "1", "bytes": 20, "calls": 5}]},
+    ]
+
+    result = build_table_result(metric, samples, {})
+
+    assert result["rows"] == []
 
 
 def test_delta_table_rejects_changed_counter_epoch_even_when_counter_increases() -> None:
@@ -829,6 +901,35 @@ def test_chart_counter_decrease_is_a_gap_with_invalid_coverage() -> None:
         "invalid": 1,
         "counts": {"counter_decrease": 1},
     }
+
+
+def test_chart_epoch_change_is_a_gap_even_when_counter_increases() -> None:
+    metric = {
+        "epoch_refs": ["dimensions.stats_since"],
+        "chart": {"kind": "line", "unit": "CPU-s/s"},
+        "series": [
+            {"name": "user CPU", "value_ref": "counters.cpu", "transform": "rate"}
+        ],
+    }
+    semantics = {
+        "dimensions": {"stats_since": "stats_since"},
+        "counters": {"cpu": "cpu"},
+    }
+    samples = [
+        {
+            "timestamp": "2026-07-05T00:00:00+00:00",
+            "rows": [{"stats_since": "2026-07-01T00:00:00+00:00", "cpu": 10}],
+        },
+        {
+            "timestamp": "2026-07-05T00:00:05+00:00",
+            "rows": [{"stats_since": "2026-07-05T00:00:01+00:00", "cpu": 20}],
+        },
+    ]
+
+    result = build_chart_result(metric, samples, semantics)
+
+    assert result["series"][0]["points"][-1]["value"] is None
+    assert result["interval_coverage"]["counts"] == {"epoch_changed": 1}
 
 
 def test_top_n_first_last_ratio_chart_uses_counter_deltas() -> None:

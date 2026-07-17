@@ -1,4 +1,25 @@
 queries:
+  statements.pg_stat_kcache_capabilities:
+    title: pg_stat_kcache Capability Check
+    database_scope: current_database
+    group: SQL Workload
+    main_view: pg_extension
+    description: Extension API, preload order, and tracking settings required by kernel-level SQL diagnostics.
+    display:
+      default_sort:
+        column: capability
+        direction: asc
+    evaluation:
+      summary_title: pg_stat_kcache evidence is incomplete
+      recommendation: Fix extension activation only under the site's change policy; pg_diag never resets pg_stat_kcache statistics.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: statements_pg_stat_kcache_capabilities_pg10_plus
+        min_pg_version: 100000
+        sql_file: statements/pg_stat_kcache_capabilities.sql
+
   statements.pg_stat_statements_capabilities:
     title: pg_stat_statements Capability Check
     database_scope: current_database

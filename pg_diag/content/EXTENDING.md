@@ -383,9 +383,16 @@ database.workload_delta:
         pg_type: int8
 ```
 
-Supported endpoint-table transforms include key columns, `delta`, `rate`, and
-`last`. A window endpoint source executes only at the start and end of the timed
+Supported endpoint-table transforms include key columns, `delta`, `rate`,
+`delta_ratio`, and `last`. `delta_ratio` divides the sum of one or more
+numerator counter deltas by the sum of one or more denominator counter deltas;
+declare exactly one of `numerator_ref`/`numerator_refs` and exactly one of
+`denominator_ref`/`denominator_refs`, plus an optional numeric `scale`. A window endpoint source executes only at the start and end of the timed
 chart window; its raw rows are not persisted in the artifact snapshot array.
+
+Repeated counter charts may declare top-level `epoch_refs`. Every referenced
+reset marker must remain equal across adjacent samples; an epoch change creates
+an invalid-coverage gap instead of a misleading delta or rate.
 
 ## Add A Local Bash Item
 

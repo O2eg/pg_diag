@@ -84,7 +84,7 @@ def _artifact() -> dict:
 
     return {
         "artifact_schema_version": runtime_config.ARTIFACT_SCHEMA_VERSION,
-        "generator": {"name": "pg_diag", "version": "0.9.0"},
+        "generator": {"name": "pg_diag", "version": "0.9.1"},
         "content": {
             "schema_version": runtime_config.SUPPORTED_CONTENT_SCHEMA_VERSION,
             "content_path": "/tmp/test-content",
