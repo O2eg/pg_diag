@@ -24,6 +24,7 @@ VERSIONS_ENV = "PG_DIAG_DOCKER_VERSIONS"
 TRUE_VALUES = {"1", "true", "yes", "on"}
 SUPPORTED_MAJORS = (10, 11, 12, 13, 14, 15, 16, 17, 18)
 REPO_ROOT = Path(__file__).resolve().parents[2]
+CONTENT_PATH = REPO_ROOT / "src" / "pg_diag" / "content"
 DOCKER_CONTEXT = Path(__file__).resolve().parent / "docker"
 
 
@@ -405,7 +406,7 @@ def collect_report(
         str(Path(__file__).resolve().parent / "_run_pg_diag.py"),
         mode,
         "--content",
-        str(REPO_ROOT / "pg_diag" / "content"),
+        str(CONTENT_PATH),
         "--host",
         "127.0.0.1",
         "--port",
@@ -488,7 +489,7 @@ def assert_remote_host_items_ran(
     mode: str,
 ) -> None:
     server_version_num = int(artifact["runtime"]["server_version_num"])
-    content = load_content(REPO_ROOT / "pg_diag" / "content")
+    content = load_content(CONTENT_PATH)
     plan = build_plan(
         content,
         server_version_num,
