@@ -177,7 +177,7 @@ as skipped.
 
 ## When Adding Tests
 
-- Add content contract tests for new rules in `pg_diag/content/*.yaml`, query catalogs,
+- Add content contract tests for new rules in `src/pg_diag/content/*.yaml`, query catalogs,
   SQL files, scripts, Python sources, or metric declarations.
 - Add Python executor tests for new trusted Python source behavior, especially
   local file access, diagnostics, issues, and result shape.
@@ -229,7 +229,7 @@ Compile Python files:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python -m py_compile \
-  pg_diag/*.py \
-  pg_diag/executors/*.py \
-  pg_diag/render/*.py
+  src/pg_diag/*.py \
+  src/pg_diag/executors/*.py \
+  src/pg_diag/render/*.py
 ```

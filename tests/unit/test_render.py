@@ -5,7 +5,7 @@ from pg_diag.render.html import render_html
 
 
 def test_report_collator_is_initialized_before_initial_render(repo_root) -> None:
-    template = (repo_root / "pg_diag/render/templates/report.html").read_text(encoding="utf-8")
+    template = (repo_root / "src/pg_diag/render/templates/report.html").read_text(encoding="utf-8")
 
     assert template.index("let cachedReportCollator = null;") < template.index("renderSections();")
     assert template.count("let cachedReportCollator = null;") == 1

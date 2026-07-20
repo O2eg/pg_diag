@@ -13,20 +13,20 @@ SSH, repeated snapshots for rate/delta charts, and by default writes three outpu
 
 The report layout, taxonomy, presentation rules, SQL queries, host scripts,
 trusted Python sources, metrics, and sampler-provider registrations are
-declarative files under `pg_diag/content/`. The installed command uses this bundled
+declarative files under `src/pg_diag/content/`. The installed command uses this bundled
 content pack by default. The engine validates and executes only its
 generic contracts; bundled item and host-probe implementations are not embedded
 in core dispatch, validation, or metric rendering.
 
 ## Documentation
 
-- [Content pack overview](https://github.com/O2eg/pg_diag/blob/main/pg_diag/content/README.md) - bundled report structure, SQL
+- [Content pack overview](https://github.com/O2eg/pg_diag/blob/main/src/pg_diag/content/README.md) - bundled report structure, SQL
   catalogs, host scripts, trusted Python sources, metrics, collection modes,
   and validation.
-- [Extending the report](https://github.com/O2eg/pg_diag/blob/main/pg_diag/content/EXTENDING.md) - examples for adding SQL table
+- [Extending the report](https://github.com/O2eg/pg_diag/blob/main/src/pg_diag/content/EXTENDING.md) - examples for adding SQL table
   items, snapshot charts, top-N charts, delta tables, host shell items, trusted
   Python items, and OS sampler charts.
-- [Item development specification](https://github.com/O2eg/pg_diag/blob/main/pg_diag/content/ITEM_DEVELOPMENT_SPEC.md) - normative
+- [Item development specification](https://github.com/O2eg/pg_diag/blob/main/src/pg_diag/content/ITEM_DEVELOPMENT_SPEC.md) - normative
   contracts for values, units, timestamps, tables, charts, and diagnostics.
 - [Tests](https://github.com/O2eg/pg_diag/blob/main/tests/README.md) - test layout, unit and integration test commands,
   and guidance for adding or correcting tests.
@@ -1121,7 +1121,7 @@ provenance are empty.
 ## Content Layout
 
 ```text
-pg_diag/content/
+src/pg_diag/content/
   README.md                 # content-pack overview and contracts
   report.yaml               # report structure and item ordering
   presentation.yaml         # units, formatting, and renderer rules
@@ -1151,6 +1151,12 @@ the annotated `Raw` YAML view; `Total` remains the default resolved-metadata vie
 All catalog paths and section/item defaults are explicit in `report.yaml`.
 Missing configuration is a validation error; the loader and renderer do not
 infer paths or adapt older content and artifact schemas.
+
+## Orchestrator integration
+
+The normal collection and report CLI remains human-oriented. Authors of
+`pg_play`-compatible orchestrators can use the separate
+[versioned machine contract](docs/pg_play-integration.md).
 
 ## Development
 
@@ -1245,6 +1251,6 @@ The `pg_diag` source code is distributed under the
 HTML reports bundle Apache ECharts under Apache-2.0 and highlight.js plus the
 ECharts d3 components under BSD-3-Clause. Their complete license and notice
 files are listed in
-[THIRD_PARTY_LICENSES.txt](https://github.com/O2eg/pg_diag/blob/main/pg_diag/render/vendor/THIRD_PARTY_LICENSES.txt)
+[THIRD_PARTY_LICENSES.txt](https://github.com/O2eg/pg_diag/blob/main/src/pg_diag/render/vendor/THIRD_PARTY_LICENSES.txt)
 and are included in both source and wheel distributions. The complete package
 therefore uses the SPDX expression `MIT AND BSD-3-Clause AND Apache-2.0`.

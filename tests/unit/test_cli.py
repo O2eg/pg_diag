@@ -32,13 +32,40 @@ def test_validate_cli(repo_root: Path) -> None:
     assert "OK content=" in proc.stdout
 
 
+def test_machine_capabilities_use_versioned_envelope(repo_root: Path) -> None:
+    proc = run_cli(
+        repo_root,
+        "--machine",
+        "--request-id=diag-capabilities",
+        "--component-capabilities",
+    )
+
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    payload = json.loads(proc.stdout)
+    assert payload["component"] == "pg_diag"
+    assert payload["request_id"] == "diag-capabilities"
+    assert payload["status"] == "succeeded"
+    assert payload["result"]["contract_version"] == "pg_play/component/v1"
+
+
+def test_machine_plumbing_is_hidden_from_human_help(repo_root: Path) -> None:
+    proc = run_cli(repo_root, "--help")
+
+    assert proc.returncode == 0
+    assert "--machine" not in proc.stdout
+    assert "--request-id" not in proc.stdout
+    assert "--component-capabilities" not in proc.stdout
+    assert "validate-artifact" in proc.stdout
+    assert "summarize" in proc.stdout
+
+
 def test_bundled_content_default_is_independent_of_working_directory(
     repo_root: Path,
     tmp_path: Path,
 ) -> None:
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"
-    env["PYTHONPATH"] = str(repo_root)
+    env["PYTHONPATH"] = str(repo_root / "src")
 
     proc = subprocess.run(
         [sys.executable, "-m", "pg_diag.cli", "validate"],
@@ -50,7 +77,7 @@ def test_bundled_content_default_is_independent_of_working_directory(
     )
 
     assert proc.returncode == 0, proc.stderr + proc.stdout
-    assert f"OK content={repo_root / 'pg_diag' / 'content'}" in proc.stdout
+    assert f"OK content={repo_root / 'src' / 'pg_diag' / 'content'}" in proc.stdout
 
 
 def test_validate_cli_reports_content_integrity_failure_to_both_streams(
@@ -58,7 +85,7 @@ def test_validate_cli_reports_content_integrity_failure_to_both_streams(
     tmp_path: Path,
 ) -> None:
     copied = tmp_path / "content"
-    shutil.copytree(repo_root / "pg_diag" / "content", copied)
+    shutil.copytree(repo_root / "src" / "pg_diag" / "content", copied)
     report = copied / "report.yaml"
     report.write_text(report.read_text(encoding="utf-8") + "\n# changed\n", encoding="utf-8")
 

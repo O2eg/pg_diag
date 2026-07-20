@@ -106,13 +106,13 @@ def test_engine_modules_do_not_embed_item_or_sampler_implementation_names(
     repo_root: Path,
 ) -> None:
     core_files = [
-        repo_root / "pg_diag" / "artifact.py",
-        repo_root / "pg_diag" / "metric_engine.py",
-        repo_root / "pg_diag" / "runtime_config.py",
-        repo_root / "pg_diag" / "sampler_runtime.py",
-        repo_root / "pg_diag" / "snapshots.py",
-        repo_root / "pg_diag" / "validator.py",
-        repo_root / "pg_diag" / "executors" / "shell.py",
+        repo_root / "src" / "pg_diag" / "artifact.py",
+        repo_root / "src" / "pg_diag" / "metric_engine.py",
+        repo_root / "src" / "pg_diag" / "runtime_config.py",
+        repo_root / "src" / "pg_diag" / "sampler_runtime.py",
+        repo_root / "src" / "pg_diag" / "snapshots.py",
+        repo_root / "src" / "pg_diag" / "validator.py",
+        repo_root / "src" / "pg_diag" / "executors" / "shell.py",
     ]
     forbidden = (
         "os.cpu",

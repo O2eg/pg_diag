@@ -12,4 +12,4 @@ def repo_root() -> Path:
 
 @pytest.fixture()
 def content_path(repo_root: Path) -> Path:
-    return repo_root / "pg_diag" / "content"
+    return repo_root / "src" / "pg_diag" / "content"

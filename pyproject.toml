@@ -4,16 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pg-diag"
-version = "0.9.1"
+version = "0.10.0"
 description = "Declarative PostgreSQL diagnostic report utility"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT AND BSD-3-Clause AND Apache-2.0"
 license-files = [
   "LICENSE",
-  "pg_diag/render/vendor/*LICENSE*",
-  "pg_diag/render/vendor/*NOTICE*",
-  "pg_diag/render/vendor/THIRD_PARTY_LICENSES.txt",
+  "src/pg_diag/render/vendor/*LICENSE*",
+  "src/pg_diag/render/vendor/*NOTICE*",
+  "src/pg_diag/render/vendor/THIRD_PARTY_LICENSES.txt",
 ]
 authors = [
   { name = "O2eg", email = "oleg.ispu@yandex.ru" },
@@ -64,12 +64,13 @@ Issues = "https://github.com/O2eg/pg_diag/issues"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
 
 [tool.setuptools]
+package-dir = {"" = "src"}
 include-package-data = false
 
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["pg_diag*"]
 namespaces = false
 
@@ -91,3 +92,6 @@ pg_diag = [
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+[tool.ruff.lint.per-file-ignores]
+"src/pg_diag/content/python/security/*.py" = ["F403", "F405"]

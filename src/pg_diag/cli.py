@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
+import io
 import json
 import os
 import sys
@@ -14,6 +16,15 @@ from . import __version__, runtime_config
 from .artifact import artifact_has_errors, report_output_paths
 from .content_loader import ContentPack, iter_report_items, load_content
 from .errors import ContentIntegrityError, PgDiagError
+from .orchestration import (
+    EXIT_CODES,
+    capabilities,
+    envelope,
+    file_hash,
+    load_artifact,
+    summarize_artifact,
+    summarize_execution_plan,
+)
 from .planner import (
     available_item_tags,
     build_plan,
@@ -33,6 +44,13 @@ from .versioning import select_query_variant
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.component_capabilities:
+        args.command = "capabilities"
+        args.func = cmd_capabilities
+    elif args.command is None:
+        parser.error("a command is required")
+    if args.machine:
+        return _run_machine(args)
     try:
         return args.func(args)
     except ContentIntegrityError:
@@ -57,7 +75,33 @@ def main(argv: list[str] | None = None) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="pg-diag")
     parser.add_argument("--version", action="version", version=f"pg-diag {__version__}")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    parser.add_argument(
+        "--machine",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--request-id",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--component-capabilities",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    subparsers = parser.add_subparsers(dest="command")
+
+    artifact_parser = subparsers.add_parser(
+        "validate-artifact", help="Validate a collected report JSON artifact"
+    )
+    artifact_parser.add_argument("artifact")
+    artifact_parser.set_defaults(func=cmd_validate_artifact)
+
+    summarize_parser = subparsers.add_parser(
+        "summarize", help="Print a compact deterministic report summary"
+    )
+    summarize_parser.add_argument("artifact")
+    summarize_parser.set_defaults(func=cmd_summarize)
 
     validate_parser = subparsers.add_parser("validate", help="Validate content pack")
     _add_content_arg(validate_parser)
@@ -146,6 +190,35 @@ def _add_content_arg(parser: argparse.ArgumentParser) -> None:
 
 def _default_content_path() -> str:
     return str(Path(__file__).resolve().parent / "content")
+
+
+def cmd_capabilities(_args: argparse.Namespace) -> int:
+    print(json.dumps(capabilities(), indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_validate_artifact(args: argparse.Namespace) -> int:
+    artifact_path = Path(args.artifact).expanduser().resolve()
+    artifact = load_artifact(artifact_path)
+    print(
+        json.dumps(
+            {
+                "valid": True,
+                "path": str(artifact_path),
+                "file_hash": file_hash(artifact_path),
+                "summary": summarize_artifact(artifact),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def cmd_summarize(args: argparse.Namespace) -> int:
+    artifact_path = Path(args.artifact).expanduser().resolve()
+    print(json.dumps(summarize_artifact(load_artifact(artifact_path)), indent=2, sort_keys=True))
+    return 0
 
 
 def _add_report_output_file_args(parser: argparse.ArgumentParser) -> None:
@@ -262,7 +335,9 @@ def _add_ssh_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_pg_version_arg(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--pg-version", type=int, required=True, help="PostgreSQL server_version_num")
+    parser.add_argument(
+        "--pg-version", type=int, required=True, help="PostgreSQL server_version_num"
+    )
 
 
 def _add_mode_args(parser: argparse.ArgumentParser) -> None:
@@ -287,8 +362,42 @@ def _load_and_validate(content_path: str | Path) -> tuple[ContentPack, list[Any]
 def cmd_validate(args: argparse.Namespace) -> int:
     content, issues = _load_and_validate(args.content)
     if not issues:
-        print(f"OK content={content.path} checksum={content.checksum}")
+        if args.machine:
+            print(
+                json.dumps(
+                    {
+                        "valid": True,
+                        "content": str(content.path),
+                        "checksum": content.checksum,
+                        "issues": [],
+                    },
+                    sort_keys=True,
+                )
+            )
+        else:
+            print(f"OK content={content.path} checksum={content.checksum}")
         return 0
+    if args.machine:
+        print(
+            json.dumps(
+                {
+                    "valid": not has_errors(issues),
+                    "content": str(content.path),
+                    "checksum": content.checksum,
+                    "issues": [
+                        {
+                            "level": issue.level,
+                            "code": issue.code,
+                            "location": issue.location,
+                            "message": issue.message,
+                        }
+                        for issue in issues
+                    ],
+                },
+                sort_keys=True,
+            )
+        )
+        return 1 if has_errors(issues) else 0
     for issue in issues:
         print(f"{issue.level.upper()} {issue.code} {issue.location}: {issue.message}")
     return 1 if has_errors(issues) else 0
@@ -317,7 +426,9 @@ def cmd_list_items(args: argparse.Namespace) -> int:
         _print_validation_errors(issues)
         return 1
     for _section_id, _item_key, item_id, item in iter_report_items(content):
-        source_kind = next((key for key in ("query", "script", "metric", "python") if key in item), "unknown")
+        source_kind = next(
+            (key for key in ("query", "script", "metric", "python") if key in item), "unknown"
+        )
         print(f"{item_id}\t{source_kind}\t{item.get(source_kind, '')}")
     return 0
 
@@ -334,7 +445,7 @@ def cmd_explain_plan(args: argparse.Namespace) -> int:
         mode=args.run_mode,
         collection_mode=args.collection_mode,
     )
-    if args.json:
+    if args.json or args.machine:
         print(json.dumps(plan.to_dict(), indent=2, sort_keys=True))
     else:
         _print_plan(plan.to_dict())
@@ -458,7 +569,9 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
     if connection_error:
         print(f"ERROR: {connection_error}", file=sys.stderr)
         return 2
-    window_error = runtime_config.validate_snapshots_window(args.duration_seconds, args.interval_seconds)
+    window_error = runtime_config.validate_snapshots_window(
+        args.duration_seconds, args.interval_seconds
+    )
     if window_error:
         print(f"ERROR: {window_error}", file=sys.stderr)
         return 2
@@ -541,6 +654,157 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
         progress.close()
 
 
+def _decode_machine_output(output: str) -> Any:
+    text = output.strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return {"stdout": text}
+
+
+def _machine_artifacts(args: argparse.Namespace) -> list[dict[str, Any]]:
+    paths: list[tuple[str, str | None, Path]] = []
+    if args.command in {"validate-artifact", "summarize"}:
+        paths.append(("DiagnosticReport", None, Path(args.artifact)))
+    elif args.command == "render":
+        paths.append(("DiagnosticReportHtml", None, Path(args.out)))
+    elif args.command in {"one-shot", "snapshots"}:
+        json_path, html_path = report_output_paths(
+            args.out,
+            args.json_out,
+            args.html_out,
+            args.output_format,
+        )
+        if json_path is not None:
+            paths.append(("DiagnosticReport", "pg_diag/artifact-v4", json_path))
+        if html_path is not None:
+            paths.append(("DiagnosticReportHtml", None, html_path))
+    artifacts = []
+    for kind, schema_version, raw_path in paths:
+        path = raw_path.expanduser().resolve()
+        if not path.is_file():
+            continue
+        artifacts.append(
+            {
+                "kind": kind,
+                "schema_version": schema_version,
+                "path": str(path),
+                "hash": file_hash(path),
+                "size_bytes": path.stat().st_size,
+            }
+        )
+    return artifacts
+
+
+def _collection_machine_result(
+    args: argparse.Namespace,
+    result: Any,
+    artifacts: list[dict[str, Any]],
+) -> Any:
+    if args.command == "explain-plan" and isinstance(result, dict):
+        return summarize_execution_plan(result)
+    if args.command not in {"one-shot", "snapshots"}:
+        return result
+    payload: dict[str, Any] = {
+        "outputs": artifacts,
+        "collection_mode": args.collection_mode,
+    }
+    json_artifact = next(
+        (item for item in artifacts if item["kind"] == "DiagnosticReport"),
+        None,
+    )
+    if json_artifact is not None:
+        payload["summary"] = summarize_artifact(load_artifact(json_artifact["path"]))
+    if result is not None:
+        payload["command_output"] = result
+    return payload
+
+
+def _emit_machine(
+    args: argparse.Namespace,
+    status: str,
+    *,
+    result: Any = None,
+    artifacts: list[dict[str, Any]] | None = None,
+    error: dict[str, Any] | None = None,
+) -> None:
+    print(
+        json.dumps(
+            envelope(
+                args.command,
+                status,
+                request_id=args.request_id,
+                result=result,
+                artifacts=artifacts,
+                error=error,
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+def _run_machine(args: argparse.Namespace) -> int:
+    output = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(output):
+            exit_code = args.func(args)
+        result = _decode_machine_output(output.getvalue())
+        artifacts = _machine_artifacts(args)
+        result = _collection_machine_result(args, result, artifacts)
+        if exit_code == 0:
+            _emit_machine(args, "succeeded", result=result, artifacts=artifacts)
+            return 0
+        if args.command in {"validate", "validate-artifact"} or exit_code == 2:
+            code = "validation_error"
+            machine_exit = EXIT_CODES[code]
+            status = "failed"
+        elif args.command in {"one-shot", "snapshots"} and artifacts:
+            code = "partial"
+            machine_exit = EXIT_CODES[code]
+            status = "partial"
+        else:
+            code = "execution_error"
+            machine_exit = EXIT_CODES[code]
+            status = "failed"
+        _emit_machine(
+            args,
+            status,
+            result=result,
+            artifacts=artifacts,
+            error={"code": code, "message": f"{args.command} exited with code {exit_code}"},
+        )
+        return machine_exit
+    except ContentIntegrityError:
+        message = (
+            "content integrity verification failed; reinstall pg_diag and content "
+            "from a trusted distribution"
+        )
+        _emit_machine(
+            args,
+            "failed",
+            error={"code": "validation_error", "message": message},
+        )
+        return EXIT_CODES["validation_error"]
+    except PgDiagError as exc:
+        code = "validation_error" if args.command == "validate-artifact" else "execution_error"
+        _emit_machine(
+            args,
+            "failed",
+            error={"code": code, "message": redact_error(exc)},
+        )
+        return EXIT_CODES[code]
+    except KeyboardInterrupt:
+        _emit_machine(
+            args,
+            "cancelled",
+            error={"code": "cancelled", "message": "interrupted"},
+        )
+        return EXIT_CODES["cancelled"]
+
+
 def _validated_report_log_path(args: argparse.Namespace) -> Path:
     json_path, html_path = report_output_paths(
         args.out, args.json_out, args.html_out, args.output_format
@@ -548,9 +812,7 @@ def _validated_report_log_path(args: argparse.Namespace) -> Path:
     log_path = report_log_path(args.out)
     resolved_log = log_path.resolve(strict=False)
     output_paths = {
-        path.resolve(strict=False)
-        for path in (json_path, html_path)
-        if path is not None
+        path.resolve(strict=False) for path in (json_path, html_path) if path is not None
     }
     if resolved_log in output_paths:
         raise ValueError("report.log path must be different from JSON and HTML output paths")
@@ -659,9 +921,7 @@ def _ssh_config(args: argparse.Namespace) -> SshConfig | None:
     if args.collection_mode != runtime_config.REMOTE_COLLECTION_MODE:
         return None
     passphrase = (
-        os.environ.get(args.ssh_key_passphrase_env)
-        if args.ssh_key_passphrase_env
-        else None
+        os.environ.get(args.ssh_key_passphrase_env) if args.ssh_key_passphrase_env else None
     )
     return SshConfig(
         host=str(args.ssh_host or ""),
@@ -672,9 +932,7 @@ def _ssh_config(args: argparse.Namespace) -> SshConfig | None:
             str("~/.ssh/known_hosts" if args.ssh_known_hosts is None else args.ssh_known_hosts)
         ).expanduser(),
         connect_timeout=(
-            10.0
-            if args.ssh_connect_timeout is None
-            else float(args.ssh_connect_timeout)
+            10.0 if args.ssh_connect_timeout is None else float(args.ssh_connect_timeout)
         ),
         passphrase=passphrase,
     )

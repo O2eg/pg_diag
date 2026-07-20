@@ -29,6 +29,7 @@ from pg_diag.content_loader import ContentLoadError, iter_report_items, load_con
 from pg_diag.errors import ValidationError
 from pg_diag.executors.python import execute_python_item
 from pg_diag.metric_engine import build_metric_item
+from pg_diag.orchestration import load_artifact, summarize_artifact, summarize_execution_plan
 from pg_diag.planner import PlannedItem, build_plan
 from pg_diag.progress import ProgressReporter
 from pg_diag.render.html import _publicize_artifact_for_render, render_html
@@ -166,6 +167,59 @@ def _artifact(*, title: str = "Test", data: str = "ok") -> dict:
         "snapshots": [],
         "diagnostics": [],
     }
+
+
+def test_orchestration_summary_is_deterministic_and_artifact_is_validated(
+    tmp_path: Path,
+) -> None:
+    artifact = _artifact()
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps(artifact), encoding="utf-8")
+
+    loaded = load_artifact(path)
+    first = summarize_artifact(loaded)
+    second = summarize_artifact(loaded)
+
+    assert first == second
+    assert first["schema_version"] == "pg_diag/summary-v1"
+    assert first["item_count"] == 1
+    assert first["collection_statuses"] == {"ok": 1}
+    assert first["completeness"]["ratio"] == 1.0
+    assert first["has_errors"] is False
+
+    artifact["artifact_schema_version"] = -1
+    path.write_text(json.dumps(artifact), encoding="utf-8")
+    with pytest.raises(ValidationError, match="Unsupported artifact schema version"):
+        load_artifact(path)
+
+
+def test_machine_plan_summary_is_compact_and_content_addressed() -> None:
+    plan = {
+        "server_version_num": 180000,
+        "supported_server_version": True,
+        "mode": "snapshots",
+        "collection_mode": "remote-db-only",
+        "items": [
+            {
+                "item_id": "overview.server_version",
+                "status": "planned",
+                "collection_scope": "once",
+            },
+            {
+                "item_id": "os.kernel_version",
+                "status": "skipped",
+                "collection_scope": "once",
+            },
+        ],
+    }
+
+    summary = summarize_execution_plan(plan)
+
+    assert summary["schema_version"] == "pg_diag/plan-summary-v1"
+    assert summary["item_count"] == 2
+    assert summary["status_counts"] == {"planned": 1, "skipped": 1}
+    assert summary["item_ids_hash"].startswith("sha256:")
+    assert "item_ids" not in summary
 
 
 def test_database_scope_presentation_labels_items_and_hides_redundant_datname() -> None:
