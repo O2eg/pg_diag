@@ -275,6 +275,59 @@ def test_connect_fails_closed_when_session_is_not_read_only(monkeypatch) -> None
     assert conn.closed is True
 
 
+class SearchPathConn:
+    def __init__(self, schemas: list[str]) -> None:
+        self.schemas = schemas
+        self.user_name = "app"
+        self.executed: list[str] = []
+        self.closed = False
+
+    async def fetchrow(self, sql: str):
+        if "current_schemas" in sql:
+            return {"schemas": self.schemas, "user_name": self.user_name}
+        return {"session_default": "on", "current_transaction": "on"}
+
+    async def execute(self, sql: str) -> None:
+        self.executed.append(sql)
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+def test_connect_repairs_mangled_startup_search_path(monkeypatch) -> None:
+    conn = SearchPathConn(schemas=[])
+    asyncpg = AsyncpgConnectStub(conn)
+    monkeypatch.setattr("pg_diag.executors.sql._load_asyncpg", lambda: asyncpg)
+
+    asyncio.run(
+        connect(
+            host="db.example",
+            database="appdb",
+            user="app",
+            server_settings={"search_path": "pg_catalog, public"},
+        )
+    )
+
+    assert conn.executed == ['SET search_path = "pg_catalog", "public"']
+
+
+def test_connect_keeps_intact_search_path_without_extra_set(monkeypatch) -> None:
+    conn = SearchPathConn(schemas=["pg_catalog", "public"])
+    asyncpg = AsyncpgConnectStub(conn)
+    monkeypatch.setattr("pg_diag.executors.sql._load_asyncpg", lambda: asyncpg)
+
+    asyncio.run(
+        connect(
+            host="db.example",
+            database="appdb",
+            user="app",
+            server_settings={"search_path": "pg_catalog, public"},
+        )
+    )
+
+    assert conn.executed == []
+
+
 def test_sql_timeout_exception_is_recorded_in_item(tmp_path) -> None:
     queries = tmp_path / "queries"
     queries.mkdir()

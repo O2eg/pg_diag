@@ -25,6 +25,7 @@ from .collection import (
     start_collection,
 )
 from .content_loader import ContentPack
+from .executors.batch import QueryBatchContext
 from .executors.sql import (
     execute_query_item,
 )
@@ -510,14 +511,19 @@ async def _execute_query_batch(
     snapshot = {"timestamp": utc_now(), "items": {}}
     items: dict[str, dict[str, Any]] = {}
     error_counts: Counter[str] = Counter()
+    batch_context = QueryBatchContext(queries)
     async with conn.transaction(readonly=True):
         for planned in queries:
             try:
-                item = await execute_query_item(
-                    content,
-                    conn,
-                    planned,
-                )
+                if batch_context.handles(planned):
+                    item = await execute_query_item(
+                        content,
+                        conn,
+                        planned,
+                        batch_context=batch_context,
+                    )
+                else:
+                    item = await execute_query_item(content, conn, planned)
             except Exception as exc:
                 item = item_error_from_exception(planned, exc)
             if query_texts is not None:

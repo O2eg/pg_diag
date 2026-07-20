@@ -33,7 +33,7 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_heap_read
 ## Related report items
 - [snapshot_delta_workload.table_io_delta](#item-snapshot_delta_workload.table_io_delta) — Inspect relation heap-block reads.
 - [snapshot_charts_os.os_disk_read_throughput](#item-snapshot_charts_os.os_disk_read_throughput) — Check host read throughput.
-- [buffer_cache.relation_coverage](#item-buffer_cache.relation_coverage) — Review cache coverage for the affected tables.
+- [buffer_cache.top_relations](#item-buffer_cache.top_relations) — Review whether the affected tables dominate shared buffers.
 
 ## Checklist
 - Review SQL touching top tables.

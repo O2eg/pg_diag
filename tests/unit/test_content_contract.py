@@ -30,25 +30,54 @@ def test_content_manifests_are_valid(content_path: Path) -> None:
     assert not issues
 
 
-def test_buffer_cache_section_has_ten_independent_chart_sources(content_path: Path) -> None:
+def test_buffer_cache_section_excludes_low_value_expensive_charts(content_path: Path) -> None:
     content = load_content(content_path)
     section = content.report["sections"]["buffer_cache"]
 
-    assert len(section["items"]) == 10
+    assert set(section["items"]) == {
+        "utilization",
+        "usage_count_distribution",
+        "dirty_and_pinned",
+        "by_database",
+        "top_relations",
+        "top_dirty_relations",
+    }
     metric_ids = [item["metric"] for item in section["items"].values()]
     source_ids = [content.metrics[metric_id]["source_query"] for metric_id in metric_ids]
-    assert len(source_ids) == len(set(source_ids)) == 10
+    assert len(source_ids) == len(set(source_ids)) == 6
     assert all(content.queries[source_id].get("optional") is not True for source_id in source_ids)
+    assert all(content.queries[source_id]["cost"] == "high" for source_id in source_ids)
 
 
-def test_relation_coverage_excludes_system_schemas(content_path: Path) -> None:
-    sql = (content_path / "queries/buffer_cache/relation_coverage.sql").read_text(
-        encoding="utf-8"
-    )
+def test_pg16_buffer_cache_summary_sources_use_cheaper_functions(content_path: Path) -> None:
+    content = load_content(content_path)
+    expected_files = {
+        "buffer_cache.utilization": "buffer_cache/utilization_pg16_plus.sql",
+        "buffer_cache.usage_count_distribution": (
+            "buffer_cache/usage_count_distribution_pg16_plus.sql"
+        ),
+        "buffer_cache.dirty_and_pinned": "buffer_cache/dirty_and_pinned_pg16_plus.sql",
+    }
 
-    assert "join pg_catalog.pg_namespace n" in sql
-    assert "n.nspname !~ '^pg_'" in sql
-    assert "n.nspname <> 'information_schema'" in sql
+    for source_id, pg16_file in expected_files.items():
+        query = content.queries[source_id]
+        pg15 = select_query_variant(source_id, query, 150000)
+        pg16 = select_query_variant(source_id, query, 160000)
+
+        assert pg15.variant is not None
+        assert pg16.variant is not None
+        assert pg15.variant["sql_file"] != pg16_file
+        assert pg16.variant["sql_file"] == pg16_file
+        assert pg15.variant["semantic_columns"] == pg16.variant["semantic_columns"]
+
+        sql = (content.path / "queries" / pg16_file).read_text(encoding="utf-8")
+        assert "pg_buffercache_summary()" in sql
+
+    usage_sql = (
+        content.path / "queries/buffer_cache/usage_count_distribution_pg16_plus.sql"
+    ).read_text(encoding="utf-8")
+    assert "pg_buffercache_usage_counts()" in usage_sql
+    assert "summary.buffers_unused" in usage_sql
 
 
 def test_zero_disk_reads_have_an_explicit_empty_message(content_path: Path) -> None:
@@ -223,6 +252,12 @@ def test_host_source_timeouts_do_not_exceed_one_second(content_path: Path) -> No
             assert 0 < source["timeout_ms"] <= max_timeout_ms, source_id
 
     assert content.pythons["security.role_password_hashes"]["timeout_ms"] == 5000
+
+
+def test_sql_queries_have_one_second_global_timeout(content_path: Path) -> None:
+    content = load_content(content_path)
+
+    assert content.report["runtime_policy"]["default_sql_timeout_ms"] == 1000
 
 
 def test_os_capacity_scripts_emit_canonical_structured_values(content_path: Path) -> None:

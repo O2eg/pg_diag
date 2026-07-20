@@ -818,7 +818,7 @@ def test_collect_snapshots_runs_static_items_before_chart_window(tmp_path, monke
         assert ssh is None
         assert database_connector.connection_kwargs == {
             "server_settings": {
-                "statement_timeout": "10000",
+                "statement_timeout": "1000",
                 "lock_timeout": "1000",
                 "idle_in_transaction_session_timeout": "10000",
                 "search_path": "pg_catalog, public",

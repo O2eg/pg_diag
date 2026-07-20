@@ -42,7 +42,7 @@ report:
     presentation: presentation.yaml
 
 runtime_policy:
-  default_sql_timeout_ms: 3000
+  default_sql_timeout_ms: 1000
   default_shell_timeout_ms: 1000
   remote_db_only_shell_message: "no data because remote call"
   table_columns: dynamic_from_result
@@ -1261,10 +1261,6 @@ sections:
         metric: buffer_cache.dirty_and_pinned
         tags: [Memory, "I/O"]
         state: expanded
-      dirty_by_usage_count:
-        metric: buffer_cache.dirty_by_usage_count
-        tags: [Memory, "I/O"]
-        state: collapsed
       by_database:
         metric: buffer_cache.by_database
         tags: [Memory, Databases]
@@ -1276,16 +1272,4 @@ sections:
       top_dirty_relations:
         metric: buffer_cache.top_dirty_relations
         tags: [Memory, Tables, Indexes, "I/O"]
-        state: collapsed
-      relation_coverage:
-        metric: buffer_cache.relation_coverage
-        tags: [Memory, Tables, Indexes]
-        state: collapsed
-      relation_residency_delta:
-        metric: buffer_cache.relation_residency_delta
-        tags: [Memory, Tables, Indexes]
-        state: expanded
-      relation_kinds:
-        metric: buffer_cache.relation_kinds
-        tags: [Memory, Tables, Indexes]
         state: collapsed

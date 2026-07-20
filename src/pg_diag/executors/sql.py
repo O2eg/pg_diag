@@ -13,6 +13,7 @@ from typing import Any
 from pg_diag.artifact import item_from_plan
 from pg_diag.content_loader import ContentPack
 from pg_diag.errors import PgDiagError
+from pg_diag.executors.batch import QueryBatchContext
 from pg_diag.executors.common import elapsed_ms, exception_diagnostic
 from pg_diag.planner import PlannedEntry
 from pg_diag.security import json_safe, redact_error, redact_row
@@ -59,6 +60,14 @@ async def connect(dsn: str | None = None, **kwargs: Any):
             **connect_kwargs,
             server_settings=server_settings,
         )
+    try:
+        await _ensure_effective_search_path(conn, server_settings)
+    except BaseException:
+        try:
+            await conn.close()
+        except Exception:
+            pass
+        raise
     await _verify_read_only_connection(conn)
     return conn
 
@@ -104,6 +113,36 @@ def _read_only_server_settings(settings: Any) -> dict[str, str]:
         raise TypeError("server_settings must be a mapping")
     result[READ_ONLY_SERVER_SETTING] = READ_ONLY_SERVER_VALUE
     return result
+
+
+async def _ensure_effective_search_path(conn: Any, settings: Mapping[str, str]) -> None:
+    """Re-apply search_path when a proxy mangled the startup-packet value.
+
+    Some poolers re-apply startup parameters as a quoted SET, turning
+    "pg_catalog, public" into a single nonexistent schema name. Compare the
+    effective path with the requested one and correct it with an explicit
+    SET, which passes through such proxies unchanged.
+    """
+    requested = settings.get("search_path")
+    if not requested:
+        return
+    requested_schemas = [
+        part.strip().strip('"') for part in requested.split(",") if part.strip()
+    ]
+    if not requested_schemas:
+        return
+    row = await conn.fetchrow(
+        "select current_schemas(false) as schemas, current_user as user_name"
+    )
+    user_name = str(row["user_name"])
+    effective_schemas = list(row["schemas"] or [])
+    resolved_requested = [
+        user_name if name == "$user" else name for name in requested_schemas
+    ]
+    if effective_schemas == resolved_requested:
+        return
+    quoted = ", ".join('"' + name.replace('"', '""') + '"' for name in requested_schemas)
+    await conn.execute(f"SET search_path = {quoted}")
 
 
 async def _verify_read_only_connection(conn: Any) -> None:
@@ -157,6 +196,8 @@ async def execute_query_item(
     content: ContentPack,
     conn: Any,
     planned: PlannedEntry,
+    *,
+    batch_context: QueryBatchContext | None = None,
 ) -> dict[str, Any]:
     started = time.perf_counter()
     sql_file = planned.sql_file
@@ -175,19 +216,23 @@ async def execute_query_item(
     try:
         sql_text = Path(sql_path).read_text(encoding="utf-8")
         async with conn.transaction(readonly=True):
-            prepared = await conn.prepare(sql_text)
-            raw_columns = _columns_from_prepared(prepared)
-            records = await prepared.fetch()
-            raw_rows = [
-                redact_row(
-                    raw_columns,
-                    [
-                        _record_value(record, index, str(column.get("name") or ""))
-                        for index, column in enumerate(raw_columns)
-                    ],
-                )
-                for record in records
-            ]
+            if batch_context is not None and batch_context.handles(planned):
+                raw_columns, provider_rows = await batch_context.execute(conn, planned)
+                raw_rows = [redact_row(raw_columns, row) for row in provider_rows]
+            else:
+                prepared = await conn.prepare(sql_text)
+                raw_columns = _columns_from_prepared(prepared)
+                records = await prepared.fetch()
+                raw_rows = [
+                    redact_row(
+                        raw_columns,
+                        [
+                            _record_value(record, index, str(column.get("name") or ""))
+                            for index, column in enumerate(raw_columns)
+                        ],
+                    )
+                    for record in records
+                ]
             severity_level, issues = evaluate_table_findings(
                 raw_columns,
                 raw_rows,
@@ -229,7 +274,7 @@ def runtime_guard_server_settings(content: ContentPack) -> dict[str, str]:
     """Return session-level guard settings applied at connection startup."""
     policy = content.report.get("runtime_policy") or {}
     return {
-        "statement_timeout": str(policy.get("default_sql_timeout_ms", 10000)),
+        "statement_timeout": str(policy.get("default_sql_timeout_ms", 1000)),
         "lock_timeout": "1000",
         "idle_in_transaction_session_timeout": "10000",
         "search_path": "pg_catalog, public",

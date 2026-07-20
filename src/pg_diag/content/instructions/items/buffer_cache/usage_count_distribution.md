@@ -22,7 +22,6 @@ This instruction belongs to report item `buffer_cache.usage_count_distribution`.
 
 ## Related report items
 - [buffer_cache.top_relations](#item-buffer_cache.top_relations) — Identify relations occupying the cache.
-- [buffer_cache.relation_residency_delta](#item-buffer_cache.relation_residency_delta) — Inspect relation-level cache gains and losses.
 - [snapshot_charts_db.database_block_access_rate](#item-snapshot_charts_db.database_block_access_rate) — Compare usage counts with block activity.
 
 ## Checklist

@@ -26,7 +26,7 @@ This instruction belongs to report item `object_workload.table_io`. The item is 
 ## Related report items
 - [snapshot_delta_workload.table_io_delta](#item-snapshot_delta_workload.table_io_delta) — Measure table I/O in the capture window.
 - [sql_workload.top_sql_by_shared_io](#item-sql_workload.top_sql_by_shared_io) — Find statements associated with shared-block work.
-- [buffer_cache.relation_coverage](#item-buffer_cache.relation_coverage) — Check cache coverage for important relations.
+- [buffer_cache.top_relations](#item-buffer_cache.top_relations) — Check whether important relations dominate shared buffers.
 
 ## Checklist
 - Compare with SQL shared I/O.

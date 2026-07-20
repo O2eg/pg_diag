@@ -29,3 +29,7 @@ This instruction belongs to report item `buffer_cache.utilization`.
 ## Checklist
 - Correlate with cache churn and read I/O.
 - Install or grant access to `pg_buffercache` only under the site's change procedure.
+- Treat the one-second SQL timeout as best-effort on PostgreSQL 10-12 and on
+  PostgreSQL releases older than 13.23, 14.20, 15.15, 16.11, 17.7, or 18.1.
+  Their `pg_buffercache` loops can finish scanning shared buffers before they
+  observe cancellation. Prefer a patched minor release on large buffer pools.

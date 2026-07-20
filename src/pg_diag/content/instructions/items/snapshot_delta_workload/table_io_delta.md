@@ -24,7 +24,7 @@ This instruction belongs to report item `snapshot_delta_workload.table_io_delta`
 ## Related report items
 - [snapshot_delta_workload.sql_io_delta](#item-snapshot_delta_workload.sql_io_delta) — Attribute statement I/O to table activity.
 - [snapshot_charts_os.os_disk_latency](#item-snapshot_charts_os.os_disk_latency) — Check storage latency in the same window.
-- [buffer_cache.relation_residency_delta](#item-buffer_cache.relation_residency_delta) — Check whether cache residency changed.
+- [buffer_cache.top_relations](#item-buffer_cache.top_relations) — Inspect the relations occupying shared buffers.
 
 ## Checklist
 - Compare with statement shared I/O and OS disk latency.

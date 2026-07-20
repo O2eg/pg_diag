@@ -2187,16 +2187,6 @@ metrics:
       - {name: pinned, value_ref: gauges.pinned_blocks, transform: gauge, unit: blocks}
     chart: {kind: line, unit: blocks}
 
-  buffer_cache.dirty_by_usage_count:
-    title: Dirty Buffers By Usage Count
-    database_scope: all_databases
-    source_query: buffer_cache.dirty_by_usage_count
-    requires_collection: every_snapshot
-    partition_by: [dimensions.usage_count]
-    series:
-      - {name_from_ref: dimensions.usage_count, value_ref: gauges.dirty_blocks, transform: gauge, unit: blocks}
-    chart: {kind: stacked_column, unit: blocks}
-
   buffer_cache.by_database:
     title: Buffer Cache By Database
     database_scope: all_databases
@@ -2225,34 +2215,4 @@ metrics:
     partition_by: [dimensions.relation]
     series:
       - {name_from_ref: dimensions.relation, value_ref: gauges.dirty_blocks, transform: gauge, unit: blocks}
-    chart: {kind: stacked_column, unit: blocks}
-
-  buffer_cache.relation_coverage:
-    title: Relation Cache Coverage
-    database_scope: current_database
-    source_query: buffer_cache.relation_coverage
-    requires_collection: every_snapshot
-    partition_by: [dimensions.relation]
-    series:
-      - {name_from_ref: dimensions.relation, value_ref: gauges.coverage_pct, transform: gauge, unit: "%"}
-    chart: {kind: column, unit: "%"}
-
-  buffer_cache.relation_residency_delta:
-    title: Relation Cache Residency Delta
-    database_scope: current_database
-    source_query: buffer_cache.relation_residency_delta
-    requires_collection: every_snapshot
-    partition_by: [dimensions.relation]
-    series:
-      - {name_from_ref: dimensions.relation, value_ref: gauges.cached_blocks, transform: difference, unit: blocks}
-    chart: {kind: stacked_column, unit: blocks}
-
-  buffer_cache.relation_kinds:
-    title: Cached Relation Kinds
-    database_scope: current_database
-    source_query: buffer_cache.relation_kinds
-    requires_collection: every_snapshot
-    partition_by: [dimensions.relation_kind]
-    series:
-      - {name_from_ref: dimensions.relation_kind, value_ref: gauges.cached_blocks, transform: gauge, unit: blocks}
     chart: {kind: stacked_column, unit: blocks}

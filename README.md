@@ -156,6 +156,11 @@ PostgreSQL target:
   recommended for complete activity/statistics visibility.
 - No extension is required for the core catalog, activity, locks, WAL,
   replication, storage, vacuum, index, and OS parts of the report.
+- `pg_buffercache` collection uses a one-second statement timeout, but that
+  guard is best-effort on PostgreSQL 10-12 and releases older than 13.23,
+  14.20, 15.15, 16.11, 17.7, or 18.1. Those server versions can complete the
+  extension's shared-buffer loop before observing cancellation; use a patched
+  minor release when collecting buffer-cache charts from a large buffer pool.
 
 Recommended users:
 
