@@ -20,6 +20,9 @@ in core dispatch, validation, or metric rendering.
 
 ## Documentation
 
+- [PostgreSQL access best practices](https://github.com/O2eg/pg_diag/blob/main/docs/access-best-practices.md) - secure
+  connection patterns, least-privilege accounts, SSH and TLS boundaries,
+  pooler caveats, and Patroni/HAProxy topologies.
 - [Content pack overview](https://github.com/O2eg/pg_diag/blob/main/src/pg_diag/content/README.md) - bundled report structure, SQL
   catalogs, host scripts, trusted Python sources, metrics, collection modes,
   and validation.
