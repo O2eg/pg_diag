@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pg-diag"
 version = "0.10.3"
-description = "Declarative PostgreSQL diagnostic report utility"
+description = "PostgreSQL diagnostics with host metrics and portable JSON/HTML reports"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT AND BSD-3-Clause AND Apache-2.0"
