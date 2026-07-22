@@ -293,14 +293,20 @@ def _validate_field_reference(content: ContentPack, issues: list[ValidationIssue
             )
             break
 
-    patterns = [path.split("/") for path in fields if path != "*"]
+    patterns_by_shape: dict[tuple[int, tuple[int, ...]], set[tuple[str, ...]]] = {}
+    for pattern in (path.split("/") for path in fields if path != "*"):
+        literal_indexes = tuple(index for index, segment in enumerate(pattern) if segment != "*")
+        shape = (len(pattern), literal_indexes)
+        patterns_by_shape.setdefault(shape, set()).add(
+            tuple(pattern[index] for index in literal_indexes)
+        )
     paths_requiring_help = _unified_document_paths(content.document).union(
         REQUIRED_RESOLVED_FIELD_REFERENCE_PATHS
     )
     missing = sorted(
         path
         for path in paths_requiring_help
-        if not any(_field_reference_pattern_matches(pattern, path.split("/")) for pattern in patterns)
+        if not _field_reference_patterns_match(patterns_by_shape, path.split("/"))
     )
     if missing:
         preview = ", ".join(missing[:8])
@@ -313,11 +319,16 @@ def _validate_field_reference(content: ContentPack, issues: list[ValidationIssue
         )
 
 
-def _field_reference_pattern_matches(pattern: list[str], path: list[str]) -> bool:
-    return len(pattern) == len(path) and all(
-        expected == "*" or expected == actual
-        for expected, actual in zip(pattern, path)
-    )
+def _field_reference_patterns_match(
+    patterns_by_shape: dict[tuple[int, tuple[int, ...]], set[tuple[str, ...]]],
+    path: list[str],
+) -> bool:
+    for (length, literal_indexes), literals in patterns_by_shape.items():
+        if length != len(path):
+            continue
+        if tuple(path[index] for index in literal_indexes) in literals:
+            return True
+    return False
 
 
 def _validate_presentation_catalog(

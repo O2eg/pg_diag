@@ -52,17 +52,20 @@ def _reference(root: Path) -> str:
     return value
 
 
-def _seed(root: Path) -> None:
+def _seed(root: Path) -> str | None:
     root = root.resolve()
     token = b""
+    revision: str | None = None
     try:
         expected = _reference(root)
         actual = _fold(root)
         if hmac.compare_digest(expected, actual):
             token = sha256(os.fsencode(root) + b"\0" + actual.encode("ascii")).digest()
+            revision = actual
     except (OSError, UnicodeError, ValueError):
         pass
     _SLOT.set((root, token))
+    return revision
 
 
 def _allows(path: Path) -> bool:

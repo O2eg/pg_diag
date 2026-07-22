@@ -15,7 +15,7 @@ concurrency:
 jobs:
   build:
     name: Test and build distributions
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
 
     steps:
@@ -29,7 +29,7 @@ jobs:
 
       - name: Install test and build dependencies
         run: |
-          python -m pip install --upgrade pip build twine
+          python -m pip install --upgrade 'pip>=24.3,<26' 'build>=1.2,<2' 'twine>=6,<7'
           python -m pip install --editable ".[test]"
 
       - name: Verify tag matches package version
@@ -83,7 +83,7 @@ jobs:
   publish:
     name: Publish distributions to PyPI
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment:
       name: pypi

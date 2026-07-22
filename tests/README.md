@@ -125,7 +125,10 @@ PYTHONDONTWRITEBYTECODE=1 \
 python -m pytest -q tests/integration
 ```
 
-Each major uses a cached image derived from an official PostgreSQL image:
+Each major uses a content-addressed cached image derived from an official PostgreSQL image.
+If the matching Dockerfile, major, and base tag are already present locally, the test skips
+`docker build` entirely; `PG_DIAG_DOCKER_PULL=1` deliberately forces a rebuild. PostgreSQL
+image selection is:
 PostgreSQL 10 uses `postgres:10-bullseye`, while PostgreSQL 11-18 use
 `postgres:<major>-bookworm`. The image installs OpenSSH, host inspection
 utilities, and the matching `postgresql-<major>-pg-wait-sampling` package. Set

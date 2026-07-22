@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pg-diag"
-version = "0.10.2"
+version = "0.10.3"
 description = "Declarative PostgreSQL diagnostic report utility"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,27 +31,29 @@ classifiers = [
   "Topic :: System :: Systems Administration",
 ]
 dependencies = [
-  "PyYAML>=6.0",
-  "asyncpg>=0.29",
+  "PyYAML>=6.0,<7",
+  "asyncpg>=0.29,<1",
   "asyncssh>=2.21,<3",
 ]
 
 [project.optional-dependencies]
 test = [
-  "pytest>=7.4",
+  "pytest>=7.4,<9",
   "tomli>=2.0; python_version < '3.11'",
 ]
 dev = [
-  "pytest>=7.4",
-  "pytest-cov>=4.1",
-  "ruff>=0.5",
+  "build>=1.2,<2",
+  "pytest>=7.4,<9",
+  "pytest-cov>=4.1,<8",
+  "ruff>=0.5,<0.6",
   "tomli>=2.0; python_version < '3.11'",
+  "twine>=6,<7",
 ]
 browser = [
-  "playwright>=1.45",
+  "playwright>=1.45,<2",
 ]
 docker = [
-  "docker>=7.1",
+  "docker>=7.1,<8",
 ]
 
 [project.scripts]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -136,8 +137,20 @@ def wait_for_tcp(host: str, port: int) -> None:
 
 
 def build_integration_image(major: int) -> str:
-    image = f"pg-diag-integration-pg{major}:local"
     image_tag = f"{major}-bullseye" if major == 10 else f"{major}-bookworm"
+    dockerfile = DOCKER_CONTEXT / "Dockerfile"
+    digest = sha256()
+    digest.update(dockerfile.read_bytes())
+    digest.update(b"\0")
+    digest.update(str(major).encode("ascii"))
+    digest.update(b"\0")
+    digest.update(image_tag.encode("ascii"))
+    image = f"pg-diag-integration-pg{major}:sha-{digest.hexdigest()[:16]}"
+    force_build = os.environ.get("PG_DIAG_DOCKER_PULL", "").lower() in TRUE_VALUES
+    if not force_build:
+        inspected = run(["docker", "image", "inspect", image], check=False)
+        if inspected.returncode == 0:
+            return image
     command = [
         "docker",
         "build",
@@ -149,7 +162,7 @@ def build_integration_image(major: int) -> str:
         image,
         str(DOCKER_CONTEXT),
     ]
-    if os.environ.get("PG_DIAG_DOCKER_PULL", "").lower() in TRUE_VALUES:
+    if force_build:
         command.insert(2, "--pull")
     run(command, timeout=900)
     return image

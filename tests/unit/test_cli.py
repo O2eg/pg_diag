@@ -46,6 +46,10 @@ def test_machine_capabilities_use_versioned_envelope(repo_root: Path) -> None:
     assert payload["request_id"] == "diag-capabilities"
     assert payload["status"] == "succeeded"
     assert payload["result"]["contract_version"] == "pg_play/component/v1"
+    assert payload["result"]["capability_schema_version"] == "pg_play/capabilities/v1"
+    assert (
+        payload["result"]["machine_interface"]["capabilities_option"] == "--component-capabilities"
+    )
 
 
 def test_machine_plumbing_is_hidden_from_human_help(repo_root: Path) -> None:
@@ -146,9 +150,12 @@ def test_strip_meta_cli_is_opt_in_for_report_and_render_commands() -> None:
     assert parser.parse_args(["one-shot"]).strip_meta is False
     assert parser.parse_args(["one-shot", "--strip-meta"]).strip_meta is True
     assert parser.parse_args(["snapshots", "--strip-meta"]).strip_meta is True
-    assert parser.parse_args(
-        ["render", "--from-json", "report.json", "--out", "report.html", "--strip-meta"]
-    ).strip_meta is True
+    assert (
+        parser.parse_args(
+            ["render", "--from-json", "report.json", "--out", "report.html", "--strip-meta"]
+        ).strip_meta
+        is True
+    )
 
 
 @pytest.mark.parametrize("value", ["xml", "[html,pdf]", "[json,json]", "[]"])
@@ -321,9 +328,12 @@ def test_explain_plan_remote_mode_plans_host_sources(repo_root: Path) -> None:
     )
 
     assert proc.returncode == 0, proc.stderr + proc.stdout
-    kernel_line = next(line for line in proc.stdout.splitlines() if line.startswith("os.kernel_version\t"))
+    kernel_line = next(
+        line for line in proc.stdout.splitlines() if line.startswith("os.kernel_version\t")
+    )
     os_chart_line = next(
-        line for line in proc.stdout.splitlines()
+        line
+        for line in proc.stdout.splitlines()
         if line.startswith("snapshot_charts_os.os_cpu_utilization\t")
     )
     assert "\tplanned\t" in kernel_line

@@ -13,6 +13,12 @@ pg-diag --machine --request-id diag-003 validate-artifact report.json
 pg-diag --machine --request-id diag-004 summarize report.json
 ```
 
+The capability document uses `pg_play/capabilities/v1`. Every command declares
+the common boolean fields `mutates_target`, `machine_output`, and
+`accepts_plan_hash`.
+Its `machine_interface` object records the canonical machine, request-id, and
+capability option names.
+
 One-shot and snapshots collection commands also return the common machine
 envelope. Report files are described by paths and SHA-256 hashes. Partial
 collection remains `partial`; it is not promoted to success merely because a

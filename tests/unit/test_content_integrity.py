@@ -83,3 +83,14 @@ def test_internal_rebase_accepts_deliberate_content_update(
     assert index == copied / "integrity.sha256"
     assert index.stat().st_mode & 0o777 == 0o600
     assert load_content(copied).path == copied.resolve()
+
+
+def test_cached_content_loads_do_not_share_mutable_catalogs(content_path: Path) -> None:
+    first = load_content(content_path)
+    first.report["mutated_by_caller"] = True
+    first.queries["cluster.settings"]["mutated_by_caller"] = True
+
+    second = load_content(content_path)
+
+    assert "mutated_by_caller" not in second.report
+    assert "mutated_by_caller" not in second.queries["cluster.settings"]

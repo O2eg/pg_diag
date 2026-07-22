@@ -14,6 +14,12 @@ from .artifact_schema import validate_artifact
 from .errors import ValidationError
 
 CONTRACT_VERSION = "pg_play/component/v1"
+CAPABILITY_SCHEMA_VERSION = "pg_play/capabilities/v1"
+MACHINE_INTERFACE = {
+    "machine_flag": "--machine",
+    "request_id_option": "--request-id",
+    "capabilities_option": "--component-capabilities",
+}
 COMPONENT = "pg_diag"
 
 EXIT_CODES = {
@@ -130,17 +136,52 @@ def summarize_execution_plan(plan: dict[str, Any]) -> dict[str, Any]:
 
 def capabilities() -> dict[str, Any]:
     return {
+        "capability_schema_version": CAPABILITY_SCHEMA_VERSION,
+        "machine_interface": MACHINE_INTERFACE,
         "contract_version": CONTRACT_VERSION,
         "component": COMPONENT,
         "component_version": __version__,
         "commands": {
-            "validate": {"mutates_target": False, "machine_output": True},
-            "explain-plan": {"mutates_target": False, "machine_output": True},
-            "one-shot": {"mutates_target": False, "machine_output": True},
-            "snapshots": {"mutates_target": False, "machine_output": True},
-            "validate-artifact": {"mutates_target": False, "machine_output": True},
-            "summarize": {"mutates_target": False, "machine_output": True},
-            "render": {"mutates_target": False, "machine_output": True},
+            "capabilities": {
+                "mutates_target": False,
+                "machine_output": True,
+                "accepts_plan_hash": False,
+            },
+            "validate": {
+                "mutates_target": False,
+                "machine_output": True,
+                "accepts_plan_hash": False,
+            },
+            "explain-plan": {
+                "mutates_target": False,
+                "machine_output": True,
+                "accepts_plan_hash": False,
+            },
+            "one-shot": {
+                "mutates_target": False,
+                "machine_output": True,
+                "accepts_plan_hash": False,
+            },
+            "snapshots": {
+                "mutates_target": False,
+                "machine_output": True,
+                "accepts_plan_hash": False,
+            },
+            "validate-artifact": {
+                "mutates_target": False,
+                "machine_output": True,
+                "accepts_plan_hash": False,
+            },
+            "summarize": {
+                "mutates_target": False,
+                "machine_output": True,
+                "accepts_plan_hash": False,
+            },
+            "render": {
+                "mutates_target": False,
+                "machine_output": True,
+                "accepts_plan_hash": False,
+            },
         },
         "artifact_schema_versions": [runtime_config.ARTIFACT_SCHEMA_VERSION],
         "summary_schema_versions": ["pg_diag/summary-v1"],

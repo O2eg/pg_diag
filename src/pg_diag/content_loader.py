@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,7 @@ from ._content_state import _allows, _seed
 from .errors import ContentIntegrityError, ContentLoadError
 
 
-class UniqueKeySafeLoader(yaml.SafeLoader):
+class UniqueKeySafeLoader(getattr(yaml, "CSafeLoader", yaml.SafeLoader)):
     """PyYAML safe loader that rejects duplicate mapping keys."""
 
 
@@ -300,7 +301,21 @@ def load_content(content_path: str | Path) -> ContentPack:
     if not root.is_dir():
         raise ContentLoadError(f"Content path must be a directory: {root}")
 
-    _seed(root)
+    revision = _seed(root)
+    if revision is None:
+        # Preserve the normal integrity error path without admitting any file
+        # from an invalid content root.
+        load_yaml_file(root / "report.yaml")
+        raise ContentIntegrityError
+    return deepcopy(_load_content_revision(root, revision))
+
+
+@lru_cache(maxsize=8)
+def _load_content_revision(root: Path, revision: str) -> ContentPack:
+    # The revision is deliberately part of the cache key. Integrity is checked
+    # before every public load, so changed and deliberately rebased content can
+    # never reuse a stale parsed pack.
+    del revision
     report_path = root / "report.yaml"
     report = load_yaml_file(report_path)
     report_meta = _mapping(report.get("report"), "report.yaml:report")
