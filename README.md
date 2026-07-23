@@ -1166,6 +1166,20 @@ The normal collection and report CLI remains human-oriented. Authors of
 `pg_play`-compatible orchestrators can use the separate
 [versioned machine contract](docs/pg_play-integration.md).
 
+For configuration review automation, extract a compact, content-addressed
+facts artifact from an existing validated report:
+
+```bash
+pg-diag configuration-facts report.json --out configuration-facts.json
+```
+
+The `pg_diag/configuration-facts-v1` contract contains PostgreSQL version,
+database size, effective `pg_settings`, installed extensions, CPU topology,
+RAM, filesystems, mounts, disks, source-report provenance, and collection
+completeness. It contains no connection credentials and does not recommend or
+apply settings. The packaged JSON Schema is
+`pg_diag/schema/configuration-facts-v1.schema.json`.
+
 ## Development
 
 Run the test suite:

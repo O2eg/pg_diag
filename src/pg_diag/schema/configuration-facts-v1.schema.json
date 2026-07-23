@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://o2eg.github.io/pg_diag/schema/configuration-facts-v1.schema.json",
+  "title": "pg_diag configuration facts",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "generator",
+    "source_artifact",
+    "collected_at",
+    "postgresql",
+    "host",
+    "collection",
+    "facts_hash"
+  ],
+  "properties": {
+    "schema_version": {"const": "pg_diag/configuration-facts-v1"},
+    "kind": {"const": "PostgreSQLConfigurationFacts"},
+    "generator": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {"name": {"const": "pg_diag"}, "version": {"type": "string"}}
+    },
+    "source_artifact": {
+      "type": "object",
+      "required": ["path", "schema_version", "hash"],
+      "properties": {
+        "path": {"type": ["string", "null"]},
+        "schema_version": {},
+        "hash": {"type": "string", "pattern": "^sha256:"}
+      }
+    },
+    "collected_at": {"type": ["string", "null"]},
+    "postgresql": {
+      "type": "object",
+      "required": ["version", "version_num", "major", "database_size_bytes", "database_sizes", "settings", "installed_extensions", "available_extensions"],
+      "properties": {
+        "version": {"type": ["string", "null"]},
+        "version_num": {"type": ["integer", "null"]},
+        "major": {"type": ["string", "null"]},
+        "database_size_bytes": {"type": ["integer", "null"], "minimum": 0},
+        "database_sizes": {"type": "array", "items": {"type": "object"}},
+        "settings": {"type": "object", "additionalProperties": {"type": "object"}},
+        "installed_extensions": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "available_extensions": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      }
+    },
+    "host": {
+      "type": "object",
+      "required": ["cpu_cores", "cpu", "ram_bytes", "filesystems", "mounts", "disks"],
+      "properties": {
+        "cpu_cores": {"type": ["integer", "null"], "minimum": 1},
+        "cpu": {"type": "object"},
+        "ram_bytes": {"type": ["integer", "null"], "minimum": 1},
+        "filesystems": {"type": "array", "items": {"type": "object"}},
+        "mounts": {"type": ["string", "null"]},
+        "disks": {"type": "array", "items": {"type": "object"}}
+      }
+    },
+    "collection": {
+      "type": "object",
+      "required": ["item_ids", "critical_item_ids", "missing_item_ids", "failed_item_ids", "invalid_item_ids", "usable"],
+      "properties": {
+        "item_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "critical_item_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "missing_item_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "failed_item_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "invalid_item_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "usable": {"type": "boolean"}
+      }
+    },
+    "facts_hash": {"type": "string", "pattern": "^sha256:"}
+  }
+}

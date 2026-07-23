@@ -251,6 +251,10 @@ def _parse_legacy_lshw_json(text: str) -> Any:
         r"\1}, {",
         repaired,
     )
+    # A filtered parent with several matching children can leave the original
+    # parent terminator between the flattened last child and the next record.
+    # Keep the child terminator and discard only that orphaned parent marker.
+    repaired = re.sub(r"}\s*,\s*}\s*,\s*{", "}, {", repaired)
     repaired = re.sub(r",\s*}\s*]\s*$", "\n]", repaired)
     repaired = re.sub(r",\s*]\s*$", "\n]", repaired)
     return json.loads(repaired)

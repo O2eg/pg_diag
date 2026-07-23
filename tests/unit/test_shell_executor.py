@@ -206,6 +206,36 @@ def test_table_json_parser_repairs_lshw_0218_empty_class() -> None:
     assert result == {"kind": "table", "columns": [], "rows": [], "row_count": 0}
 
 
+def test_table_json_parser_repairs_lshw_0218_filtered_children() -> None:
+    result = table_json_result(
+        """
+        [
+          {
+            "id" : "pci:0",
+            "class" : "bridge",
+            "clock" : 33000000      {
+              "id" : "pci:0",
+              "class" : "bridge"
+            },
+            {
+              "id" : "isa",
+              "class" : "bridge"
+            },
+
+          },
+          {
+            "id" : "pci:1",
+            "class" : "bridge"
+          }
+        ]
+        """,
+        repair_legacy_lshw=True,
+    )
+
+    assert result["row_count"] == 4
+    assert [row[0] for row in result["rows"]] == ["pci:0", "pci:0", "isa", "pci:1"]
+
+
 def test_table_json_parser_does_not_repair_unrelated_invalid_json() -> None:
     with pytest.raises(ValueError, match="cannot parse shell JSON output"):
         table_json_result('{"broken": }', repair_legacy_lshw=True)

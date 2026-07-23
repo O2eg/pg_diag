@@ -13,8 +13,9 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__, runtime_config
-from .artifact import artifact_has_errors, report_output_paths
+from .artifact import artifact_has_errors, report_output_paths, write_text_secure
 from .content_loader import ContentPack, iter_report_items, load_content
+from .configuration_facts import extract_configuration_facts
 from .errors import ContentIntegrityError, PgDiagError
 from .orchestration import (
     EXIT_CODES,
@@ -102,6 +103,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     summarize_parser.add_argument("artifact")
     summarize_parser.set_defaults(func=cmd_summarize)
+
+    facts_parser = subparsers.add_parser(
+        "configuration-facts",
+        help="Extract configuration-tuning facts from a report artifact",
+    )
+    facts_parser.add_argument("artifact")
+    facts_parser.add_argument("--out", help="Write the facts artifact to this exact path")
+    facts_parser.set_defaults(func=cmd_configuration_facts)
 
     validate_parser = subparsers.add_parser("validate", help="Validate content pack")
     _add_content_arg(validate_parser)
@@ -668,6 +677,12 @@ def _machine_artifacts(args: argparse.Namespace) -> list[dict[str, Any]]:
     paths: list[tuple[str, str | None, Path]] = []
     if args.command in {"validate-artifact", "summarize"}:
         paths.append(("DiagnosticReport", None, Path(args.artifact)))
+    elif args.command == "configuration-facts":
+        paths.append(("DiagnosticReport", None, Path(args.artifact)))
+        if args.out:
+            paths.append(
+                ("PostgreSQLConfigurationFacts", "pg_diag/configuration-facts-v1", Path(args.out))
+            )
     elif args.command == "render":
         paths.append(("DiagnosticReportHtml", None, Path(args.out)))
     elif args.command in {"one-shot", "snapshots"}:
@@ -789,7 +804,11 @@ def _run_machine(args: argparse.Namespace) -> int:
         )
         return EXIT_CODES["validation_error"]
     except PgDiagError as exc:
-        code = "validation_error" if args.command == "validate-artifact" else "execution_error"
+        code = (
+            "validation_error"
+            if args.command in {"validate-artifact", "configuration-facts"}
+            else "execution_error"
+        )
         _emit_machine(
             args,
             "failed",
@@ -945,6 +964,16 @@ def cmd_render(args: argparse.Namespace) -> int:
         print(f"ERROR: render failed: {redact_error(exc)}", file=sys.stderr)
         return 1
     print(f"Wrote {args.out}")
+    return 0
+
+
+def cmd_configuration_facts(args: argparse.Namespace) -> int:
+    facts = extract_configuration_facts(load_artifact(args.artifact), source_path=args.artifact)
+    output = json.dumps(facts, indent=2, sort_keys=True) + "\n"
+    if args.out:
+        destination = Path(args.out).expanduser().resolve()
+        write_text_secure(destination, output)
+    print(output, end="")
     return 0
 
 

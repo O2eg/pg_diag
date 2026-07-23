@@ -11,6 +11,8 @@ pg-diag --machine --request-id diag-002 explain-plan \
   --pg-version 180000 --run-mode snapshots --collection-mode remote-db-only
 pg-diag --machine --request-id diag-003 validate-artifact report.json
 pg-diag --machine --request-id diag-004 summarize report.json
+pg-diag --machine --request-id diag-005 configuration-facts report.json \
+  --out configuration-facts.json
 ```
 
 The capability document uses `pg_play/capabilities/v1`. Every command declares
@@ -27,3 +29,9 @@ JSON artifact exists.
 `summarize` validates the artifact schema before returning deterministic
 counts, completeness, severities, collection statuses, and snapshot count.
 It does not interpret findings or apply remediation.
+
+`configuration-facts` validates the source report and extracts the stable
+`pg_diag/configuration-facts-v1` subset used by configuration tools. The facts
+artifact preserves its source hash and item completeness. Missing CPU, RAM,
+server-version, or `pg_settings` items make `collection.usable` false instead
+of silently substituting host-local defaults.

@@ -177,6 +177,11 @@ def capabilities() -> dict[str, Any]:
                 "machine_output": True,
                 "accepts_plan_hash": False,
             },
+            "configuration-facts": {
+                "mutates_target": False,
+                "machine_output": True,
+                "accepts_plan_hash": False,
+            },
             "render": {
                 "mutates_target": False,
                 "machine_output": True,
@@ -185,6 +190,7 @@ def capabilities() -> dict[str, Any]:
         },
         "artifact_schema_versions": [runtime_config.ARTIFACT_SCHEMA_VERSION],
         "summary_schema_versions": ["pg_diag/summary-v1"],
+        "configuration_facts_schema_versions": ["pg_diag/configuration-facts-v1"],
         "plan_summary_schema_versions": ["pg_diag/plan-summary-v1"],
         "content_schema_versions": [runtime_config.SUPPORTED_CONTENT_SCHEMA_VERSION],
         "postgresql_server_version_num": {

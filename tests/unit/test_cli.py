@@ -63,6 +63,23 @@ def test_machine_plumbing_is_hidden_from_human_help(repo_root: Path) -> None:
     assert "summarize" in proc.stdout
 
 
+def test_machine_configuration_facts_classifies_invalid_report_as_validation_error(
+    repo_root: Path,
+) -> None:
+    proc = run_cli(
+        repo_root,
+        "--machine",
+        "--request-id=invalid-configuration-facts",
+        "configuration-facts",
+        "/dev/null",
+    )
+
+    payload = json.loads(proc.stdout)
+    assert proc.returncode == 2
+    assert payload["status"] == "failed"
+    assert payload["error"]["code"] == "validation_error"
+
+
 def test_bundled_content_default_is_independent_of_working_directory(
     repo_root: Path,
     tmp_path: Path,
