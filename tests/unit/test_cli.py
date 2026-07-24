@@ -127,6 +127,31 @@ def test_list_queries_cli(repo_root: Path) -> None:
     assert "database_stats_pg15_plus" in proc.stdout
 
 
+def test_list_items_cli_includes_tags_as_fourth_column(repo_root: Path) -> None:
+    proc = run_cli(repo_root, "list-items")
+
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    by_item_id = {
+        columns[0]: columns
+        for line in proc.stdout.splitlines()
+        if len(columns := line.split("\t")) == 4
+    }
+    assert by_item_id["overview.server_version"] == [
+        "overview.server_version",
+        "query",
+        "cluster.server_version",
+        "Configuration",
+    ]
+    assert by_item_id["backend_os.postgres_main_process_linked_libraries"] == [
+        "backend_os.postgres_main_process_linked_libraries",
+        "python",
+        "backend.postgres_main_process_linked_libraries",
+        "Processes,Configuration",
+    ]
+    assert len(by_item_id) == len(proc.stdout.splitlines())
+    assert not proc.stderr
+
+
 def test_report_selection_cli_parses_scalar_and_array_forms() -> None:
     parser = build_parser()
 
@@ -219,8 +244,8 @@ def test_report_selection_cli_rejects_item_and_tag_filter_together(repo_root: Pa
     assert "not allowed with argument" in proc.stderr
 
 
-def test_tags_list_does_not_require_database_connection(repo_root: Path) -> None:
-    proc = run_cli(repo_root, "one-shot", "--tags-list")
+def test_list_tags_does_not_require_database_connection(repo_root: Path) -> None:
+    proc = run_cli(repo_root, "one-shot", "--list-tags")
 
     assert proc.returncode == 0, proc.stderr + proc.stdout
     tags = proc.stdout.splitlines()
@@ -284,6 +309,69 @@ def test_report_selection_cli_rejects_unknown_tag_before_connecting(
     assert proc.returncode == 2
     assert "Unknown report tag(s): missing" in proc.stderr
     assert not out_dir.exists()
+
+
+def test_one_shot_host_only_item_does_not_require_database_connection(
+    repo_root: Path,
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "host-only"
+
+    proc = run_cli(
+        repo_root,
+        "one-shot",
+        "--collection-mode",
+        "local",
+        "--item-id=os.kernel_version",
+        "--output-format=json",
+        "--out",
+        str(out_dir),
+    )
+
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    artifact = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+    assert artifact["runtime"]["targets"] == ["host"]
+    assert artifact["runtime"]["database_connected"] is False
+    assert artifact["runtime"]["server_version_num"] is None
+    assert artifact["items"]["os.kernel_version"]["targets"] == ["host"]
+
+
+def test_one_shot_database_item_still_requires_connection_parameters(
+    repo_root: Path,
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "db-only"
+
+    proc = run_cli(
+        repo_root,
+        "one-shot",
+        "--collection-mode",
+        "local",
+        "--item-id=overview.pg_settings",
+        "--out",
+        str(out_dir),
+    )
+
+    assert proc.returncode == 2
+    assert "selected items require database connection" in proc.stderr
+    assert "overview.pg_settings" in proc.stderr
+    assert not out_dir.exists()
+
+
+def test_remote_host_only_item_requires_ssh_but_not_database_parameters(
+    repo_root: Path,
+) -> None:
+    proc = run_cli(
+        repo_root,
+        "one-shot",
+        "--collection-mode",
+        "remote",
+        "--item-id=os.kernel_version",
+    )
+
+    assert proc.returncode == 2
+    assert "remote collection requires --ssh-host, --ssh-user, --ssh-key" in proc.stderr
+    assert "database connection" not in proc.stderr
 
 
 def test_explain_plan_cli(repo_root: Path) -> None:

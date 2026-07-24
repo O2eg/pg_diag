@@ -50,6 +50,7 @@ metrics:
   os.cpu_utilization:
     title: CPU Utilization
     source_sampler: os.cpu
+    targets: [host]
     series:
       - name: user
         value_ref: user_pct
@@ -84,6 +85,7 @@ metrics:
   os.cpu_load:
     title: CPU Load Average
     source_sampler: os.cpu
+    targets: [host]
     series:
       - name: load1
         value_ref: load1
@@ -104,6 +106,7 @@ metrics:
   os.memory_usage:
     title: Memory Usage
     source_sampler: os.memory
+    targets: [host]
     series:
       - name: Application memory
         value_ref: application_bytes
@@ -163,6 +166,7 @@ metrics:
   os.memory_pressure:
     title: RAM And Swap Usage
     source_sampler: os.memory
+    targets: [host]
     series:
       - name: RAM used
         value_ref: used_pct
@@ -179,6 +183,7 @@ metrics:
   os.disk_read_throughput:
     title: Disk Read Throughput
     source_sampler: os.disk
+    targets: [host]
     partition_by:
       - device
     series:
@@ -193,6 +198,7 @@ metrics:
   os.disk_write_throughput:
     title: Disk Write Throughput
     source_sampler: os.disk
+    targets: [host]
     partition_by:
       - device
     series:
@@ -207,6 +213,7 @@ metrics:
   os.disk_iops:
     title: Disk IOPS
     source_sampler: os.disk
+    targets: [host]
     partition_by:
       - device
     series:
@@ -225,6 +232,7 @@ metrics:
   os.disk_utilization:
     title: Disk Utilization
     source_sampler: os.disk
+    targets: [host]
     partition_by:
       - device
     series:
@@ -239,6 +247,7 @@ metrics:
   os.disk_latency:
     title: Disk Latency
     source_sampler: os.disk
+    targets: [host]
     partition_by:
       - device
     series:
@@ -261,6 +270,7 @@ metrics:
   os.network_receive_throughput:
     title: Network Receive Throughput
     source_sampler: os.network
+    targets: [host]
     partition_by:
       - interface
     series:
@@ -275,6 +285,7 @@ metrics:
   os.network_transmit_throughput:
     title: Network Transmit Throughput
     source_sampler: os.network
+    targets: [host]
     partition_by:
       - interface
     series:
@@ -289,6 +300,7 @@ metrics:
   os.network_packets:
     title: Network Packets
     source_sampler: os.network
+    targets: [host]
     partition_by:
       - interface
     series:
@@ -308,6 +320,7 @@ metrics:
     title: Database Transaction Rate
     database_scope: all_databases
     source_query: metrics.database_transaction_rate
+    targets: [db]
     requires_collection: every_snapshot
     partition_by:
       - dimensions.database
@@ -328,6 +341,7 @@ metrics:
     title: Sessions By State
     database_scope: all_databases
     source_query: metrics.activity_sessions_by_state
+    targets: [db]
     requires_collection: every_snapshot
     partition_by:
       - dimensions.database
@@ -344,6 +358,7 @@ metrics:
   wal.growth_rate:
     title: WAL Growth Rate
     source_query: metrics.wal_growth_rate
+    targets: [db]
     requires_collection: every_snapshot
     partition_by:
       - dimensions.scope
@@ -359,6 +374,7 @@ metrics:
   io.read_write_rate:
     title: I/O Read And Write Rate
     source_query: metrics.io_read_write_rate
+    targets: [db]
     requires_collection: every_snapshot
     partition_by:
       - dimensions.backend_type
@@ -381,6 +397,7 @@ metrics:
     title: Database Tuple DML Rate
     database_scope: all_databases
     source_query: metrics.database_tuple_dml_rate
+    targets: [db]
     requires_collection: every_snapshot
     partition_by:
       - dimensions.database
@@ -405,6 +422,7 @@ metrics:
     title: Database Tuple Access Rate
     database_scope: all_databases
     source_query: metrics.database_tuple_access_rate
+    targets: [db]
     requires_collection: every_snapshot
     partition_by:
       - dimensions.database
@@ -425,6 +443,7 @@ metrics:
     title: Database Block Access Rate
     database_scope: all_databases
     source_query: metrics.database_block_access_rate
+    targets: [db]
     requires_collection: every_snapshot
     partition_by:
       - dimensions.database
@@ -445,6 +464,7 @@ metrics:
     title: Database Temp Files Delta
     database_scope: all_databases
     source_query: metrics.database_temp_files_delta
+    targets: [db]
     requires_collection: every_snapshot
     partition_by:
       - dimensions.database
@@ -461,6 +481,7 @@ metrics:
     title: Database Temp Bytes Rate
     database_scope: all_databases
     source_query: metrics.database_temp_bytes_rate
+    targets: [db]
     requires_collection: every_snapshot
     partition_by:
       - dimensions.database
@@ -477,6 +498,7 @@ metrics:
     title: Database I/O Time Rate
     database_scope: all_databases
     source_query: metrics.database_io_time_rate
+    targets: [db]
     requires_collection: every_snapshot
     partition_by:
       - dimensions.database
@@ -497,6 +519,7 @@ metrics:
     title: Database Backends
     database_scope: all_databases
     source_query: metrics.database_backends
+    targets: [db]
     requires_collection: every_snapshot
     partition_by:
       - dimensions.database
@@ -513,6 +536,7 @@ metrics:
     title: Database Deadlocks
     database_scope: all_databases
     source_query: metrics.database_deadlocks
+    targets: [db]
     requires_collection: every_snapshot
     partition_by:
       - dimensions.database
@@ -529,6 +553,7 @@ metrics:
     title: Top Tables By Tuple Access Rate
     database_scope: current_database
     source_query: metrics.objects_tables_top_tuple_access_rate
+    targets: [db]
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -546,6 +571,7 @@ metrics:
     title: Top Tables By Sequential Tuple Read Rate
     database_scope: current_database
     source_query: metrics.objects_tables_top_seq_read_rate
+    targets: [db]
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -563,6 +589,7 @@ metrics:
     title: Top Tables By Index Fetch Rate
     database_scope: current_database
     source_query: metrics.objects_tables_top_index_fetch_rate
+    targets: [db]
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -580,6 +607,7 @@ metrics:
     title: Top Tables By DML Rate
     database_scope: current_database
     source_query: metrics.objects_tables_top_dml_rate
+    targets: [db]
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -597,6 +625,7 @@ metrics:
     title: Top Tables By Insert Rate
     database_scope: current_database
     source_query: metrics.objects_tables_top_insert_rate
+    targets: [db]
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -614,6 +643,7 @@ metrics:
     title: Top Tables By Update Rate
     database_scope: current_database
     source_query: metrics.objects_tables_top_update_rate
+    targets: [db]
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -631,6 +661,7 @@ metrics:
     title: Top Tables By Delete Rate
     database_scope: current_database
     source_query: metrics.objects_tables_top_delete_rate
+    targets: [db]
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -648,6 +679,7 @@ metrics:
     title: Top Tables By HOT Update Rate
     database_scope: current_database
     source_query: metrics.objects_tables_top_hot_update_rate
+    targets: [db]
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -665,6 +697,7 @@ metrics:
     title: Top Tables By Heap Block Read Rate
     database_scope: current_database
     source_query: metrics.objects_tables_top_heap_read_rate
+    targets: [db]
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -682,6 +715,7 @@ metrics:
     title: Top Tables By Index Block Read Rate
     database_scope: current_database
     source_query: metrics.objects_tables_top_index_block_read_rate
+    targets: [db]
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -699,6 +733,7 @@ metrics:
     title: Top Indexes By Scan Rate
     database_scope: current_database
     source_query: metrics.objects_indexes_top_scan_rate
+    targets: [db]
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -716,6 +751,7 @@ metrics:
     title: Top Indexes By Tuple Read Rate
     database_scope: current_database
     source_query: metrics.objects_indexes_top_tuple_read_rate
+    targets: [db]
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -733,6 +769,7 @@ metrics:
     title: Top Indexes By Tuple Fetch Rate
     database_scope: current_database
     source_query: metrics.objects_indexes_top_tuple_fetch_rate
+    targets: [db]
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -750,6 +787,7 @@ metrics:
     title: Top Indexes By Tuples Read Per Scan
     database_scope: current_database
     source_query: metrics.objects_indexes_top_reads_per_scan
+    targets: [db]
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -769,6 +807,7 @@ metrics:
     title: Top Indexes By Heap Fetches Per Scan
     database_scope: current_database
     source_query: metrics.objects_indexes_top_fetches_per_scan
+    targets: [db]
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -788,6 +827,7 @@ metrics:
     title: Top Indexes By Tuples Read Per Heap Fetch
     database_scope: current_database
     source_query: metrics.objects_indexes_top_reads_per_fetch
+    targets: [db]
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -807,6 +847,7 @@ metrics:
     title: Database Workload Delta
     database_scope: all_databases
     source_query: metrics.database_workload_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -920,6 +961,7 @@ metrics:
     title: SQL Kernel CPU Delta
     database_scope: current_database
     source_query: metrics.sql_kernel_cpu_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display: {default_sort: {column: cpu_seconds_per_sec, direction: desc}}
@@ -945,6 +987,7 @@ metrics:
     title: SQL Filesystem I/O Delta
     database_scope: current_database
     source_query: metrics.sql_filesystem_io_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display: {default_sort: {column: filesystem_bytes_per_sec, direction: desc}}
@@ -972,6 +1015,7 @@ metrics:
     title: SQL CPU Efficiency Delta
     database_scope: current_database
     source_query: metrics.sql_cpu_efficiency_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display: {default_sort: {column: cpu_seconds_per_sec, direction: desc}}
@@ -1000,6 +1044,7 @@ metrics:
     title: SQL Context Switches Delta
     database_scope: current_database
     source_query: metrics.sql_context_switches_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display: {default_sort: {column: involuntary_switches_per_sec, direction: desc}}
@@ -1027,6 +1072,7 @@ metrics:
     title: SQL Page Faults Delta
     database_scope: current_database
     source_query: metrics.sql_page_faults_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display: {default_sort: {column: major_faults_delta, direction: desc}}
@@ -1054,6 +1100,7 @@ metrics:
     title: SQL I/O Attribution Delta
     database_scope: current_database
     source_query: metrics.sql_io_attribution_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display: {default_sort: {column: filesystem_bytes_per_sec, direction: desc}}
@@ -1085,6 +1132,7 @@ metrics:
     title: SQL Planning Kernel Delta
     database_scope: current_database
     source_query: metrics.sql_planning_kernel_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display: {default_sort: {column: planning_cpu_seconds_per_sec, direction: desc}}
@@ -1117,6 +1165,7 @@ metrics:
     title: Database Kernel CPU Rate
     database_scope: all_databases
     source_query: metrics.database_kernel_cpu_rate
+    targets: [db]
     requires_collection: every_snapshot
     partition_by: [dimensions.database]
     epoch_refs: [dimensions.kcache_stats_since]
@@ -1129,6 +1178,7 @@ metrics:
     title: Database Filesystem I/O Rate
     database_scope: all_databases
     source_query: metrics.database_filesystem_io_rate
+    targets: [db]
     requires_collection: every_snapshot
     partition_by: [dimensions.database]
     epoch_refs: [dimensions.kcache_stats_since]
@@ -1141,6 +1191,7 @@ metrics:
     title: Database Page Fault Rate
     database_scope: all_databases
     source_query: metrics.database_page_fault_rate
+    targets: [db]
     requires_collection: every_snapshot
     partition_by: [dimensions.database]
     epoch_refs: [dimensions.kcache_stats_since]
@@ -1153,6 +1204,7 @@ metrics:
     title: SQL Time Delta
     database_scope: current_database
     source_query: metrics.statements_total_time_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -1216,6 +1268,7 @@ metrics:
     title: SQL Shared I/O Delta
     database_scope: current_database
     source_query: metrics.statements_io_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -1283,6 +1336,7 @@ metrics:
     title: SQL WAL Delta
     database_scope: current_database
     source_query: metrics.statements_wal_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -1342,6 +1396,7 @@ metrics:
     title: Table DML Delta
     database_scope: current_database
     source_query: metrics.objects_table_dml_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -1405,6 +1460,7 @@ metrics:
     title: Table Scan Delta
     database_scope: current_database
     source_query: metrics.objects_table_scan_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -1481,6 +1537,7 @@ metrics:
     title: Table I/O Delta
     database_scope: current_database
     source_query: metrics.objects_table_io_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -1540,6 +1597,7 @@ metrics:
     title: Index Usage Delta
     database_scope: current_database
     source_query: metrics.objects_index_usage_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -1607,6 +1665,7 @@ metrics:
     title: Function Time Delta
     database_scope: current_database
     source_query: metrics.objects_function_time_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -1666,6 +1725,7 @@ metrics:
     title: Wait Event Sample Profile
     database_scope: all_databases
     source_query: metrics.activity_wait_sample_profile
+    targets: [db]
     requires_collection: every_snapshot
     top_n:
       mode: interval
@@ -1682,6 +1742,7 @@ metrics:
   backend.proc_cpu_top:
     title: PostgreSQL Backend /proc CPU
     source_sampler: os.backend_proc
+    targets: [host]
     requires_collection: window_endpoints
     result: table
     display:
@@ -1720,6 +1781,7 @@ metrics:
   backend.proc_io_top:
     title: PostgreSQL Backend /proc I/O
     source_sampler: os.backend_proc
+    targets: [host]
     requires_collection: window_endpoints
     result: table
     display:
@@ -1764,6 +1826,7 @@ metrics:
     title: SQL Temp I/O Delta
     database_scope: current_database
     source_query: metrics.statements_temp_io_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -1791,6 +1854,7 @@ metrics:
     title: PostgreSQL I/O Delta
     database_scope: all_databases
     source_query: metrics.io_activity_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -1827,6 +1891,7 @@ metrics:
     title: Checkpointer Delta
     database_scope: all_databases
     source_query: metrics.checkpointer_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -1853,6 +1918,7 @@ metrics:
     title: WAL Activity Delta
     database_scope: all_databases
     source_query: metrics.wal_activity_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -1874,6 +1940,7 @@ metrics:
     title: Table Maintenance Delta
     database_scope: current_database
     source_query: metrics.objects_table_maintenance_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -1904,6 +1971,7 @@ metrics:
     title: Standby Recovery Conflicts Delta
     database_scope: all_databases
     source_query: metrics.recovery_conflicts_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -1936,6 +2004,7 @@ metrics:
     title: Database Session Outcomes Delta
     database_scope: all_databases
     source_query: metrics.database_session_outcomes_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -1970,6 +2039,7 @@ metrics:
     title: Physical Replication Progress Delta
     database_scope: all_databases
     source_query: metrics.physical_replication_progress_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -1998,6 +2068,7 @@ metrics:
     title: SQL Planning Delta
     database_scope: current_database
     source_query: metrics.statements_planning_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -2024,6 +2095,7 @@ metrics:
     title: Background Writer Delta
     database_scope: all_databases
     source_query: metrics.bgwriter_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -2052,6 +2124,7 @@ metrics:
     title: SLRU Activity Delta
     database_scope: all_databases
     source_query: metrics.slru_activity_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -2074,6 +2147,7 @@ metrics:
     title: WAL Archiver Delta
     database_scope: all_databases
     source_query: metrics.wal_archiver_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -2102,6 +2176,7 @@ metrics:
     title: Logical Decoding Slot Delta
     database_scope: all_databases
     source_query: metrics.logical_decoding_slot_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -2127,6 +2202,7 @@ metrics:
     title: Subscription Errors And Conflicts Delta
     database_scope: current_database
     source_query: metrics.subscription_errors_delta
+    targets: [db]
     requires_collection: window_endpoints
     result: table
     display:
@@ -2161,6 +2237,7 @@ metrics:
     title: Buffer Cache Utilization
     database_scope: all_databases
     source_query: buffer_cache.utilization
+    targets: [db]
     requires_collection: every_snapshot
     series:
       - {name: used, value_ref: gauges.used_blocks, transform: gauge, unit: blocks}
@@ -2171,6 +2248,7 @@ metrics:
     title: Buffer Usage Count Distribution
     database_scope: all_databases
     source_query: buffer_cache.usage_count_distribution
+    targets: [db]
     requires_collection: every_snapshot
     partition_by: [dimensions.usage_count]
     series:
@@ -2181,6 +2259,7 @@ metrics:
     title: Dirty And Pinned Buffers
     database_scope: all_databases
     source_query: buffer_cache.dirty_and_pinned
+    targets: [db]
     requires_collection: every_snapshot
     series:
       - {name: dirty, value_ref: gauges.dirty_blocks, transform: gauge, unit: blocks}
@@ -2191,6 +2270,7 @@ metrics:
     title: Buffer Cache By Database
     database_scope: all_databases
     source_query: buffer_cache.by_database
+    targets: [db]
     requires_collection: every_snapshot
     partition_by: [dimensions.database]
     series:
@@ -2201,6 +2281,7 @@ metrics:
     title: Top Relations In Buffer Cache
     database_scope: current_database
     source_query: buffer_cache.top_relations
+    targets: [db]
     requires_collection: every_snapshot
     partition_by: [dimensions.relation]
     series:
@@ -2211,6 +2292,7 @@ metrics:
     title: Top Dirty Relations In Buffer Cache
     database_scope: current_database
     source_query: buffer_cache.top_dirty_relations
+    targets: [db]
     requires_collection: every_snapshot
     partition_by: [dimensions.relation]
     series:

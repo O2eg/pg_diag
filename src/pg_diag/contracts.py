@@ -9,6 +9,11 @@ COLLECTION_STATUSES = frozenset({"ok", "empty", "error", "unsupported", "skipped
 RESULT_KINDS = frozenset({"none", "plain_text", "table", "chart"})
 SEVERITY_LEVELS = frozenset({"high", "medium", "ok", "unknown"})
 
+SOURCE_TARGET_HOST = "host"
+SOURCE_TARGET_DATABASE = "db"
+SOURCE_TARGET_ORDER = (SOURCE_TARGET_HOST, SOURCE_TARGET_DATABASE)
+SOURCE_TARGETS = frozenset(SOURCE_TARGET_ORDER)
+
 DATABASE_SCOPE_ALL = "all_databases"
 DATABASE_SCOPE_CURRENT = "current_database"
 DATABASE_SCOPES = frozenset({DATABASE_SCOPE_ALL, DATABASE_SCOPE_CURRENT})

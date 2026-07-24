@@ -533,6 +533,7 @@ queries:
     description: User tables without a primary key or any valid unique index.
     source: queries_collection/pg_index_dba_tables_without_pk_or_unique_db_converter.md
     cost: medium
+    timeout_ms: 5000
     display:
       default_sort:
         column: total_relation_size_bytes

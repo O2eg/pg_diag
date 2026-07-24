@@ -216,6 +216,12 @@ async def execute_query_item(
     try:
         sql_text = Path(sql_path).read_text(encoding="utf-8")
         async with conn.transaction(readonly=True):
+            timeout_ms = planned.source_metadata.get("timeout_ms")
+            if timeout_ms is not None:
+                await conn.execute(
+                    "select pg_catalog.set_config('statement_timeout', $1, true)",
+                    str(timeout_ms),
+                )
             if batch_context is not None and batch_context.handles(planned):
                 raw_columns, provider_rows = await batch_context.execute(conn, planned)
                 raw_rows = [redact_row(raw_columns, row) for row in provider_rows]

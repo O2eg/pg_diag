@@ -170,6 +170,7 @@ def item_from_plan(
         "item_key": getattr(planned, "item_key", None),
         "title": planned.title,
         "source_kind": planned.source_kind,
+        "targets": list(getattr(planned, "targets", ())),
         "collection_scope": planned.collection_scope,
         "collection_status": collection_status,
         "severity_level": normalized_severity_level,

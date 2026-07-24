@@ -34,6 +34,13 @@ and failover design of the target environment.
 | `local` | Direct TCP or Unix socket from the collector | Collected from the collector host | Run on the PostgreSQL host |
 | `remote` | TCP through a dynamic local SSH forward | Collected from the SSH target | Full remote database and host diagnosis |
 
+The table describes an unfiltered report. With `--item-id` or `--tags`,
+`pg_diag` resolves each selected source's `targets`. A host-only selection does
+not require PostgreSQL credentials and does not attempt a database connection.
+In `remote` mode it still requires the SSH identity and host-key controls
+described below, but no database tunnel is opened. If any selected executable
+item targets `db`, the usual database connection requirements remain.
+
 ```text
 REMOTE-DB-ONLY
 
@@ -95,8 +102,10 @@ Every PostgreSQL session opened by `pg_diag` requests these startup settings:
 
 The collector verifies that the session is read-only before collection and
 uses explicit read-only transactions for its main SQL executor. A query that
-cannot finish within one second is reported as an item-level error; increasing
-the timeout globally is usually worse than disabling or optimizing that item.
+cannot finish within one second is reported as an item-level error unless its
+manifest declares a larger positive `timeout_ms`. The override is applied only
+inside that query's transaction; increasing the global timeout is usually worse
+than using a narrow override, disabling the item, or optimizing the query.
 
 These controls reduce the risk of an accidental write by `pg_diag`. They do
 not make a privileged credential safe: anyone who obtains the password can

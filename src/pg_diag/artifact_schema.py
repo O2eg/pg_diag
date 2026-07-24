@@ -12,6 +12,7 @@ from .contracts import (
     INTERVAL_COVERAGE_STATUSES,
     RESULT_KINDS,
     SEVERITY_LEVELS,
+    SOURCE_TARGETS,
     interval_coverage_totals,
 )
 from .errors import ValidationError
@@ -76,6 +77,11 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
         artifact["runtime"]["strip_meta"], bool
     ):
         raise ValidationError("Artifact field 'runtime.strip_meta' must be boolean")
+    if "database_connected" in artifact["runtime"] and not isinstance(
+        artifact["runtime"]["database_connected"], bool
+    ):
+        raise ValidationError("Artifact field 'runtime.database_connected' must be boolean")
+    _validate_targets(artifact["runtime"].get("targets"), "Artifact runtime targets")
     content = artifact["content"]
     if content.get("schema_version") != runtime_config.SUPPORTED_CONTENT_SCHEMA_VERSION:
         raise ValidationError("Artifact content schema version does not match the runtime contract")
@@ -201,6 +207,7 @@ def _validate_item_payload(item_id: str, item: dict[str, Any], units: set[str]) 
     for key in ("section_id", "item_key", "title", "source_kind"):
         if not isinstance(item.get(key), str) or not item[key]:
             raise ValidationError(f"Artifact item {item_id!r} field {key!r} must be a non-empty string")
+    _validate_targets(item.get("targets"), f"Artifact item {item_id!r} targets")
     if not _value_in(item.get("collection_status"), COLLECTION_STATUSES):
         raise ValidationError(
             f"Artifact item {item_id!r} has unsupported collection_status "
@@ -234,6 +241,17 @@ def _validate_item_payload(item_id: str, item: dict[str, Any], units: set[str]) 
         not isinstance(timing_ms, (int, float)) or isinstance(timing_ms, bool)
     ):
         raise ValidationError(f"Artifact item {item_id!r} timing_ms must be numeric or null")
+
+
+def _validate_targets(value: Any, label: str) -> None:
+    if value is None:
+        return
+    if (
+        not isinstance(value, list)
+        or any(not isinstance(target, str) or target not in SOURCE_TARGETS for target in value)
+        or len(value) != len(set(value))
+    ):
+        raise ValidationError(f"{label} must be a unique list containing only host and db")
 
 
 def _validate_result(item_id: str, result: dict[str, Any], units: set[str]) -> None:

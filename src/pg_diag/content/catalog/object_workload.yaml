@@ -6,6 +6,7 @@ queries:
     main_view: pg_stat_all_tables
     description: Cumulative table scan, DML, vacuum, and analyze counters for user-visible relations.
     cost: medium
+    timeout_ms: 5000
     display:
       default_sort:
         column: total_dml

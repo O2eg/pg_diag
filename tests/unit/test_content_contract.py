@@ -16,6 +16,8 @@ from pg_diag.planner import build_plan
 from pg_diag.presentation import apply_presentation_contract, resolve_column_descriptor
 from pg_diag.runtime_config import (
     HOST_COMMAND_TIMEOUT_SECONDS,
+    MAX_LOCAL_PYTHON_SOURCE_TIMEOUT_SECONDS,
+    MAX_SHELL_SOURCE_TIMEOUT_SECONDS,
     REMOTE_DB_ONLY_COLLECTION_MODE,
     ONE_SHOT_MODE,
     SNAPSHOTS_MODE,
@@ -28,6 +30,47 @@ def test_content_manifests_are_valid(content_path: Path) -> None:
     content = load_content(content_path)
     issues = validate_content(content)
     assert not issues
+
+
+def test_source_targets_match_source_execution_dependencies(content_path: Path) -> None:
+    content = load_content(content_path)
+
+    assert all(source["targets"] == ["db"] for source in content.queries.values())
+    assert all(source["targets"] == ["host"] for source in content.scripts.values())
+    for metric_id, metric in content.metrics.items():
+        expected = ["db"] if metric.get("source_query") else ["host"]
+        assert metric["targets"] == expected, metric_id
+
+    assert content.pythons["database.database_volume"]["targets"] == ["db"]
+    assert content.pythons["security.core_dump_policy"]["targets"] == ["host"]
+    assert content.pythons["os.postgresql_huge_pages"]["targets"] == ["host", "db"]
+
+
+def test_source_target_validation_rejects_kind_and_local_only_mismatches(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    queries = deepcopy(content.queries)
+    pythons = deepcopy(content.pythons)
+    metrics = deepcopy(content.metrics)
+    queries["cluster.settings"]["targets"] = ["host"]
+    pythons["security.core_dump_policy"]["targets"] = ["db"]
+    metrics["os.cpu_utilization"]["targets"] = ["db"]
+
+    issues = validate_content(
+        replace(content, queries=queries, pythons=pythons, metrics=metrics)
+    )
+    messages = {(issue.location, issue.message) for issue in issues}
+
+    assert ("query:cluster.settings", "targets must be ['db'] for this source kind") in messages
+    assert (
+        "python:security.core_dump_policy",
+        "local_only must be true exactly when targets includes host",
+    ) in messages
+    assert (
+        "metric:os.cpu_utilization",
+        "targets must be ['host'] for this source kind",
+    ) in messages
 
 
 def test_buffer_cache_section_excludes_low_value_expensive_charts(content_path: Path) -> None:
@@ -236,28 +279,89 @@ def test_chart_delta_uses_exact_counter_delta_descriptor(content_path: Path) -> 
     assert series["points"][0]["value"] == "2"
 
 
-def test_host_source_timeouts_do_not_exceed_one_second(content_path: Path) -> None:
+def test_host_source_timeouts_use_bounded_source_specific_limits(
+    content_path: Path,
+) -> None:
     content = load_content(content_path)
-    max_timeout_ms = int(HOST_COMMAND_TIMEOUT_SECONDS * 1000)
+    max_shell_timeout_ms = int(MAX_SHELL_SOURCE_TIMEOUT_SECONDS * 1000)
+    max_python_timeout_ms = int(MAX_LOCAL_PYTHON_SOURCE_TIMEOUT_SECONDS * 1000)
 
-    assert content.report["runtime_policy"]["default_shell_timeout_ms"] == max_timeout_ms
+    assert content.report["runtime_policy"]["default_shell_timeout_ms"] == 1000
     for script_id, source in content.scripts.items():
         timeout_ms = source.get(
             "timeout_ms",
             content.report["runtime_policy"]["default_shell_timeout_ms"],
         )
-        assert 0 < timeout_ms <= max_timeout_ms, script_id
+        assert 0 < timeout_ms <= max_shell_timeout_ms, script_id
     for source_id, source in content.pythons.items():
         if source["local_only"]:
-            assert 0 < source["timeout_ms"] <= max_timeout_ms, source_id
+            assert 0 < source["timeout_ms"] <= max_python_timeout_ms, source_id
 
+    assert HOST_COMMAND_TIMEOUT_SECONDS == 5.0
+    assert {
+        source_id: content.pythons[source_id]["timeout_ms"]
+        for source_id in (
+            "os.postgresql_huge_pages",
+            "backend.postgres_main_process_linked_libraries",
+            "security.remote_superuser_access",
+            "security.unix_socket_permissions",
+            "security.postgres_client_secret_files",
+            "security.postgres_config_file_permissions",
+            "security.log_file_permissions",
+            "security.postgres_binary_integrity",
+            "security.extension_directory_permissions",
+            "security.wal_archive_directory_permissions",
+            "security.backup_repository_permissions",
+            "security.postgres_history_files",
+            "security.world_writable_paths_in_pg_tree",
+            "security.symlinks_in_sensitive_paths",
+            "security.firewall_postgres_exposure",
+            "security.disk_encryption_status",
+            "security.postgres_cron_timer_scripts",
+        )
+    } == {
+        "os.postgresql_huge_pages": 3000,
+        "backend.postgres_main_process_linked_libraries": 3000,
+        "security.remote_superuser_access": 5000,
+        "security.unix_socket_permissions": 3000,
+        "security.postgres_client_secret_files": 10000,
+        "security.postgres_config_file_permissions": 5000,
+        "security.log_file_permissions": 30000,
+        "security.postgres_binary_integrity": 30000,
+        "security.extension_directory_permissions": 10000,
+        "security.wal_archive_directory_permissions": 5000,
+        "security.backup_repository_permissions": 10000,
+        "security.postgres_history_files": 10000,
+        "security.world_writable_paths_in_pg_tree": 30000,
+        "security.symlinks_in_sensitive_paths": 30000,
+        "security.firewall_postgres_exposure": 5000,
+        "security.disk_encryption_status": 5000,
+        "security.postgres_cron_timer_scripts": 30000,
+    }
     assert content.pythons["security.role_password_hashes"]["timeout_ms"] == 5000
 
 
-def test_sql_queries_have_one_second_global_timeout(content_path: Path) -> None:
+def test_sql_queries_keep_short_default_with_bounded_overrides(content_path: Path) -> None:
     content = load_content(content_path)
 
     assert content.report["runtime_policy"]["default_sql_timeout_ms"] == 1000
+    assert content.queries["objects.table_workload"]["timeout_ms"] == 5000
+    assert content.queries["indexes.tables_without_pk_or_unique"]["timeout_ms"] == 5000
+    plan = build_plan(
+        content,
+        180000,
+        item_id=(
+            "object_workload.table_workload",
+            "indexes.tables_without_pk_or_unique",
+        ),
+    )
+    assert {
+        item.item_id: item.source_metadata["timeout_ms"]
+        for item in plan.items
+    } == {
+        "object_workload.table_workload": 5000,
+        "indexes.tables_without_pk_or_unique": 5000,
+    }
 
 
 def test_os_capacity_scripts_emit_canonical_structured_values(content_path: Path) -> None:
@@ -381,24 +485,36 @@ def test_version_optional_metric_counters_are_null_not_zero(content_path: Path) 
     assert set(conflicts[0]["column_statuses"]) == {"confl_active_logicalslot"}
 
 
-def test_validator_rejects_host_source_timeouts_over_one_second(
+def test_validator_rejects_host_source_timeouts_over_their_limits(
     content_path: Path,
 ) -> None:
     content = load_content(content_path)
     report = deepcopy(content.report)
     scripts = deepcopy(content.scripts)
     pythons = deepcopy(content.pythons)
+    queries = deepcopy(content.queries)
     report["runtime_policy"]["default_shell_timeout_ms"] = 1001
     scripts["os.kernel_version"]["timeout_ms"] = 1001
-    pythons["security.pgdata_permissions"]["timeout_ms"] = 1001
-    invalid = replace(content, report=report, scripts=scripts, pythons=pythons)
+    pythons["security.pgdata_permissions"]["timeout_ms"] = 30001
+    queries["objects.table_workload"]["timeout_ms"] = 0
+    invalid = replace(
+        content,
+        report=report,
+        scripts=scripts,
+        pythons=pythons,
+        queries=queries,
+    )
 
     issues = validate_content(invalid)
 
     messages = {(issue.location, issue.message) for issue in issues}
     assert ("report.yaml", "runtime_policy.default_shell_timeout_ms must not exceed 1000") in messages
     assert ("script:os.kernel_version", "timeout_ms must not exceed 1000 for host shell scripts") in messages
-    assert ("python:security.pgdata_permissions", "local_only timeout_ms must not exceed 1000") in messages
+    assert (
+        "python:security.pgdata_permissions",
+        "local_only timeout_ms must not exceed 30000",
+    ) in messages
+    assert ("query:objects.table_workload", "timeout_ms must be positive") in messages
 
 
 def test_content_pack_exposes_one_effective_document_with_file_provenance(

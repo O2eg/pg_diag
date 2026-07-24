@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from . import runtime_config
+from .contracts import (
+    SOURCE_TARGET_DATABASE,
+    SOURCE_TARGET_HOST,
+    SOURCE_TARGET_ORDER,
+)
 from .content_loader import ContentPack, iter_report_items
 from .versioning import select_query_variant, supported_version_reason
 
@@ -27,6 +32,7 @@ class PlannedItem:
     script_file: str | None = None
     python_file: str | None = None
     collection_scope: str | None = None
+    targets: tuple[str, ...] = ()
     source_metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -45,6 +51,7 @@ class PlannedItem:
             "script_file": self.script_file,
             "python_file": self.python_file,
             "collection_scope": self.collection_scope,
+            "targets": list(self.targets),
             "source_metadata": self.source_metadata,
         }
 
@@ -61,6 +68,7 @@ class SourceJob:
     variant_id: str | None = None
     sql_file: str | None = None
     collection_scope: str | None = None
+    targets: tuple[str, ...] = ()
     source_metadata: dict[str, Any] = field(default_factory=dict)
 
     source_kind: str = field(default="query", init=False)
@@ -80,6 +88,7 @@ class SourceJob:
             "variant_id": self.variant_id,
             "sql_file": self.sql_file,
             "collection_scope": self.collection_scope,
+            "targets": list(self.targets),
             "source_metadata": self.source_metadata,
         }
 
@@ -91,7 +100,7 @@ PlannedEntry = PlannedItem | SourceJob
 class ExecutionPlan:
     mode: str
     collection_mode: str
-    server_version_num: int
+    server_version_num: int | None
     supported_server_version: bool
     reason: str | None
     sections: list[dict[str, Any]]
@@ -111,9 +120,34 @@ class ExecutionPlan:
         }
 
 
+@dataclass(frozen=True)
+class CollectionRequirements:
+    host_item_ids: tuple[str, ...]
+    database_item_ids: tuple[str, ...]
+
+    @property
+    def targets(self) -> tuple[str, ...]:
+        selected = {
+            target
+            for target, item_ids in (
+                (SOURCE_TARGET_HOST, self.host_item_ids),
+                (SOURCE_TARGET_DATABASE, self.database_item_ids),
+            )
+            if item_ids
+        }
+        return tuple(target for target in SOURCE_TARGET_ORDER if target in selected)
+
+    @property
+    def requires_database(self) -> bool:
+        return bool(self.database_item_ids)
+
+    def requires_ssh(self, collection_mode: str) -> bool:
+        return collection_mode == runtime_config.REMOTE_COLLECTION_MODE and bool(self.targets)
+
+
 def build_plan(
     content: ContentPack,
-    server_version_num: int,
+    server_version_num: int | None,
     mode: str = runtime_config.ONE_SHOT_MODE,
     collection_mode: str = runtime_config.DEFAULT_COLLECTION_MODE,
     item_id: str | Iterable[str] | None = None,
@@ -124,7 +158,20 @@ def build_plan(
     requested_item_ids = normalize_requested_item_ids(content, item_id)
     requested_tags = normalize_requested_tags(content, tags)
     selected_item_ids = _selected_report_item_ids(content, requested_item_ids, requested_tags)
-    unsupported_reason = supported_version_reason(server_version_num)
+    requirements = collection_requirements(
+        content,
+        mode=mode,
+        collection_mode=collection_mode,
+        item_id=requested_item_ids,
+        tags=requested_tags,
+    )
+    if requirements.requires_database and server_version_num is None:
+        raise ValueError("server_version_num is required by the selected db target")
+    unsupported_reason = (
+        supported_version_reason(server_version_num)
+        if server_version_num is not None
+        else None
+    )
     metric_dependencies = (
         _metric_dependencies(content, selected_item_ids=selected_item_ids)
         if mode == runtime_config.SNAPSHOTS_MODE
@@ -152,6 +199,7 @@ def build_plan(
                     status="unsupported",
                     state=_item_state(content, item),
                     reason=unsupported_reason,
+                    targets=_source_targets(content, source_kind, item),
                     source_metadata=_with_item_metadata(content, planned_item_id, item),
                 )
             )
@@ -199,6 +247,25 @@ def build_plan(
         if any(iid in planned_item_ids for iid in section["items"])
     ]
 
+    if selected_item_ids is not None:
+        items = [
+            replace(item, state="expanded")
+            if item.state != "hidden"
+            else item
+            for item in items
+        ]
+        sections = [
+            {
+                **section,
+                "state": (
+                    "expanded"
+                    if section.get("state") != "hidden"
+                    else section["state"]
+                ),
+            }
+            for section in sections
+        ]
+
     if unsupported_reason is None and metric_dependencies:
         for query_id in sorted(metric_dependencies):
             source_jobs.append(
@@ -226,6 +293,46 @@ def build_plan(
 def available_report_item_ids(content: ContentPack) -> list[str]:
     """Return report item ids in their declared display order."""
     return [item_id for _section_id, _item_key, item_id, _item in iter_report_items(content)]
+
+
+def collection_requirements(
+    content: ContentPack,
+    *,
+    mode: str,
+    collection_mode: str,
+    item_id: str | Iterable[str] | None = None,
+    tags: Iterable[str] | None = None,
+) -> CollectionRequirements:
+    """Resolve transports required by report items which execute in this run."""
+    if item_id is not None and tags is not None:
+        raise ValueError("--item-id and --tags cannot be used together")
+    requested_item_ids = normalize_requested_item_ids(content, item_id)
+    requested_tags = normalize_requested_tags(content, tags)
+    selected_item_ids = _selected_report_item_ids(content, requested_item_ids, requested_tags)
+    host_item_ids: list[str] = []
+    database_item_ids: list[str] = []
+
+    for _section_id, _item_key, report_item_id, item in iter_report_items(content):
+        if selected_item_ids is not None and report_item_id not in selected_item_ids:
+            continue
+        source_kind = _source_kind(item)
+        targets = _source_targets(content, source_kind, item)
+        if not _item_executes_in_mode(source_kind, targets, mode, collection_mode):
+            continue
+        if SOURCE_TARGET_HOST in targets:
+            host_item_ids.append(report_item_id)
+        if SOURCE_TARGET_DATABASE in targets:
+            database_item_ids.append(report_item_id)
+
+    # Preserve the historical contract: only an explicit item/tag filter may
+    # make a report database-free.
+    if selected_item_ids is None and not database_item_ids:
+        database_item_ids.append("<full-report>")
+
+    return CollectionRequirements(
+        host_item_ids=tuple(host_item_ids),
+        database_item_ids=tuple(database_item_ids),
+    )
 
 
 def normalize_requested_item_ids(
@@ -337,6 +444,55 @@ def _source_kind(item: dict[str, Any]) -> str:
     if len(source_kinds) != 1:
         raise ValueError("Report item must declare exactly one source kind")
     return source_kinds[0]
+
+
+def _source_targets(
+    content: ContentPack,
+    source_kind: str,
+    item: dict[str, Any],
+) -> tuple[str, ...]:
+    source_id = item.get(source_kind)
+    catalogs = {
+        "query": content.queries,
+        "script": content.scripts,
+        "metric": content.metrics,
+        "python": content.pythons,
+    }
+    manifest = catalogs[source_kind].get(source_id) or {}
+    values = manifest.get("targets")
+    if not isinstance(values, list):
+        if source_kind == "query":
+            values = [SOURCE_TARGET_DATABASE]
+        elif source_kind == "script":
+            values = [SOURCE_TARGET_HOST]
+        elif source_kind == "metric":
+            values = [
+                SOURCE_TARGET_DATABASE
+                if manifest.get("source_query")
+                else SOURCE_TARGET_HOST
+            ]
+        elif manifest.get("local_only"):
+            values = [SOURCE_TARGET_HOST, SOURCE_TARGET_DATABASE]
+        else:
+            values = [SOURCE_TARGET_DATABASE]
+    selected = set(values)
+    return tuple(target for target in SOURCE_TARGET_ORDER if target in selected)
+
+
+def _item_executes_in_mode(
+    source_kind: str,
+    targets: tuple[str, ...],
+    mode: str,
+    collection_mode: str,
+) -> bool:
+    if source_kind == "metric" and mode == runtime_config.ONE_SHOT_MODE:
+        return False
+    if (
+        collection_mode == runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE
+        and SOURCE_TARGET_HOST in targets
+    ):
+        return False
+    return True
 
 
 def _plan_sections(content: ContentPack) -> list[dict[str, Any]]:
@@ -512,6 +668,7 @@ def _plan_query_item(
             status="unsupported",
             state=_item_state(content, item),
             reason=selection.reason,
+            targets=_source_targets(content, "query", item),
             source_metadata=_with_item_metadata(content, item_id, item, source_metadata),
         )
 
@@ -534,6 +691,7 @@ def _plan_query_item(
         variant_id=variant.get("id"),
         sql_file=variant.get("sql_file"),
         collection_scope=runtime_config.ONCE_COLLECTION_SCOPE,
+        targets=_source_targets(content, "query", item),
         source_metadata=source_metadata,
     )
 
@@ -558,6 +716,7 @@ def _plan_metric_source_job(
             status="unsupported",
             reason=selection.reason,
             collection_scope=collection_scope,
+            targets=tuple(manifest["targets"]),
             source_metadata=usage,
         )
 
@@ -570,6 +729,7 @@ def _plan_metric_source_job(
         variant_id=variant.get("id"),
         sql_file=variant.get("sql_file"),
         collection_scope=collection_scope,
+        targets=tuple(manifest["targets"]),
         source_metadata=_query_source_metadata(manifest, variant, usage),
     )
 
@@ -579,7 +739,7 @@ def _query_source_metadata(
     variant: dict[str, Any],
     usage: dict[str, Any],
 ) -> dict[str, Any]:
-    return {
+    metadata = {
         "query_id": usage["query_usage"]["query_id"],
         "variant_id": variant.get("id"),
         "sql_file": variant.get("sql_file"),
@@ -594,6 +754,9 @@ def _query_source_metadata(
         "column_statuses": variant.get("column_statuses") or {},
         **usage,
     }
+    if manifest.get("timeout_ms") is not None:
+        metadata["timeout_ms"] = manifest["timeout_ms"]
+    return metadata
 
 
 def _plan_script_item(
@@ -620,6 +783,7 @@ def _plan_script_item(
             reason=message,
             script_file=script.get("script_file"),
             collection_scope="once",
+            targets=_source_targets(content, "script", item),
             source_metadata=_with_item_metadata(content, item_id, item, {
                 "script_id": script_id,
                 "script_file": script.get("script_file"),
@@ -644,6 +808,7 @@ def _plan_script_item(
         state=_item_state(content, item),
         script_file=script.get("script_file"),
         collection_scope="once",
+        targets=_source_targets(content, "script", item),
         source_metadata=source_metadata,
     )
 
@@ -672,6 +837,7 @@ def _plan_python_item(
             reason=message,
             python_file=python_source.get("python_file"),
             collection_scope="once",
+            targets=_source_targets(content, "python", item),
             source_metadata=_with_item_metadata(content, item_id, item, {
                 "python_id": python_id,
                 "python_file": python_source.get("python_file"),
@@ -698,6 +864,7 @@ def _plan_python_item(
         state=_item_state(content, item),
         python_file=python_source.get("python_file"),
         collection_scope="once",
+        targets=_source_targets(content, "python", item),
         source_metadata=source_metadata,
     )
 
@@ -727,6 +894,7 @@ def _plan_metric_item(
             status="skipped",
             state=_item_state(content, item),
             reason="requires snapshots mode",
+            targets=_source_targets(content, "metric", item),
             source_metadata=_with_item_metadata(content, item_id, item, {
                 "metric_id": metric_id,
                 "source_query": source_query,
@@ -752,6 +920,7 @@ def _plan_metric_item(
             status="skipped",
             state=_item_state(content, item),
             reason="remote_db_only",
+            targets=_source_targets(content, "metric", item),
             source_metadata=_with_item_metadata(content, item_id, item, {
                 "metric_id": metric_id,
                 "source_sampler": metric.get("source_sampler"),
@@ -780,6 +949,7 @@ def _plan_metric_item(
         status="planned",
         state=_item_state(content, item),
         collection_scope="post_collection",
+        targets=_source_targets(content, "metric", item),
         source_metadata=source_metadata,
     )
 

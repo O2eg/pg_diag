@@ -1024,6 +1024,82 @@ def test_collect_snapshots_uses_backend_proc_window_endpoints(tmp_path, monkeypa
     assert artifact["runtime"]["window_endpoint_sampler_count"] == 1
 
 
+def test_collect_snapshots_sampler_only_does_not_connect_to_database(
+    content_path,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import pg_diag.snapshots as snapshots_module
+    from pg_diag.content_loader import load_content
+
+    calls: list[str] = []
+
+    async def unexpected_database_connect(*args, **kwargs):
+        raise AssertionError("sampler-only snapshots must not connect to PostgreSQL")
+
+    async def collect_db_samples_stub(content, conn, sampled_queries, *args, **kwargs):
+        assert conn is None
+        assert sampled_queries == []
+        calls.append("window")
+        return [], [], {}
+
+    async def collect_sampler_providers_stub(
+        content,
+        host,
+        duration_seconds,
+        interval_seconds,
+        required_outputs,
+    ):
+        assert required_outputs == {"os.cpu"}
+        calls.append("sampler")
+        return SamplerCollection(samples={"os.cpu": []}, errors=[])
+
+    def build_metric_item_stub(planned, *args, **kwargs):
+        calls.append(f"metric:{planned.item_id}")
+        return item_from_plan(
+            planned,
+            collection_status="empty",
+            result={"kind": "chart", "series": []},
+        )
+
+    monkeypatch.setattr(collection_module, "connect", unexpected_database_connect)
+    monkeypatch.setattr(snapshots_module, "_collect_db_samples", collect_db_samples_stub)
+    monkeypatch.setattr(
+        snapshots_module,
+        "collect_sampler_providers",
+        collect_sampler_providers_stub,
+    )
+    monkeypatch.setattr(snapshots_module, "build_metric_item", build_metric_item_stub)
+    monkeypatch.setattr(
+        collection_module,
+        "render_html",
+        lambda artifact, **kwargs: "<html></html>",
+    )
+
+    artifact = asyncio.run(
+        collect_snapshots(
+            content=load_content(content_path),
+            out_dir=tmp_path / "out",
+            dsn=None,
+            connection_kwargs={},
+            collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
+            duration_seconds=30,
+            interval_seconds=15,
+            content_validated=True,
+            item_id="snapshot_charts_os.os_cpu_utilization",
+        )
+    )
+
+    assert artifact["runtime"]["targets"] == ["host"]
+    assert artifact["runtime"]["database_connected"] is False
+    assert artifact["runtime"]["server_version_num"] is None
+    assert calls == [
+        "window",
+        "sampler",
+        "metric:snapshot_charts_os.os_cpu_utilization",
+    ]
+
+
 def test_collect_one_shot_rejects_unsupported_server_before_writing(tmp_path, monkeypatch) -> None:
     async def connect_stub(*args, **kwargs):
         return FakeConn()

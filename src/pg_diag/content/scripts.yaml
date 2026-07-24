@@ -1,6 +1,7 @@
 script_catalog:
   schema_version: 4
   defaults:
+    targets: [host]
     output: plain_text
     local_only: true
     remote_db_only_behavior:

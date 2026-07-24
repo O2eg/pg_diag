@@ -30,7 +30,7 @@ from pg_diag.errors import ValidationError
 from pg_diag.executors.python import execute_python_item
 from pg_diag.metric_engine import build_metric_item
 from pg_diag.orchestration import load_artifact, summarize_artifact, summarize_execution_plan
-from pg_diag.planner import PlannedItem, build_plan
+from pg_diag.planner import PlannedItem, build_plan, collection_requirements
 from pg_diag.progress import ProgressReporter
 from pg_diag.render.html import _publicize_artifact_for_render, render_html
 from pg_diag.snapshots import _collect_db_samples, _execute_query_batch
@@ -326,6 +326,115 @@ def test_postgresql_settings_is_collected_once_in_snapshots_mode(content_path: P
     assert item.collection_scope == runtime_config.ONCE_COLLECTION_SCOPE
 
 
+def test_collection_requirements_resolve_host_database_and_mixed_selections(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+
+    host = collection_requirements(
+        content,
+        mode=runtime_config.ONE_SHOT_MODE,
+        collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
+        item_id="os.kernel_version",
+    )
+    database = collection_requirements(
+        content,
+        mode=runtime_config.ONE_SHOT_MODE,
+        collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
+        item_id="overview.pg_settings",
+    )
+    mixed = collection_requirements(
+        content,
+        mode=runtime_config.ONE_SHOT_MODE,
+        collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
+        item_id=("os.kernel_version", "overview.pg_settings"),
+    )
+    host_python = collection_requirements(
+        content,
+        mode=runtime_config.ONE_SHOT_MODE,
+        collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
+        item_id="os.core_dump_policy",
+    )
+    mixed_python = collection_requirements(
+        content,
+        mode=runtime_config.ONE_SHOT_MODE,
+        collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
+        item_id="os.postgresql_huge_pages",
+    )
+    sampler = collection_requirements(
+        content,
+        mode=runtime_config.SNAPSHOTS_MODE,
+        collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
+        item_id="snapshot_charts_os.os_cpu_utilization",
+    )
+    host_tag = collection_requirements(
+        content,
+        mode=runtime_config.ONE_SHOT_MODE,
+        collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
+        tags=("Hardware",),
+    )
+    mixed_tag = collection_requirements(
+        content,
+        mode=runtime_config.ONE_SHOT_MODE,
+        collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
+        tags=("Security",),
+    )
+
+    assert host.targets == ("host",)
+    assert host.host_item_ids == ("os.kernel_version",)
+    assert not host.database_item_ids
+    assert database.targets == ("db",)
+    assert database.database_item_ids == ("overview.pg_settings",)
+    assert mixed.targets == ("host", "db")
+    assert host_python.targets == ("host",)
+    assert mixed_python.targets == ("host", "db")
+    assert sampler.targets == ("host",)
+    assert host_tag.targets == ("host",)
+    assert mixed_tag.targets == ("host", "db")
+
+
+def test_host_only_plan_does_not_require_postgresql_version(content_path: Path) -> None:
+    content = load_content(content_path)
+
+    plan = build_plan(
+        content,
+        None,
+        collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
+        item_id="os.kernel_version",
+    )
+
+    assert plan.server_version_num is None
+    assert plan.items[0].targets == ("host",)
+    assert plan.to_dict()["items"][0]["targets"] == ["host"]
+    with pytest.raises(ValueError, match="selected db target"):
+        build_plan(
+            content,
+            None,
+            collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
+            item_id="overview.pg_settings",
+        )
+
+
+def test_skipped_items_do_not_add_transport_requirements(content_path: Path) -> None:
+    content = load_content(content_path)
+
+    one_shot_metric = collection_requirements(
+        content,
+        mode=runtime_config.ONE_SHOT_MODE,
+        collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
+        item_id="snapshot_charts_os.os_cpu_utilization",
+    )
+    remote_db_only_host = collection_requirements(
+        content,
+        mode=runtime_config.ONE_SHOT_MODE,
+        collection_mode=runtime_config.REMOTE_DB_ONLY_COLLECTION_MODE,
+        item_id="os.kernel_version",
+    )
+
+    assert one_shot_metric.targets == ()
+    assert remote_db_only_host.targets == ()
+
+
 def test_build_plan_rejects_unknown_requested_item(content_path: Path) -> None:
     content = load_content(content_path)
 
@@ -338,9 +447,9 @@ def test_build_plan_accepts_multiple_requested_items_and_only_their_dependencies
 ) -> None:
     content = load_content(content_path)
     requested = [
-        "overview.pg_settings",
+        "overview.pg_config",
         "snapshot_delta_workload.database_workload_delta",
-        "overview.pg_settings",
+        "overview.pg_config",
     ]
 
     plan = build_plan(
@@ -351,7 +460,7 @@ def test_build_plan_accepts_multiple_requested_items_and_only_their_dependencies
     )
 
     assert [item.item_id for item in plan.items] == [
-        "overview.pg_settings",
+        "overview.pg_config",
         "snapshot_delta_workload.database_workload_delta",
     ]
     assert {job.source_id for job in plan.source_jobs} == {"metrics.database_workload_delta"}
@@ -360,6 +469,8 @@ def test_build_plan_accepts_multiple_requested_items_and_only_their_dependencies
         for section in plan.sections
         for item_id in section["items"]
     } == {item.item_id for item in plan.items}
+    assert all(item.state == "expanded" for item in plan.items)
+    assert all(section["state"] == "expanded" for section in plan.sections)
 
 
 def test_build_plan_reports_every_unknown_requested_item(content_path: Path) -> None:
@@ -399,6 +510,23 @@ def test_build_plan_tag_filter_uses_case_insensitive_any_match(content_path: Pat
         and "Security" not in item.source_metadata["tags"]
         for item in plan.items
     )
+    assert all(item.state == "expanded" for item in plan.items)
+    assert all(section["state"] == "expanded" for section in plan.sections)
+
+
+def test_build_plan_without_filters_preserves_declared_item_and_section_states(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+
+    plan = build_plan(content, 180000)
+
+    items = {item.item_id: item for item in plan.items}
+    sections = {section["section_id"]: section for section in plan.sections}
+    assert items["overview.server_version"].state == "expanded"
+    assert items["overview.pg_config"].state == "collapsed"
+    assert sections["overview"]["state"] == "expanded"
+    assert sections["os"]["state"] == "collapsed"
 
 
 def test_build_plan_tag_filter_only_plans_selected_metric_dependencies(

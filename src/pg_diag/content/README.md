@@ -176,11 +176,13 @@ explicit scope as its source query.
 
 Important keys:
 
+- `targets` (inherited as `[db]`)
 - `title`
 - `group`
 - `main_view`
 - `description`
 - `cost`
+- `timeout_ms`, when a bounded query needs more than the one-second SQL default
 - `optional`, when a query depends on an optional extension or relation and a
   missing relation should not make the whole item a collection error
 - `display.default_sort.column`
@@ -241,6 +243,7 @@ Local scripts are declared in `scripts.yaml`.
 
 Important keys:
 
+- `targets` (inherited as `[host]`)
 - `title`
 - `description`
 - `script_file`
@@ -276,6 +279,7 @@ or shell script.
 
 Important keys:
 
+- `targets`
 - `title`
 - `description`
 - `python_file`
@@ -293,6 +297,11 @@ finding columns use `risk_level`/`risk_reason`; reserved
 `pg_diag_internal_severity`/`pg_diag_internal_reason` columns evaluate an
 ordinary table without exposing helper columns. Automatic severity is intended
 only for obvious, explicitly documented conditions.
+
+Every Python source declares the transports it needs: `[db]`, `[host]`, or
+`[host, db]`. `local_only` must be true exactly when `targets` includes
+`host`. This explicit contract lets filtered report runs avoid PostgreSQL
+entirely when every executable selected item is host-only.
 
 Local-only Python sources are always evaluated by the collector's Python
 runtime. They read database-host facts through `PythonSourceContext.host`: its
@@ -315,8 +324,9 @@ sources remain available. Each omitted item and its skip reason are written to
 
 `timeout_ms` bounds module loading, local evaluation, database calls, and host
 operations. Synchronous local sources run in a killable child process. SSH
-commands are terminated on timeout. Trusted sources must still avoid external
-side effects. A `local_only` source cannot configure more than `1000 ms`; the
+commands are terminated after at most five seconds even when the enclosing
+source has a larger deadline. Trusted sources must still avoid external side
+effects. A `local_only` source cannot configure more than `30000 ms`; the
 timeout becomes an error of that source's report item rather than a
 collection-wide exception.
 
@@ -334,6 +344,7 @@ Metrics can produce:
 
 Important keys:
 
+- `targets` - `[db]` for `source_query` or `[host]` for `source_sampler`.
 - `source_query` - use a dedicated SQL source for a chart or endpoint metric.
 - `source_sampler` - use an output declared by a sampler provider.
 - `requires_collection: every_snapshot`
@@ -385,8 +396,16 @@ snapshot metrics the planner adds only their declared query or sampler
 dependencies; filters never directly select hidden catalog sources.
 
 `--item-id-list` prints item IDs, tags, and source descriptions;
-`--tags-list` prints tags assigned to report items. Both list operations exit
+`--list-tags` prints tags assigned to report items. Both list operations exit
 after content validation and do not open PostgreSQL or SSH connections.
+
+After filtering, the planner unions the selected executable source `targets`.
+Database parameters and a PostgreSQL connection are required only when that
+union contains `db`. In `remote` mode, SSH remains required for either target;
+a host-only selection opens SSH but does not create a database tunnel. Items
+already skipped by the chosen report or collection mode do not add transport
+requirements. An unfiltered report preserves the complete database-and-host
+collection behavior.
 
 `one-shot` mode collects one point-in-time report. Metric items are omitted
 without execution because they require repeated samples; their skip reasons

@@ -27,8 +27,10 @@ from .orchestration import (
     summarize_execution_plan,
 )
 from .planner import (
+    CollectionRequirements,
     available_item_tags,
     build_plan,
+    collection_requirements,
     normalize_requested_item_ids,
     normalize_requested_tags,
 )
@@ -267,7 +269,7 @@ def _add_report_selection_args(parser: argparse.ArgumentParser) -> None:
         help="Collect items matching at least one comma-separated tag (case-insensitive)",
     )
     selection.add_argument(
-        "--tags-list",
+        "--list-tags",
         action="store_true",
         help="List tags available for --tags and exit without connecting",
     )
@@ -438,7 +440,8 @@ def cmd_list_items(args: argparse.Namespace) -> int:
         source_kind = next(
             (key for key in ("query", "script", "metric", "python") if key in item), "unknown"
         )
-        print(f"{item_id}\t{source_kind}\t{item.get(source_kind, '')}")
+        tags = ",".join(str(tag) for tag in (item.get("tags") or []))
+        print(f"{item_id}\t{source_kind}\t{item.get(source_kind, '')}\t{tags}")
     return 0
 
 
@@ -489,10 +492,6 @@ def cmd_one_shot(args: argparse.Namespace) -> int:
     selection_list_result = _selection_list_result(args)
     if selection_list_result is not None:
         return selection_list_result
-    connection_error = _connection_args_error(args, "one-shot")
-    if connection_error:
-        print(f"ERROR: {connection_error}", file=sys.stderr)
-        return 2
     try:
         log_path = _validated_report_log_path(args)
     except ValueError as exc:
@@ -508,6 +507,17 @@ def cmd_one_shot(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
+    requirements = collection_requirements(
+        content,
+        mode=runtime_config.ONE_SHOT_MODE,
+        collection_mode=args.collection_mode,
+        item_id=requested_item_ids,
+        tags=requested_tags,
+    )
+    connection_error = _connection_args_error(args, "one-shot", requirements)
+    if connection_error:
+        print(f"ERROR: {connection_error}", file=sys.stderr)
+        return 2
     connection_kwargs = {
         "host": args.host,
         "port": args.port,
@@ -516,7 +526,7 @@ def cmd_one_shot(args: argparse.Namespace) -> int:
         "password": args.password,
         "passfile": args.passfile,
     }
-    ssh_config = _ssh_config(args)
+    ssh_config = _ssh_config(args) if requirements.requires_ssh(args.collection_mode) else None
     progress: ProgressReporter | None = None
     try:
         progress = ProgressReporter(log_path)
@@ -574,10 +584,6 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
     selection_list_result = _selection_list_result(args)
     if selection_list_result is not None:
         return selection_list_result
-    connection_error = _connection_args_error(args, "snapshots")
-    if connection_error:
-        print(f"ERROR: {connection_error}", file=sys.stderr)
-        return 2
     window_error = runtime_config.validate_snapshots_window(
         args.duration_seconds, args.interval_seconds
     )
@@ -599,6 +605,17 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
+    requirements = collection_requirements(
+        content,
+        mode=runtime_config.SNAPSHOTS_MODE,
+        collection_mode=args.collection_mode,
+        item_id=requested_item_ids,
+        tags=requested_tags,
+    )
+    connection_error = _connection_args_error(args, "snapshots", requirements)
+    if connection_error:
+        print(f"ERROR: {connection_error}", file=sys.stderr)
+        return 2
     connection_kwargs = {
         "host": args.host,
         "port": args.port,
@@ -607,7 +624,7 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
         "password": args.password,
         "passfile": args.passfile,
     }
-    ssh_config = _ssh_config(args)
+    ssh_config = _ssh_config(args) if requirements.requires_ssh(args.collection_mode) else None
     progress: ProgressReporter | None = None
     try:
         progress = ProgressReporter(log_path)
@@ -839,13 +856,13 @@ def _validated_report_log_path(args: argparse.Namespace) -> Path:
 
 
 def _selection_list_result(args: argparse.Namespace) -> int | None:
-    if not args.tags_list and not args.item_id_list:
+    if not args.list_tags and not args.item_id_list:
         return None
     content, issues = _load_and_validate(args.content)
     if has_errors(issues):
         _print_validation_errors(issues)
         return 1
-    if args.tags_list:
+    if args.list_tags:
         for tag in available_item_tags(content):
             print(tag)
     else:
@@ -894,9 +911,23 @@ def _strip_meta_log_suffix(enabled: bool) -> str:
     return " strip_meta=true" if enabled else ""
 
 
-def _connection_args_error(args: argparse.Namespace, command: str) -> str | None:
-    if not args.dsn and not (args.host and args.database and args.user):
-        return f"{command} requires --dsn or --host/--database/--user"
+def _connection_args_error(
+    args: argparse.Namespace,
+    command: str,
+    requirements: CollectionRequirements,
+) -> str | None:
+    if requirements.requires_database and not args.dsn and not (
+        args.host and args.database and args.user
+    ):
+        selected = (
+            "full report"
+            if args.item_id is None and args.tags is None
+            else _format_required_item_ids(requirements.database_item_ids)
+        )
+        return (
+            f"{command} selected items require database connection "
+            f"(--dsn or --host/--database/--user): {selected}"
+        )
     if args.collection_mode != runtime_config.REMOTE_COLLECTION_MODE:
         supplied = any(
             getattr(args, name, None)
@@ -912,6 +943,9 @@ def _connection_args_error(args: argparse.Namespace, command: str) -> str | None
         )
         if supplied:
             return "SSH options require --collection-mode remote"
+        return None
+
+    if not requirements.requires_ssh(args.collection_mode):
         return None
 
     missing = [
@@ -934,6 +968,13 @@ def _connection_args_error(args: argparse.Namespace, command: str) -> str | None
     except PgDiagError as exc:
         return str(exc)
     return None
+
+
+def _format_required_item_ids(item_ids: tuple[str, ...], limit: int = 10) -> str:
+    visible = ", ".join(item_ids[:limit])
+    if len(item_ids) <= limit:
+        return visible
+    return f"{visible}, ... ({len(item_ids)} items)"
 
 
 def _ssh_config(args: argparse.Namespace) -> SshConfig | None:
@@ -994,6 +1035,7 @@ def _print_plan(plan: dict[str, Any]) -> None:
         bits = [
             item["item_id"],
             item["source_kind"],
+            ",".join(item.get("targets") or []),
             item["status"],
             item.get("source_id") or "",
             item.get("variant_id") or "",
@@ -1006,6 +1048,7 @@ def _print_plan(plan: dict[str, Any]) -> None:
         bits = [
             job["job_id"],
             job["source_kind"],
+            ",".join(job.get("targets") or []),
             job["status"],
             job.get("source_id") or "",
             job.get("variant_id") or "",

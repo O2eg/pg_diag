@@ -412,7 +412,8 @@ Validate the bundled content pack:
 pg-diag validate
 ```
 
-List available report items:
+List available report items as tab-separated item ID, source kind, source ID,
+and comma-separated tags:
 
 ```bash
 pg-diag list-items
@@ -474,6 +475,49 @@ by default).
 | --- | --- | --- | --- | --- |
 | `one-shot` | `remote-db-only` | Point-in-time diagnostic report | Executes applicable `query`, `script`, and `python` items with `once`; does not execute or include `metric` items because no interval data exists | `runtime.mode` is `one-shot`; the public `snapshots` array is empty |
 | `snapshots` | `local` | Interval diagnostic report | Executes visible once-items, collects required repeated/end-point sources, then evaluates derived metrics | `runtime.mode` is `snapshots`; when the selected plan requires repeated SQL sampling, the artifact contains samples plus derived rates, deltas, tables, and charts |
+
+### Filtered Source Targets
+
+Every effective source manifest declares `targets: [host]`, `targets: [db]`,
+or `targets: [host, db]`. When `--item-id` or `--tags` narrows a report,
+`pg_diag` unions the targets of the items that actually execute in the selected
+report and collection modes:
+
+- host-only `local` collection does not require database parameters and never
+  connects to PostgreSQL;
+- host-only `remote` collection requires SSH, but does not open a database
+  tunnel;
+- any selection containing `db` requires `--dsn` or
+  `--host/--database/--user`;
+- mixed tag or item selections require both transports;
+- without filters, the full report keeps the normal database connection
+  requirement.
+
+For example, collect a local OS item while PostgreSQL is unavailable:
+
+```bash
+pg-diag one-shot \
+  --collection-mode local \
+  --item-id os.kernel_version \
+  --output-format html \
+  --html-out reports/kernel.html
+```
+
+Sampler-backed OS charts work the same way in `snapshots`:
+
+```bash
+pg-diag snapshots \
+  --collection-mode local \
+  --item-id snapshot_charts_os.os_cpu_utilization \
+  --duration-seconds 60 \
+  --interval-seconds 10 \
+  --output-format html \
+  --html-out reports/os_cpu.html
+```
+
+The artifact records the resolved `runtime.targets`,
+`runtime.database_connected`, and each item's `targets`. A host-only artifact
+has `runtime.server_version_num: null`.
 
 ### Collection Modes
 
@@ -924,7 +968,7 @@ pg-diag snapshots \
 List the canonical filter tags:
 
 ```bash
-pg-diag one-shot --tags-list
+pg-diag one-shot --list-tags
 ```
 
 `--tags` accepts a scalar or comma-separated array, matches tags
@@ -942,6 +986,9 @@ pg-diag one-shot \
 
 `--item-id` and `--tags` cannot be used together. Unknown tags and every
 unknown ID in an item array are reported before SSH or PostgreSQL is opened.
+When either filter is used for collection, every selected visible item and its
+containing section start expanded in the generated HTML report. Without a
+filter, item and section expansion follows the states declared in `report.yaml`.
 
 Selection applies to visible report items, not directly to query, script,
 Python, metric, or sampler catalog identifiers. In `snapshots` mode:
@@ -1252,9 +1299,11 @@ python -m ruff check pg_diag tests
   normalized to `null`, and invalid external artifacts are rejected.
 - Local host data and local-only Python sources are omitted without execution
   in `remote-db-only` mode; their skip reasons are logged.
-- Host shell items and host-dependent Python checks have a strict one-second
-  timeout. A timeout is recorded and rendered inside the affected item; other
-  items continue when `fail_fast` is disabled.
+- Host shell items retain a strict one-second timeout. Host-dependent Python
+  checks use bounded source-specific deadlines of up to 30 seconds, while each
+  nested host command is limited to five seconds. A timeout is recorded and
+  rendered inside the affected item; other items continue when `fail_fast` is
+  disabled.
 - Full `remote` mode authenticates only with the configured key, verifies the
   configured `known_hosts` file, and keeps PostgreSQL sessions read-only through
   the forwarded connection.
@@ -1263,7 +1312,7 @@ python -m ruff check pg_diag tests
   running in the collector background.
 - A declared sampler provider may own a window-length command. Its command and
   provider grace bounds are explicit in the content/provider contract; ordinary
-  host commands remain limited to one second.
+  host commands remain limited to five seconds.
 - Generated reports are ignored by Git by default.
 
 ## License

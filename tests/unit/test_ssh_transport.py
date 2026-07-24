@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import os
 from pathlib import Path
 import signal
@@ -13,10 +14,11 @@ import asyncssh
 
 import pg_diag.collection as collection_module
 from pg_diag import runtime_config
+from pg_diag.artifact import item_from_plan
 from pg_diag.content_loader import load_content
 from pg_diag.executors.python import execute_python_item
 from pg_diag.executors.shell import execute_remote_shell_item
-from pg_diag.host_access import HostAccess, SshHostAccess
+from pg_diag.host_access import SFTP_READ_CHUNK_SIZE, HostAccess, SshHostAccess
 from pg_diag.planner import ExecutionPlan, PlannedItem, build_plan
 from pg_diag.sampler_runtime import collect_sampler_providers
 from pg_diag.one_shot import collect_one_shot
@@ -470,7 +472,7 @@ def test_local_only_python_source_evaluates_locally_with_ssh_host_access(tmp_pat
 
         async def run(self, command: str, *, timeout: float) -> SshCommandResult:
             assert "printf remote-host" in command
-            assert timeout == 1.0
+            assert timeout == 5.0
             return SshCommandResult(0, "remote-host", "")
 
     item = asyncio.run(execute_python_item(content, FakeDb(), planned, FakeTransport()))
@@ -518,7 +520,7 @@ def test_remote_host_command_timeout_becomes_python_item_error(tmp_path: Path) -
 
         async def run(self, command: str, *, timeout: float) -> SshCommandResult:
             assert "slow-host-command" in command
-            assert timeout == 1.0
+            assert timeout == 5.0
             raise SshCommandTimeoutError("remote command timed out after 1 second")
 
     item = asyncio.run(
@@ -529,6 +531,84 @@ def test_remote_host_command_timeout_becomes_python_item_error(tmp_path: Path) -
     assert item["reason"] == "Python source timed out after 1000 ms"
     assert item["result"] == {"kind": "none"}
     assert item["diagnostics"][0]["code"] == "python_timeout"
+
+
+def test_sftp_host_read_is_sequential_and_bounded() -> None:
+    payload = b"x" * (SFTP_READ_CHUNK_SIZE * 2 + 7)
+    read_sizes: list[int] = []
+    open_options: dict[str, Any] = {}
+
+    class FakeStream:
+        def __init__(self) -> None:
+            self.offset = 0
+            self.closed = False
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            self.closed = True
+            return False
+
+        async def read(self, size: int) -> bytes:
+            read_sizes.append(size)
+            chunk = payload[self.offset : self.offset + size]
+            self.offset += len(chunk)
+            return chunk
+
+    stream = FakeStream()
+
+    class FakeSftp:
+        def open(self, path: str, mode: str, **kwargs: Any) -> FakeStream:
+            assert path == "/remote/evidence"
+            assert mode == "rb"
+            open_options.update(kwargs)
+            return stream
+
+    class FakeTransport:
+        async def sftp(self) -> FakeSftp:
+            return FakeSftp()
+
+    result = asyncio.run(
+        SshHostAccess(FakeTransport()).read_bytes(
+            "/remote/evidence",
+            limit=len(payload),
+        )
+    )
+
+    assert result == payload
+    assert open_options == {"block_size": None, "max_requests": 1}
+    assert read_sizes
+    assert max(read_sizes) <= SFTP_READ_CHUNK_SIZE
+    assert stream.closed is True
+
+
+def test_sftp_host_read_rejects_a_file_over_the_limit() -> None:
+    class FakeStream:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+        async def read(self, size: int) -> bytes:
+            return b"x" * size
+
+    class FakeSftp:
+        def open(self, path: str, mode: str, **kwargs: Any) -> FakeStream:
+            return FakeStream()
+
+    class FakeTransport:
+        async def sftp(self) -> FakeSftp:
+            return FakeSftp()
+
+    with pytest.raises(OSError, match="exceeds the 9-byte read limit"):
+        asyncio.run(
+            SshHostAccess(FakeTransport()).read_bytes(
+                "/remote/too-large",
+                limit=9,
+            )
+        )
 
 
 def test_remote_plan_collects_host_scripts_python_and_samplers(content_path: Path) -> None:
@@ -544,6 +624,83 @@ def test_remote_plan_collects_host_scripts_python_and_samplers(content_path: Pat
     assert items["os.kernel_version"].status == "planned"
     assert items["cluster_inventory.pgdata_permissions"].status == "planned"
     assert items["snapshot_charts_os.os_cpu_utilization"].status == "planned"
+
+
+def test_remote_host_only_collection_uses_ssh_without_database_tunnel(
+    content_path: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    config = _ssh_config(tmp_path)
+
+    class FakeTransport:
+        def __init__(self) -> None:
+            self.config = config
+            self.host_access = SimpleNamespace()
+
+        async def open_database_tunnel(self, *args: Any) -> tuple[str, int]:
+            raise AssertionError("host-only collection must not open a database tunnel")
+
+        async def close(self) -> None:
+            calls.append("ssh.close")
+
+    async def ssh_connect_stub(received: SshConfig) -> FakeTransport:
+        assert received is config
+        calls.append("ssh.connect")
+        return FakeTransport()
+
+    async def unexpected_database_connect(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("host-only collection must not connect to PostgreSQL")
+
+    async def execute_stub(
+        content: Any,
+        conn: Any,
+        planned: PlannedItem,
+        ssh: Any,
+        database_connector: Any,
+    ) -> dict[str, Any]:
+        assert conn is None
+        assert ssh is not None
+        assert database_connector is None
+        calls.append(f"item:{planned.item_id}")
+        return item_from_plan(
+            planned,
+            collection_status="ok",
+            result={"kind": "plain_text", "data": "Linux"},
+        )
+
+    monkeypatch.setattr(
+        collection_module.SshTransport,
+        "connect",
+        staticmethod(ssh_connect_stub),
+    )
+    monkeypatch.setattr(collection_module, "connect", unexpected_database_connect)
+    monkeypatch.setattr(collection_module, "execute_report_item", execute_stub)
+    monkeypatch.setattr(
+        collection_module,
+        "render_html",
+        lambda artifact, **kwargs: "<html></html>",
+    )
+
+    artifact = asyncio.run(
+        collect_one_shot(
+            content=load_content(content_path),
+            out_dir=tmp_path / "report",
+            dsn=None,
+            connection_kwargs={},
+            collection_mode=runtime_config.REMOTE_COLLECTION_MODE,
+            content_validated=True,
+            ssh_config=config,
+            item_id="os.kernel_version",
+        )
+    )
+
+    assert artifact["runtime"]["targets"] == ["host"]
+    assert artifact["runtime"]["database_connected"] is False
+    assert artifact["runtime"]["remote_host"] == "db.example"
+    assert "remote_database_host" not in artifact["runtime"]
+    assert calls == ["ssh.connect", "item:os.kernel_version", "ssh.close"]
 
 
 def test_remote_collection_tunnels_dsn_and_closes_ssh_after_db(
@@ -668,6 +825,12 @@ class _LoopbackSshServer(asyncssh.SSHServer):
         return True
 
 
+class _SlowSftpServer(asyncssh.SFTPServer):
+    async def read(self, file_obj: object, offset: int, size: int) -> bytes:
+        await asyncio.sleep(0.05)
+        return await asyncio.to_thread(super().read, file_obj, offset, size)
+
+
 async def _copy_stream(reader: Any, writer: Any) -> None:
     try:
         while True:
@@ -760,6 +923,74 @@ def test_remote_script_wrapper_stops_process_group(tmp_path: Path) -> None:
         finally:
             if _process_is_running(child_pid):
                 os.kill(child_pid, signal.SIGKILL)
+
+    asyncio.run(scenario())
+
+
+def test_cancelled_sftp_read_has_no_unretrieved_tasks_and_transport_remains_usable(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        server_key = asyncssh.generate_private_key("ssh-ed25519")
+        client_key = asyncssh.generate_private_key("ssh-ed25519")
+        client_key_path = tmp_path / "client-key"
+        client_key_path.write_bytes(client_key.export_private_key())
+        client_key_path.chmod(0o600)
+        evidence = tmp_path / "evidence.txt"
+        evidence.write_text("bounded remote evidence\n", encoding="utf-8")
+
+        server = await asyncssh.create_server(
+            _LoopbackSshServer,
+            "127.0.0.1",
+            0,
+            server_host_keys=[server_key],
+            sftp_factory=_SlowSftpServer,
+            encoding=None,
+        )
+        ssh_port = server.get_port()
+        known_hosts = tmp_path / "known_hosts"
+        known_hosts.write_bytes(
+            b"[127.0.0.1]:"
+            + str(ssh_port).encode("ascii")
+            + b" "
+            + server_key.export_public_key().strip()
+            + b"\n"
+        )
+        loop = asyncio.get_running_loop()
+        previous_exception_handler = loop.get_exception_handler()
+        loop_errors: list[dict[str, Any]] = []
+        loop.set_exception_handler(lambda _loop, context: loop_errors.append(context))
+        transport: SshTransport | None = None
+        try:
+            transport = await SshTransport.connect(
+                SshConfig(
+                    host="127.0.0.1",
+                    port=ssh_port,
+                    username="diagnostics",
+                    client_key=client_key_path,
+                    known_hosts=known_hosts,
+                )
+            )
+            host_access = SshHostAccess(transport)
+
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(
+                    host_access.read_bytes(evidence),
+                    timeout=0.01,
+                )
+
+            await asyncio.sleep(0.15)
+            assert await host_access.read_bytes(evidence) == evidence.read_bytes()
+        finally:
+            if transport is not None:
+                await transport.close()
+            server.close()
+            await server.wait_closed()
+            await asyncio.sleep(0.15)
+            gc.collect()
+            await asyncio.sleep(0)
+            loop.set_exception_handler(previous_exception_handler)
+        assert loop_errors == []
 
     asyncio.run(scenario())
 
@@ -954,7 +1185,7 @@ def test_asyncssh_end_to_end_forward_shell_sftp_and_local_python_evaluation(
             # The collector executes report items sequentially. Keep this
             # end-to-end transport check aligned with that runtime behavior:
             # running every local-only source concurrently through one SSH
-            # connection can consume a source's one-second timeout while it is
+            # connection can consume a source's item deadline while it is
             # merely waiting behind unrelated SFTP operations.
             all_items = [
                 await execute_python_item(

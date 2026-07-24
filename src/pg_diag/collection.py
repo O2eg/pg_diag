@@ -37,6 +37,7 @@ from .planner import (
     ExecutionPlan,
     PlannedItem,
     build_plan,
+    collection_requirements,
     normalize_requested_item_ids,
     normalize_requested_tags,
 )
@@ -56,13 +57,13 @@ from .validator import has_errors, validate_content
 @dataclass(frozen=True)
 class CollectionRun:
     content: ContentPack
-    conn: Any
+    conn: Any | None
     plan: ExecutionPlan
     artifact: dict[str, Any]
     fail_fast: bool
     json_path: Path | None
     html_path: Path | None
-    database_connector: DatabaseConnector
+    database_connector: DatabaseConnector | None
     ssh: SshTransport | None = None
     progress: ProgressReporter | None = None
 
@@ -99,55 +100,78 @@ async def start_collection(
         raise ValueError("--item-id and --tags cannot be used together")
     requested_item_ids = normalize_requested_item_ids(content, item_id)
     requested_tags = normalize_requested_tags(content, tags)
+    requirements = collection_requirements(
+        content,
+        mode=mode,
+        collection_mode=collection_mode,
+        item_id=requested_item_ids,
+        tags=requested_tags,
+    )
 
     json_path, html_path = report_output_paths(out_dir, json_out, html_out, output_formats)
     conn: Any | None = None
     ssh: SshTransport | None = None
+    database_connector: DatabaseConnector | None = None
     remote_endpoint: tuple[str, int] | None = None
     try:
         effective_connection_kwargs = dict(connection_kwargs)
         if collection_mode == runtime_config.REMOTE_COLLECTION_MODE:
-            if ssh_config is None:
+            if requirements.requires_ssh(collection_mode) and ssh_config is None:
                 raise ValueError("remote collection requires SSH configuration")
-            remote_endpoint = remote_database_endpoint(dsn, effective_connection_kwargs)
-            ssh = await SshTransport.connect(ssh_config)
-            local_host, local_port = await ssh.open_database_tunnel(*remote_endpoint)
-            effective_connection_kwargs = tunneled_connection_kwargs(
-                dsn,
-                effective_connection_kwargs,
-                remote_endpoint,
-                (local_host, local_port),
-            )
+            if requirements.requires_ssh(collection_mode):
+                assert ssh_config is not None
+                ssh = await SshTransport.connect(ssh_config)
+            if requirements.requires_database:
+                remote_endpoint = remote_database_endpoint(dsn, effective_connection_kwargs)
+                assert ssh is not None
+                local_host, local_port = await ssh.open_database_tunnel(*remote_endpoint)
+                effective_connection_kwargs = tunneled_connection_kwargs(
+                    dsn,
+                    effective_connection_kwargs,
+                    remote_endpoint,
+                    (local_host, local_port),
+                )
         elif ssh_config is not None:
             raise ValueError("SSH configuration is only valid in remote collection mode")
 
-        guard_settings = runtime_guard_server_settings(content)
-        existing_server_settings = effective_connection_kwargs.get("server_settings")
-        if isinstance(existing_server_settings, dict):
-            guard_settings = {**guard_settings, **existing_server_settings}
-        effective_connection_kwargs["server_settings"] = guard_settings
+        runtime_context: dict[str, Any] = {
+            "targets": list(requirements.targets),
+            "database_connected": requirements.requires_database,
+        }
+        server_version_num: int | None = None
+        if requirements.requires_database:
+            guard_settings = runtime_guard_server_settings(content)
+            existing_server_settings = effective_connection_kwargs.get("server_settings")
+            if isinstance(existing_server_settings, dict):
+                guard_settings = {**guard_settings, **existing_server_settings}
+            effective_connection_kwargs["server_settings"] = guard_settings
 
-        conn = await connect(dsn=dsn, **effective_connection_kwargs)
-        database_connector = DatabaseConnector(dsn, effective_connection_kwargs)
-        runtime_context = await detect_runtime_context(conn)
-        await _populate_database_identity(
-            runtime_context,
-            collection_mode=collection_mode,
-            dsn=dsn,
-            connection_kwargs=connection_kwargs,
-            ssh=ssh,
-        )
-        if ssh is not None and remote_endpoint is not None:
+            conn = await connect(dsn=dsn, **effective_connection_kwargs)
+            database_connector = DatabaseConnector(dsn, effective_connection_kwargs)
+            runtime_context.update(await detect_runtime_context(conn))
+            await _populate_database_identity(
+                runtime_context,
+                collection_mode=collection_mode,
+                dsn=dsn,
+                connection_kwargs=connection_kwargs,
+                ssh=ssh,
+            )
+            server_version_num = int(runtime_context["server_version_num"])
+        if ssh is not None:
             runtime_context.update(
                 {
                     "remote_host": ssh.config.host,
                     "remote_ssh_port": ssh.config.port,
                     "remote_ssh_user": ssh.config.username,
-                    "remote_database_host": remote_endpoint[0],
-                    "remote_database_port": remote_endpoint[1],
                 }
             )
-        server_version_num = int(runtime_context["server_version_num"])
+            if remote_endpoint is not None:
+                runtime_context.update(
+                    {
+                        "remote_database_host": remote_endpoint[0],
+                        "remote_database_port": remote_endpoint[1],
+                    }
+                )
         plan = build_plan(
             content,
             server_version_num,
@@ -393,6 +417,8 @@ def finish_collection(
 
 
 async def close_connection(conn: Any) -> None:
+    if conn is None:
+        return
     try:
         await conn.close()
     except Exception:

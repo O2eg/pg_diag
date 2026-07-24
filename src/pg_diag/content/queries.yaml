@@ -2,6 +2,7 @@ query_catalog:
   schema_version: 4
   sql_root: queries
   defaults:
+    targets: [db]
     result_shape: dynamic_table
     cost: low
     collection:

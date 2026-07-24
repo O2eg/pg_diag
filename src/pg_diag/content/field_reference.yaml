@@ -47,19 +47,23 @@ field_reference:
     catalogs/queries/files: Query-manifest files loaded in declaration order.
     catalogs/queries/files[]: One query-manifest file included in the unified query catalog.
     catalogs/queries/defaults/result_shape: Default shape expected from SQL query results.
+    catalogs/queries/defaults/targets: Default execution targets inherited by SQL sources.
+    catalogs/queries/defaults/targets[]: One execution target inherited by SQL sources.
     catalogs/queries/defaults/cost: Default estimated query cost class.
     catalogs/queries/defaults/collection: Default query collection contract.
     catalogs/queries/defaults/collection/default: Default frequency used when an item does not override collection.
     catalogs/queries/defaults/collection/supports: Collection frequencies supported by queries in this catalog.
     catalogs/queries/defaults/collection/supports[]: One supported query collection frequency.
     catalogs/scripts/defaults/output: Default parser used for script stdout.
+    catalogs/scripts/defaults/targets: Default execution targets inherited by shell sources.
+    catalogs/scripts/defaults/targets[]: One execution target inherited by shell sources.
     catalogs/scripts/defaults/local_only: Whether scripts require access to the database host.
     catalogs/scripts/defaults/remote_db_only_behavior: Default behavior when a local script cannot run remotely.
     catalogs/scripts/defaults/remote_db_only_behavior/status: Collection status emitted for a skipped local script.
     catalogs/scripts/defaults/remote_db_only_behavior/message_ref: Runtime-policy path supplying the skip explanation.
     catalogs/metrics/defaults/mode: Runtime mode required by metrics in this catalog.
     catalogs/metrics/defaults/x: Default source column used as chart time coordinate.
-    catalogs/python/defaults/timeout_ms: Default trusted Python source timeout in milliseconds; local-only sources are capped at 1000.
+    catalogs/python/defaults/timeout_ms: Default trusted Python source timeout in milliseconds; local-only sources are capped at 30000.
     catalogs/python/defaults/local_only: Whether Python sources require access to the database host.
     sections: Ordered report sections and their item declarations.
     sections/*: One report section selected by its stable section id.
@@ -84,11 +88,14 @@ field_reference:
     queries: Effective query manifests after query-catalog defaults are merged.
     queries/*: One effective SQL query manifest selected by query id.
     queries/*/title: Human-readable query title inherited by report items.
+    queries/*/targets: Execution targets required by this query source.
+    queries/*/targets[]: One required execution target; SQL queries use db.
     queries/*/description: Maintainer-facing description of the query purpose.
     queries/*/group: Logical catalog group used to organize source definitions.
     queries/*/main_view: Primary PostgreSQL view or subsystem read by the query.
     queries/*/source: Origin or ownership marker for the query definition.
     queries/*/cost: Estimated execution-cost class used during review.
+    queries/*/timeout_ms: Optional positive statement timeout in milliseconds applied only inside this query transaction.
     queries/*/optional: Whether unsupported or unavailable query prerequisites are non-fatal.
     queries/*/result_shape: Expected public result shape.
     queries/*/database_scope: Whether the query covers all databases or only the connected database.
@@ -121,6 +128,8 @@ field_reference:
     scripts: Effective shell-source manifests after script-catalog defaults are merged.
     scripts/*: One effective shell source selected by script id.
     scripts/*/title: Human-readable script title inherited by report items.
+    scripts/*/targets: Execution targets required by this shell source.
+    scripts/*/targets[]: One required execution target; shell sources use host.
     scripts/*/description: Maintainer-facing description of collected host data.
     scripts/*/script_file: Script path relative to the content scripts directory.
     scripts/*/output: Declared parser used to convert script stdout into plain text or a generic JSON table.
@@ -132,11 +141,13 @@ field_reference:
     python_sources: Effective trusted Python manifests after Python-catalog defaults are merged.
     python_sources/*: One trusted Python source selected by source id.
     python_sources/*/title: Human-readable Python-source title inherited by report items.
+    python_sources/*/targets: Execution targets required by this trusted Python source.
+    python_sources/*/targets[]: One required execution target, host or db.
     python_sources/*/description: Maintainer-facing description of the Python check.
     python_sources/*/python_file: Python module path relative to the content Python directory.
     python_sources/*/function: Trusted callable invoked from the Python module.
     python_sources/*/local_only: Whether the Python source must run on the database host.
-    python_sources/*/timeout_ms: Python source timeout in milliseconds; local-only sources are capped at 1000.
+    python_sources/*/timeout_ms: Python source timeout in milliseconds; local-only sources are capped at 30000.
     python_sources/*/display: Optional presentation settings for a Python-source result.
     python_sources/*/display/default_sort: Initial table sort applied by the report renderer.
     python_sources/*/display/default_sort/column: Result column used for initial sorting.
@@ -156,6 +167,8 @@ field_reference:
     metrics: Effective metric manifests after metric-catalog defaults are merged.
     metrics/*: One chart or derived-table metric selected by metric id.
     metrics/*/title: Human-readable metric title inherited by report items.
+    metrics/*/targets: Execution targets required by this metric source.
+    metrics/*/targets[]: One required execution target inherited from the metric source kind.
     metrics/*/mode: Runtime mode required to calculate this metric.
     metrics/*/x: Source field used as the time coordinate.
     metrics/*/source_query: Dedicated SQL source supplying metric samples.
@@ -251,6 +264,8 @@ field_reference:
     resolved/title: Final title after item and source-manifest inheritance.
     resolved/source_kind: Query, script, metric, or Python source type.
     resolved/source_id: Referenced source-manifest identifier.
+    resolved/targets: Execution targets required by the resolved report item.
+    resolved/targets[]: One resolved execution target, host or db.
     resolved/state: Final expansion state after defaults are applied.
     resolved/database_scope: Final database scope shown in the item title.
     resolved/tags: Final normalized item tags.

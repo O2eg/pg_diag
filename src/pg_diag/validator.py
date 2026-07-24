@@ -11,7 +11,12 @@ import re
 from typing import Any
 
 from . import runtime_config
-from .contracts import DATABASE_SCOPES
+from .contracts import (
+    DATABASE_SCOPES,
+    SOURCE_TARGET_DATABASE,
+    SOURCE_TARGET_HOST,
+    SOURCE_TARGETS,
+)
 from .content_loader import (
     ContentLoadError,
     ContentPack,
@@ -61,6 +66,8 @@ REQUIRED_RESOLVED_FIELD_REFERENCE_PATHS = {
     "resolved/title",
     "resolved/source_kind",
     "resolved/source_id",
+    "resolved/targets",
+    "resolved/targets[]",
     "resolved/state",
     "resolved/database_scope",
     "resolved/tags",
@@ -514,12 +521,12 @@ def _validate_report_contract(content: ContentPack, issues: list[ValidationIssue
         if not _is_positive_number(policy.get(key)):
             _issue(issues, "runtime_policy", f"runtime_policy.{key} must be positive", "report.yaml")
     shell_timeout_ms = policy.get("default_shell_timeout_ms")
-    max_host_timeout_ms = runtime_config.HOST_COMMAND_TIMEOUT_SECONDS * 1000
-    if _is_positive_number(shell_timeout_ms) and float(shell_timeout_ms) > max_host_timeout_ms:
+    max_shell_timeout_ms = runtime_config.MAX_SHELL_SOURCE_TIMEOUT_SECONDS * 1000
+    if _is_positive_number(shell_timeout_ms) and float(shell_timeout_ms) > max_shell_timeout_ms:
         _issue(
             issues,
             "runtime_policy",
-            f"runtime_policy.default_shell_timeout_ms must not exceed {max_host_timeout_ms:g}",
+            f"runtime_policy.default_shell_timeout_ms must not exceed {max_shell_timeout_ms:g}",
             "report.yaml",
         )
     remote_message = policy.get("remote_db_only_shell_message")
@@ -824,6 +831,12 @@ def _validate_query_manifests(content: ContentPack, issues: list[ValidationIssue
         return
     for query_id, manifest in content.queries.items():
         location = f"query:{query_id}"
+        _validate_source_targets(
+            manifest.get("targets"),
+            issues,
+            location,
+            expected={SOURCE_TARGET_DATABASE},
+        )
         variants_value = manifest.get("variants")
         if not isinstance(variants_value, list) or not variants_value:
             _issue(issues, "variants", "Query manifest must define at least one variant", location)
@@ -874,6 +887,9 @@ def _validate_query_manifests(content: ContentPack, issues: list[ValidationIssue
         optional = manifest.get("optional")
         if optional is not None and not isinstance(optional, bool):
             _issue(issues, "query", "optional must be boolean", location)
+        timeout_ms = manifest.get("timeout_ms")
+        if timeout_ms is not None and not _is_positive_number(timeout_ms):
+            _issue(issues, "query", "timeout_ms must be positive", location)
         _validate_database_scope(manifest.get("database_scope"), issues, location)
 
         ranges: list[tuple[int, int, str]] = []
@@ -1033,9 +1049,15 @@ def _validate_scripts(content: ContentPack, issues: list[ValidationIssue]) -> No
     except ContentLoadError as exc:  # pragma: no cover - fixed literal root
         _issue(issues, "script_file", str(exc), "scripts.yaml")
         return
-    max_host_timeout_ms = runtime_config.HOST_COMMAND_TIMEOUT_SECONDS * 1000
+    max_shell_timeout_ms = runtime_config.MAX_SHELL_SOURCE_TIMEOUT_SECONDS * 1000
     for script_id, script in content.scripts.items():
         location = f"script:{script_id}"
+        _validate_source_targets(
+            script.get("targets"),
+            issues,
+            location,
+            expected={SOURCE_TARGET_HOST},
+        )
         script_file = script.get("script_file")
         try:
             script_path = resolve_under(scripts_root, script_file, "Script file")
@@ -1056,11 +1078,11 @@ def _validate_scripts(content: ContentPack, issues: list[ValidationIssue]) -> No
         timeout_ms = script.get("timeout_ms")
         if timeout_ms is not None and not _is_positive_number(timeout_ms):
             _issue(issues, "script", "timeout_ms must be positive", location)
-        elif timeout_ms is not None and float(timeout_ms) > max_host_timeout_ms:
+        elif timeout_ms is not None and float(timeout_ms) > max_shell_timeout_ms:
             _issue(
                 issues,
                 "script",
-                f"timeout_ms must not exceed {max_host_timeout_ms:g} for host shell scripts",
+                f"timeout_ms must not exceed {max_shell_timeout_ms:g} for host shell scripts",
                 location,
             )
         remote_behavior = script.get("remote_db_only_behavior")
@@ -1110,9 +1132,12 @@ def _validate_python_sources(content: ContentPack, issues: list[ValidationIssue]
     except ContentLoadError as exc:  # pragma: no cover - fixed literal root
         _issue(issues, "python_file", str(exc), "python.yaml")
         return
-    max_host_timeout_ms = runtime_config.HOST_COMMAND_TIMEOUT_SECONDS * 1000
+    max_python_timeout_ms = (
+        runtime_config.MAX_LOCAL_PYTHON_SOURCE_TIMEOUT_SECONDS * 1000
+    )
     for python_id, python_source in content.pythons.items():
         location = f"python:{python_id}"
+        targets = _validate_source_targets(python_source.get("targets"), issues, location)
         python_file = python_source.get("python_file")
         path: Path | None = None
         try:
@@ -1131,6 +1156,13 @@ def _validate_python_sources(content: ContentPack, issues: list[ValidationIssue]
         local_only = python_source.get("local_only")
         if not isinstance(local_only, bool):
             _issue(issues, "python_source", "local_only must be boolean", location)
+        elif targets is not None and local_only != (SOURCE_TARGET_HOST in targets):
+            _issue(
+                issues,
+                "python_source",
+                "local_only must be true exactly when targets includes host",
+                location,
+            )
         if (
             path is not None
             and path.is_file()
@@ -1176,12 +1208,12 @@ def _validate_python_sources(content: ContentPack, issues: list[ValidationIssue]
             _issue(issues, "python_source", "timeout_ms must be positive", location)
         elif (
             local_only is True
-            and float(timeout_ms) > max_host_timeout_ms
+            and float(timeout_ms) > max_python_timeout_ms
         ):
             _issue(
                 issues,
                 "python_source",
-                f"local_only timeout_ms must not exceed {max_host_timeout_ms:g}",
+                f"local_only timeout_ms must not exceed {max_python_timeout_ms:g}",
                 location,
             )
         _validate_display_options(python_source, issues, location)
@@ -1301,6 +1333,17 @@ def _validate_metrics(content: ContentPack, issues: list[ValidationIssue]) -> No
                 location,
             )
             continue
+        expected_targets = (
+            {SOURCE_TARGET_DATABASE}
+            if source_query
+            else {SOURCE_TARGET_HOST}
+        )
+        _validate_source_targets(
+            metric.get("targets"),
+            issues,
+            location,
+            expected=expected_targets,
+        )
         if source_query is not None and (not isinstance(source_query, str) or not source_query):
             _issue(issues, "metric_source", "source_query must be a non-empty string", location)
             continue
@@ -1490,7 +1533,43 @@ def _validate_metrics(content: ContentPack, issues: list[ValidationIssue]) -> No
                         ref,
                     ):
                         _issue(issues, "metric_ref", f"Unresolvable table column ref {ref!r}", location)
-        _validate_metric_result_shape(metric, issues, location)
+            _validate_metric_result_shape(metric, issues, location)
+
+
+def _validate_source_targets(
+    value: Any,
+    issues: list[ValidationIssue],
+    location: str,
+    *,
+    expected: set[str] | None = None,
+) -> set[str] | None:
+    if not isinstance(value, list) or not value:
+        _issue(
+            issues,
+            "source_targets",
+            "targets must be a non-empty list containing host, db, or both",
+            location,
+        )
+        return None
+    if any(not isinstance(target, str) or target not in SOURCE_TARGETS for target in value):
+        _issue(
+            issues,
+            "source_targets",
+            "targets must contain only host and db",
+            location,
+        )
+        return None
+    targets = set(value)
+    if len(targets) != len(value):
+        _issue(issues, "source_targets", "targets must not contain duplicates", location)
+    if expected is not None and targets != expected:
+        _issue(
+            issues,
+            "source_targets",
+            f"targets must be {sorted(expected)!r} for this source kind",
+            location,
+        )
+    return targets
 
 
 def _validate_database_scope(

@@ -17,6 +17,7 @@ from .ssh_transport import SshCommandResult, SshTransport
 
 
 DEFAULT_FILE_LIMIT = 4 * 1024 * 1024
+SFTP_READ_CHUNK_SIZE = 64 * 1024
 
 
 @dataclass(frozen=True)
@@ -265,11 +266,24 @@ class SshHostAccess(HostAccess):
         value = str(path)
         sftp = await self.transport.sftp()
         try:
-            async with sftp.open(value, "rb") as stream:
-                data = await stream.read(limit + 1)
+            chunks: list[bytes] = []
+            remaining = limit + 1
+            async with sftp.open(
+                value,
+                "rb",
+                block_size=None,
+                max_requests=1,
+            ) as stream:
+                while remaining > 0:
+                    data = await stream.read(min(SFTP_READ_CHUNK_SIZE, remaining))
+                    if not data:
+                        break
+                    chunk = bytes(data)
+                    chunks.append(chunk)
+                    remaining -= len(chunk)
         except Exception as exc:
             raise _mapped_sftp_error(exc, value) from exc
-        result = bytes(data)
+        result = b"".join(chunks)
         if len(result) > limit:
             raise OSError(f"host file exceeds the {limit}-byte read limit: {value}")
         return result

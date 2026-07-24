@@ -349,6 +349,7 @@ Example:
 
 ```yaml
 database.workload_delta:
+  targets: [db]
   title: Database Workload Delta
   database_scope: all_databases
   source_query: metrics.database_workload_delta
@@ -408,6 +409,7 @@ PostgreSQL SQL.
    ```yaml
    scripts:
      os.kernel_cmdline:
+       targets: [host]
        title: Kernel Command Line
        description: Local kernel boot command line.
        script_file: os/kernel_cmdline.sh
@@ -419,6 +421,7 @@ PostgreSQL SQL.
    ```yaml
    scripts:
      os.device_inventory:
+       targets: [host]
        title: Device Inventory
        description: Local device inventory rendered as a table.
        script_file: os/device_inventory.sh
@@ -443,11 +446,11 @@ planner does not execute them and omits their items from JSON/HTML. The item id
 and skip reason are written to stdout and `report.log`.
 
 Host shell scripts inherit `runtime_policy.default_shell_timeout_ms`; an optional
-per-source `timeout_ms` can only reduce that bound. Local-only Python sources
-inherit their catalog timeout. Neither host source type may exceed `1000 ms`.
-A timeout is attached to that item as its collection error and rendered in place
-of the expected result; it does not abort unrelated items when `fail_fast` is
-disabled.
+per-source `timeout_ms` cannot exceed `1000 ms`. Local-only Python sources
+inherit their catalog timeout and may declare a bounded override up to
+`30000 ms`; each nested host command remains limited to five seconds. A timeout
+is attached to that item as its collection error and rendered in place of the
+expected result; it does not abort unrelated items when `fail_fast` is disabled.
 
 4. Add `instructions/items/<section>/<item>.md` so the collected script has DBA
    guidance in reports produced by applicable collection modes.
@@ -480,6 +483,7 @@ multiple SQL calls, local file parsing, or structured issue output.
    ```yaml
    python_sources:
      security.database_identity:
+       targets: [db]
        title: Database Identity
        description: Example trusted Python source.
        python_file: security/database_identity.py
@@ -498,6 +502,10 @@ multiple SQL calls, local file parsing, or structured issue output.
          tags: [Security]
          state: collapsed
    ```
+
+Use `targets: [db]` for database-only Python, `targets: [host]` for host-only
+Python, and `targets: [host, db]` when both `ctx.conn` and `ctx.host` are
+required. Set `local_only: true` exactly when `targets` contains `host`.
 
 Local-only Python sources are not executed and are omitted from JSON/HTML in
 `remote-db-only` collection mode; their item ids and skip reasons remain in

@@ -392,6 +392,39 @@ def test_sql_query_does_not_set_runtime_guards(tmp_path) -> None:
     assert conn.executed == []
 
 
+def test_sql_query_applies_manifest_timeout_inside_its_transaction(tmp_path) -> None:
+    queries = tmp_path / "queries"
+    queries.mkdir()
+    (queries / "sample.sql").write_text("select 1", encoding="utf-8")
+    content = SimpleNamespace(
+        path=tmp_path,
+        query_catalog={"query_catalog": {"sql_root": "queries"}},
+        report={"runtime_policy": {"default_sql_timeout_ms": 1000}},
+    )
+    planned = PlannedItem(
+        item_id="test.sample",
+        section_id="test",
+        item_key="sample",
+        title="Sample SQL",
+        source_kind="query",
+        status="planned",
+        source_id="test.sample",
+        sql_file="sample.sql",
+        source_metadata={"query_id": "test.sample", "timeout_ms": 5000},
+    )
+    conn = TimeoutConn(RowsPrepared(["value"], [[1]]))
+
+    item = asyncio.run(execute_query_item(content, conn, planned))
+
+    assert item["collection_status"] == "ok"
+    assert conn.executed == [
+        (
+            "select pg_catalog.set_config('statement_timeout', $1, true)",
+            "5000",
+        )
+    ]
+
+
 def test_optional_missing_relation_is_recorded_as_unsupported(tmp_path) -> None:
     queries = tmp_path / "queries"
     queries.mkdir()
