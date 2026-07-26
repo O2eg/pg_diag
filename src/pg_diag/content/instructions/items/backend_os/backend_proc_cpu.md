@@ -32,4 +32,4 @@ This instruction belongs to report item `backend_os.backend_proc_cpu`. The item 
 - Use the PID and command to correlate with Backend Activity; this item does not contain a query ID.
 - Group leader and parallel worker PIDs together.
 - Treat the value as a window average, not a peak measurement.
-- Run pg_diag locally with permissions required for `/proc` access.
+- Run `pg-diag` locally with permissions required for `/proc` access.

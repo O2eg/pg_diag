@@ -5,6 +5,7 @@ import gc
 import os
 from pathlib import Path
 import signal
+import socket
 import ssl
 from types import SimpleNamespace
 from typing import Any
@@ -274,7 +275,7 @@ def test_ssh_command_timeout_is_not_treated_as_missing_host_path() -> None:
         asyncio.run(TimeoutHost().exists("/remote/path"))
 
 
-def test_ssh_config_requires_key_and_known_hosts(tmp_path: Path) -> None:
+def test_ssh_config_requires_key_or_agent_and_known_hosts(tmp_path: Path) -> None:
     config = SshConfig(
         host="db.example",
         username="diagnostics",
@@ -286,6 +287,38 @@ def test_ssh_config_requires_key_and_known_hosts(tmp_path: Path) -> None:
         config.validate()
 
 
+def test_ssh_config_accepts_agent_socket(tmp_path: Path) -> None:
+    known_hosts = tmp_path / "known_hosts"
+    known_hosts.write_text("db.example ssh-ed25519 placeholder", encoding="utf-8")
+    agent_path = tmp_path / "agent.sock"
+
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as agent:
+        agent.bind(str(agent_path))
+        SshConfig(
+            host="db.example",
+            username="diagnostics",
+            known_hosts=known_hosts,
+            agent_path=agent_path,
+        ).validate()
+
+
+def test_ssh_config_rejects_non_socket_agent_path(tmp_path: Path) -> None:
+    known_hosts = tmp_path / "known_hosts"
+    known_hosts.write_text("db.example ssh-ed25519 placeholder", encoding="utf-8")
+    agent_path = tmp_path / "agent.sock"
+    agent_path.write_text("not-a-socket", encoding="utf-8")
+
+    config = SshConfig(
+        host="db.example",
+        username="diagnostics",
+        known_hosts=known_hosts,
+        agent_path=agent_path,
+    )
+
+    with pytest.raises(SshTransportError, match="SSH_AUTH_SOCK is not a socket"):
+        config.validate()
+
+
 def test_ssh_config_rejects_private_key_visible_to_group_or_other(tmp_path: Path) -> None:
     config = _ssh_config(tmp_path)
     config.client_key.chmod(0o644)
@@ -294,7 +327,7 @@ def test_ssh_config_rejects_private_key_visible_to_group_or_other(tmp_path: Path
         config.validate()
 
 
-def test_asyncssh_connect_is_key_only_and_does_not_load_ssh_config(
+def test_asyncssh_connect_uses_selected_key_and_does_not_load_ssh_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -319,9 +352,46 @@ def test_asyncssh_connect_is_key_only_and_does_not_load_ssh_config(
     assert options["known_hosts"] == str(config.known_hosts)
     assert options["config"] is None
     assert options["agent_path"] is None
+    assert options["agent_forwarding"] is False
     assert options["preferred_auth"] == ["publickey"]
     assert options["password_auth"] is False
     assert options["kbdint_auth"] is False
+
+
+def test_asyncssh_connect_uses_agent_without_forwarding_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, dict[str, Any]]] = []
+    connection = _FakeSshConnection()
+    known_hosts = tmp_path / "known_hosts"
+    known_hosts.write_text("db.example ssh-ed25519 placeholder", encoding="utf-8")
+    agent_path = tmp_path / "agent.sock"
+
+    class FakeAsyncssh:
+        @staticmethod
+        async def connect(host: str, **kwargs: Any) -> Any:
+            calls.append((host, kwargs))
+            return connection
+
+    monkeypatch.setattr("pg_diag.ssh_transport._load_asyncssh", lambda: FakeAsyncssh)
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as agent:
+        agent.bind(str(agent_path))
+        config = SshConfig(
+            host="db.example",
+            username="diagnostics",
+            known_hosts=known_hosts,
+            agent_path=agent_path,
+        )
+
+        transport = asyncio.run(SshTransport.connect(config))
+
+    assert transport.config is config
+    _, options = calls[0]
+    assert options["client_keys"] == []
+    assert options["agent_path"] == str(agent_path)
+    assert options["agent_forwarding"] is False
+    assert options["known_hosts"] == str(known_hosts)
 
 
 def test_tunnel_uses_dynamic_loopback_port_and_closes_with_connection(tmp_path: Path) -> None:

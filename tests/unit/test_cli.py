@@ -370,7 +370,10 @@ def test_remote_host_only_item_requires_ssh_but_not_database_parameters(
     )
 
     assert proc.returncode == 2
-    assert "remote collection requires --ssh-host, --ssh-user, --ssh-key" in proc.stderr
+    assert (
+        "remote collection requires --ssh-host, --ssh-user, "
+        "one of --ssh-key or --ssh-agent"
+    ) in proc.stderr
     assert "database connection" not in proc.stderr
 
 
@@ -673,7 +676,54 @@ def test_one_shot_remote_mode_requires_explicit_ssh_identity(repo_root: Path) ->
     )
 
     assert proc.returncode == 2
-    assert "remote collection requires --ssh-host, --ssh-user, --ssh-key" in proc.stderr
+    assert (
+        "remote collection requires --ssh-host, --ssh-user, "
+        "one of --ssh-key or --ssh-agent"
+    ) in proc.stderr
+
+
+def test_one_shot_ssh_agent_requires_running_agent(
+    repo_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SSH_AUTH_SOCK", raising=False)
+    proc = run_cli(
+        repo_root,
+        "one-shot",
+        "--dsn",
+        "postgresql://app@127.0.0.1/appdb",
+        "--collection-mode",
+        "remote",
+        "--ssh-host",
+        "db.example",
+        "--ssh-user",
+        "pgdiag",
+        "--ssh-agent",
+    )
+
+    assert proc.returncode == 2
+    assert "--ssh-agent requires SSH_AUTH_SOCK" in proc.stderr
+
+
+def test_one_shot_rejects_key_and_agent_together(repo_root: Path) -> None:
+    proc = run_cli(
+        repo_root,
+        "one-shot",
+        "--dsn",
+        "postgresql://app@127.0.0.1/appdb",
+        "--collection-mode",
+        "remote",
+        "--ssh-host",
+        "db.example",
+        "--ssh-user",
+        "pgdiag",
+        "--ssh-key",
+        "/tmp/id_ed25519",
+        "--ssh-agent",
+    )
+
+    assert proc.returncode == 2
+    assert "not allowed with argument --ssh-key" in proc.stderr
 
 
 def test_one_shot_rejects_ssh_options_outside_remote_mode(repo_root: Path) -> None:

@@ -1,6 +1,6 @@
-# pg_diag
+# pg-diag
 
-`pg_diag` is a PostgreSQL diagnostic report utility for PostgreSQL 10-18.
+`pg-diag` is a PostgreSQL diagnostic report utility for PostgreSQL 10-18.
 
 Based on [pg_perfbench](https://github.com/TantorLabs/pg_perfbench).
 
@@ -171,10 +171,10 @@ Recommended users:
   `pg-diag`. Only PostgreSQL connection privileges matter in this mode.
 - For full `remote` collection, use a dedicated SSH account with public-key
   authentication and the same narrow host read permissions described for local
-  collection. The private key and PostgreSQL credentials remain on the
-  collector; they are not copied to the target host. The SSH service must allow
-  command execution, the SFTP subsystem, and local TCP forwarding to the
-  PostgreSQL endpoint.
+  collection. The selected private-key file or agent socket and PostgreSQL
+  credentials remain on the collector; they are not copied or forwarded to the
+  target host. The SSH service must allow command execution, the SFTP
+  subsystem, and local TCP forwarding to the PostgreSQL endpoint.
 - For full `local` collection, run the CLI on the PostgreSQL host as an OS user
   that can read local PostgreSQL configuration files and `/proc` process data.
   In packaged Linux installs this is usually the `postgres` OS user, or a
@@ -587,8 +587,8 @@ container, or reachable from that host over its private network:
 |             DB protocol     |  SSH tunnel     | local/container/private host  |
 +-----------------------------+                 +-------------------------------+
 
-The SSH private key and PostgreSQL credentials stay on the collector;
-pg-diag does not need to be installed on the SSH target
+The selected key file or agent socket and PostgreSQL credentials stay on the
+collector; pg-diag does not need to be installed on the SSH target
 Host OS evidence: SSH target
 Best fit: production VM reachable only through SSH or a bastion-style endpoint
 ```
@@ -676,7 +676,7 @@ pg-diag one-shot \
 ### Local
 
 Local mode collects PostgreSQL data and local host data from the machine where
-`pg_diag` is running:
+`pg-diag` is running:
 
 ```bash
 pg-diag one-shot \
@@ -784,18 +784,43 @@ pg-diag one-shot \
   --out reports/appdb_remote_one_shot
 ```
 
-Remote mode requires explicit key authentication and strict `known_hosts`
-verification. It does not fall back to password authentication, ssh-agent, or
-the user's OpenSSH configuration. It does not upload an agent, create a remote
-working directory, or require Python on the SSH target. Shell source text is
-sent to `/bin/sh` through SSH stdin, file metadata/content is read over the
-same SSH connection, and evaluation stays in the collector process. The
-private key and any PostgreSQL passfile used by the collector must not grant
-group or other access. Password lookup honors `--passfile`, a URI `passfile`,
-`PGPASSFILE`, and the default `~/.pgpass`, and matches entries against the
-original remote database host and port before `asyncpg` connects through the
-dynamic local tunnel. A URI DSN can provide the remote endpoint; a keyword-style
-DSN must be accompanied by `--host` and optionally `--port`.
+Alternatively, load the identity into an existing local `ssh-agent` and select
+it explicitly. `pg-diag` never starts an agent or runs `ssh-add`:
+
+```bash
+eval "$(ssh-agent -s)"
+ssh-add ~/.ssh/id_ed25519
+ssh-add -l
+
+pg-diag one-shot \
+  --collection-mode remote \
+  --ssh-host db.example.com \
+  --ssh-user pgdiag \
+  --ssh-agent \
+  --ssh-known-hosts ~/.ssh/pg_diag_known_hosts \
+  --host 127.0.0.1 \
+  --database appdb \
+  --user app \
+  --out reports/appdb_remote_one_shot
+```
+
+`--ssh-key` and `--ssh-agent` are mutually exclusive. Agent mode requires the
+current process to inherit a live `SSH_AUTH_SOCK`; the socket must remain
+available for the entire collection. Agent forwarding to the SSH target is
+always disabled.
+
+Remote mode requires explicit public-key authentication and strict
+`known_hosts` verification. It does not fall back to password authentication
+or the user's OpenSSH configuration. It does not upload or forward an agent,
+create a remote working directory, or require Python on the SSH target. Shell
+source text is sent to `/bin/sh` through SSH stdin, file metadata/content is
+read over the same SSH connection, and evaluation stays in the collector
+process. A private key and any PostgreSQL passfile used by the collector must
+not grant group or other access. Password lookup honors `--passfile`, a URI
+`passfile`, `PGPASSFILE`, and the default `~/.pgpass`, and matches entries
+against the original remote database host and port before `asyncpg` connects
+through the dynamic local tunnel. A URI DSN can provide the remote endpoint; a
+keyword-style DSN must be accompanied by `--host` and optionally `--port`.
 
 Remote mode rejects `sslmode=verify-full` and an `SSLContext` with hostname
 verification enabled. The dynamic forward changes the endpoint seen by

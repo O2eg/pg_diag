@@ -44,7 +44,7 @@ def test_distribution_metadata_policy(repo_root: Path) -> None:
     assert project["authors"] == [{"name": "O2eg", "email": "oleg.ispu@yandex.ru"}]
     assert project["keywords"] == ["postgresql", "diagnostics", "dba"]
     assert project["urls"] == {
-        "Homepage": "https://github.com/O2eg/pg_diag",
+        "Homepage": "https://o2eg.com/",
         "Repository": "https://github.com/O2eg/pg_diag",
         "Issues": "https://github.com/O2eg/pg_diag/issues",
     }

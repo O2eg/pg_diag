@@ -289,7 +289,13 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "generator.name || \"pg_diag\"" in html
     assert "generatorName + \" version \" + generatorVersion" in html
     assert "https://github.com/O2eg/pg_diag" in html
+    assert "https://o2eg.com/" in html
     assert "https://t.me/O2egg" in html
+    assert (
+        html.index("https://github.com/O2eg/pg_diag")
+        < html.index("https://o2eg.com/")
+        < html.index("https://t.me/O2egg")
+    )
     assert "project-link-icon" in html
     assert "formatRuntimeValue(entry[0], entry[1])" in html
     assert "formatBrowserTimestamp(value)" in html

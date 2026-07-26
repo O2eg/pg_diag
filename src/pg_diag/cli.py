@@ -329,7 +329,13 @@ def _add_ssh_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--ssh-host", help="SSH host for full remote collection")
     parser.add_argument("--ssh-port", type=int, help="SSH port (default: 22)")
     parser.add_argument("--ssh-user")
-    parser.add_argument("--ssh-key", help="SSH private key path")
+    ssh_auth = parser.add_mutually_exclusive_group()
+    ssh_auth.add_argument("--ssh-key", help="SSH private key path")
+    ssh_auth.add_argument(
+        "--ssh-agent",
+        action="store_true",
+        help="Authenticate through the existing SSH_AUTH_SOCK agent",
+    )
     parser.add_argument(
         "--ssh-known-hosts",
         help="known_hosts file used for strict SSH host verification (default: ~/.ssh/known_hosts)",
@@ -936,6 +942,7 @@ def _connection_args_error(
                 "ssh_port",
                 "ssh_user",
                 "ssh_key",
+                "ssh_agent",
                 "ssh_known_hosts",
                 "ssh_connect_timeout",
                 "ssh_key_passphrase_env",
@@ -953,12 +960,17 @@ def _connection_args_error(
         for option, value in (
             ("--ssh-host", args.ssh_host),
             ("--ssh-user", args.ssh_user),
-            ("--ssh-key", args.ssh_key),
         )
         if not value
     ]
+    if not args.ssh_key and not args.ssh_agent:
+        missing.append("one of --ssh-key or --ssh-agent")
     if missing:
         return "remote collection requires " + ", ".join(missing)
+    if args.ssh_agent and not os.environ.get("SSH_AUTH_SOCK"):
+        return "--ssh-agent requires SSH_AUTH_SOCK to reference a running agent"
+    if args.ssh_key_passphrase_env and not args.ssh_key:
+        return "--ssh-key-passphrase-env requires --ssh-key"
     if args.ssh_key_passphrase_env and args.ssh_key_passphrase_env not in os.environ:
         return f"environment variable {args.ssh_key_passphrase_env!r} is not set"
     try:
@@ -987,10 +999,13 @@ def _ssh_config(args: argparse.Namespace) -> SshConfig | None:
         host=str(args.ssh_host or ""),
         port=22 if args.ssh_port is None else int(args.ssh_port),
         username=str(args.ssh_user or ""),
-        client_key=Path(str(args.ssh_key or "")).expanduser(),
         known_hosts=Path(
             str("~/.ssh/known_hosts" if args.ssh_known_hosts is None else args.ssh_known_hosts)
         ).expanduser(),
+        client_key=(Path(str(args.ssh_key)).expanduser() if args.ssh_key else None),
+        agent_path=(
+            Path(str(os.environ["SSH_AUTH_SOCK"])).expanduser() if args.ssh_agent else None
+        ),
         connect_timeout=(
             10.0 if args.ssh_connect_timeout is None else float(args.ssh_connect_timeout)
         ),

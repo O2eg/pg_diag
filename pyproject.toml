@@ -60,7 +60,7 @@ docker = [
 pg-diag = "pg_diag.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/O2eg/pg_diag"
+Homepage = "https://o2eg.com/"
 Repository = "https://github.com/O2eg/pg_diag"
 Issues = "https://github.com/O2eg/pg_diag/issues"
 

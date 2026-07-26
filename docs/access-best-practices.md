@@ -217,7 +217,8 @@ In `remote` mode, the passfile entry must match the original `--host` and
 `--port` as seen from the SSH target, not the dynamic loopback port created on
 the collector. Escape `:` as `\:` and `\` as `\\` inside passfile fields.
 
-Protect SSH private keys and PostgreSQL passfiles from group and other access.
+Protect SSH private-key files, when used, and PostgreSQL passfiles from group
+and other access.
 Obtain the SSH host-key fingerprint over an independent trusted channel before
 adding it to `known_hosts`; `ssh-keyscan` alone does not authenticate a host.
 
@@ -250,6 +251,28 @@ pg-diag snapshots \
   --interval-seconds 60 \
   --out reports/application_db
 ```
+
+The SSH identity can instead be supplied by an already running local agent:
+
+```bash
+eval "$(ssh-agent -s)"
+ssh-add ~/.ssh/pg_diag_ed25519
+
+pg-diag one-shot \
+  --collection-mode remote \
+  --ssh-host db.example.net \
+  --ssh-user pg_diag \
+  --ssh-agent \
+  --ssh-known-hosts ~/.ssh/pg_diag_known_hosts \
+  --host 127.0.0.1 \
+  --database application_db \
+  --user pg_diag \
+  --out reports/application_db
+```
+
+Agent mode is explicit, requires a live inherited `SSH_AUTH_SOCK`, and never
+forwards the agent to the target. Keep strict `known_hosts` verification in
+both key-file and agent modes.
 
 The certificate chain, certificate name, HBA rule, and network policy must all
 match the service endpoint.
@@ -495,7 +518,8 @@ pretending they are one transactionally consistent snapshot.
 - [ ] Optional grants were added only after reviewing item-level permission
       failures.
 - [ ] The effective HBA rule requires the intended authentication method.
-- [ ] The passfile and private key are not accessible to group or other users.
+- [ ] The passfile and any selected private-key file are not accessible to
+      group or other users.
 - [ ] The SSH host key was verified through an independent trusted channel.
 - [ ] `--host` and `--port` are reachable from the collector in direct mode or
       from the SSH target in remote mode.

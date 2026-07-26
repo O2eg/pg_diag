@@ -9,6 +9,7 @@ import math
 import os
 from pathlib import Path
 import shlex
+import stat
 import ssl
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -64,8 +65,9 @@ class SshCommandTimeoutError(SshTransportError, CommandTimeoutError):
 class SshConfig:
     host: str
     username: str
-    client_key: Path
     known_hosts: Path
+    client_key: Path | None = None
+    agent_path: Path | None = field(default=None, repr=False)
     port: int = DEFAULT_SSH_PORT
     connect_timeout: float = 10.0
     passphrase: str | None = field(default=None, repr=False)
@@ -79,13 +81,30 @@ class SshConfig:
             raise SshTransportError("SSH port must be between 1 and 65535")
         if not math.isfinite(self.connect_timeout) or self.connect_timeout <= 0:
             raise SshTransportError("SSH connect timeout must be positive")
-        client_key = self.client_key.expanduser()
-        if not client_key.is_file():
-            raise SshTransportError(f"SSH private key does not exist: {self.client_key}")
-        if client_key.stat().st_mode & 0o077:
+        if (self.client_key is None) == (self.agent_path is None):
             raise SshTransportError(
-                f"SSH private key must not grant group or other access: {self.client_key}"
+                "SSH authentication requires exactly one of a private key or ssh-agent"
             )
+        if self.client_key is not None:
+            client_key = self.client_key.expanduser()
+            if not client_key.is_file():
+                raise SshTransportError(f"SSH private key does not exist: {self.client_key}")
+            if client_key.stat().st_mode & 0o077:
+                raise SshTransportError(
+                    f"SSH private key must not grant group or other access: {self.client_key}"
+                )
+        if self.agent_path is not None:
+            agent_path = self.agent_path.expanduser()
+            try:
+                agent_mode = agent_path.stat().st_mode
+            except OSError as exc:
+                raise SshTransportError(
+                    f"SSH agent socket is not available: {self.agent_path}"
+                ) from exc
+            if not stat.S_ISSOCK(agent_mode):
+                raise SshTransportError(f"SSH_AUTH_SOCK is not a socket: {self.agent_path}")
+            if self.passphrase is not None:
+                raise SshTransportError("SSH key passphrase is not used with ssh-agent")
         if not self.known_hosts.expanduser().is_file():
             raise SshTransportError(f"SSH known_hosts file does not exist: {self.known_hosts}")
 
@@ -404,16 +423,19 @@ class SshTransport:
     async def connect(cls, config: SshConfig) -> SshTransport:
         config.validate()
         asyncssh = _load_asyncssh()
+        client_keys = [str(config.client_key.expanduser())] if config.client_key is not None else []
+        agent_path = str(config.agent_path.expanduser()) if config.agent_path is not None else None
         try:
             connection = await asyncssh.connect(
                 config.host,
                 port=config.port,
                 username=config.username,
-                client_keys=[str(config.client_key.expanduser())],
+                client_keys=client_keys,
                 passphrase=config.passphrase,
                 known_hosts=str(config.known_hosts.expanduser()),
                 config=None,
-                agent_path=None,
+                agent_path=agent_path,
+                agent_forwarding=False,
                 preferred_auth=["publickey"],
                 password_auth=False,
                 kbdint_auth=False,
