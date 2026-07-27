@@ -2371,6 +2371,7 @@ __HIGHLIGHT_JS__
     bindSourceModalControls();
     bindMetaModalControls();
     bindInstructionModalControls();
+    bindChartExportMenuControls();
     bindPageScrollControls();
     applyReportFilters();
 
@@ -4997,12 +4998,16 @@ __HIGHLIGHT_JS__
       return menu;
     }
 
-    function toggleEChartsExportMenu(entry) {
+    function closeEChartsExportMenus(except) {
       for (const candidate of echartsCharts) {
-        if (candidate !== entry && candidate.exportMenu) {
+        if (candidate !== except && candidate.exportMenu) {
           candidate.exportMenu.hidden = true;
         }
       }
+    }
+
+    function toggleEChartsExportMenu(entry) {
+      closeEChartsExportMenus(entry);
       entry.exportMenu.hidden = !entry.exportMenu.hidden;
       if (!entry.exportMenu.hidden) {
         entry.exportMenu.querySelector("button").focus({preventScroll: true});
@@ -6507,6 +6512,20 @@ __HIGHLIGHT_JS__
       document.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && !modal.hidden) {
           closeInstructionModal();
+        }
+      });
+    }
+
+    function bindChartExportMenuControls() {
+      document.addEventListener("pointerdown", (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target || !target.closest(".chart-export-menu")) {
+          closeEChartsExportMenus();
+        }
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          closeEChartsExportMenus();
         }
       });
     }

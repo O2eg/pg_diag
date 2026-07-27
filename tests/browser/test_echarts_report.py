@@ -47,9 +47,7 @@ def _artifact() -> dict:
     }
     column_names = [f"schema.table_with_a_long_descriptive_name_{index}" for index in range(30)]
     results = {
-        "charts.line": _chart_result(
-            "line", [[120_000, 140_000, 130_000]], names=["query.123"]
-        ),
+        "charts.line": _chart_result("line", [[120_000, 140_000, 130_000]], names=["query.123"]),
         "charts.area": _chart_result(
             "stacked_area", [[2, 4, 3], [1, 2, 1]], names=["read", "write"]
         ),
@@ -155,9 +153,7 @@ def test_self_contained_echarts_report_in_browser(tmp_path: Path) -> None:
         )
 
         page.goto(report_path.as_uri(), wait_until="load")
-        page.wait_for_function(
-            "document.querySelectorAll('[data-chart-ready=true]').length === 3"
-        )
+        page.wait_for_function("document.querySelectorAll('[data-chart-ready=true]').length === 3")
         state = page.evaluate(
             """() => {
               const entry = echartsCharts[0];
@@ -220,9 +216,9 @@ def test_self_contained_echarts_report_in_browser(tmp_path: Path) -> None:
         page.wait_for_timeout(100)
         panned_zoom = page.evaluate("echartsCharts[0].zoomRange")
 
-        crowded_legend_button = page.locator(".chart-legend-panel").nth(2).locator(
-            ".chart-legend-item"
-        ).first
+        crowded_legend_button = (
+            page.locator(".chart-legend-panel").nth(2).locator(".chart-legend-item").first
+        )
         crowded_legend_button.click()
         assert crowded_legend_button.get_attribute("aria-pressed") == "false"
         crowded_legend_button.click()
@@ -236,6 +232,12 @@ def test_self_contained_echarts_report_in_browser(tmp_path: Path) -> None:
             "Export PNG",
             "Export CSV",
         ]
+        page.locator("#reportTitle").click()
+        assert export_menu.is_hidden()
+        page.evaluate("toggleEChartsExportMenu(echartsCharts[0])")
+        page.keyboard.press("Escape")
+        assert export_menu.is_hidden()
+        page.evaluate("toggleEChartsExportMenu(echartsCharts[0])")
         with page.expect_download() as svg_download_info:
             export_menu.locator('[data-export-format="svg"]').click()
         svg_download = svg_download_info.value
@@ -329,9 +331,7 @@ def test_strip_meta_removes_item_action_buttons_in_browser(tmp_path: Path) -> No
         browser = playwright.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 1200, "height": 800})
         page.goto(report_path.as_uri(), wait_until="load")
-        page.wait_for_function(
-            "document.querySelectorAll('[data-chart-ready=true]').length === 3"
-        )
+        page.wait_for_function("document.querySelectorAll('[data-chart-ready=true]').length === 3")
 
         assert page.locator(".item-action-buttons button").count() == 0
         assert page.get_by_role("button", name="Show SQL").count() == 0

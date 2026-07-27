@@ -41,7 +41,7 @@ def test_distribution_metadata_policy(repo_root: Path) -> None:
         "src/pg_diag/render/vendor/*NOTICE*",
         "src/pg_diag/render/vendor/THIRD_PARTY_LICENSES.txt",
     ]
-    assert project["authors"] == [{"name": "O2eg", "email": "oleg.ispu@yandex.ru"}]
+    assert project["authors"] == [{"name": "O2eg", "email": "oleg.ispu@gmail.com"}]
     assert project["keywords"] == ["postgresql", "diagnostics", "dba"]
     assert project["urls"] == {
         "Homepage": "https://o2eg.com/",
