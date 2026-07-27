@@ -43,6 +43,7 @@ report:
 
 runtime_policy:
   default_sql_timeout_ms: 1000
+  default_lock_timeout_ms: 750
   default_shell_timeout_ms: 1000
   remote_db_only_shell_message: "no data because remote call"
   table_columns: dynamic_from_result
@@ -69,6 +70,22 @@ defaults:
       current_database:
         title_suffix: " (Only {current_database})"
         hidden_columns: [datname, database_name]
+
+fallback_items:
+  fallback.object_workload.table_workload_relpages:
+    title: Approximate Table Workload Counters From relpages
+    query: objects.table_workload_relpages
+    instruction: fallback_items/object_workload/table_workload_relpages.md
+  fallback.object_workload.index_workload_relpages:
+    title: Approximate Index Workload Counters From relpages
+    query: objects.index_workload_relpages
+    instruction: fallback_items/object_workload/index_workload_relpages.md
+  fallback.indexes.tables_without_pk_or_unique_relpages:
+    title: Tables Without PK Or Unique Index From relpages
+    query: indexes.tables_without_pk_or_unique_relpages
+    instruction: fallback_items/indexes/tables_without_pk_or_unique_relpages.md
+    render:
+      empty_message: No user tables without PK or unique index detected.
 
 sections:
   overview:
@@ -725,6 +742,8 @@ sections:
     items:
       table_workload:
         query: objects.table_workload
+        fallback_item: fallback.object_workload.table_workload_relpages
+        fallback_on: [statement_timeout, lock_timeout]
         tags: [Tables]
         state: expanded
       table_io:
@@ -733,6 +752,8 @@ sections:
         state: expanded
       index_workload:
         query: objects.index_workload
+        fallback_item: fallback.object_workload.index_workload_relpages
+        fallback_on: [statement_timeout, lock_timeout]
         tags: [Indexes]
         state: expanded
       function_workload:
@@ -916,6 +937,8 @@ sections:
           empty_message: No foreign keys without supporting indexes detected.
       tables_without_pk_or_unique:
         query: indexes.tables_without_pk_or_unique
+        fallback_item: fallback.indexes.tables_without_pk_or_unique_relpages
+        fallback_on: [statement_timeout, lock_timeout]
         tags: [Indexes, Tables]
         state: expanded
         render:

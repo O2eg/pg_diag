@@ -15,6 +15,7 @@ This instruction belongs to report item `os.sysctl_vm`. The item is backed by `o
 - Default OS tuning left in place.
 - Sysctl change not persisted.
 - Configuration management drift.
+- `sysctl` is not installed, or is inaccessible even after searching the inherited `PATH` and standard system binary directories.
 
 ## Automatic evaluation
 - No severity is assigned: safe VM values depend on RAM, storage latency, kernel release, and workload.

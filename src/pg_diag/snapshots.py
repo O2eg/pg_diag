@@ -523,7 +523,12 @@ async def _execute_query_batch(
                         batch_context=batch_context,
                     )
                 else:
-                    item = await execute_query_item(content, conn, planned)
+                    item = await execute_query_item(
+                        content,
+                        conn,
+                        planned,
+                        batch_context=batch_context,
+                    )
             except Exception as exc:
                 item = item_error_from_exception(planned, exc)
             if query_texts is not None:

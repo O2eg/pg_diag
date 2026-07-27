@@ -1943,6 +1943,10 @@ __ECHARTS_JS__
       white-space: nowrap;
     }
 
+    table.single-cell-table td {
+      text-align: left;
+    }
+
     .sort-button {
       display: flex;
       align-items: center;
@@ -2305,6 +2309,10 @@ __HIGHLIGHT_JS__
     const tableViews = [];
     const pendingCharts = [];
     const echartsCharts = [];
+    const echartsChartByContainer = new WeakMap();
+    const echartsResizeObserver = typeof window.ResizeObserver === "function"
+      ? new window.ResizeObserver(handleObservedEChartsResize)
+      : null;
     let activeEChartsPanEntry = null;
     const CHART_MIN_HEIGHT_PX = 470;
     const CHART_PLOT_MIN_HEIGHT_PX = 300;
@@ -3539,7 +3547,25 @@ __HIGHLIGHT_JS__
       const section = contentDocument.sections[sectionId];
       const itemDefinition = section.items[itemKey];
       const sourceKind = item.source_kind;
-      const sourceId = itemDefinition[sourceKind];
+      const metadata = item.source_metadata || {};
+      const fallbackMetadata = metadata.fallback || {};
+      const effectiveItemId = fallbackMetadata.used
+        ? String(fallbackMetadata.effective_item_id || fallbackMetadata.fallback_item_id || "")
+        : "";
+      const fallbackDefinition = effectiveItemId
+        ? (contentDocument.fallback_items || {})[effectiveItemId]
+        : null;
+      if (effectiveItemId && !fallbackDefinition) {
+        throw new Error("Missing fallback definition for item " + itemId);
+      }
+      const effectiveItemDefinition = fallbackDefinition || itemDefinition;
+      const metadataSourceKey = {
+        query: "query_id",
+        script: "script_id",
+        metric: "metric_id",
+        python: "python_id",
+      }[sourceKind];
+      const sourceId = metadata[metadataSourceKey] || effectiveItemDefinition[sourceKind];
       const sourceRoot = {
         query: "queries",
         script: "scripts",
@@ -3560,7 +3586,13 @@ __HIGHLIGHT_JS__
         document.runtime_policy = runtimePolicy;
         relatedPaths.push("runtime_policy");
       }
-      const defaults = relevantRawDefaults(item, section, itemDefinition, sourceManifest);
+      const defaults = relevantRawDefaults(
+        item,
+        section,
+        itemDefinition,
+        effectiveItemDefinition,
+        sourceManifest
+      );
       if (Object.keys(defaults).length) {
         document.defaults = defaults;
         relatedPaths.push("defaults");
@@ -3574,6 +3606,10 @@ __HIGHLIGHT_JS__
       sectionDefinition.items = {[itemKey]: itemDefinition};
       document.sections = {[sectionId]: sectionDefinition};
       relatedPaths.push("sections/" + sectionId + "/items/" + itemKey);
+      if (fallbackDefinition) {
+        document.fallback_items = {[effectiveItemId]: fallbackDefinition};
+        relatedPaths.push("fallback_items/" + effectiveItemId);
+      }
 
       document[sourceRoot] = {
         [sourceId]: projectedRawSourceManifest(sourceKind, sourceManifest, item.source_metadata),
@@ -3603,14 +3639,17 @@ __HIGHLIGHT_JS__
         }
       }
 
-      const instruction = contentDocument.instructions[itemId];
+      const instructionId = fallbackDefinition ? effectiveItemId : itemId;
+      const instruction = contentDocument.instructions[instructionId];
       if (instruction) {
-        document.instructions = {[itemId]: instruction};
-        relatedPaths.push("instructions/" + itemId);
+        document.instructions = {[instructionId]: instruction};
+        relatedPaths.push("instructions/" + instructionId);
       }
       document.resolved = resolvedRawItemConfiguration(
         item,
         itemDefinition,
+        effectiveItemDefinition,
+        effectiveItemId,
         sourceKind,
         sourceId,
         sourceRoot,
@@ -3630,6 +3669,9 @@ __HIGHLIGHT_JS__
       const selected = {fail_fast: policy.fail_fast};
       if (sourceKind === "query" || (sourceKind === "metric" && sourceManifest.source_query)) {
         selected.default_sql_timeout_ms = policy.default_sql_timeout_ms;
+        selected.default_lock_timeout_ms = policy.default_lock_timeout_ms === undefined
+          ? 750
+          : policy.default_lock_timeout_ms;
       }
       if (sourceKind === "script" && sourceManifest.timeout_ms === undefined) {
         selected.default_shell_timeout_ms = policy.default_shell_timeout_ms;
@@ -3653,7 +3695,13 @@ __HIGHLIGHT_JS__
       return selected;
     }
 
-    function relevantRawDefaults(item, section, itemDefinition, sourceManifest) {
+    function relevantRawDefaults(
+      item,
+      section,
+      itemDefinition,
+      effectiveItemDefinition,
+      sourceManifest
+    ) {
       const defaults = contentDocument.defaults;
       const selected = {};
       if ((item.result || {}).kind === "table") {
@@ -3665,7 +3713,7 @@ __HIGHLIGHT_JS__
       }
       const resolvedScope = (item.source_metadata || {}).database_scope;
       if (
-        itemDefinition.database_scope === undefined
+        effectiveItemDefinition.database_scope === undefined
         && sourceManifest.database_scope === undefined
         && resolvedScope === defaults.item.database_scope
       ) {
@@ -3756,11 +3804,20 @@ __HIGHLIGHT_JS__
       return provenance;
     }
 
-    function resolvedRawItemConfiguration(item, itemDefinition, sourceKind, sourceId, sourceRoot) {
+    function resolvedRawItemConfiguration(
+      item,
+      itemDefinition,
+      effectiveItemDefinition,
+      effectiveItemId,
+      sourceKind,
+      sourceId,
+      sourceRoot
+    ) {
       const metadata = item.source_metadata;
       const sourceManifest = contentDocument[sourceRoot][sourceId];
       const resolved = {
         item_id: item.item_id,
+        effective_item_id: effectiveItemId || item.item_id,
         title: item.title,
         source_kind: sourceKind,
         source_id: sourceId,
@@ -3768,13 +3825,20 @@ __HIGHLIGHT_JS__
         tags: itemDefinition.tags,
         collection_scope: item.collection_scope,
       };
-      for (const key of ["database_scope", "variant_id", "sql_file"]) {
+      for (const key of [
+        "database_scope",
+        "variant_id",
+        "sql_file",
+        "script_file",
+        "python_file",
+        "function",
+      ]) {
         if (metadata[key] !== undefined && metadata[key] !== null) {
           resolved[key] = metadata[key];
         }
       }
-      if (itemDefinition.render !== undefined) {
-        resolved.render = itemDefinition.render;
+      if (effectiveItemDefinition.render !== undefined) {
+        resolved.render = effectiveItemDefinition.render;
       }
       if (sourceManifest.display !== undefined) {
         resolved.display = sourceManifest.display;
@@ -4428,8 +4492,13 @@ __HIGHLIGHT_JS__
           panDrag: null,
           legendPanel: null,
           exportMenu: null,
+          observedResizeRaf: 0,
         };
         echartsCharts.push(entry);
+        echartsChartByContainer.set(pending.container, entry);
+        if (echartsResizeObserver) {
+          echartsResizeObserver.observe(pending.container);
+        }
         chart.on("datazoom", (event) => rememberEChartsZoom(entry, event));
         chart.setOption(buildEChartsOptions(entry), {notMerge: true});
         chart.resize();
@@ -4439,6 +4508,27 @@ __HIGHLIGHT_JS__
         entry.exportMenu = createEChartsExportMenu(entry);
         pending.shell.appendChild(entry.exportMenu);
         pending.container.dataset.chartReady = "true";
+      }
+    }
+
+    function handleObservedEChartsResize(observations) {
+      for (const observation of observations) {
+        const entry = echartsChartByContainer.get(observation.target);
+        if (
+          !entry
+          || observation.contentRect.width <= 0
+          || observation.contentRect.height <= 0
+          || entry.observedResizeRaf
+        ) {
+          continue;
+        }
+        entry.observedResizeRaf = window.requestAnimationFrame(() => {
+          entry.observedResizeRaf = 0;
+          if (entry.container.clientWidth <= 0 || entry.container.clientHeight <= 0) {
+            return;
+          }
+          resizeEChartsLayout(entry);
+        });
       }
     }
 
@@ -5509,6 +5599,9 @@ __HIGHLIGHT_JS__
       scroll.className = "table-scroll";
       const table = document.createElement("table");
       table.dataset.itemId = itemId;
+      if (rows.length === 1 && columns.length === 1) {
+        table.classList.add("single-cell-table");
+      }
       const thead = document.createElement("thead");
       const tr = document.createElement("tr");
       const headerCells = [];

@@ -394,6 +394,35 @@ One formatter registry is used by:
 - finding summaries containing measured values;
 - report time and duration labels.
 
+### 5.5 Fallback replacement layer
+
+A registered fallback MAY replace a report item after an explicitly allowed,
+normalized timeout failure. The replacement MUST:
+
+- retain the parent `item_id`, section, item key, position, state, and tags;
+- expose its own effective source, instruction, result descriptors, findings,
+  and render configuration;
+- prefix the visible title with `[Fallback]`;
+- record the trigger, primary failure, parent and effective IDs, and separate
+  timings under `source_metadata.fallback`;
+- preserve the fallback's final `collection_status` while marking the machine
+  summary `degraded`;
+- never activate for a generic cancellation that has not been classified as the
+  declared timeout condition.
+
+The parent `item_id` is a stable layout identity, not a promise that primary and
+fallback rows share one schema. Consumers MUST inspect
+`source_metadata.fallback.used` and
+`source_metadata.fallback.effective_item_id` before interpreting result fields.
+Fallback columns remain subject to every descriptor rule in this specification;
+estimated or truncated evidence MUST declare that quality in its descriptors,
+field names, result columns, diagnostics, or instruction as appropriate.
+
+Fallback definitions MUST NOT form chains or require execution targets that the
+parent did not make available. A successful fallback MAY produce `ok` or
+`empty`, and therefore MAY satisfy normal completeness while the artifact
+remains explicitly degraded.
+
 ## 6. Cell And Column Status
 
 An item may succeed while one cell or one version-specific column is unavailable.

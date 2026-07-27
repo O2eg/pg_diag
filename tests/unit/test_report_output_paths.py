@@ -102,6 +102,7 @@ def fake_content(tmp_path):
             "metrics": {},
             "python_sources": {},
             "sampler_providers": {},
+            "fallback_items": {},
             "instructions": {},
             "field_reference": {"report": "Report metadata."},
         },
@@ -819,7 +820,7 @@ def test_collect_snapshots_runs_static_items_before_chart_window(tmp_path, monke
         assert database_connector.connection_kwargs == {
             "server_settings": {
                 "statement_timeout": "1000",
-                "lock_timeout": "1000",
+                "lock_timeout": "750",
                 "idle_in_transaction_session_timeout": "10000",
                 "search_path": "pg_catalog, public",
             }

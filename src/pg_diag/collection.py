@@ -261,6 +261,39 @@ async def execute_report_item(
     ssh: SshTransport | None = None,
     database_connector: DatabaseConnector | None = None,
 ) -> dict[str, Any]:
+    primary_item = await _execute_source_item(
+        content,
+        conn,
+        planned,
+        ssh,
+        database_connector,
+    )
+    trigger = _fallback_trigger(primary_item, planned.fallback_on)
+    if trigger is None or planned.fallback_item is None:
+        return primary_item
+    fallback_item = await _execute_source_item(
+        content,
+        conn,
+        planned.fallback_item,
+        ssh,
+        database_connector,
+    )
+    return _replace_with_fallback_item(
+        planned,
+        primary_item,
+        planned.fallback_item,
+        fallback_item,
+        trigger,
+    )
+
+
+async def _execute_source_item(
+    content: ContentPack,
+    conn: Any,
+    planned: PlannedItem,
+    ssh: SshTransport | None,
+    database_connector: DatabaseConnector | None,
+) -> dict[str, Any]:
     if planned.status == "unsupported":
         return item_from_plan(
             planned,
@@ -321,6 +354,97 @@ async def execute_report_item(
         reason="Unknown source kind",
         result={"kind": "none"},
     )
+
+
+def _fallback_trigger(item: dict[str, Any], allowed: tuple[str, ...]) -> str | None:
+    if item.get("collection_status") != "error" or not allowed:
+        return None
+    allowed_set = set(allowed)
+    for diagnostic in item.get("diagnostics") or []:
+        if not isinstance(diagnostic, dict):
+            continue
+        failure_kind = diagnostic.get("failure_kind")
+        if isinstance(failure_kind, str) and failure_kind in allowed_set:
+            return failure_kind
+        code = diagnostic.get("code")
+        if isinstance(code, str) and code in allowed_set:
+            return code
+    return None
+
+
+def _replace_with_fallback_item(
+    parent_plan: PlannedItem,
+    primary_item: dict[str, Any],
+    fallback_plan: PlannedItem,
+    fallback_item: dict[str, Any],
+    trigger: str,
+) -> dict[str, Any]:
+    primary_timing_ms = _numeric_timing(primary_item.get("timing_ms"))
+    fallback_timing_ms = _numeric_timing(fallback_item.get("timing_ms"))
+    fallback_metadata = dict(fallback_item.get("source_metadata") or {})
+    parent_metadata = primary_item.get("source_metadata") or {}
+    parent_tags = parent_metadata.get("tags")
+    if isinstance(parent_tags, list):
+        fallback_metadata["tags"] = list(parent_tags)
+    fallback_metadata["fallback"] = {
+        "used": True,
+        "trigger": trigger,
+        "on": list(parent_plan.fallback_on),
+        "parent_item_id": parent_plan.item_id,
+        "parent_title": parent_plan.title,
+        "fallback_item_id": fallback_plan.item_id,
+        "effective_item_id": fallback_plan.item_id,
+        "primary_source_kind": parent_plan.source_kind,
+        "primary_source_id": parent_plan.source_id,
+        "primary_reason": primary_item.get("reason"),
+        "primary_timing_ms": primary_timing_ms,
+        "fallback_timing_ms": fallback_timing_ms,
+        "primary_diagnostics": primary_item.get("diagnostics") or [],
+    }
+    fallback_diagnostics = list(fallback_item.get("diagnostics") or [])
+    fallback_diagnostics.insert(
+        0,
+        {
+            "level": "warning",
+            "code": "fallback_item_activated",
+            "message": (
+                f"Primary item {parent_plan.item_id} failed with {trigger}; "
+                f"executed fallback item {fallback_plan.item_id}."
+            ),
+            "trigger": trigger,
+            "parent_item_id": parent_plan.item_id,
+            "fallback_item_id": fallback_plan.item_id,
+        },
+    )
+    fallback_status = str(fallback_item.get("collection_status") or "error")
+    if fallback_status in {"ok", "empty"}:
+        reason = (
+            f"Primary item timed out ({trigger}); fallback item "
+            f"{fallback_plan.item_id} was collected."
+        )
+    else:
+        fallback_reason = fallback_item.get("reason") or fallback_status
+        reason = (
+            f"Primary item timed out ({trigger}); fallback item "
+            f"{fallback_plan.item_id} failed: {fallback_reason}"
+        )
+    return {
+        **fallback_item,
+        "item_id": parent_plan.item_id,
+        "section_id": parent_plan.section_id,
+        "item_key": parent_plan.item_key,
+        "title": f"[Fallback] {fallback_item.get('title') or fallback_plan.title}",
+        "state": parent_plan.state,
+        "collection_scope": parent_plan.collection_scope,
+        "reason": reason,
+        "timing_ms": round(primary_timing_ms + fallback_timing_ms, 3),
+        "source_metadata": fallback_metadata,
+        "diagnostics": fallback_diagnostics,
+    }
+
+
+def _numeric_timing(value: Any) -> float:
+    return float(value) if isinstance(value, (int, float)) else 0.0
 
 
 async def execute_and_record_report_item(

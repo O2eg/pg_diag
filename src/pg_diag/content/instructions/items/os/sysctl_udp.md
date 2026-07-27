@@ -14,6 +14,7 @@ This instruction belongs to report item `os.sysctl_udp`. The item is backed by `
 - Default sysctl values.
 - High monitoring packet volume.
 - Configuration drift.
+- `sysctl` is not installed, or is inaccessible even after searching the inherited `PATH` and standard system binary directories.
 
 ## Automatic evaluation
 - No severity is assigned because PostgreSQL itself does not normally use UDP and adjacent services differ by deployment.

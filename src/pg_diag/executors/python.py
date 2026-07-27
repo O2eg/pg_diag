@@ -134,7 +134,14 @@ async def execute_python_item(
             reason=message,
             timing_ms=elapsed_ms(started),
             result={"kind": "none"},
-            diagnostics=[{"level": "error", "code": "python_timeout", "message": message}],
+            diagnostics=[
+                {
+                    "level": "error",
+                    "code": "python_timeout",
+                    "failure_kind": "python_timeout",
+                    "message": message,
+                }
+            ],
             source_text=source_text,
             source_language="python",
         )

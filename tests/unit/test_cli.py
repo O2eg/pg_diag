@@ -504,6 +504,7 @@ def test_render_from_json_cli(repo_root: Path, tmp_path: Path) -> None:
                 "metrics": {},
                 "python_sources": {},
                 "sampler_providers": {},
+                "fallback_items": {},
                 "instructions": {
                     "overview.x": {
                         "format": "markdown",

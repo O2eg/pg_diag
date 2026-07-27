@@ -117,7 +117,7 @@ queries:
     database_scope: current_database
     group: Activity & Locks
     main_view: pg_locks
-    description: Current lock counts by type, mode, and granted state for the connected database and its sessions.
+    description: Current lock counts with bounded backend PID and relation samples by type, mode, and granted state for the connected database and its sessions.
     source: queries_collection/pg_locks_locks_mode.md
     display:
       default_sort:
@@ -533,7 +533,8 @@ queries:
     description: User tables without a primary key or any valid unique index.
     source: queries_collection/pg_index_dba_tables_without_pk_or_unique_db_converter.md
     cost: medium
-    timeout_ms: 5000
+    timeout_ms: 3000
+    lock_timeout_ms: 2500
     display:
       default_sort:
         column: total_relation_size_bytes
@@ -548,6 +549,30 @@ queries:
       - id: indexes_tables_without_pk_or_unique_pg14_plus
         min_pg_version: 100000
         sql_file: indexes/tables_without_pk_or_unique.sql
+
+  indexes.tables_without_pk_or_unique_relpages:
+    title: Tables Without PK Or Unique Index From relpages
+    database_scope: current_database
+    group: Index Health
+    main_view: pg_class
+    description: Lightweight fallback that ranks a bounded set of keyless table roots by catalog relpages without relation-size functions and reports selection coverage.
+    cost: low
+    timeout_ms: 2000
+    lock_timeout_ms: 750
+    display:
+      default_sort:
+        column: estimated_table_size_bytes
+        direction: desc
+    evaluation:
+      summary_title: Large estimated tables lack a primary or non-partial unique index
+      recommendation: Confirm table lifecycle and row-identity requirements; relpages estimates are approximate.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: indexes_tables_without_pk_or_unique_relpages_pg14_plus
+        min_pg_version: 100000
+        sql_file: indexes/tables_without_pk_or_unique_relpages.sql
 
   indexes.large_indexes:
     title: Indexes Large Relative To Table

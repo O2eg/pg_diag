@@ -191,6 +191,86 @@ Query-backed metrics must repeat the same explicit scope as their source query.
    parameters omitted the destination item, the reference remains visible but
    inactive.
 
+## Add A Fallback Item
+
+Use a fallback when a bounded primary report source can fail for one explicit,
+recoverable timeout condition and a cheaper source can still provide useful
+evidence. A fallback is not a second layout item: it replaces its parent in the
+same section position and keeps the parent `item_id`, item key, state, and tags.
+
+1. Define the replacement under top-level `fallback_items` in `report.yaml`.
+   The definition owns its title, instruction, source, result schema, findings,
+   and optional render settings:
+
+   ```yaml
+   fallback_items:
+     fallback.object_workload.table_workload_relpages:
+       title: Approximate Table Workload From relpages
+       query: objects.table_workload_relpages
+       instruction: fallback_items/object_workload/table_workload_relpages.md
+   ```
+
+   Exactly one `query`, `script`, or `python` source is required. Metrics and
+   fallback chains are not supported. The fallback's required execution targets
+   must be a subset of the parent's targets.
+
+2. Attach it to the parent and enumerate only the intended normalized triggers:
+
+   ```yaml
+   table_workload:
+     query: objects.table_workload
+     fallback_item: fallback.object_workload.table_workload_relpages
+     fallback_on: [statement_timeout, lock_timeout]
+     tags: [Tables]
+   ```
+
+   Valid triggers are:
+
+   - SQL query: `statement_timeout`, `lock_timeout`;
+   - shell script: `shell_timeout`;
+   - trusted Python source: `python_timeout`.
+
+   PostgreSQL SQLSTATE `57014` and `55P03` are not timeout-specific. The
+   executor records generic `query_canceled` or `lock_not_available` unless
+   timeout evidence exists; generic cancellation must not silently activate a
+   timeout-only fallback.
+
+3. Add the fallback source manifest and implementation exactly as for an
+   ordinary source. For SQL, keep `lock_timeout_ms` lower than the effective
+   `timeout_ms`. A fallback intended to recover from a heavy relation-size query
+   should avoid the same size functions, bound catalog enumeration before
+   recursion, and disclose any truncation in its result.
+
+4. Add the fallback instruction. It must explain:
+
+   - why the primary source can fail;
+   - which evidence is preserved and which fields changed;
+   - whether values are exact, estimated, missing, or truncated;
+   - partitioned-object aggregation semantics;
+   - how to obtain exact evidence later without repeating the production risk.
+
+5. Treat the parent ID as a stable placement identity, not a stable row schema.
+   On activation, consumers must branch on:
+
+   ```text
+   source_metadata.fallback.used
+   source_metadata.fallback.effective_item_id
+   ```
+
+   A successful fallback normally has final status `ok` or `empty`; it therefore
+   does not trigger `fail_fast` and does not make `has_errors` true. Machine
+   summaries expose `degraded: true` and the activated parent IDs under
+   `fallback_items`.
+
+6. Cover at least these cases:
+
+   - the declared timeout activates the fallback;
+   - an unrelated query cancellation or `NOWAIT` failure does not;
+   - fallback success and fallback failure;
+   - a fallback whose source kind differs from its parent;
+   - HTML `Show SQL/Python/Bash`, `Show Instruction`, and `Show meta → Raw`;
+   - machine summary degradation and effective schema selection.
+
 ## Add A Repeated-Snapshot Chart
 
 Use this when the report needs a time-series chart from SQL samples.

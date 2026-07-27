@@ -20,7 +20,9 @@ from .contracts import (
 from .content_loader import (
     ContentLoadError,
     ContentPack,
+    instruction_ref_for_fallback_item,
     instruction_ref_for_report_item,
+    iter_fallback_items,
     iter_report_items,
     resolve_under,
 )
@@ -37,6 +39,19 @@ class ValidationIssue:
 
 
 SOURCE_KEYS = {"query", "script", "metric", "python"}
+FALLBACK_SOURCE_KEYS = {"query", "script", "python"}
+VALID_FALLBACK_TRIGGERS = {
+    "statement_timeout",
+    "lock_timeout",
+    "python_timeout",
+    "shell_timeout",
+}
+FALLBACK_TRIGGERS_BY_SOURCE = {
+    "query": {"statement_timeout", "lock_timeout"},
+    "script": {"shell_timeout"},
+    "python": {"python_timeout"},
+    "metric": set(),
+}
 FORBIDDEN_LAYOUT_KEYS = {"columns", "theader", "fields"}
 VALID_STATES = {"expanded", "collapsed", "hidden"}
 VALID_COLLECTION_SCOPES = {
@@ -146,6 +161,7 @@ def _validate_content_shapes(content: ContentPack, issues: list[ValidationIssue]
         (content.report.get("runtime_policy"), "report.yaml:runtime_policy"),
         (content.report.get("defaults"), "report.yaml:defaults"),
         (content.report.get("sections"), "report.yaml:sections"),
+        (content.report.get("fallback_items") or {}, "report.yaml:fallback_items"),
         (content.query_catalog.get("query_catalog"), "queries.yaml:query_catalog"),
         (content.script_catalog.get("script_catalog"), "scripts.yaml:script_catalog"),
         (content.metric_catalog.get("metric_catalog"), "metrics.yaml:metric_catalog"),
@@ -234,6 +250,7 @@ def _validate_unified_document(content: ContentPack, issues: list[ValidationIssu
         "runtime_policy": content.report.get("runtime_policy") or {},
         "defaults": content.report.get("defaults") or {},
         "sections": content.report.get("sections") or {},
+        "fallback_items": content.report.get("fallback_items") or {},
         "queries": content.queries,
         "scripts": content.scripts,
         "metrics": content.metrics,
@@ -517,9 +534,37 @@ def _validate_report_contract(content: ContentPack, issues: list[ValidationIssue
     fail_fast = policy.get("fail_fast")
     if not isinstance(fail_fast, bool):
         _issue(issues, "runtime_policy", "runtime_policy.fail_fast must be boolean", "report.yaml")
-    for key in ("default_sql_timeout_ms", "default_shell_timeout_ms"):
+    for key in (
+        "default_sql_timeout_ms",
+        "default_shell_timeout_ms",
+    ):
         if not _is_positive_number(policy.get(key)):
             _issue(issues, "runtime_policy", f"runtime_policy.{key} must be positive", "report.yaml")
+    declared_default_lock_timeout_ms = policy.get("default_lock_timeout_ms")
+    if (
+        declared_default_lock_timeout_ms is not None
+        and not _is_positive_number(declared_default_lock_timeout_ms)
+    ):
+        _issue(
+            issues,
+            "runtime_policy",
+            "runtime_policy.default_lock_timeout_ms must be positive",
+            "report.yaml",
+        )
+    default_sql_timeout_ms = policy.get("default_sql_timeout_ms")
+    default_lock_timeout_ms = policy.get("default_lock_timeout_ms", 750)
+    if (
+        _is_positive_number(default_sql_timeout_ms)
+        and _is_positive_number(default_lock_timeout_ms)
+        and float(default_lock_timeout_ms) >= float(default_sql_timeout_ms)
+    ):
+        _issue(
+            issues,
+            "runtime_policy",
+            "runtime_policy.default_lock_timeout_ms must be lower than "
+            "runtime_policy.default_sql_timeout_ms",
+            "report.yaml",
+        )
     shell_timeout_ms = policy.get("default_shell_timeout_ms")
     max_shell_timeout_ms = runtime_config.MAX_SHELL_SOURCE_TIMEOUT_SECONDS * 1000
     if _is_positive_number(shell_timeout_ms) and float(shell_timeout_ms) > max_shell_timeout_ms:
@@ -724,12 +769,13 @@ def _validate_schema_versions(content: ContentPack, issues: list[ValidationIssue
         )
 
     for key in content.report:
-        if key not in {"report", "runtime_policy", "defaults", "sections"}:
+        if key not in {"report", "runtime_policy", "defaults", "sections", "fallback_items"}:
             _issue(issues, "unknown_key", f"Unknown report top-level key {key!r}", "report.yaml")
 
 
 def _validate_report_items(content: ContentPack, issues: list[ValidationIssue]) -> None:
     allowed_tags = set((content.report.get("report") or {}).get("allowed_item_tags") or [])
+    fallback_items = content.report.get("fallback_items") or {}
     for section_id, item_key, item_id, item in iter_report_items(content):
         source_keys = SOURCE_KEYS.intersection(item)
         location = f"report.yaml:sections.{section_id}.items.{item_key}"
@@ -768,6 +814,67 @@ def _validate_report_items(content: ContentPack, issues: list[ValidationIssue]) 
         if title is not None and (not isinstance(title, str) or not title.strip()):
             _issue(issues, "item_title", "Report item title must be a non-empty string", location)
         _validate_database_scope(item.get("database_scope"), issues, location)
+        fallback_item_id = item.get("fallback_item")
+        fallback_on = item.get("fallback_on")
+        if fallback_item_id is None:
+            if fallback_on is not None:
+                _issue(
+                    issues,
+                    "fallback_item",
+                    "fallback_on requires fallback_item",
+                    location,
+                )
+        else:
+            if not isinstance(fallback_item_id, str) or not fallback_item_id.strip():
+                _issue(
+                    issues,
+                    "fallback_item",
+                    "fallback_item must be a non-empty fallback item id",
+                    location,
+                )
+            elif fallback_item_id not in fallback_items:
+                _issue(
+                    issues,
+                    "fallback_item",
+                    f"Unknown fallback item id {fallback_item_id!r}",
+                    location,
+                )
+            if (
+                not isinstance(fallback_on, list)
+                or not fallback_on
+                or any(trigger not in VALID_FALLBACK_TRIGGERS for trigger in fallback_on)
+                or len(set(fallback_on)) != len(fallback_on)
+            ):
+                _issue(
+                    issues,
+                    "fallback_item",
+                    "fallback_on must be a non-empty unique list containing only "
+                    + ", ".join(sorted(VALID_FALLBACK_TRIGGERS)),
+                    location,
+                )
+            elif any(
+                trigger not in FALLBACK_TRIGGERS_BY_SOURCE[source_key]
+                for trigger in fallback_on
+            ):
+                _issue(
+                    issues,
+                    "fallback_item",
+                    f"fallback_on contains a trigger unsupported by {source_key} items",
+                    location,
+                )
+            if isinstance(fallback_item_id, str) and fallback_item_id in fallback_items:
+                parent_targets = _declared_item_targets(content, item)
+                fallback_targets = _declared_item_targets(
+                    content,
+                    fallback_items[fallback_item_id],
+                )
+                if not fallback_targets.issubset(parent_targets):
+                    _issue(
+                        issues,
+                        "fallback_item",
+                        "Fallback item must not require targets unavailable to its parent",
+                        location,
+                    )
 
         if source_key == "query" and source_id not in content.queries:
             _issue(issues, "missing_query", f"Unknown query id {source_id!r}", location)
@@ -777,6 +884,97 @@ def _validate_report_items(content: ContentPack, issues: list[ValidationIssue]) 
             _issue(issues, "missing_metric", f"Unknown metric id {source_id!r}", location)
         if source_key == "python" and source_id not in content.pythons:
             _issue(issues, "missing_python", f"Unknown python source id {source_id!r}", location)
+
+    _validate_fallback_items(content, issues)
+
+
+def _validate_fallback_items(content: ContentPack, issues: list[ValidationIssue]) -> None:
+    report_item_ids = {
+        item_id for _section_id, _item_key, item_id, _item in iter_report_items(content)
+    }
+    for fallback_item_id, item in iter_fallback_items(content):
+        location = f"report.yaml:fallback_items.{fallback_item_id}"
+        if (
+            not fallback_item_id
+            or fallback_item_id in report_item_ids
+            or not re.fullmatch(r"[a-z][a-z0-9_.-]*", fallback_item_id)
+        ):
+            _issue(
+                issues,
+                "fallback_item",
+                "Fallback item id must be unique and contain only lowercase identifier characters",
+                location,
+            )
+        source_keys = SOURCE_KEYS.intersection(item)
+        if len(source_keys) != 1:
+            _issue(
+                issues,
+                "fallback_item",
+                "Fallback item must contain exactly one source key: query, script, or python",
+                location,
+            )
+            continue
+        source_key = next(iter(source_keys))
+        if source_key not in FALLBACK_SOURCE_KEYS:
+            _issue(
+                issues,
+                "fallback_item",
+                "Metric sources cannot be used as fallback items",
+                location,
+            )
+            continue
+        source_id = item.get(source_key)
+        if not isinstance(source_id, str) or not source_id.strip():
+            _issue(
+                issues,
+                "fallback_item",
+                f"Fallback {source_key} reference must be a non-empty string",
+                location,
+            )
+            continue
+        title = item.get("title")
+        if title is not None and (not isinstance(title, str) or not title.strip()):
+            _issue(
+                issues,
+                "fallback_item",
+                "Fallback title must be a non-empty string",
+                location,
+            )
+        _validate_report_item_render(item, issues, location)
+        _validate_database_scope(item.get("database_scope"), issues, location)
+        if "fallback_item" in item or "fallback_on" in item:
+            _issue(
+                issues,
+                "fallback_item",
+                "Fallback chains are not supported",
+                location,
+            )
+        if source_key == "query" and source_id not in content.queries:
+            _issue(issues, "missing_query", f"Unknown query id {source_id!r}", location)
+        if source_key == "script" and source_id not in content.scripts:
+            _issue(issues, "missing_script", f"Unknown script id {source_id!r}", location)
+        if source_key == "python" and source_id not in content.pythons:
+            _issue(issues, "missing_python", f"Unknown python source id {source_id!r}", location)
+
+
+def _declared_item_targets(content: ContentPack, item: dict[str, Any]) -> set[str]:
+    source_keys = SOURCE_KEYS.intersection(item)
+    if len(source_keys) != 1:
+        return set()
+    source_key = next(iter(source_keys))
+    catalogs = {
+        "query": content.queries,
+        "script": content.scripts,
+        "metric": content.metrics,
+        "python": content.pythons,
+    }
+    manifest = catalogs[source_key].get(item.get(source_key)) or {}
+    targets = manifest.get("targets")
+    return {
+        str(target)
+        for target in (targets if isinstance(targets, list) else [])
+        if isinstance(target, str)
+    }
 
 
 def _validate_report_item_tags(
@@ -887,9 +1085,32 @@ def _validate_query_manifests(content: ContentPack, issues: list[ValidationIssue
         optional = manifest.get("optional")
         if optional is not None and not isinstance(optional, bool):
             _issue(issues, "query", "optional must be boolean", location)
-        timeout_ms = manifest.get("timeout_ms")
-        if timeout_ms is not None and not _is_positive_number(timeout_ms):
-            _issue(issues, "query", "timeout_ms must be positive", location)
+        for timeout_key in ("timeout_ms", "lock_timeout_ms"):
+            timeout_ms = manifest.get(timeout_key)
+            if timeout_ms is not None and not _is_positive_number(timeout_ms):
+                _issue(issues, "query", f"{timeout_key} must be positive", location)
+        effective_statement_timeout_ms = manifest.get(
+            "timeout_ms",
+            (content.report.get("runtime_policy") or {}).get("default_sql_timeout_ms"),
+        )
+        effective_lock_timeout_ms = manifest.get(
+            "lock_timeout_ms",
+            (content.report.get("runtime_policy") or {}).get(
+                "default_lock_timeout_ms",
+                750,
+            ),
+        )
+        if (
+            _is_positive_number(effective_statement_timeout_ms)
+            and _is_positive_number(effective_lock_timeout_ms)
+            and float(effective_lock_timeout_ms) >= float(effective_statement_timeout_ms)
+        ):
+            _issue(
+                issues,
+                "query",
+                "Effective lock_timeout_ms must be lower than effective timeout_ms",
+                location,
+            )
         _validate_database_scope(manifest.get("database_scope"), issues, location)
 
         ranges: list[tuple[int, int, str]] = []
@@ -1709,6 +1930,7 @@ def _validate_instructions(content: ContentPack, issues: list[ValidationIssue]) 
     report_item_ids = {
         item_id for _section_id, _item_key, item_id, _item in iter_report_items(content)
     }
+    instruction_items: list[tuple[str, dict[str, Any], str, str | None, bool]] = []
     for section_id, item_key, item_id, item in iter_report_items(content):
         location = f"report.yaml:sections.{section_id}.items.{item_key}"
         try:
@@ -1716,8 +1938,23 @@ def _validate_instructions(content: ContentPack, issues: list[ValidationIssue]) 
         except Exception as exc:
             _issue(issues, "instruction_file", str(exc), location)
             continue
+        instruction_items.append(
+            (item_id, item, location, instruction_ref, item.get("state") != "hidden")
+        )
+    for fallback_item_id, item in iter_fallback_items(content):
+        location = f"report.yaml:fallback_items.{fallback_item_id}"
+        try:
+            instruction_ref = instruction_ref_for_fallback_item(fallback_item_id, item)
+        except Exception as exc:
+            _issue(issues, "instruction_file", str(exc), location)
+            continue
+        instruction_items.append(
+            (fallback_item_id, item, location, instruction_ref, True)
+        )
+
+    for item_id, item, location, instruction_ref, instruction_required in instruction_items:
         if instruction_ref is None:
-            if item.get("state") != "hidden":
+            if instruction_required:
                 _issue(issues, "instruction_file", "Visible report item must define an instruction markdown file", location)
             continue
         try:

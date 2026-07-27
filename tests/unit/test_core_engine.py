@@ -13,6 +13,7 @@ import time
 import pytest
 import yaml
 
+import pg_diag.collection as collection_module
 from pg_diag import runtime_config
 from pg_diag._content_state import _rebase
 from pg_diag.artifact import (
@@ -122,6 +123,7 @@ def _artifact(*, title: str = "Test", data: str = "ok") -> dict:
                 "metrics": {},
                 "python_sources": {},
                 "sampler_providers": {},
+                "fallback_items": {},
                 "instructions": {},
                 "field_reference": {"report": "Report metadata."},
             },
@@ -169,6 +171,145 @@ def _artifact(*, title: str = "Test", data: str = "ok") -> dict:
     }
 
 
+def test_timeout_fallback_replaces_source_but_keeps_parent_identity(monkeypatch) -> None:
+    fallback = PlannedItem(
+        item_id="fallback.s.q_relpages",
+        section_id="s",
+        item_key="q",
+        title="Approximate Query",
+        source_kind="query",
+        source_id="q.relpages",
+        status="planned",
+        state="expanded",
+        collection_scope="once",
+        source_metadata={
+            "query_id": "q.relpages",
+            "instructions": {"format": "markdown", "text": "fallback"},
+        },
+    )
+    parent = PlannedItem(
+        item_id="s.q",
+        section_id="s",
+        item_key="q",
+        title="Primary Query",
+        source_kind="query",
+        source_id="q",
+        status="planned",
+        state="expanded",
+        collection_scope="once",
+        source_metadata={"query_id": "q", "tags": ["Tables"]},
+        fallback_on=("statement_timeout", "lock_timeout"),
+        fallback_item=fallback,
+    )
+
+    async def execute_query_stub(_content, _conn, planned):
+        if planned.item_id == "s.q":
+            return item_from_plan(
+                planned,
+                collection_status="error",
+                reason="statement timeout",
+                timing_ms=3000,
+                result={"kind": "none"},
+                diagnostics=[
+                    {
+                        "level": "error",
+                        "code": "error",
+                        "failure_kind": "statement_timeout",
+                        "message": "statement timeout",
+                    }
+                ],
+            )
+        return item_from_plan(
+            planned,
+            collection_status="ok",
+            timing_ms=10,
+            result={
+                "kind": "table",
+                "columns": [_test_column("estimated_size_bytes")],
+                "rows": [[8192]],
+                "row_count": 1,
+            },
+            source_text="select relpages * 8192 as estimated_size_bytes",
+            source_language="sql",
+        )
+
+    monkeypatch.setattr(collection_module, "execute_query_item", execute_query_stub)
+
+    item = asyncio.run(
+        collection_module.execute_report_item(
+            SimpleNamespace(),
+            object(),
+            parent,
+        )
+    )
+
+    assert item["item_id"] == "s.q"
+    assert item["section_id"] == "s"
+    assert item["item_key"] == "q"
+    assert item["title"] == "[Fallback] Approximate Query"
+    assert item["collection_status"] == "ok"
+    assert item["timing_ms"] == 3010
+    assert item["source_metadata"]["tags"] == ["Tables"]
+    assert item["source_metadata"]["fallback"]["fallback_item_id"] == "fallback.s.q_relpages"
+    assert item["source_metadata"]["fallback"]["trigger"] == "statement_timeout"
+    assert item["diagnostics"][0]["code"] == "fallback_item_activated"
+
+
+def test_generic_query_cancellation_does_not_activate_timeout_fallback(monkeypatch) -> None:
+    fallback = PlannedItem(
+        item_id="fallback.s.q",
+        section_id="s",
+        item_key="q",
+        title="Fallback",
+        source_kind="query",
+        source_id="fallback.q",
+        status="planned",
+    )
+    parent = PlannedItem(
+        item_id="s.q",
+        section_id="s",
+        item_key="q",
+        title="Primary",
+        source_kind="query",
+        source_id="q",
+        status="planned",
+        fallback_on=("statement_timeout",),
+        fallback_item=fallback,
+    )
+    calls: list[str] = []
+
+    async def execute_query_stub(_content, _conn, planned):
+        calls.append(planned.item_id)
+        return item_from_plan(
+            planned,
+            collection_status="error",
+            reason="canceling statement due to user request",
+            result={"kind": "none"},
+            diagnostics=[
+                {
+                    "level": "error",
+                    "code": "error",
+                    "failure_kind": "query_canceled",
+                    "message": "canceling statement due to user request",
+                }
+            ],
+        )
+
+    monkeypatch.setattr(collection_module, "execute_query_item", execute_query_stub)
+
+    item = asyncio.run(
+        collection_module.execute_report_item(
+            SimpleNamespace(),
+            object(),
+            parent,
+        )
+    )
+
+    assert calls == ["s.q"]
+    assert item["collection_status"] == "error"
+    assert item["diagnostics"][0]["failure_kind"] == "query_canceled"
+
+
 def test_orchestration_summary_is_deterministic_and_artifact_is_validated(
     tmp_path: Path,
 ) -> None:
@@ -185,12 +326,43 @@ def test_orchestration_summary_is_deterministic_and_artifact_is_validated(
     assert first["item_count"] == 1
     assert first["collection_statuses"] == {"ok": 1}
     assert first["completeness"]["ratio"] == 1.0
+    assert first["fallback_items"] == {
+        "count": 0,
+        "item_ids": [],
+        "triggers": {},
+        "collection_statuses": {},
+    }
+    assert first["degraded"] is False
     assert first["has_errors"] is False
 
     artifact["artifact_schema_version"] = -1
     path.write_text(json.dumps(artifact), encoding="utf-8")
     with pytest.raises(ValidationError, match="Unsupported artifact schema version"):
         load_artifact(path)
+
+
+def test_orchestration_summary_marks_successful_fallback_as_degraded() -> None:
+    artifact = _artifact()
+    artifact["items"]["s.i"]["source_metadata"] = {
+        "fallback": {
+            "used": True,
+            "trigger": "statement_timeout",
+            "effective_item_id": "fallback.s.i",
+        }
+    }
+
+    summary = summarize_artifact(artifact)
+
+    assert summary["collection_statuses"] == {"ok": 1}
+    assert summary["completeness"]["ratio"] == 1.0
+    assert summary["has_errors"] is False
+    assert summary["degraded"] is True
+    assert summary["fallback_items"] == {
+        "count": 1,
+        "item_ids": ["s.i"],
+        "triggers": {"statement_timeout": 1},
+        "collection_statuses": {"ok": 1},
+    }
 
 
 def test_machine_plan_summary_is_compact_and_content_addressed() -> None:
@@ -599,7 +771,7 @@ def test_db_snapshots_store_only_varying_table_data(
     query_texts: dict[str, str] = {}
     snapshot_schemas: dict[str, dict] = {}
 
-    async def execute_stub(content, conn, item):
+    async def execute_stub(content, conn, item, **_kwargs):
         return item_from_plan(
             item,
             collection_status="ok",
@@ -671,7 +843,7 @@ def test_db_snapshots_store_only_varying_table_data(
 def test_db_sampler_does_not_start_stale_final_sample(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = 0
 
-    async def execute_stub(content, conn, item):
+    async def execute_stub(content, conn, item, **_kwargs):
         nonlocal calls
         calls += 1
         await asyncio.sleep(0.16)
@@ -700,7 +872,7 @@ def test_window_endpoint_queries_share_one_read_only_transaction(
 ) -> None:
     calls: list[str] = []
 
-    async def execute_stub(content, conn, item):
+    async def execute_stub(content, conn, item, **_kwargs):
         calls.append(item.item_id)
         return item_from_plan(
             item,
@@ -950,6 +1122,17 @@ def test_artifact_validator_requires_unified_content_document(tmp_path: Path) ->
     del artifact["content"]["document"]
 
     with pytest.raises(ValidationError, match="content.document"):
+        write_json(tmp_path / "invalid.json", artifact)
+
+
+def test_artifact_validator_rejects_non_mapping_fallback_items(tmp_path: Path) -> None:
+    artifact = _artifact()
+    artifact["content"]["document"]["fallback_items"] = []
+
+    with pytest.raises(
+        ValidationError,
+        match="content.document.fallback_items.*must be a mapping",
+    ):
         write_json(tmp_path / "invalid.json", artifact)
 
 

@@ -96,16 +96,20 @@ Every PostgreSQL session opened by `pg_diag` requests these startup settings:
 
 - `default_transaction_read_only=on`;
 - `statement_timeout=1000` (one second);
-- `lock_timeout=1000`;
+- `lock_timeout=750`;
 - `idle_in_transaction_session_timeout=10000`;
 - `search_path=pg_catalog, public`.
 
 The collector verifies that the session is read-only before collection and
 uses explicit read-only transactions for its main SQL executor. A query that
 cannot finish within one second is reported as an item-level error unless its
-manifest declares a larger positive `timeout_ms`. The override is applied only
-inside that query's transaction; increasing the global timeout is usually worse
-than using a narrow override, disabling the item, or optimizing the query.
+manifest declares a different positive `timeout_ms`. A query may also declare
+`lock_timeout_ms` when it needs a different lock-wait limit. Both overrides are
+applied transaction-locally and `lock_timeout_ms` must stay below the effective
+statement timeout so that lock waits remain distinguishable. Successful
+overrides are restored to the runtime guards before the next query in a shared
+snapshot transaction. Increasing the global timeouts is usually worse than
+using narrow overrides, disabling the item, or optimizing the query.
 
 These controls reduce the risk of an accidental write by `pg_diag`. They do
 not make a privileged credential safe: anyone who obtains the password can

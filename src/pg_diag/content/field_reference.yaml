@@ -11,6 +11,7 @@ field_reference:
     report/catalogs/*: Relative path to one catalog or instruction root.
     runtime_policy: Runtime limits and behavior shared by report items.
     runtime_policy/default_sql_timeout_ms: Default timeout for SQL statements in milliseconds.
+    runtime_policy/default_lock_timeout_ms: Optional default relation-lock wait timeout in milliseconds (750 when omitted); it must be lower than the SQL statement timeout.
     runtime_policy/default_shell_timeout_ms: Default shell-item timeout in milliseconds; the maximum is 1000.
     runtime_policy/remote_db_only_shell_message: Explanation used when a local source is skipped in remote DB-only mode.
     runtime_policy/table_columns: Policy declaring that SQL result columns come from the runtime result schema.
@@ -85,6 +86,19 @@ field_reference:
     sections/*/items/*/render: Item-specific presentation behavior.
     sections/*/items/*/render/empty_message: Text shown when collection succeeds but returns no rows.
     sections/*/items/*/instruction: Optional instruction path overriding the conventional item path.
+    sections/*/items/*/fallback_item: Registered fallback item executed when an allowed primary-source failure occurs.
+    sections/*/items/*/fallback_on: Explicit normalized failure kinds which may activate the fallback item.
+    sections/*/items/*/fallback_on[]: One source-specific normalized trigger; SQL supports statement_timeout and lock_timeout, shell supports shell_timeout, and Python supports python_timeout.
+    fallback_items: Registered replacement items which are never placed or executed independently.
+    fallback_items/*: One pluggable fallback item definition.
+    fallback_items/*/title: Optional title used when the fallback item replaces its parent.
+    fallback_items/*/query: SQL query manifest id used by this fallback item.
+    fallback_items/*/script: Shell source manifest id used by this fallback item.
+    fallback_items/*/python: Trusted Python manifest id used by this fallback item.
+    fallback_items/*/database_scope: Database scope overriding the fallback source manifest.
+    fallback_items/*/render: Fallback-specific presentation behavior.
+    fallback_items/*/render/empty_message: Text shown when the fallback succeeds without rows.
+    fallback_items/*/instruction: Instruction path owned by the fallback item.
     queries: Effective query manifests after query-catalog defaults are merged.
     queries/*: One effective SQL query manifest selected by query id.
     queries/*/title: Human-readable query title inherited by report items.
@@ -96,6 +110,7 @@ field_reference:
     queries/*/source: Origin or ownership marker for the query definition.
     queries/*/cost: Estimated execution-cost class used during review.
     queries/*/timeout_ms: Optional positive statement timeout in milliseconds applied only inside this query transaction.
+    queries/*/lock_timeout_ms: Optional positive lock-wait timeout in milliseconds applied only inside this query transaction.
     queries/*/optional: Whether unsupported or unavailable query prerequisites are non-fatal.
     queries/*/result_shape: Expected public result shape.
     queries/*/database_scope: Whether the query covers all databases or only the connected database.

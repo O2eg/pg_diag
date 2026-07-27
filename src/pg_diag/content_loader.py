@@ -189,6 +189,9 @@ def _build_content_document(
         ),
         "defaults": deepcopy(_mapping(report.get("defaults"), "report.yaml:defaults")),
         "sections": deepcopy(_mapping(report.get("sections"), "report.yaml:sections")),
+        "fallback_items": deepcopy(
+            _mapping(report.get("fallback_items") or {}, "report.yaml:fallback_items")
+        ),
         "catalogs": {
             "queries": deepcopy(
                 _mapping(query_catalog.get("query_catalog"), "queries.yaml:query_catalog")
@@ -246,6 +249,7 @@ def _build_content_provenance(
         "runtime_policy": report_source,
         "defaults": report_source,
         "sections": report_source,
+        "fallback_items": report_source,
         "catalogs/queries": [query_index_source],
         "catalogs/scripts": [_relative_content_path(root, script_path)],
         "catalogs/metrics": [_relative_content_path(root, metric_path)],
@@ -286,6 +290,20 @@ def instruction_ref_for_report_item(section_id: str, item_key: str, item: dict[s
     if not isinstance(ref, str) or not ref:
         raise ContentLoadError(
             f"Instruction path must be a non-empty string or false: sections.{section_id}.items.{item_key}"
+        )
+    return ref
+
+
+def instruction_ref_for_fallback_item(fallback_item_id: str, item: dict[str, Any]) -> str | None:
+    ref = item.get("instruction")
+    if ref is False:
+        return None
+    if ref is None:
+        return "fallback_items/" + fallback_item_id.replace(".", "/") + ".md"
+    if not isinstance(ref, str) or not ref:
+        raise ContentLoadError(
+            "Fallback instruction path must be a non-empty string or false: "
+            f"fallback_items.{fallback_item_id}"
         )
     return ref
 
@@ -435,6 +453,22 @@ def _load_content_revision(root: Path, revision: str) -> ContentPack:
             "path": f"{instructions_root}/{instruction_ref}",
             "text": instruction_text,
         }
+    for fallback_item_id, item in iter_fallback_items_from_report(report):
+        instruction_ref = instruction_ref_for_fallback_item(fallback_item_id, item)
+        if instruction_ref is None:
+            continue
+        path = _instruction_path(instructions_dir, instruction_ref)
+        if not path.is_file():
+            raise ContentLoadError(f"Fallback instruction file does not exist: {path}")
+        try:
+            instruction_text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise ContentLoadError(f"Cannot read fallback instruction {path}: {exc}") from exc
+        instructions[fallback_item_id] = {
+            "format": "markdown",
+            "path": f"{instructions_root}/{instruction_ref}",
+            "text": instruction_text,
+        }
 
     instruction_files = sorted(instructions_dir.rglob("*.md"))
 
@@ -517,6 +551,10 @@ def iter_report_items(content: ContentPack):
     yield from iter_report_items_from_report(content.report)
 
 
+def iter_fallback_items(content: ContentPack):
+    yield from iter_fallback_items_from_report(content.report)
+
+
 def iter_report_items_from_report(report: dict[str, Any]):
     sections = report.get("sections") or {}
     if not isinstance(sections, dict):
@@ -529,3 +567,11 @@ def iter_report_items_from_report(report: dict[str, Any]):
             continue
         for item_key, item in items.items():
             yield section_id, item_key, f"{section_id}.{item_key}", item if isinstance(item, dict) else {}
+
+
+def iter_fallback_items_from_report(report: dict[str, Any]):
+    fallback_items = report.get("fallback_items") or {}
+    if not isinstance(fallback_items, dict):
+        return
+    for fallback_item_id, item in fallback_items.items():
+        yield str(fallback_item_id), item if isinstance(item, dict) else {}

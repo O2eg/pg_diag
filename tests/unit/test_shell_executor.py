@@ -120,11 +120,12 @@ def test_shell_timeout_is_rendered_in_the_item_result(tmp_path: Path, monkeypatc
         "data": "Shell source timed out after 1000 ms",
     }
     assert item["diagnostics"] == [
-        {
-            "level": "error",
-            "code": "shell_timeout",
-            "message": "Shell source timed out after 1000 ms",
-        }
+            {
+                "level": "error",
+                "code": "shell_timeout",
+                "failure_kind": "shell_timeout",
+                "message": "Shell source timed out after 1000 ms",
+            }
     ]
 
 
@@ -204,6 +205,30 @@ def test_table_json_parser_repairs_lshw_0218_empty_class() -> None:
     result = table_json_result("]", repair_legacy_lshw=True)
 
     assert result == {"kind": "table", "columns": [], "rows": [], "row_count": 0}
+
+
+def test_table_json_parser_repairs_lshw_0218_unterminated_system_object() -> None:
+    result = table_json_result(
+        """
+        [
+        {
+          "id" : "host",
+          "class" : "system",
+          "claimed" : true,
+          "description" : "Computer",
+          "capabilities" : {
+            "smp" : "Symmetric Multi-Processing",
+            "cp15_barrier" : true
+          }
+        ]
+        """,
+        repair_legacy_lshw=True,
+    )
+
+    assert result["row_count"] == 1
+    columns = [column["name"] for column in result["columns"]]
+    assert columns == ["id", "class", "claimed", "description", "capabilities"]
+    assert result["rows"][0][0:4] == ["host", "system", True, "Computer"]
 
 
 def test_table_json_parser_repairs_lshw_0218_filtered_children() -> None:

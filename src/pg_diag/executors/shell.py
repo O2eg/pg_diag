@@ -117,7 +117,14 @@ def _timeout_item(
         reason=message,
         timing_ms=elapsed_ms(started),
         result={"kind": "plain_text", "data": message},
-        diagnostics=[{"level": "error", "code": "shell_timeout", "message": message}],
+        diagnostics=[
+            {
+                "level": "error",
+                "code": "shell_timeout",
+                "failure_kind": "shell_timeout",
+                "message": message,
+            }
+        ],
         source_text=source_text,
         source_language="bash",
     )
@@ -257,7 +264,38 @@ def _parse_legacy_lshw_json(text: str) -> Any:
     repaired = re.sub(r"}\s*,\s*}\s*,\s*{", "}, {", repaired)
     repaired = re.sub(r",\s*}\s*]\s*$", "\n]", repaired)
     repaired = re.sub(r",\s*]\s*$", "\n]", repaired)
+    repaired = _close_legacy_lshw_unterminated_object(repaired)
     return json.loads(repaired)
+
+
+def _close_legacy_lshw_unterminated_object(text: str) -> str:
+    """Close one object omitted immediately before the top-level array terminator."""
+    if not text.lstrip().startswith("[") or not text.rstrip().endswith("]"):
+        return text
+
+    object_depth = 0
+    in_string = False
+    escaped = False
+    for character in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+            continue
+        if character == '"':
+            in_string = True
+        elif character == "{":
+            object_depth += 1
+        elif character == "}":
+            object_depth -= 1
+
+    if object_depth != 1:
+        return text
+    array_end = text.rfind("]")
+    return text[:array_end] + "}\n" + text[array_end:]
 
 
 def _script_output_mode(content: ContentPack, planned: PlannedItem) -> str:

@@ -108,8 +108,13 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
         "instructions",
         "field_reference",
     }
-    if set(content_document) != required_document_roots:
+    if set(content_document).difference({"fallback_items"}) != required_document_roots:
         raise ValidationError("Artifact field 'content.document' has an invalid root set")
+    fallback_items = content_document.get("fallback_items", {})
+    if not isinstance(fallback_items, dict):
+        raise ValidationError(
+            "Artifact field 'content.document.fallback_items' must be a mapping"
+        )
     presentation = ((content_document.get("catalogs") or {}).get("presentation") or {})
     units = presentation.get("units") if isinstance(presentation, dict) else None
     if not isinstance(units, dict) or not units:

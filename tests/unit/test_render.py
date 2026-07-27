@@ -87,6 +87,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
                 "metrics": {},
                 "python_sources": {},
                 "sampler_providers": {},
+                "fallback_items": {},
                 "field_reference": {
                     "report": "Report metadata.",
                     "sections/*/items/*/query": "Query manifest id used by this item.",
@@ -199,6 +200,9 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "if (showPaginationControls)" in app_html
     assert ".table-toolbar.no-pagination" in app_html
     assert ".table-toolbar.single-row" in app_html
+    assert "table.single-cell-table td" in app_html
+    assert 'if (rows.length === 1 && columns.length === 1)' in app_html
+    assert 'table.classList.add("single-cell-table")' in app_html
     assert '--code-panel-bg: #f6f8fa' in app_html
     assert 'html[data-theme="light"] .scroll-jump' in app_html
     assert 'background: #ffffff' in app_html
@@ -463,10 +467,15 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert 'selectMetaTab("raw")' in html
     assert "buildRawItemConfiguration(currentMetaItem)" in html
     assert "renderAnnotatedYaml(raw.document, raw.provenance)" in html
+    assert "fallbackMetadata.effective_item_id" in html
+    assert "const effectiveItemDefinition = fallbackDefinition || itemDefinition" in html
+    assert "metadata[metadataSourceKey] || effectiveItemDefinition[sourceKind]" in html
+    assert "document.fallback_items = {[effectiveItemId]: fallbackDefinition}" in html
+    assert "const instructionId = fallbackDefinition ? effectiveItemId : itemId" in html
     assert 'copyRawRoot(document, "report")' not in html
     assert "document.catalogs = selectedCatalogs" not in html
     assert "relevantRawRuntimePolicy(item, sourceKind, sourceManifest)" in html
-    assert "relevantRawDefaults(item, section, itemDefinition, sourceManifest)" in html
+    assert "effectiveItemDefinition,\n        sourceManifest" in html
     assert "projectedRawQueryManifest(queryManifest, null)" in html
     assert "samplerProviderForOutput(sourceSampler)" in html
     assert "projectedRawProvenance(document, relatedPaths)" in html
@@ -575,6 +584,9 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "chartResizeScopes" in html
     assert "flushChartResize" in html
     assert "isVisibleThroughDetails(entry.container)" in html
+    assert "new window.ResizeObserver(handleObservedEChartsResize)" in html
+    assert "echartsResizeObserver.observe(pending.container)" in html
+    assert "observation.contentRect.width <= 0" in html
     assert 'diagnosticParts.push(key + ":\\n" + stringifyValue(value));' in html
     assert 'parts.push("diagnostic[" + index + "]:\\n" + diagnosticParts.join("\\n\\n"));' in html
     assert 'parts.push("output:\\n" + stringifyValue(result.data));' in html

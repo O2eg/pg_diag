@@ -11,7 +11,13 @@ import subprocess
 import pytest
 
 from pg_diag.artifact import create_artifact
-from pg_diag.content_loader import ContentLoadError, iter_report_items, load_content, load_yaml_file
+from pg_diag.content_loader import (
+    ContentLoadError,
+    iter_fallback_items,
+    iter_report_items,
+    load_content,
+    load_yaml_file,
+)
 from pg_diag.planner import build_plan
 from pg_diag.presentation import apply_presentation_contract, resolve_column_descriptor
 from pg_diag.runtime_config import (
@@ -345,22 +351,54 @@ def test_sql_queries_keep_short_default_with_bounded_overrides(content_path: Pat
     content = load_content(content_path)
 
     assert content.report["runtime_policy"]["default_sql_timeout_ms"] == 1000
-    assert content.queries["objects.table_workload"]["timeout_ms"] == 5000
-    assert content.queries["indexes.tables_without_pk_or_unique"]["timeout_ms"] == 5000
+    assert content.report["runtime_policy"]["default_lock_timeout_ms"] == 750
+    expected_timeouts = {
+        "objects.table_workload": {
+            "timeout_ms": 3000,
+            "lock_timeout_ms": 2500,
+        },
+        "objects.index_workload": {
+            "timeout_ms": 3000,
+            "lock_timeout_ms": 2500,
+        },
+        "indexes.tables_without_pk_or_unique": {
+            "timeout_ms": 3000,
+            "lock_timeout_ms": 2500,
+        },
+    }
+    for query_id, expected in expected_timeouts.items():
+        assert {
+            timeout_key: content.queries[query_id][timeout_key]
+            for timeout_key in expected
+        } == expected
     plan = build_plan(
         content,
         180000,
         item_id=(
             "object_workload.table_workload",
+            "object_workload.index_workload",
             "indexes.tables_without_pk_or_unique",
         ),
     )
     assert {
-        item.item_id: item.source_metadata["timeout_ms"]
+        item.item_id: {
+            timeout_key: item.source_metadata[timeout_key]
+            for timeout_key in ("timeout_ms", "lock_timeout_ms")
+        }
         for item in plan.items
     } == {
-        "object_workload.table_workload": 5000,
-        "indexes.tables_without_pk_or_unique": 5000,
+        "object_workload.table_workload": {
+            "timeout_ms": 3000,
+            "lock_timeout_ms": 2500,
+        },
+        "object_workload.index_workload": {
+            "timeout_ms": 3000,
+            "lock_timeout_ms": 2500,
+        },
+        "indexes.tables_without_pk_or_unique": {
+            "timeout_ms": 3000,
+            "lock_timeout_ms": 2500,
+        },
     }
 
 
@@ -497,6 +535,8 @@ def test_validator_rejects_host_source_timeouts_over_their_limits(
     scripts["os.kernel_version"]["timeout_ms"] = 1001
     pythons["security.pgdata_permissions"]["timeout_ms"] = 30001
     queries["objects.table_workload"]["timeout_ms"] = 0
+    queries["objects.table_workload"]["lock_timeout_ms"] = 0
+    queries["objects.index_workload"]["lock_timeout_ms"] = 3000
     invalid = replace(
         content,
         report=report,
@@ -515,6 +555,11 @@ def test_validator_rejects_host_source_timeouts_over_their_limits(
         "local_only timeout_ms must not exceed 30000",
     ) in messages
     assert ("query:objects.table_workload", "timeout_ms must be positive") in messages
+    assert ("query:objects.table_workload", "lock_timeout_ms must be positive") in messages
+    assert (
+        "query:objects.index_workload",
+        "Effective lock_timeout_ms must be lower than effective timeout_ms",
+    ) in messages
 
 
 def test_content_pack_exposes_one_effective_document_with_file_provenance(
@@ -525,6 +570,7 @@ def test_content_pack_exposes_one_effective_document_with_file_provenance(
 
     assert document["report"] == content.report["report"]
     assert document["sections"] == content.report["sections"]
+    assert document["fallback_items"] == content.report["fallback_items"]
     assert document["queries"] == content.queries
     assert document["scripts"] == content.scripts
     assert document["metrics"] == content.metrics
@@ -532,6 +578,7 @@ def test_content_pack_exposes_one_effective_document_with_file_provenance(
     assert document["sampler_providers"] == content.sampler_providers
     assert document["field_reference"]["sections/*/items/*/render"]
     assert content.provenance["sections"] == ["report.yaml"]
+    assert content.provenance["fallback_items"] == ["report.yaml"]
     assert content.provenance["queries/indexes.redundant_indexes"] == [
         "queries.yaml",
         "catalog/dba_extra.yaml",
@@ -647,6 +694,43 @@ def test_report_references_exist(content_path: Path) -> None:
             assert item["metric"] in content.metrics
         if "python" in item:
             assert item["python"] in content.pythons
+    for _fallback_item_id, item in iter_fallback_items(content):
+        if "query" in item:
+            assert item["query"] in content.queries
+        if "script" in item:
+            assert item["script"] in content.scripts
+        if "python" in item:
+            assert item["python"] in content.pythons
+
+
+def test_timeout_fallback_items_are_planned_under_their_parent_ids(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    plan = build_plan(
+        content,
+        180000,
+        mode=ONE_SHOT_MODE,
+        item_id=(
+            "object_workload.table_workload",
+            "object_workload.index_workload",
+            "indexes.tables_without_pk_or_unique",
+        ),
+    )
+
+    planned = {item.item_id: item for item in plan.items}
+    assert set(planned) == {
+        "object_workload.table_workload",
+        "object_workload.index_workload",
+        "indexes.tables_without_pk_or_unique",
+    }
+    for item in planned.values():
+        assert item.fallback_on == ("statement_timeout", "lock_timeout")
+        assert item.fallback_item is not None
+        assert item.fallback_item.item_id.startswith("fallback.")
+        assert item.fallback_item.source_kind == "query"
+        assert item.fallback_item.source_metadata["timeout_ms"] == 2000
+        assert item.fallback_item.source_metadata["lock_timeout_ms"] == 750
 
 
 def test_report_items_have_exactly_one_source(content_path: Path) -> None:
@@ -667,7 +751,14 @@ def test_report_items_have_allowed_tags(content_path: Path) -> None:
 
 def test_report_items_have_markdown_instructions(content_path: Path) -> None:
     content = load_content(content_path)
-    item_ids = []
+    item_ids = [
+        item_id
+        for _section_id, _item_key, item_id, _item in iter_report_items(content)
+    ]
+    fallback_item_ids = [
+        fallback_item_id
+        for fallback_item_id, _item in iter_fallback_items(content)
+    ]
     item_links = re.compile(
         r"\[([a-z][a-z0-9_.-]*)\]\(#item-([a-z][a-z0-9_.-]*)\)"
     )
@@ -682,8 +773,7 @@ def test_report_items_have_markdown_instructions(content_path: Path) -> None:
         "## Checklist",
     )
     instructions_without_related_items = set()
-    for _section_id, _item_key, item_id, _item in iter_report_items(content):
-        item_ids.append(item_id)
+    for item_id in item_ids + fallback_item_ids:
         instruction = content.instructions.get(item_id)
         assert instruction, item_id
         assert instruction["format"] == "markdown"
@@ -715,7 +805,7 @@ def test_report_items_have_markdown_instructions(content_path: Path) -> None:
             assert all(related_item_line.fullmatch(line) for line in related_lines), item_id
         else:
             instructions_without_related_items.add(item_id)
-    assert set(content.instructions) == set(item_ids)
+    assert set(content.instructions) == set(item_ids + fallback_item_ids)
     assert all(
         target in item_ids
         for instruction in content.instructions.values()
@@ -1740,6 +1830,26 @@ def test_os_shell_scripts_do_not_require_fixed_sbin_paths(content_path: Path) ->
         assert "/sbin/sysctl" not in script, script_id
 
 
+def test_sysctl_scripts_search_standard_system_binary_directories(
+    content_path: Path,
+) -> None:
+    expected_scripts = {
+        "os.sysctl_vm",
+        "os.sysctl_tcp",
+        "os.sysctl_udp",
+    }
+    content = load_content(content_path)
+
+    for script_id in expected_scripts:
+        manifest = content.scripts[script_id]
+        script = (content.path / "scripts" / manifest["script_file"]).read_text(
+            encoding="utf-8"
+        )
+        assert "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" in script
+        assert 'sysctl_bin="$(command -v sysctl 2>/dev/null || true)"' in script
+        assert 'LC_ALL=C "$sysctl_bin" -a' in script
+
+
 def test_host_items_have_unique_self_contained_posix_scripts(content_path: Path) -> None:
     content = load_content(content_path)
     script_files = [manifest["script_file"] for manifest in content.scripts.values()]
@@ -2476,3 +2586,22 @@ def test_object_and_index_queries_bound_expensive_size_calls(content_path: Path)
                 sql.find("pg_relation_size"),
                 sql.find("pg_total_relation_size"),
             ), source_id
+
+
+def test_lock_mode_counts_include_bounded_pid_and_relation_samples(
+    content_path: Path,
+) -> None:
+    content = load_content(content_path)
+    variant = content.queries["locks.lock_modes"]["variants"][-1]
+    sql = (content.path / "queries" / variant["sql_file"]).read_text(
+        encoding="utf-8"
+    ).lower()
+
+    assert "as backend_pids" in sql
+    assert "as relations" in sql
+    assert "array_agg(distinct lock_rows.pid order by lock_rows.pid)" in sql
+    assert (
+        "array_agg(distinct lock_rows.relation_name order by lock_rows.relation_name)"
+        in sql
+    )
+    assert sql.count("[1:50]") == 2

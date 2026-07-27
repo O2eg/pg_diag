@@ -12,7 +12,7 @@ from .contracts import (
     SOURCE_TARGET_HOST,
     SOURCE_TARGET_ORDER,
 )
-from .content_loader import ContentPack, iter_report_items
+from .content_loader import ContentPack, iter_fallback_items, iter_report_items
 from .versioning import select_query_variant, supported_version_reason
 
 
@@ -34,6 +34,8 @@ class PlannedItem:
     collection_scope: str | None = None
     targets: tuple[str, ...] = ()
     source_metadata: dict[str, Any] = field(default_factory=dict)
+    fallback_on: tuple[str, ...] = ()
+    fallback_item: PlannedItem | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -53,6 +55,8 @@ class PlannedItem:
             "collection_scope": self.collection_scope,
             "targets": list(self.targets),
             "source_metadata": self.source_metadata,
+            "fallback_on": list(self.fallback_on),
+            "fallback_item": self.fallback_item.to_dict() if self.fallback_item else None,
         }
 
 
@@ -188,54 +192,70 @@ def build_plan(
             continue
         source_kind = _source_kind(item)
         if unsupported_reason:
-            items.append(
-                PlannedItem(
-                    item_id=planned_item_id,
-                    section_id=section_id,
-                    item_key=item_key,
-                    title=_item_title(content, source_kind, item, item_key),
-                    source_kind=source_kind,
-                    source_id=item.get(source_kind),
-                    status="unsupported",
-                    state=_item_state(content, item),
-                    reason=unsupported_reason,
-                    targets=_source_targets(content, source_kind, item),
-                    source_metadata=_with_item_metadata(content, planned_item_id, item),
-                )
+            planned = PlannedItem(
+                item_id=planned_item_id,
+                section_id=section_id,
+                item_key=item_key,
+                title=_item_title(content, source_kind, item, item_key),
+                source_kind=source_kind,
+                source_id=item.get(source_kind),
+                status="unsupported",
+                state=_item_state(content, item),
+                reason=unsupported_reason,
+                targets=_source_targets(content, source_kind, item),
+                source_metadata=_with_item_metadata(content, planned_item_id, item),
             )
-            continue
-
-        if source_kind == "query":
-            items.append(
-                _plan_query_item(
-                    content,
-                    section_id,
-                    item_key,
-                    planned_item_id,
-                    item,
-                    server_version_num,
-                    query_usage_index,
-                )
+        elif source_kind == "query":
+            planned = _plan_query_item(
+                content,
+                section_id,
+                item_key,
+                planned_item_id,
+                item,
+                server_version_num,
+                query_usage_index,
             )
         elif source_kind == "script":
-            items.append(_plan_script_item(content, section_id, item_key, planned_item_id, item, collection_mode))
+            planned = _plan_script_item(
+                content,
+                section_id,
+                item_key,
+                planned_item_id,
+                item,
+                collection_mode,
+            )
         elif source_kind == "python":
-            items.append(_plan_python_item(content, section_id, item_key, planned_item_id, item, collection_mode))
+            planned = _plan_python_item(
+                content,
+                section_id,
+                item_key,
+                planned_item_id,
+                item,
+                collection_mode,
+            )
         elif source_kind == "metric":
-            items.append(
-                _plan_metric_item(
-                    content,
-                    section_id,
-                    item_key,
-                    planned_item_id,
-                    item,
-                    mode,
-                    collection_mode,
-                    query_usage_index,
-                )
+            planned = _plan_metric_item(
+                content,
+                section_id,
+                item_key,
+                planned_item_id,
+                item,
+                mode,
+                collection_mode,
+                query_usage_index,
             )
         else:
             raise ValueError(f"Unsupported source kind {source_kind!r} for item {planned_item_id}")
+        if unsupported_reason is None:
+            planned = _attach_fallback_item(
+                content,
+                planned,
+                item,
+                server_version_num,
+                collection_mode,
+                query_usage_index,
+            )
+        items.append(planned)
 
     planned_item_ids = {item.item_id for item in items}
     sections = [
@@ -615,7 +635,72 @@ def _query_usage_index(content: ContentPack) -> dict[str, list[str]]:
         if not query_id:
             continue
         usage.setdefault(query_id, []).append(item_id)
+    for fallback_item_id, item in iter_fallback_items(content):
+        query_id = _sql_source_query_id(content, item)
+        if not query_id:
+            continue
+        usage.setdefault(query_id, []).append(fallback_item_id)
     return usage
+
+
+def _attach_fallback_item(
+    content: ContentPack,
+    planned: PlannedItem,
+    item: dict[str, Any],
+    server_version_num: int,
+    collection_mode: str,
+    query_usage_index: dict[str, list[str]],
+) -> PlannedItem:
+    fallback_item_id = item.get("fallback_item")
+    if not fallback_item_id:
+        return planned
+    fallback_items = content.report.get("fallback_items") or {}
+    fallback_definition = fallback_items[fallback_item_id]
+    source_kind = _source_kind(fallback_definition)
+    if source_kind == "query":
+        fallback = _plan_query_item(
+            content,
+            planned.section_id,
+            planned.item_key,
+            fallback_item_id,
+            fallback_definition,
+            server_version_num,
+            query_usage_index,
+        )
+    elif source_kind == "script":
+        fallback = _plan_script_item(
+            content,
+            planned.section_id,
+            planned.item_key,
+            fallback_item_id,
+            fallback_definition,
+            collection_mode,
+        )
+    elif source_kind == "python":
+        fallback = _plan_python_item(
+            content,
+            planned.section_id,
+            planned.item_key,
+            fallback_item_id,
+            fallback_definition,
+            collection_mode,
+        )
+    else:
+        raise ValueError(
+            f"Unsupported fallback source kind {source_kind!r} for item {planned.item_id}"
+        )
+    return replace(
+        planned,
+        source_metadata={
+            **planned.source_metadata,
+            "fallback_policy": {
+                "fallback_item_id": fallback_item_id,
+                "on": list(item.get("fallback_on") or ()),
+            },
+        },
+        fallback_on=tuple(str(value) for value in (item.get("fallback_on") or ())),
+        fallback_item=replace(fallback, state=planned.state),
+    )
 
 
 def _sql_source_query_id(content: ContentPack, item: dict[str, Any]) -> str | None:
@@ -754,8 +839,9 @@ def _query_source_metadata(
         "column_statuses": variant.get("column_statuses") or {},
         **usage,
     }
-    if manifest.get("timeout_ms") is not None:
-        metadata["timeout_ms"] = manifest["timeout_ms"]
+    for timeout_key in ("timeout_ms", "lock_timeout_ms"):
+        if manifest.get(timeout_key) is not None:
+            metadata[timeout_key] = manifest[timeout_key]
     return metadata
 
 

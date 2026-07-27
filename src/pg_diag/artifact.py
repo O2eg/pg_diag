@@ -113,6 +113,7 @@ def strip_artifact_metadata(artifact: dict[str, Any]) -> dict[str, Any]:
         "runtime_policy": {},
         "defaults": {},
         "sections": {},
+        "fallback_items": {},
         "catalogs": {"presentation": {"units": unit_registry}},
         "queries": {},
         "scripts": {},

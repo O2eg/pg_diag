@@ -99,6 +99,7 @@ def _artifact() -> dict:
                 "metrics": {},
                 "python_sources": {},
                 "sampler_providers": {},
+                "fallback_items": {},
                 "field_reference": {},
             },
             "provenance": {"report": ["report.yaml"], "sections": ["report.yaml"]},
@@ -157,7 +158,6 @@ def test_self_contained_echarts_report_in_browser(tmp_path: Path) -> None:
         state = page.evaluate(
             """() => {
               const entry = echartsCharts[0];
-              entry.chart.resize();
               enableEChartsPan(entry);
               return {
                 ready: document.querySelectorAll("[data-chart-ready=true]").length,
@@ -305,6 +305,264 @@ def test_self_contained_echarts_report_in_browser(tmp_path: Path) -> None:
         assert "140,000" not in tooltip.inner_text()
         assert external_requests == []
         assert errors == []
+        browser.close()
+
+
+def test_filter_resizes_chart_initialized_inside_collapsed_section(tmp_path: Path) -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    artifact = _artifact()
+    artifact["sections"][0]["state"] = "collapsed"
+    report_path = tmp_path / "filtered-chart-report.html"
+    report_path.write_text(render_html(artifact, validate=False), encoding="utf-8")
+
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1280, "height": 900})
+        errors: list[str] = []
+        page.on(
+            "console",
+            lambda message: errors.append(message.text) if message.type == "error" else None,
+        )
+        page.on("pageerror", lambda error: errors.append(str(error)))
+
+        page.goto(report_path.as_uri(), wait_until="load")
+        page.wait_for_function("document.querySelectorAll('[data-chart-ready=true]').length === 3")
+        page.locator("#itemSearch").fill("charts.columns")
+        page.wait_for_function(
+            """() => {
+              const entry = echartsCharts.find(
+                (candidate) => candidate.item.item_id === "charts.columns"
+              );
+              const section = document.querySelector(
+                'details.section[data-section-id="charts"]'
+              );
+              return Boolean(
+                entry
+                && section
+                && section.open
+                && entry.container.clientWidth > 640
+                && Math.abs(entry.chart.getWidth() - entry.container.clientWidth) <= 1
+              );
+            }"""
+        )
+        layout = page.evaluate(
+            """() => {
+              const entry = echartsCharts.find(
+                (candidate) => candidate.item.item_id === "charts.columns"
+              );
+              const svg = entry.container.querySelector("svg");
+              return {
+                containerWidth: entry.container.clientWidth,
+                chartWidth: entry.chart.getWidth(),
+                svgWidth: Number(svg && svg.getAttribute("width")),
+              };
+            }"""
+        )
+
+        assert layout["containerWidth"] > 640
+        assert layout["chartWidth"] == pytest.approx(layout["containerWidth"], abs=1)
+        assert layout["svgWidth"] == pytest.approx(layout["containerWidth"], abs=1)
+        assert errors == []
+        browser.close()
+
+
+def test_single_cell_numeric_table_aligns_value_left_in_browser(tmp_path: Path) -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    artifact = _artifact()
+    artifact["content"]["document"]["sections"]["charts"]["items"]["total_ram"] = {
+        "metric": "test.total_ram",
+        "tags": ["Memory", "Hardware"],
+    }
+    artifact["items"]["charts.total_ram"] = {
+        "item_id": "charts.total_ram",
+        "section_id": "charts",
+        "item_key": "total_ram",
+        "title": "Total RAM Capacity",
+        "source_kind": "metric",
+        "collection_scope": "once",
+        "collection_status": "ok",
+        "severity_level": "ok",
+        "state": "expanded",
+        "result": {
+            "kind": "table",
+            "columns": [
+                {
+                    "name": "total_ram_bytes",
+                    "label": "Total RAM bytes",
+                    "pg_type": "int8",
+                    "value_kind": "integer",
+                    "semantic_role": "gauge",
+                    "quantity": "data_volume",
+                    "unit": "bytes",
+                    "quality": "exact",
+                    "nullable": False,
+                    "encoding": "decimal_string",
+                }
+            ],
+            "rows": [["105473638400"]],
+        },
+        "source_metadata": {
+            "metric_id": "test.total_ram",
+            "tags": ["Memory", "Hardware"],
+        },
+        "diagnostics": [],
+        "issues": {},
+    }
+    artifact["sections"][0]["items"].append("charts.total_ram")
+    report_path = tmp_path / "single-cell-table-report.html"
+    report_path.write_text(render_html(artifact, validate=False), encoding="utf-8")
+
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1200, "height": 800})
+        errors: list[str] = []
+        page.on(
+            "console",
+            lambda message: errors.append(message.text) if message.type == "error" else None,
+        )
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.goto(report_path.as_uri(), wait_until="load")
+
+        table = page.locator(
+            'details.item[data-item-id="charts.total_ram"] table.single-cell-table'
+        )
+        cell = table.locator("tbody td")
+        assert table.count() == 1
+        assert cell.count() == 1
+        assert cell.evaluate("element => getComputedStyle(element).textAlign") == "left"
+        assert errors == []
+        browser.close()
+
+
+def test_fallback_raw_metadata_uses_effective_cross_kind_source(tmp_path: Path) -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    artifact = _artifact()
+    document = artifact["content"]["document"]
+    document["defaults"].update(
+        {
+            "item": {"state": "collapsed", "database_scope": "all_databases"},
+            "section": {"state": "expanded"},
+        }
+    )
+    document["field_reference"] = {
+        **{
+            root: f"{root} test metadata."
+            for root in (
+                "runtime_policy",
+                "defaults",
+                "sections",
+                "fallback_items",
+                "python_sources",
+                "instructions",
+                "resolved",
+            )
+        },
+        **{
+            "/".join(["*"] * depth): "Nested test metadata."
+            for depth in range(2, 9)
+        },
+    }
+    document["sections"]["charts"]["items"]["fallback"] = {
+        "query": "primary.query",
+        "fallback_item": "fallback.charts.python",
+        "fallback_on": ["statement_timeout"],
+        "tags": ["Tables"],
+    }
+    document["queries"]["primary.query"] = {
+        "title": "Primary Query",
+        "variants": [
+            {
+                "id": "primary_query_pg14_plus",
+                "min_pg_version": 140000,
+                "sql_file": "primary/query.sql",
+            }
+        ],
+    }
+    document["python_sources"]["fallback.python"] = {
+        "title": "Fallback Python",
+        "python_file": "python/fallback.py",
+        "function": "collect",
+    }
+    document["fallback_items"]["fallback.charts.python"] = {
+        "title": "Fallback Python",
+        "python": "fallback.python",
+        "instruction": "fallback_items/charts/python.md",
+    }
+    document["instructions"] = {
+        "fallback.charts.python": {
+            "format": "markdown",
+            "path": "instructions/fallback_items/charts/python.md",
+            "text": "# Fallback Python",
+        }
+    }
+    artifact["content"]["provenance"].update(
+        {
+            "fallback_items/fallback.charts.python": ["report.yaml"],
+            "python_sources/fallback.python": ["python.yaml"],
+            "instructions/fallback.charts.python": [
+                "instructions/fallback_items/charts/python.md"
+            ],
+        }
+    )
+    artifact["items"]["charts.fallback"] = {
+        "item_id": "charts.fallback",
+        "section_id": "charts",
+        "item_key": "fallback",
+        "title": "[Fallback] Fallback Python",
+        "source_kind": "python",
+        "collection_scope": "once",
+        "collection_status": "ok",
+        "severity_level": "unknown",
+        "state": "expanded",
+        "result": {"kind": "plain_text", "data": "approximate evidence"},
+        "source_metadata": {
+            "python_id": "fallback.python",
+            "python_file": "python/fallback.py",
+            "function": "collect",
+            "source_text": "def collect(context): return 'approximate evidence'",
+            "source_language": "python",
+            "tags": ["Tables"],
+            "instructions": document["instructions"]["fallback.charts.python"],
+            "fallback": {
+                "used": True,
+                "trigger": "statement_timeout",
+                "parent_item_id": "charts.fallback",
+                "fallback_item_id": "fallback.charts.python",
+                "effective_item_id": "fallback.charts.python",
+            },
+        },
+        "diagnostics": [],
+        "issues": {},
+    }
+    artifact["sections"][0]["items"].append("charts.fallback")
+    report_path = tmp_path / "fallback-raw-meta.html"
+    report_path.write_text(render_html(artifact, validate=False), encoding="utf-8")
+
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1200, "height": 800})
+        errors: list[str] = []
+        page.on(
+            "console",
+            lambda message: errors.append(message.text) if message.type == "error" else None,
+        )
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.goto(report_path.as_uri(), wait_until="load")
+
+        fallback_item = page.locator('details.item[data-item-id="charts.fallback"]')
+        fallback_item.get_by_role("button", name="Show meta").click()
+        page.get_by_role("tab", name="Raw").click()
+        raw = page.locator("#metaRawCode").inner_text()
+
+        assert errors == []
+        assert "fallback_items:" in raw
+        assert "fallback.charts.python:" in raw
+        assert "python_sources:" in raw
+        assert "fallback.python:" in raw
+        assert "python/fallback.py" in raw
+        assert "instructions:" in raw
+        assert "instructions/fallback_items/charts/python.md" in raw
+        assert 'effective_item_id: "fallback.charts.python"' in raw
         browser.close()
 
 

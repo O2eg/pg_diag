@@ -77,6 +77,19 @@ def summarize_artifact(artifact: dict[str, Any]) -> dict[str, Any]:
     )
     successful = sum(collection_statuses.get(value, 0) for value in ("ok", "empty"))
     total = len(items)
+    fallback_item_ids: list[str] = []
+    fallback_triggers: Counter[str] = Counter()
+    fallback_statuses: Counter[str] = Counter()
+    for item_id, item in items.items():
+        if not isinstance(item, dict):
+            continue
+        fallback = ((item.get("source_metadata") or {}).get("fallback") or {})
+        if not isinstance(fallback, dict) or fallback.get("used") is not True:
+            continue
+        fallback_item_ids.append(str(item_id))
+        fallback_triggers[str(fallback.get("trigger") or "unknown")] += 1
+        fallback_statuses[str(item.get("collection_status") or "unknown")] += 1
+    fallback_item_ids.sort()
     snapshots = artifact.get("snapshots") or {}
     if isinstance(snapshots, dict):
         snapshot_count = max(
@@ -109,6 +122,13 @@ def summarize_artifact(artifact: dict[str, Any]) -> dict[str, Any]:
             "total_items": total,
             "ratio": round(successful / total, 6) if total else 1.0,
         },
+        "fallback_items": {
+            "count": len(fallback_item_ids),
+            "item_ids": fallback_item_ids,
+            "triggers": dict(sorted(fallback_triggers.items())),
+            "collection_statuses": dict(sorted(fallback_statuses.items())),
+        },
+        "degraded": bool(fallback_item_ids),
         "has_errors": artifact_has_errors(artifact),
     }
 

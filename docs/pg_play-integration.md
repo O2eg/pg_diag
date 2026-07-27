@@ -27,8 +27,11 @@ collection remains `partial`; it is not promoted to success merely because a
 JSON artifact exists.
 
 `summarize` validates the artifact schema before returning deterministic
-counts, completeness, severities, collection statuses, and snapshot count.
-It does not interpret findings or apply remediation.
+counts, completeness, severities, collection statuses, snapshot count, and
+fallback degradation. A successful replacement may keep completeness at 100%
+and `has_errors` false while setting `degraded: true`; `fallback_items` lists
+the affected parent IDs, triggers, and final statuses. It does not interpret
+findings or apply remediation.
 
 `configuration-facts` validates the source report and extracts the stable
 `pg_diag/configuration-facts-v1` subset used by configuration tools. The facts

@@ -4,13 +4,25 @@ This instruction belongs to report item `activity_locks.lock_modes`. The item is
 
 ## What this item shows
 - An instantaneous count by lock type, mode, and granted state.
+- Up to 50 unique backend PIDs for each count group, sorted numerically.
+- Up to 50 unique schema-qualified relations for each relation-lock group, sorted by name.
 - Locks whose target belongs to the connected database plus database-independent locks held or requested by its sessions.
 - Prepared-transaction locks with a current-database target; pg_diag's own locks are excluded.
+
+`backend_pids` identifies current lock holders when `granted = true` and current
+requesters when `granted = false`. Prepared-transaction locks have no backend
+PID and therefore do not appear in that array. `relations` is empty for lock
+types that do not target a relation. Relations whose names cannot be resolved
+during collection do not appear in the array.
+
+Both arrays are bounded samples: the `locks` column remains the complete count
+for the group even when more than 50 distinct PIDs or relations exist.
 
 ## What to watch
 - Ungranted requests, especially restrictive relation-lock modes.
 - Unexpected `AccessExclusiveLock` during business traffic.
 - Large lock populations that align with long transactions.
+- A PID or relation repeated across restrictive lock groups.
 
 ## Automatic evaluation
 - `medium`: one or more rows contain ungranted lock requests.
@@ -28,6 +40,7 @@ This instruction belongs to report item `activity_locks.lock_modes`. The item is
 
 ## Checklist
 - Use `Lock Waits` to identify exact blockers and wait duration.
+- Correlate `backend_pids` with session activity and inspect the sampled `relations`.
 - Check DDL and maintenance windows and compare with long transactions.
 - Do not infer a blocker from mode counts alone.
 - Empty means no matching lock row after excluding pg_diag itself; collection error is unavailable evidence.

@@ -212,16 +212,38 @@ async def execute_query_item(
     sql_root = (content.query_catalog.get("query_catalog") or {}).get("sql_root", "queries")
     sql_path = content.path / sql_root / sql_file
     sql_text: str | None = None
+    policy = content.report.get("runtime_policy") or {}
+    effective_statement_timeout_ms = float(
+        planned.source_metadata.get(
+            "timeout_ms",
+            policy.get("default_sql_timeout_ms", 1000),
+        )
+    )
+    effective_lock_timeout_ms = float(
+        planned.source_metadata.get(
+            "lock_timeout_ms",
+            policy.get("default_lock_timeout_ms", 750),
+        )
+    )
 
     try:
         sql_text = Path(sql_path).read_text(encoding="utf-8")
         async with conn.transaction(readonly=True):
+            overridden_timeout_keys: list[str] = []
             timeout_ms = planned.source_metadata.get("timeout_ms")
             if timeout_ms is not None:
                 await conn.execute(
                     "select pg_catalog.set_config('statement_timeout', $1, true)",
                     str(timeout_ms),
                 )
+                overridden_timeout_keys.append("statement_timeout")
+            lock_timeout_ms = planned.source_metadata.get("lock_timeout_ms")
+            if lock_timeout_ms is not None:
+                await conn.execute(
+                    "select pg_catalog.set_config('lock_timeout', $1, true)",
+                    str(lock_timeout_ms),
+                )
+                overridden_timeout_keys.append("lock_timeout")
             if batch_context is not None and batch_context.handles(planned):
                 raw_columns, provider_rows = await batch_context.execute(conn, planned)
                 raw_rows = [redact_row(raw_columns, row) for row in provider_rows]
@@ -245,16 +267,32 @@ async def execute_query_item(
                 planned,
             )
             columns, rows = publicize_table_result(raw_columns, raw_rows)
+            if batch_context is not None and overridden_timeout_keys:
+                await _restore_batch_timeout_guards(
+                    conn,
+                    policy,
+                    overridden_timeout_keys,
+                )
     except Exception as exc:
         status = _classify_sql_error(exc, planned)
         message = redact_error(exc)
+        timing_ms = elapsed_ms(started)
         return item_from_plan(
             planned,
             collection_status=status,
             reason=message,
-            timing_ms=elapsed_ms(started),
+            timing_ms=timing_ms,
             result={"kind": "table", "columns": [], "rows": [], "row_count": 0},
-            diagnostics=[_sql_exception_diagnostic(status, message, exc)],
+            diagnostics=[
+                _sql_exception_diagnostic(
+                    status,
+                    message,
+                    exc,
+                    elapsed_time_ms=timing_ms,
+                    statement_timeout_ms=effective_statement_timeout_ms,
+                    lock_timeout_ms=effective_lock_timeout_ms,
+                )
+            ],
             source_text=sql_text,
             source_language="sql",
         )
@@ -281,10 +319,27 @@ def runtime_guard_server_settings(content: ContentPack) -> dict[str, str]:
     policy = content.report.get("runtime_policy") or {}
     return {
         "statement_timeout": str(policy.get("default_sql_timeout_ms", 1000)),
-        "lock_timeout": "1000",
+        "lock_timeout": str(policy.get("default_lock_timeout_ms", 750)),
         "idle_in_transaction_session_timeout": "10000",
         "search_path": "pg_catalog, public",
     }
+
+
+async def _restore_batch_timeout_guards(
+    conn: Any,
+    policy: dict[str, Any],
+    timeout_keys: list[str],
+) -> None:
+    """Prevent a successful savepoint-local override from leaking in a DB batch."""
+    defaults = {
+        "statement_timeout": policy.get("default_sql_timeout_ms", 1000),
+        "lock_timeout": policy.get("default_lock_timeout_ms", 750),
+    }
+    for timeout_key in timeout_keys:
+        await conn.execute(
+            f"select pg_catalog.set_config('{timeout_key}', $1, true)",
+            str(defaults[timeout_key]),
+        )
 
 
 def _columns_from_prepared(prepared: Any) -> list[dict[str, Any]]:
@@ -486,6 +541,84 @@ def _is_missing_optional_source_shape(exc: Exception, planned: PlannedEntry) -> 
     )
 
 
-def _sql_exception_diagnostic(status: str, message: str, exc: BaseException) -> dict[str, Any]:
+def _sql_exception_diagnostic(
+    status: str,
+    message: str,
+    exc: BaseException,
+    *,
+    elapsed_time_ms: float,
+    statement_timeout_ms: float,
+    lock_timeout_ms: float,
+) -> dict[str, Any]:
     level = "error" if status == "error" else "warning"
-    return exception_diagnostic(status, message, exc, level=level)
+    diagnostic = exception_diagnostic(status, message, exc, level=level)
+    diagnostic["exception_type"] = exc.__class__.__name__
+    sqlstate = getattr(exc, "sqlstate", None)
+    if isinstance(sqlstate, str) and sqlstate:
+        diagnostic["sqlstate"] = sqlstate
+    failure_kind, failure_kind_evidence = _sql_failure_kind(
+        exc,
+        elapsed_time_ms=elapsed_time_ms,
+        statement_timeout_ms=statement_timeout_ms,
+        lock_timeout_ms=lock_timeout_ms,
+    )
+    if failure_kind is not None:
+        diagnostic["failure_kind"] = failure_kind
+    if failure_kind_evidence is not None:
+        diagnostic["failure_kind_evidence"] = failure_kind_evidence
+    return diagnostic
+
+
+def _sql_failure_kind(
+    exc: BaseException,
+    *,
+    elapsed_time_ms: float,
+    statement_timeout_ms: float,
+    lock_timeout_ms: float,
+) -> tuple[str | None, str | None]:
+    sqlstate = getattr(exc, "sqlstate", None)
+    exception_name = exc.__class__.__name__
+    message = str(exc).casefold()
+    if sqlstate == "55P03" or "LockNotAvailable" in exception_name:
+        if _message_indicates_lock_timeout(message):
+            return "lock_timeout", "server_message"
+        if _elapsed_reached_timeout(elapsed_time_ms, lock_timeout_ms):
+            return "lock_timeout", "elapsed_timeout_boundary"
+        return "lock_not_available", "sqlstate"
+    if sqlstate == "57014" or "QueryCanceled" in exception_name:
+        if _message_indicates_statement_timeout(message):
+            return "statement_timeout", "server_message"
+        if _elapsed_reached_timeout(elapsed_time_ms, statement_timeout_ms):
+            return "statement_timeout", "elapsed_timeout_boundary"
+        return "query_canceled", "sqlstate"
+    return None, None
+
+
+def _message_indicates_statement_timeout(message: str) -> bool:
+    return any(
+        marker in message
+        for marker in (
+            "statement timeout",
+            "statement_timeout",
+            "из-за тайм-аута",
+            "превышения времени выполнения",
+        )
+    )
+
+
+def _message_indicates_lock_timeout(message: str) -> bool:
+    return any(
+        marker in message
+        for marker in (
+            "lock timeout",
+            "lock_timeout",
+            "ожидания блокировки",
+            "тайм-аута блокировки",
+        )
+    )
+
+
+def _elapsed_reached_timeout(elapsed_time_ms: float, timeout_ms: float) -> bool:
+    if timeout_ms <= 0:
+        return False
+    return elapsed_time_ms >= timeout_ms * 0.95

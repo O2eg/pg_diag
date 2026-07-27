@@ -16,6 +16,7 @@ This instruction belongs to report item `os.sysctl_tcp`. The item is backed by `
 - Connection pool bursts.
 - Firewall idle timeouts.
 - Configuration drift.
+- `sysctl` is not installed, or is inaccessible even after searching the inherited `PATH` and standard system binary directories.
 
 ## Automatic evaluation
 - No severity is assigned without proxy, firewall, kernel, and connection-rate context.

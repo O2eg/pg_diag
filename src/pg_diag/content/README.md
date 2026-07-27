@@ -163,6 +163,66 @@ The three Markdown documents in the content root are likewise excluded from
 that baseline. Validation fails when a visible report item has no Markdown
 instruction file.
 
+## Fallback Items
+
+A report item may name a registered replacement that is executed only after an
+explicitly allowed source failure:
+
+```yaml
+fallback_items:
+  fallback.object_workload.table_workload_relpages:
+    title: Approximate Table Workload From relpages
+    query: objects.table_workload_relpages
+    instruction: fallback_items/object_workload/table_workload_relpages.md
+
+sections:
+  object_workload:
+    items:
+      table_workload:
+        query: objects.table_workload
+        fallback_item: fallback.object_workload.table_workload_relpages
+        fallback_on: [statement_timeout, lock_timeout]
+```
+
+Fallback definitions support `query`, `script`, or `python` sources and own
+their title, instruction, source metadata, result schema, findings, and render
+configuration. They are not report-layout entries and are never collected or
+rendered independently. After activation, the fallback result keeps the parent
+item id, section, item key, position, state, and tags. Its title is prefixed
+with `[Fallback]`, and `source_metadata.fallback` records the trigger, both item
+ids, the primary failure, and separate primary/fallback timings.
+
+Fallback activation is limited to the normalized failure kinds listed in
+`fallback_on`. It does not apply to arbitrary source errors, fallback chains are
+not supported, and a fallback must not require execution targets unavailable to
+its parent. If the fallback also fails, the parent position contains the
+fallback error together with the original failure provenance.
+
+Valid triggers depend on the primary source:
+
+- SQL query: `statement_timeout`, `lock_timeout`;
+- shell script: `shell_timeout`;
+- trusted Python source: `python_timeout`.
+
+PostgreSQL SQLSTATE `57014` and `55P03` are broader than timeout errors. The SQL
+executor therefore records `query_canceled` or `lock_not_available` unless the
+server message or the configured timeout boundary provides timeout evidence.
+Those generic conditions do not activate a timeout-only fallback.
+
+A successful fallback is a degraded but usable collection. Its final
+`collection_status` may be `ok` or `empty`, so `fail_fast` does not abort the
+run and `has_errors` remains false. Machine summaries expose `degraded: true`
+and list activated parents under `fallback_items`. Audit and automation
+consumers must not use completeness alone to infer that every primary source
+succeeded.
+
+The stable parent `item_id` preserves layout and filters, but the effective
+result schema can be completely different. JSON consumers must inspect
+`source_metadata.fallback.used` and
+`source_metadata.fallback.effective_item_id` before selecting fields. The HTML
+Raw metadata view includes both the parent placement and the effective fallback
+definition.
+
 ## Query Manifests
 
 Query manifests live in files listed by `queries.yaml`.
@@ -182,7 +242,11 @@ Important keys:
 - `main_view`
 - `description`
 - `cost`
-- `timeout_ms`, when a bounded query needs more than the one-second SQL default
+- `timeout_ms`, when a bounded query needs a statement timeout different from
+  the one-second SQL default
+- `lock_timeout_ms`, when that query also needs a different relation-lock wait
+  limit; it must be lower than the effective statement timeout, and both
+  overrides are transaction-local
 - `optional`, when a query depends on an optional extension or relation and a
   missing relation should not make the whole item a collection error
 - `display.default_sort.column`

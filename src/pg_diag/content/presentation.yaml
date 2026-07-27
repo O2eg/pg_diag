@@ -381,7 +381,7 @@ presentation_catalog:
       descriptor: {value_kind: decimal, semantic_role: rate, quantity: milliseconds, unit: milliseconds/s, quality: derived, encoding: json_number}
     - match: {name_regex: '(^bytes_total$)'}
       descriptor: {value_kind: integer, semantic_role: gauge, quantity: data_volume, unit: bytes, quality: exact, encoding: decimal_string}
-    - match: {name_regex: '(^relpages$|^index_relpages$)'}
+    - match: {name_regex: '(^relpages$|_relpages$)'}
       descriptor: {value_kind: integer, semantic_role: estimate, quantity: blocks, unit: blocks, quality: estimated}
     - match: {name_regex: '(^postmaster_uptime_s$)'}
       descriptor: {value_kind: decimal, semantic_role: duration, quantity: seconds, unit: seconds, encoding: json_number}
