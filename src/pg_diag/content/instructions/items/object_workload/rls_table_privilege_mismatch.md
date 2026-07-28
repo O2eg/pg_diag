@@ -20,7 +20,9 @@ This item lists RLS-enabled tables with broad, grantable, or direct login-role t
 
 - `medium`: access is PUBLIC or can be granted onward.
 - `unknown`: a login role has a direct grant; RLS policy evaluation still applies and the access baseline decides whether this is drift.
-- Results are bounded to 1000 grants.
+- Results are bounded to 1,000 grants after at most 3,000 matching ACL rows.
+- Stored RLS tables are selected from the 10,000 largest non-empty relations by `relpages`; partitioned roots use a separate 10,000-row alphabetical pool.
+- Extension ownership is checked after bounded table selection. If a root limit is reached, extension-owned roots removed later can consume part of the sample. `candidate_sample_truncated`, `acl_expansion_truncated`, and `result_truncated` identify root, ACL expansion, or output truncation; a `[coverage]` row prevents a false clean `empty`.
 
 ## Related report items
 - [object_workload.rls_configuration](#item-object_workload.rls_configuration) — Review row-policy enablement and force settings.

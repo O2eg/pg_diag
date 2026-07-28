@@ -19,7 +19,7 @@ select
   p.heap_tuples_written as tuples_written,
   p.index_rebuild_count,
   extract(epoch from clock_timestamp() - a.query_start)::numeric as query_age_seconds,
-  left(regexp_replace(coalesce(a.query, ''), '\s+', ' ', 'g'), 500) as query
+  left(coalesce(a.query, ''), 8000) as query
 from pg_catalog.pg_stat_progress_cluster p
 join pg_catalog.pg_stat_activity a on p.pid = a.pid
 where p.datid = (select oid from pg_catalog.pg_database where datname = current_database())

@@ -20,11 +20,15 @@ This item lists non-owner roles that can re-grant object privileges.
 
 - `medium` is raised for non-owner grant options because they expand who can delegate access.
 - Owner and approved administration roles may be intentional exceptions.
-- Results are bounded to 1000 grants.
+- Results are bounded to 1,000 displayed grants.
+- Stored relations are selected by descending `relpages`, functions by descending calls, and named non-storage objects by stable name order before ACL expansion.
+- Relation, function, and schema ACL expansion is capped at 1,000 rows per pool.
+- Extension ownership is checked only after each bounded root set is selected. If that root limit is reached, `candidate_sample_truncated = true` warns that extension-owned roots removed later may have occupied places ahead of unchecked user-owned objects.
+- `candidate_sample_truncated`, `acl_expansion_truncated`, and `result_truncated` identify incomplete coverage; a `[coverage]` row prevents truncation from appearing as a clean `empty` result.
 
 ## Related report items
 - [object_workload.direct_user_grants](#item-object_workload.direct_user_grants) — Review grants issued directly to users.
-- [cluster_inventory.privilege_surface_by_role](#item-cluster_inventory.privilege_surface_by_role) — Inspect the holder's complete privilege surface.
+- [cluster_inventory.privilege_surface_by_role](#item-cluster_inventory.privilege_surface_by_role) — Inspect the holder's bounded sampled privilege surface.
 - [object_workload.object_acl_drift](#item-object_workload.object_acl_drift) — Check ACL changes associated with grant propagation.
 
 ## Checklist

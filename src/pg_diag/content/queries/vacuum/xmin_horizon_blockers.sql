@@ -9,7 +9,7 @@ with activity as (
     coalesce(application_name, '')::text as blocker_appname,
     coalesce(state, '')::text as blocker_state,
     coalesce(to_jsonb(a)->>'query_id', '')::text as query_id,
-    left(regexp_replace(coalesce(a.query, ''), '\s+', ' ', 'g'), 1000)::text as query,
+    left(coalesce(a.query, ''), 8000)::text as query,
     ''::text as slot_name,
     ''::text as slot_type,
     ''::text as slot_plugin,

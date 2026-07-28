@@ -27,7 +27,7 @@ select
   s.parallel_workers_launched::int8 as parallel_workers_launched,
   s.stats_since,
   s.minmax_stats_since,
-  left(coalesce(s.query, '<query text unavailable>'), 4000) as query,
+  left(coalesce(s.query, ''), 8000) as query,
   case when s.queryid is null then 'unknown' else 'ok' end as pg_diag_internal_severity,
   case
     when s.queryid is null then 'Query ID and SQL text are hidden for this statement owner'

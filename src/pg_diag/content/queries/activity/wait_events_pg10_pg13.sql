@@ -4,7 +4,7 @@ select
   coalesce(wait_event_type, 'Not waiting') as wait_event_type,
   coalesce(wait_event, 'Active without wait event') as wait_event,
   null::text as query_id,
-  left(regexp_replace(coalesce(a.query, ''), '\s+', ' ', 'g'), 1000) as query,
+  left(coalesce(a.query, ''), 8000) as query,
   count(*)::int8 as sessions
 from pg_stat_activity a
 where

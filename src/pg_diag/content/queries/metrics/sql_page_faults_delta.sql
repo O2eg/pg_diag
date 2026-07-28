@@ -11,7 +11,7 @@ select
   k.exec_minflts::int8 as exec_minflts,
   k.exec_majflts::int8 as exec_majflts,
   (k.exec_minflts + k.exec_majflts)::int8 as exec_page_faults,
-  s.query as query
+  left(coalesce(s.query, ''), 8000) as query
 from pg_stat_kcache() k
 join pg_stat_statements s
   on s.dbid = k.dbid and s.userid = k.userid and s.queryid = k.queryid

@@ -2,11 +2,12 @@
 
 This instruction belongs to report item `object_workload.extension_objects_acl_drift`.
 
-This item lists extension-owned objects that have explicit ACL entries.
+This item lists a bounded sample of extension-owned objects that have explicit ACL entries.
 
 ## What this item shows
 - Extension name.
 - Object kind, schema, object name, and ACL text.
+- Candidate processing reserves independent quotas for 2,000 relations ordered by `relpages` and 1,000 functions ordered by observed calls. The relation branch therefore cannot displace every function candidate.
 
 ## What to watch
 - Findings that conflict with the approved ownership, privilege, or application-role baseline.
@@ -19,7 +20,8 @@ This item lists extension-owned objects that have explicit ACL entries.
 ## Automatic evaluation
 
 - Severity is `unknown`: an explicit ACL is not evidence of harmful drift without an extension baseline.
-- Results are bounded to 1000 objects; verify upgrade behavior before changing extension-owned ACLs.
+- Results are bounded to 1,000 objects and are not a complete extension-object inventory; verify upgrade behavior before changing extension-owned ACLs.
+- `relation_candidates_truncated`, `function_candidates_truncated`, and `result_truncated` identify incomplete coverage. A `[coverage]` row remains visible even when truncation produces no ordinary finding.
 
 ## Related report items
 - [cluster_inventory.extensions](#item-cluster_inventory.extensions) — Identify the owning extension and its availability.

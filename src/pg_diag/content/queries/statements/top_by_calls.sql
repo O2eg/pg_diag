@@ -13,7 +13,7 @@ select
   s.shared_blks_hit::int8 as shared_blks_hit,
   s.shared_blks_read::int8 as shared_blks_read,
   s.wal_bytes::numeric as wal_bytes,
-  left(coalesce(s.query, '<query text unavailable>'), 4000) as query,
+  left(coalesce(s.query, ''), 8000) as query,
   case when s.queryid is null then 'unknown' else 'ok' end as pg_diag_internal_severity,
   case
     when s.queryid is null then 'Query ID and SQL text are hidden for this statement owner'

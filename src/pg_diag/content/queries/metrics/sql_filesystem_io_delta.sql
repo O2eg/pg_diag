@@ -11,7 +11,7 @@ select
   k.exec_reads::int8 as exec_reads,
   k.exec_writes::int8 as exec_writes,
   (k.exec_reads + k.exec_writes)::int8 as exec_io_bytes,
-  s.query as query
+  left(coalesce(s.query, ''), 8000) as query
 from pg_stat_kcache() k
 join pg_stat_statements s
   on s.dbid = k.dbid and s.userid = k.userid and s.queryid = k.queryid

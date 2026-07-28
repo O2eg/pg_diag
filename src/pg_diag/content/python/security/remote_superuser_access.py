@@ -29,9 +29,15 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
     )
     membership_rows = await ctx.conn.fetch(
         """
-        with recursive role_membership(member, roleid) as (
-          select member, roleid
-          from pg_auth_members
+        with recursive superusers as (
+          select oid
+          from pg_roles
+          where rolsuper
+        ),
+        role_membership(member, roleid) as (
+          select u.oid, am.roleid
+          from superusers u
+          join pg_auth_members am on am.member = u.oid
           union
           select rm.member, am.roleid
           from role_membership rm
@@ -41,10 +47,11 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
         from pg_roles u
         join role_membership rm on rm.member = u.oid
         join pg_roles g on g.oid = rm.roleid
-        where u.rolsuper
-        order by u.rolname, g.rolname
+        limit 3001
         """
     )
+    membership_truncated = len(membership_rows) > 3000
+    membership_rows = membership_rows[:3000]
 
     superusers = set()
     login_superusers = set()
@@ -104,6 +111,31 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
             "summary": _issue_summary(issues, str(listen_addresses or ""), str(current_user or "")),
             "items": issues,
         }
+        if membership_truncated:
+            issue_block["summary"]["description"] += (
+                " Superuser role-membership traversal exceeded 3000 rows; "
+                "matches through roles outside the bounded traversal may be missing."
+            )
+            issue_block["summary"]["recommendation"] += (
+                " Review the superuser membership graph separately because this result is partial."
+            )
+    elif membership_truncated:
+        severity_level = "unknown"
+        issue_block = {
+            "summary": {
+                "severity": "unknown",
+                "status": "review",
+                "title": "Remote superuser access check is partial",
+                "description": (
+                    "Superuser role-membership traversal exceeded 3000 rows. "
+                    "No definitive pass can be issued because an HBA +role match may be outside the bounded traversal."
+                ),
+                "recommendation": (
+                    "Review the superuser membership graph and pg_hba.conf +role rules separately."
+                ),
+            },
+            "items": [],
+        }
     else:
         severity_level = "ok"
         issue_block = {
@@ -124,11 +156,12 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
         severity_level=severity_level,
         diagnostics=[
             {
-                "level": "info",
+                "level": "warning" if membership_truncated else "info",
                 "code": "security_remote_superuser_access",
                 "message": (
                     f"Checked {len(rows)} host pg_hba.conf rule(s) from {hba_path}; "
-                    f"listen_addresses={listen_addresses or ''}"
+                    f"listen_addresses={listen_addresses or ''}; "
+                    f"membership_truncated={membership_truncated}"
                 ),
             }
         ],

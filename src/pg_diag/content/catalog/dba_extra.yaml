@@ -458,7 +458,7 @@ queries:
     cost: medium
     display:
       default_sort:
-        column: redundant_index_size_bytes
+        column: estimated_redundant_index_size_bytes
         direction: desc
     evaluation:
       summary_title: Structurally overlapping indexes require baseline review
@@ -480,7 +480,7 @@ queries:
     database_scope: current_database
     group: Index Health
     main_view: pg_constraint
-    description: Foreign keys whose referencing columns are not the leftmost prefix of a valid index.
+    description: Sampled foreign keys whose referencing columns are not the leftmost prefix of a valid index.
     source: queries_collection/pg_constraint_dba_foreign_keys_without_index_db_converter.md
     cost: medium
     display:
@@ -508,7 +508,7 @@ queries:
     cost: medium
     display:
       default_sort:
-        column: total_index_size_bytes
+        column: estimated_total_index_size_bytes
         direction: desc
     evaluation:
       summary_title: Structurally duplicate indexes were found

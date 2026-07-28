@@ -22,7 +22,10 @@ This item lists PUBLIC or grantable DML privileges on non-system tables in the c
 - `high`: PUBLIC has a write privilege on a user table.
 - `medium`: a non-owner can grant DML privileges onward.
 - Review inherited role membership separately; this item evaluates object ACL entries.
-- ACLs are read from PostgreSQL catalogs for all user relations in the connected database, rather than the current role's information-schema visibility subset.
+- ACLs are read directly from PostgreSQL catalogs rather than the current role's information-schema visibility subset.
+- Stored relations are selected from the 10,000 largest non-empty tables by `relpages`; partitioned tables, views, and foreign tables use a separate 10,000-row alphabetical pool.
+- At most 3,000 matching ACL rows are evaluated and 1,000 findings displayed, so absence is not proof that every relation was covered.
+- `candidate_sample_truncated`, `acl_expansion_truncated`, and `result_truncated` make that incomplete coverage explicit; a `[coverage]` row remains visible when no ordinary finding survives.
 
 ## Related report items
 - [object_workload.direct_user_grants](#item-object_workload.direct_user_grants) — Identify privileges granted directly to login roles.

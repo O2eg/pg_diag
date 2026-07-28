@@ -800,6 +800,43 @@ def test_remote_superuser_access_python_source_returns_ok_when_no_issue(content_
     assert row[column_names.index("risk_level")] == "ok"
 
 
+def test_remote_superuser_access_does_not_pass_when_membership_is_truncated(
+    content_path: Path,
+    tmp_path: Path,
+) -> None:
+    class TruncatedMembershipConn(FakeConn):
+        async def fetch(self, sql: str) -> list[dict[str, Any]]:
+            if "role_membership" in sql:
+                return [
+                    {"superuser": "postgres", "member_of": f"nested_role_{index}"}
+                    for index in range(3001)
+                ]
+            return await super().fetch(sql)
+
+    hba_file = tmp_path / "pg_hba.conf"
+    hba_file.write_text(
+        "local all all peer\n"
+        "host all app_user 10.0.0.0/8 scram-sha-256\n",
+        encoding="utf-8",
+    )
+    content = load_content(content_path)
+    plan = build_plan(content, 180000, collection_mode=LOCAL_COLLECTION_MODE)
+    planned = {
+        item.item_id: item for item in plan.items
+    }["cluster_inventory.remote_superuser_access"]
+
+    item = asyncio.run(
+        execute_python_item(content, TruncatedMembershipConn(hba_file), planned)
+    )
+
+    assert item["collection_status"] == "ok"
+    assert item["severity_level"] == "unknown"
+    assert item["issues"]["summary"]["status"] == "review"
+    assert "exceeded 3000 rows" in item["issues"]["summary"]["description"]
+    assert item["diagnostics"][0]["level"] == "warning"
+    assert "membership_truncated=True" in item["diagnostics"][0]["message"]
+
+
 def test_remote_superuser_access_reports_missing_hba_as_unsupported(content_path: Path, tmp_path: Path) -> None:
     content = load_content(content_path)
     plan = build_plan(content, 180000, collection_mode=LOCAL_COLLECTION_MODE)

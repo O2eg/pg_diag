@@ -27,7 +27,7 @@ select
     else null
   end as query_age_seconds,
   extract(epoch from now() - xact_start)::int8 as xact_age_seconds,
-  left(coalesce(query, ''), 1000) as query
+  left(coalesce(query, ''), 8000) as query
 from pg_stat_activity
 where pid <> pg_backend_pid()
 order by

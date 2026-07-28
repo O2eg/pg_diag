@@ -25,7 +25,7 @@ they are not summed from child indexes.
 ## Automatic evaluation
 - This fallback does not infer that a low-use index is safe to remove.
 - `estimated_index_size_bytes` estimates physical index pages and is not an exact relation-file measurement.
-- Partition-tree estimates depend on complete and visible `pg_inherits` catalog data.
+- Partition-tree traversal is capped at 3,000 index rows. `tree_truncated = true` means the estimate is partial.
 
 ## Related report items
 - [object_workload.index_workload](#item-object_workload.index_workload) — Retry the primary item when exact index sizes are required.
@@ -35,4 +35,5 @@ they are not summed from child indexes.
 - Confirm the fallback trigger in item metadata.
 - Compare `idx_scan`, tuple, and block counters with the statistics reset time.
 - Validate relpages freshness before ranking indexes by estimated size.
+- If `tree_truncated = true`, inspect the partition tree separately before comparing sizes.
 - Use exact size functions later, outside a lock-sensitive collection window, if exact storage is required.

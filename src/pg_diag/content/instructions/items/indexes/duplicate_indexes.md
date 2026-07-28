@@ -5,7 +5,7 @@ This instruction belongs to report item `indexes.duplicate_indexes`. The item is
 ## What this item shows
 - Indexes with identical key/operator/collation/predicate/expression fingerprints.
 - True duplicate index candidates.
-- Duplicate maintenance and storage overhead.
+- Approximate duplicate maintenance and storage overhead from `relpages`.
 
 ## What to watch
 - Duplicate unique/constraint-related structures.
@@ -20,7 +20,8 @@ This instruction belongs to report item `indexes.duplicate_indexes`. The item is
 ## Automatic evaluation
 - `medium` is assigned only when access method, uniqueness/exclusion, key count, key/include attributes, opclasses, collations, options, predicate, and expressions match.
 - Constraint and extension dependencies still decide which index, if any, can be removed.
-- Candidate groups are limited before exact size calculation.
+- At most 3,000 largest valid indexes by `relpages` are fingerprinted. Duplicate groups outside that sample may be omitted.
+- `sampled_index_count` and `estimated_total_index_size_bytes` describe only that sample; no exact size function is called.
 
 ## Related report items
 - [indexes.redundant_indexes](#item-indexes.redundant_indexes) — Review broader prefix-overlap findings.

@@ -22,9 +22,11 @@ This item reports risky grants on non-system schemas other than `public`.
 - `high`: PUBLIC can CREATE in a non-system schema.
 - `medium`: a non-owner can CREATE or re-grant privileges.
 - `unknown`: PUBLIC has only another privilege such as USAGE; compare it with the schema baseline.
+- At most 10,000 schemas in stable name order are considered and at most 3,000 matching ACL findings are expanded.
+- At most 1,000 findings are displayed. `candidate_sample_truncated`, `acl_expansion_truncated`, and `result_truncated` identify incomplete coverage; a `[coverage]` row prevents truncation from appearing as a clean `empty` result.
 
 ## Related report items
-- [cluster_inventory.schema_privilege_matrix](#item-cluster_inventory.schema_privilege_matrix) — Review grants across all schemas and roles.
+- [cluster_inventory.schema_privilege_matrix](#item-cluster_inventory.schema_privilege_matrix) — Review the bounded sample of grants across schemas and roles.
 - [object_workload.schema_owner_drift](#item-object_workload.schema_owner_drift) — Compare privileges with expected schema owners.
 - [cluster_inventory.public_schema_privileges](#item-cluster_inventory.public_schema_privileges) — Contrast application-schema and public exposure.
 

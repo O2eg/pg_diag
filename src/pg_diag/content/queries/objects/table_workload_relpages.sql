@@ -1,4 +1,4 @@
-with recursive candidates as (
+with recursive workload_roots as (
   select
     st.relid,
     st.schemaname,
@@ -21,15 +21,16 @@ with recursive candidates as (
     st.last_autovacuum,
     st.last_analyze,
     st.last_autoanalyze
-  from pg_stat_all_tables st
-  join pg_class c on c.oid = st.relid
-  join pg_namespace n on n.oid = c.relnamespace
-  where n.nspname not in ('pg_catalog', 'information_schema')
-    and n.nspname !~ '^pg_toast'
-    and c.relkind in ('r', 'p', 'm')
+  from pg_stat_user_tables st
   order by (st.n_tup_ins + st.n_tup_upd + st.n_tup_del) desc nulls last,
            st.schemaname, st.relname, st.relid
   limit 200
+),
+candidates as (
+  select wr.*
+  from workload_roots wr
+  join pg_class c on c.oid = wr.relid
+  where c.relkind in ('r', 'p', 'm')
 ),
 relation_tree as (
   select c.relid as root_oid, c.relid as relation_oid
@@ -39,6 +40,20 @@ relation_tree as (
   from relation_tree rt
   join pg_inherits i on i.inhparent = rt.relation_oid
 ),
+bounded_relation_tree as (
+  select *
+  from relation_tree
+  limit 3001
+),
+limited_relation_tree as (
+  select *
+  from bounded_relation_tree
+  limit 3000
+),
+tree_coverage as (
+  select (count(*) > 3000) as tree_truncated
+  from bounded_relation_tree
+),
 page_estimates as (
   select
     rt.root_oid,
@@ -47,7 +62,7 @@ page_estimates as (
         filter (where c.relkind in ('r', 'm')),
       0
     )::int8 as estimated_table_relpages
-  from relation_tree rt
+  from limited_relation_tree rt
   join pg_class c on c.oid = rt.relation_oid
   group by rt.root_oid
 )
@@ -82,6 +97,7 @@ select
     pe.estimated_table_relpages
     * current_setting('block_size')::int8
   )::int8 as estimated_table_size_bytes,
+  tc.tree_truncated,
   case
     when c.seq_scan >= 1000 and c.seq_tup_read >= 10000000 then 'medium'
     else 'ok'
@@ -93,5 +109,6 @@ select
   end as pg_diag_internal_reason
 from candidates c
 join page_estimates pe on pe.root_oid = c.relid
+cross join tree_coverage tc
 left join pg_stat_database db on db.datname = current_database()
 order by total_dml desc nulls last, c.schemaname, c.relname, c.relid

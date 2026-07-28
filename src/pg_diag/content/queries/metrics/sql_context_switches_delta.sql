@@ -12,7 +12,7 @@ select
   k.exec_nivcsws::int8 as exec_nivcsws,
   (k.exec_nvcsws + k.exec_nivcsws)::int8 as exec_context_switches,
   (k.exec_user_time + k.exec_system_time)::numeric as exec_cpu_time,
-  s.query as query
+  left(coalesce(s.query, ''), 8000) as query
 from pg_stat_kcache() k
 join pg_stat_statements s
   on s.dbid = k.dbid and s.userid = k.userid and s.queryid = k.queryid

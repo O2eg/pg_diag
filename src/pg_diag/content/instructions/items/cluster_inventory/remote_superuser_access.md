@@ -20,6 +20,7 @@ The check reads the `hba_file` setting from PostgreSQL, parses the local `pg_hba
 - `high`: a matching login superuser uses trust, or a non-loopback rule is reachable according to `listen_addresses`.
 - `medium`: a loopback/samehost host rule matches a login superuser.
 - Includes and netmask notation are parsed, but rows are potential matches: PostgreSQL first-match ordering can shadow a later rule.
+- Superuser membership traversal is capped at 3,000 rows. If the cap is reached, the item reports `unknown` rather than a false pass because a `+role` HBA match may be outside the bounded traversal.
 
 ## Related report items
 - [overview.listen_addresses_exposure](#item-overview.listen_addresses_exposure) — Confirm whether PostgreSQL listens on reachable interfaces.

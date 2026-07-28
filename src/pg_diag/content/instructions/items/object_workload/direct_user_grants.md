@@ -19,7 +19,11 @@ This item lists object privileges granted directly to login roles.
 ## Automatic evaluation
 
 - Severity is `unknown`: direct grants are a governance-policy question, not a PostgreSQL correctness failure.
-- Results are bounded to 1000 grants and must be compared with the role-management baseline.
+- Results are bounded to 1,000 grants and must be compared with the role-management baseline.
+- Stored relations are selected by descending `relpages`, functions by descending calls, and named non-storage objects by stable name order before ACL expansion.
+- Relation, function, and schema ACL expansion is capped at 1,000 rows per pool.
+- Extension ownership is checked only after each bounded root set is selected. If that root limit is reached, `candidate_sample_truncated = true` warns that extension-owned roots removed later may have occupied places ahead of unchecked user-owned objects.
+- `candidate_sample_truncated`, `acl_expansion_truncated`, and `result_truncated` identify incomplete coverage; a `[coverage]` row prevents truncation from appearing as a clean `empty` result.
 
 ## Related report items
 - [cluster_inventory.privilege_surface_by_role](#item-cluster_inventory.privilege_surface_by_role) — Review effective privileges after role inheritance.

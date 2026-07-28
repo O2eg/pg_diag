@@ -24,7 +24,7 @@ select
   p.partitions_done,
   (p.partitions_done::numeric * 100 / nullif(p.partitions_total, 0)) as partitions_done_pct,
   extract(epoch from clock_timestamp() - a.query_start)::numeric as query_age_seconds,
-  left(regexp_replace(coalesce(a.query, ''), '\s+', ' ', 'g'), 500) as query
+  left(coalesce(a.query, ''), 8000) as query
 from pg_catalog.pg_stat_progress_create_index p
 join pg_catalog.pg_stat_activity a on p.pid = a.pid
 where p.datid = (select oid from pg_catalog.pg_database where datname = current_database())

@@ -36,7 +36,7 @@ select
     when a.query is null or a.query like '<%' then null
     else a.query ~* 'to prevent wraparound'
   end as anti_wraparound,
-  left(regexp_replace(coalesce(a.query, ''), '\s+', ' ', 'g'), 500) as query
+  left(coalesce(a.query, ''), 8000) as query
 from pg_catalog.pg_stat_progress_vacuum p
 join pg_catalog.pg_stat_activity a on a.pid = p.pid
 join pg_catalog.pg_class c on c.oid = p.relid

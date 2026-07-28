@@ -25,7 +25,7 @@ select
       + s.shared_blks_written + s.local_blks_written + s.temp_blks_written
     )::numeric * current_setting('block_size')::int
   ) as pg_io_bytes,
-  s.query as query
+  left(coalesce(s.query, ''), 8000) as query
 from pg_stat_kcache() k
 join pg_stat_statements s
   on s.dbid = k.dbid and s.userid = k.userid and s.queryid = k.queryid

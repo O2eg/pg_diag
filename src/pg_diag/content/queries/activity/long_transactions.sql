@@ -23,7 +23,7 @@ select
     else extract(epoch from clock_timestamp() - query_start)::numeric
   end as query_age_seconds,
   query_id::text as query_id,
-  left(regexp_replace(coalesce(query, ''), '\s+', ' ', 'g'), 500) as query,
+  left(coalesce(query, ''), 8000) as query,
   case
     when state in ('idle in transaction', 'idle in transaction (aborted)')
       and clock_timestamp() - xact_start >= interval '1 hour' then 'high'

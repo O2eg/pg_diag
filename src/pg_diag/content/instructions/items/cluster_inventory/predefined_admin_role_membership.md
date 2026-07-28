@@ -5,7 +5,7 @@ This instruction belongs to report item `cluster_inventory.predefined_admin_role
 This item lists non-superuser, non-system roles that inherit powerful PostgreSQL predefined roles.
 
 ## What this item shows
-- Membership in roles such as `pg_read_server_files`, `pg_write_server_files`, `pg_execute_server_program`, `pg_read_all_data`, and `pg_write_all_data`.
+- Membership in roles such as `pg_read_server_files`, `pg_write_server_files`, `pg_execute_server_program`, `pg_read_all_data`, `pg_write_all_data`, `pg_use_reserved_connections`, and `pg_signal_autovacuum_worker` when those roles exist in the server version.
 - Whether the member role can log in.
 - Direct or inherited grant depth.
 
@@ -22,6 +22,9 @@ This item lists non-superuser, non-system roles that inherit powerful PostgreSQL
 - `high`: inherited capabilities include server-program execution, server-file write, all-data write, or subscription creation.
 - `medium`: read-all, backend signaling, checkpoint, maintenance, monitoring, or related administrative capabilities.
 - Findings exclude superusers because their authority already subsumes these roles.
+- Traversal starts from the predefined administrative roles instead of expanding the complete role graph.
+- `membership_truncated = true` means traversal reached the 3,000-row safety cap; displayed memberships are partial and must not be treated as a complete inventory.
+- When traversal is truncated, a synthetic `[coverage]` row remains visible even if every sampled membership was otherwise filtered out; therefore truncation cannot be rendered as a clean `empty` item.
 
 ## Related report items
 - [cluster_inventory.privileged_roles](#item-cluster_inventory.privileged_roles) — Review all elevated roles.

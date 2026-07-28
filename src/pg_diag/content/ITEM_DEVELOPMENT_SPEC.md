@@ -901,6 +901,27 @@ Severity evaluates raw typed values in canonical units.
 - a missing version-specific column uses null cells and `column_statuses`;
 - numeric zero placeholders for unavailable version fields are forbidden;
 - all SQL is read-only and runs through an explicitly read-only connection;
+- displayed SQL statement text MUST be bounded in the source with
+  `left(coalesce(query, ''), 8000)` (or the equivalent source alias); the
+  collector MUST NOT normalize whitespace before rendering;
+- a catalog query that can visit an unbounded object population MUST first select
+  a deterministic bounded candidate set: stored relations by descending
+  `relpages`, functions by descending calls when available, and non-storage
+  named objects by schema/name/OID;
+- a set-returning ACL expansion, recursive hierarchy walk, or self-join that
+  can multiply source rows MUST bound the expanded intermediate set to at most
+  3000 rows before a global sort and before later expensive joins, aggregates,
+  definitions, or size functions; final presentation sorting applies only to
+  the bounded set, and a smaller item-specific bound remains valid;
+- a bounded security check MUST expose machine-readable coverage flags for
+  candidate, expansion, and result limits that apply to it; if a limit or a
+  post-selection exclusion makes coverage partial and no ordinary finding row
+  survives, the query MUST emit a synthetic `[coverage]` row with severity
+  `unknown` so partial coverage cannot be rendered as a clean `empty` result;
+- when extension ownership is intentionally excluded, the dependency lookup
+  MUST run after the deterministic root limit; if that root limit is reached,
+  candidate coverage is partial because extension-owned roots removed later
+  may have occupied places ahead of unchecked user-owned objects;
 - one report item owns one query, script, Python source, or metric source.
 
 ## 18. Validation Requirements

@@ -3,9 +3,10 @@
 This instruction belongs to report item `indexes.foreign_keys_without_index`. The item is backed by `indexes.foreign_keys_without_index` (SQL query).
 
 ## What this item shows
-- Foreign keys whose referencing columns are not supported by a left-prefix valid index.
+- Foreign keys in the bounded candidate sample whose referencing columns are not supported by a left-prefix valid index.
 - Tables where parent deletes/updates may scan referencing rows.
 - FK-related lock and performance risk candidates.
+- The query considers at most 10,000 foreign keys ranked by referencing-table `relpages`, bounds missing-index candidates to 3,000 before expanding key columns, and returns at most 200 rows.
 
 ## What to watch
 - High-write parent tables with unindexed referencing FKs.
@@ -21,6 +22,7 @@ This instruction belongs to report item `indexes.foreign_keys_without_index`. Th
 - `medium`: the referencing table estimate is at least 100,000 rows and no valid full non-partial left-prefix index exists.
 - `unknown`: the same structural gap exists on a smaller table; parent UPDATE/DELETE frequency determines impact.
 - `suggested_index` is a starting definition, not executable advice for partitioned tables or a substitute for workload review.
+- Empty output means no gap was found inside the bounded sample; it does not prove that every foreign key in a very large catalog is indexed.
 
 ## Related report items
 - [snapshot_delta_workload.table_scan_delta](#item-snapshot_delta_workload.table_scan_delta) — Check whether FK checks contribute to table scans.

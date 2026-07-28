@@ -27,6 +27,7 @@ its partitions.
 - The sequential-scan finding uses the same cumulative scan thresholds as the primary item.
 - `estimated_table_size_bytes` covers physical main relations in the table or partition tree. It does not include indexes, TOAST relations, free-space maps, visibility maps, or relation forks.
 - The estimate is diagnostic prioritization data and must not be treated as an exact replacement for `pg_total_relation_size`.
+- Partition-tree traversal is capped at 3,000 relation rows. `tree_truncated = true` means displayed page estimates are partial.
 
 ## Related report items
 - [object_workload.table_workload](#item-object_workload.table_workload) — Retry the primary item when exact total relation sizes are required.
@@ -35,5 +36,6 @@ its partitions.
 ## Checklist
 - Confirm the fallback trigger in item metadata.
 - Use the workload counters even when the estimated size is stale.
+- If `tree_truncated = true`, do not use the partial size estimate to rank or compare complete partition trees.
 - Run ANALYZE on a suitable maintenance path before relying on relpages for prioritization.
 - Calculate exact sizes separately only when production locking and I/O conditions permit it.

@@ -12,7 +12,7 @@ select
   s.wal_fpi::int8 as wal_fpi,
   s.total_exec_time::numeric as total_exec_time_ms,
   s.rows::int8 as rows,
-  left(coalesce(s.query, '<query text unavailable>'), 4000) as query,
+  left(coalesce(s.query, ''), 8000) as query,
   case when s.queryid is null then 'unknown' else 'ok' end as pg_diag_internal_severity,
   case when s.queryid is null then 'Query ID and SQL text are hidden for this statement owner' else '' end
     as pg_diag_internal_reason

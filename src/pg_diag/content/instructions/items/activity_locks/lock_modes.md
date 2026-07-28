@@ -35,11 +35,11 @@ for the group even when more than 50 distinct PIDs or relations exist.
 - Advisory-lock coordination or prepared transactions.
 
 ## Related report items
-- [activity_locks.lock_waits](#item-activity_locks.lock_waits) — Resolve lock-count pressure to exact blocking chains.
+- [activity_locks.lock_waits](#item-activity_locks.lock_waits) — Resolve lock-count pressure to exact blocking chains and version-qualified wait timing.
 - [activity_locks.long_transactions](#item-activity_locks.long_transactions) — Check whether long transactions explain retained locks.
 
 ## Checklist
-- Use `Lock Waits` to identify exact blockers and wait duration.
+- Use `Lock Waits` to identify exact blockers. Wait duration is exact from PostgreSQL 14; PostgreSQL 10–13 expose only a query-age upper bound.
 - Correlate `backend_pids` with session activity and inspect the sampled `relations`.
 - Check DDL and maintenance windows and compare with long transactions.
 - Do not infer a blocker from mode counts alone.

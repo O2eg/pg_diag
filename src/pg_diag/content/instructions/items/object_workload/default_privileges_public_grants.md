@@ -22,6 +22,8 @@ This item reports `ALTER DEFAULT PRIVILEGES` entries that grant future-object pr
 - `high`: future object privileges are granted to PUBLIC.
 - `medium`: a non-owner can grant a default privilege onward.
 - The check applies only to explicit default-privilege entries, not existing object ACLs.
+- At most 10,000 default-ACL objects are considered and at most 3,000 PUBLIC or onward-grant findings are expanded.
+- At most 1,000 findings are displayed. `candidate_sample_truncated`, `acl_expansion_truncated`, and `result_truncated` identify incomplete coverage, including through a synthetic `[coverage]` row when no ordinary finding survives.
 
 ## Related report items
 - [cluster_inventory.public_schema_privileges](#item-cluster_inventory.public_schema_privileges) — Review public access at schema level.

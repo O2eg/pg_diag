@@ -20,6 +20,10 @@ This instruction belongs to report item `indexes.redundant_indexes`. The item is
 ## Automatic evaluation
 - Severity is `unknown`: the check reports only conservative btree left-prefix candidates with matching opclass, collation, sort options, predicate, and expressions.
 - Constraint-backed candidate indexes are excluded, but INCLUDE coverage, workload, and other dependencies still require manual review.
+- The root pool contains at most 3,000 largest valid btree indexes by `relpages`. At most 16 indexes per table enter pair generation, at most 3,000 deterministic cheap pair candidates enter structural comparison, and at most 100 findings are rendered.
+- A covering or redundant partner outside the pool can be missed at the sample boundary.
+- `root_sample_truncated`, `table_index_sample_truncated`, `pair_sample_truncated`, and `result_truncated` identify each incomplete stage. A `[coverage]` row prevents an exceeded limit from appearing as a clean empty item.
+- `estimated_redundant_index_size_bytes` is calculated from `relpages`; the item does not call `pg_relation_size`.
 
 ## Related report items
 - [indexes.duplicate_indexes](#item-indexes.duplicate_indexes) — Distinguish prefix redundancy from exact duplication.

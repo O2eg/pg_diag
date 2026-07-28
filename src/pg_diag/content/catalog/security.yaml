@@ -472,10 +472,10 @@ queries:
     database_scope: current_database
     group: Object Workload
     main_view: pg_class
-    description: Schemas where same-kind user objects are split across multiple owners.
+    description: Schemas where sampled same-kind user objects are split across multiple owners.
     display:
       default_sort:
-        column: owner_count
+        column: sampled_owner_count
         direction: desc
     collection:
       default: once
@@ -508,7 +508,7 @@ queries:
     database_scope: current_database
     group: Object Workload
     main_view: pg_namespace
-    description: User objects whose owner differs from the containing schema owner.
+    description: Sampled user objects whose owner differs from the containing schema owner.
     display:
       default_sort:
         column: schema_name
@@ -526,10 +526,10 @@ queries:
     database_scope: current_database
     group: Object Workload
     main_view: pg_class
-    description: Same-kind user objects in one schema with inconsistent ACL signatures.
+    description: Same-kind sampled user objects in one schema with inconsistent ACL signatures.
     display:
       default_sort:
-        column: acl_signature_count
+        column: sampled_acl_signature_count
         direction: desc
     collection:
       default: once
@@ -580,10 +580,10 @@ queries:
     database_scope: current_database
     group: Object Workload
     main_view: pg_roles
-    description: No-login roles that own user objects and should be verified as intentional owner roles.
+    description: No-login roles that own sampled user objects and should be verified as intentional owner roles.
     display:
       default_sort:
-        column: object_count
+        column: sampled_object_count
         direction: desc
     collection:
       default: once
@@ -616,7 +616,7 @@ queries:
     database_scope: current_database
     group: Object Workload
     main_view: pg_proc
-    description: SECURITY DEFINER functions owned by superusers or roles that differ from the schema owner.
+    description: Sampled SECURITY DEFINER functions owned by superusers or roles that differ from the schema owner.
     display:
       default_sort:
         column: risk_level
@@ -634,7 +634,7 @@ queries:
     database_scope: current_database
     group: Object Workload
     main_view: pg_extension
-    description: Extension-owned relations and functions that carry manual ACL entries.
+    description: Sampled extension-owned relations and functions that carry manual ACL entries.
     display:
       default_sort:
         column: extension_name
@@ -688,10 +688,10 @@ queries:
     database_scope: current_database
     group: Cluster Inventory
     main_view: pg_roles
-    description: Aggregated explicit object privilege footprint per grantee role.
+    description: Aggregated sampled explicit object privilege footprint per grantee role.
     display:
       default_sort:
-        column: explicit_privilege_count
+        column: sampled_explicit_privilege_count
         direction: desc
     collection:
       default: once
@@ -706,7 +706,7 @@ queries:
     database_scope: current_database
     group: Cluster Inventory
     main_view: pg_namespace
-    description: Schema owner, grantee, CREATE/USAGE, and object-count matrix for user schemas.
+    description: Schema owner, grantee, CREATE/USAGE, and sampled object-count matrix for user schemas.
     display:
       default_sort:
         column: schema_name

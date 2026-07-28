@@ -17,7 +17,7 @@ select
     when backend_xid is null and backend_xmin is null then null
     else greatest(coalesce(age(backend_xid), 0), coalesce(age(backend_xmin), 0))::int8
   end as xid_age,
-  left(regexp_replace(coalesce(query, ''), '\s+', ' ', 'g'), 500) as query,
+  left(coalesce(query, ''), 8000) as query,
   case
     when clock_timestamp() - state_change >= interval '1 hour' then 'high'
     else 'medium'

@@ -1,4 +1,4 @@
-with foreign_keys as (
+with foreign_key_roots as (
   select
     con.oid,
     con.conname,
@@ -10,7 +10,7 @@ with foreign_keys as (
     c_source.relname as source_table,
     n_target.nspname as target_schema,
     c_target.relname as target_table,
-    pg_get_constraintdef(con.oid) as constraint_def
+    greatest(coalesce(c_source.relpages, 0), 0)::int8 as source_relpages
   from pg_constraint con
   join pg_class c_source on c_source.oid = con.conrelid
   join pg_namespace n_source on n_source.oid = c_source.relnamespace
@@ -18,6 +18,27 @@ with foreign_keys as (
   join pg_namespace n_target on n_target.oid = c_target.relnamespace
   where con.contype = 'f'
     and n_source.nspname not in ('pg_catalog', 'pg_toast', 'information_schema')
+    and n_source.nspname not like 'pg_toast%'
+  order by c_source.relpages desc, n_source.nspname, c_source.relname,
+           con.conname, con.oid
+  limit 10000
+),
+missing_index_candidates as (
+  select fk.*
+  from foreign_key_roots fk
+  where not exists (
+    select 1
+    from pg_index i
+    where i.indrelid = fk.conrelid
+      and i.indisvalid and i.indisready and i.indislive
+      and i.indpred is null
+      and (
+        select array_agg(key.attnum order by key.ord)::smallint[]
+        from unnest(i.indkey::smallint[]) with ordinality as key(attnum, ord)
+        where key.ord <= array_length(fk.conkey, 1)
+      ) = fk.conkey
+  )
+  limit 3000
 )
 select
   fk.oid as constraint_oid,
@@ -38,7 +59,7 @@ select
     from unnest(fk.confkey) with ordinality as k(attnum, ord)
     join pg_attribute a on a.attrelid = fk.confrelid and a.attnum = k.attnum
   ) as target_columns,
-  fk.constraint_def,
+  pg_get_constraintdef(fk.oid) as constraint_def,
   coalesce(st.n_live_tup, 0)::int8 as source_n_live_tup,
   format(
     'CREATE INDEX ON %I.%I (%s)',
@@ -55,19 +76,7 @@ select
     when coalesce(st.n_live_tup, 0) >= 100000 then 'Large referencing table has no valid full left-prefix index for this foreign key.'
     else 'No valid full left-prefix index; parent UPDATE/DELETE frequency determines whether an index is worthwhile.'
   end as pg_diag_internal_reason
-from foreign_keys fk
+from missing_index_candidates fk
 left join pg_stat_all_tables st on st.relid = fk.conrelid
-where not exists (
-  select 1
-  from pg_index i
-  where i.indrelid = fk.conrelid
-    and i.indisvalid and i.indisready and i.indislive
-    and i.indpred is null
-    and (
-      select array_agg(key.attnum order by key.ord)::smallint[]
-      from unnest(i.indkey::smallint[]) with ordinality as key(attnum, ord)
-      where key.ord <= array_length(fk.conkey, 1)
-    ) = fk.conkey
-)
 order by source_n_live_tup desc nulls last, source_schema, source_table, conname, constraint_oid
 limit 200

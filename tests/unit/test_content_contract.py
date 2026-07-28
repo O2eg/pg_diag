@@ -889,6 +889,17 @@ def test_activity_lock_sql_uses_supported_bounded_semantics(content_path: Path) 
     assert "waitstart" in lock_waits_sql
     assert "limit 1000" in lock_waits_sql
     assert "blocked.relation = blocker.relation" not in lock_waits_sql
+    assert lock_waits_sql.count("from pg_locks") == 1
+    assert "lock_snapshot as materialized" in lock_waits_sql
+    assert "representative_locks as materialized" in lock_waits_sql
+    for coverage_column in (
+        "direct_blockers_truncated",
+        "blocked_sessions_truncated",
+        "blocking_pairs_truncated",
+        "upstream_blockers_truncated",
+        "result_truncated",
+    ):
+        assert coverage_column in lock_waits_sql
 
     wait_sql = (query_root / "activity/wait_events.sql").read_text(encoding="utf-8").lower()
     sampled_wait_sql = (query_root / "metrics/activity_wait_sample_profile.sql").read_text(
@@ -899,6 +910,212 @@ def test_activity_lock_sql_uses_supported_bounded_semantics(content_path: Path) 
         assert "active without wait event" in sql
         assert "'cpu'" not in sql
         assert "limit 100" in sql
+
+
+def test_pg10_pg13_lock_waits_reuses_one_bounded_lock_snapshot(
+    content_path: Path,
+) -> None:
+    sql = (content_path / "queries/locks/lock_waits_pg10_pg13.sql").read_text(
+        encoding="utf-8"
+    ).lower()
+
+    assert sql.count("from pg_locks") == 1
+    assert "lock_snapshot as (" in sql
+    assert "waiting_locks as (" in sql
+    assert "representative_locks as (" in sql
+    assert "blocked.blocker_pids[1:50]" in sql
+    assert "upstream_all.blocker_pids[1:50]" in sql
+    assert "'pg_stat_activity.query_start_upper_bound'::text as blocked_duration_source" in sql
+    assert "'unknown'::text as pg_diag_internal_severity" in sql
+
+    modern_sql = (content_path / "queries/locks/lock_waits.sql").read_text(
+        encoding="utf-8"
+    ).lower()
+    assert "'pg_locks.waitstart'::text as blocked_duration_source" in modern_sql
+
+
+def test_security_and_fk_catalog_queries_bound_candidates_before_expansion(
+    content_path: Path,
+) -> None:
+    for relative_path in (
+        "queries/security/object_owner_drift.sql",
+        "queries/security/orphaned_object_owners.sql",
+        "queries/security/schema_owner_drift.sql",
+    ):
+        sql = (content_path / relative_path).read_text(encoding="utf-8").lower()
+        assert "order by c.relpages desc" in sql
+        assert "limit 10001" in sql
+        assert "order by coalesce(stats.calls, 0) desc" in sql
+        assert "limit 1001" in sql
+        dependency_positions = _all_indexes(sql, "from pg_depend")
+        dependency_positions.extend(_all_indexes(sql, "from pg_catalog.pg_depend"))
+        assert dependency_positions
+        for dependency_pos in dependency_positions:
+            assert sql.rfind("limit ", 0, dependency_pos) >= 0
+
+    definer_sql = (
+        content_path / "queries/security/security_definer_owner_drift.sql"
+    ).read_text(encoding="utf-8").lower()
+    assert definer_sql.index("limit 1000") < definer_sql.index("pg_get_function_identity_arguments")
+    assert "order by r.rolsuper desc, coalesce(stats.calls, 0) desc" in definer_sql
+    assert definer_sql.index("limit 1000") < definer_sql.index("from pg_depend")
+
+    extension_sql = (
+        content_path / "queries/security/extension_objects_acl_drift.sql"
+    ).read_text(encoding="utf-8").lower()
+    assert "limit 2000" in extension_sql
+    assert "limit 1000" in extension_sql
+    assert "bounded_objects as (" in extension_sql
+    assert "relation_candidates_truncated" in extension_sql
+    assert "function_candidates_truncated" in extension_sql
+
+    fk_sql = (content_path / "queries/indexes/foreign_keys_without_index.sql").read_text(
+        encoding="utf-8"
+    ).lower()
+    missing_candidates_end = fk_sql.index(")\nselect", fk_sql.index("missing_index_candidates as"))
+    assert "limit 10000" in fk_sql[:missing_candidates_end]
+    assert "limit 3000" in fk_sql[:missing_candidates_end]
+    assert "pg_get_constraintdef" not in fk_sql[:missing_candidates_end]
+    assert "pg_get_constraintdef" in fk_sql[missing_candidates_end:]
+
+
+def test_index_samples_filter_valid_user_indexes_before_root_limit(
+    content_path: Path,
+) -> None:
+    for relative_path in (
+        "queries/indexes/duplicate_indexes.sql",
+        "queries/indexes/duplicate_indexes_pg10.sql",
+        "queries/indexes/redundant_indexes.sql",
+        "queries/indexes/redundant_indexes_pg10.sql",
+    ):
+        sql = (content_path / relative_path).read_text(encoding="utf-8").lower()
+        root = sql[: sql.index("limit 3000") + len("limit 3000")]
+        assert "join pg_index" in root
+        assert "i.indisvalid and i.indisready and i.indislive" in root
+        assert "pg_catalog" in root
+        assert "information_schema" in root
+        if "redundant_indexes" in relative_path:
+            assert "am.amname = 'btree'" in root
+
+
+def _all_indexes(text: str, needle: str) -> list[int]:
+    indexes: list[int] = []
+    start = 0
+    while True:
+        index = text.find(needle, start)
+        if index < 0:
+            return indexes
+        indexes.append(index)
+        start = index + len(needle)
+
+
+def test_bounded_security_queries_surface_partial_coverage(
+    content_path: Path,
+) -> None:
+    query_paths = (
+        "queries/security/default_privileges_public_grants.sql",
+        "queries/security/direct_user_grants.sql",
+        "queries/security/excessive_dml_privileges.sql",
+        "queries/security/function_execute_privileges.sql",
+        "queries/security/grant_option_holders.sql",
+        "queries/security/non_public_schema_privileges.sql",
+        "queries/security/object_acl_drift.sql",
+        "queries/security/object_owner_drift.sql",
+        "queries/security/orphaned_object_owners.sql",
+        "queries/security/privilege_surface_by_role.sql",
+        "queries/security/rls_table_privilege_mismatch.sql",
+        "queries/security/schema_owner_drift.sql",
+        "queries/security/schema_privilege_matrix.sql",
+        "queries/security/security_definer_owner_drift.sql",
+        "queries/security/sequence_privileges.sql",
+        "queries/security/unused_privileged_grants.sql",
+    )
+    for relative_path in query_paths:
+        sql = (content_path / relative_path).read_text(encoding="utf-8").lower()
+        assert "candidate_sample_truncated" in sql, relative_path
+        assert "'[coverage]'" in sql, relative_path
+        assert "'unknown'" in sql, relative_path
+
+    for relative_path in (
+        "queries/security/default_privileges_public_grants.sql",
+        "queries/security/direct_user_grants.sql",
+        "queries/security/excessive_dml_privileges.sql",
+        "queries/security/function_execute_privileges.sql",
+        "queries/security/grant_option_holders.sql",
+        "queries/security/non_public_schema_privileges.sql",
+        "queries/security/object_acl_drift.sql",
+        "queries/security/privilege_surface_by_role.sql",
+        "queries/security/rls_table_privilege_mismatch.sql",
+        "queries/security/schema_privilege_matrix.sql",
+        "queries/security/sequence_privileges.sql",
+        "queries/security/unused_privileged_grants.sql",
+    ):
+        sql = (content_path / relative_path).read_text(encoding="utf-8").lower()
+        assert "acl_expansion_truncated" in sql, relative_path
+        assert "result_truncated" in sql, relative_path
+
+
+def test_predefined_admin_membership_preserves_truncation_and_pg18_roles(
+    content_path: Path,
+) -> None:
+    sql = (
+        content_path / "queries/security/predefined_admin_role_membership.sql"
+    ).read_text(encoding="utf-8").lower()
+
+    assert "pg_use_reserved_connections" in sql
+    assert "pg_signal_autovacuum_worker" in sql
+    assert "coverage_notice as (" in sql
+    assert "'[coverage]'::name as member_role" in sql
+    assert "where membership_truncated" in sql
+
+
+def test_object_acl_drift_normalizes_acl_element_order(
+    content_path: Path,
+) -> None:
+    sql = (content_path / "queries/security/object_acl_drift.sql").read_text(
+        encoding="utf-8"
+    ).lower()
+
+    assert "string_agg(" in sql
+    assert "acl.grantor," in sql
+    assert "acl.grantee," in sql
+    assert "acl.privilege_type," in sql
+    assert "acl.is_grantable" in sql
+    assert "md5(coalesce(" not in sql
+    assert "acl_expansion_budget" in sql
+    assert "partition by objects.sample_priority" in sql
+    assert "when 1 then 1500" in sql
+    assert "when 2 then 1000" in sql
+    assert "else 500" in sql
+
+
+def test_redundant_index_pair_generation_is_bounded_before_structural_checks(
+    content_path: Path,
+) -> None:
+    for relative_path in (
+        "queries/indexes/redundant_indexes.sql",
+        "queries/indexes/redundant_indexes_pg10.sql",
+    ):
+        sql = (content_path / relative_path).read_text(encoding="utf-8").lower()
+        pair_roots = sql.index("pair_roots_bounded as (")
+        structural = sql.index("index_pairs as (")
+        assert "table_index_rank <= 16" in sql[:pair_roots]
+        assert "limit 3001" in sql[pair_roots:structural]
+        assert "pair_sample_truncated" in sql
+        assert "result_truncated" in sql
+        assert "'[coverage]'::text" in sql
+
+
+def test_tables_without_key_fallback_distinguishes_result_truncation(
+    content_path: Path,
+) -> None:
+    sql = (
+        content_path / "queries/indexes/tables_without_pk_or_unique_relpages.sql"
+    ).read_text(encoding="utf-8").lower()
+
+    assert "count(*)::int8 as ranked_candidate_count" in sql
+    assert "(result_coverage.ranked_candidate_count > 200) as result_truncated" in sql
+    assert "(rc.selected_root_count < rc.sampled_eligible_root_count)" in sql
 
 
 def test_sql_workload_instructions_define_complete_interpretation_contract(
@@ -2137,7 +2354,7 @@ def test_pg_stat_kcache_metrics_use_independent_reset_safe_sources(content_path:
         assert "from pg_stat_kcache()" in sql
         assert "k.top is true" in sql
         assert "k.stats_since as kcache_stats_since" in sql
-        assert "s.query as query" in sql
+        assert "left(coalesce(s.query, ''), 8000) as query" in sql
         assert "limit 250" in sql
 
     for metric_id in chart_metrics:

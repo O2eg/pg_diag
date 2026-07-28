@@ -2,11 +2,12 @@
 
 This instruction belongs to report item `object_workload.schema_owner_drift`.
 
-This item lists user objects whose owner differs from their containing schema owner.
+This item lists sampled user objects whose owner differs from their containing schema owner.
 
 ## What this item shows
 - Object kind, schema, object name, object owner, and schema owner.
 - Objects from PostgreSQL system schemas are excluded.
+- Stored tables and materialized views are sampled from the 10,000 largest non-empty relations; partitioned tables, sequences, views, and foreign tables from 10,000 names; functions from the 1,000 most-called candidates.
 
 ## What to watch
 - Findings that conflict with the approved ownership, privilege, or application-role baseline.
@@ -19,7 +20,8 @@ This item lists user objects whose owner differs from their containing schema ow
 ## Automatic evaluation
 
 - Severity is `unknown` until the result is compared with the intended owner-role matrix.
-- Output is bounded to 1000 objects.
+- Output is bounded to 1,000 objects and is not a complete database-wide inventory.
+- `candidate_sample_truncated` identifies a reached root limit; because extension ownership is checked later, extension-owned roots can consume part of that truncated sample. `result_truncated` covers the final output limit. A `[coverage]` row prevents either condition from appearing clean.
 
 ## Related report items
 - [object_workload.database_owner_mismatch](#item-object_workload.database_owner_mismatch) — Compare schema and database ownership.

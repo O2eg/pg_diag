@@ -22,6 +22,8 @@ This item reports PUBLIC or grantable privileges on user-defined sequences.
 - `high`: PUBLIC can use or advance a user sequence.
 - `medium`: another sequence privilege is PUBLIC or can be granted onward.
 - Ordinary explicit non-grantable role access is not included.
+- At most 10,000 sequences in stable schema/name order are considered and at most 3,000 matching ACL findings are expanded.
+- At most 1,000 findings are displayed. `candidate_sample_truncated`, `acl_expansion_truncated`, and `result_truncated` identify incomplete coverage, including through a `[coverage]` row when no ordinary finding survives.
 
 ## Related report items
 - [object_workload.sequence_table_owner_mismatch](#item-object_workload.sequence_table_owner_mismatch) — Check ownership alignment with related tables.

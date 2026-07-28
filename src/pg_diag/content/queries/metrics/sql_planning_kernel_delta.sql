@@ -17,7 +17,7 @@ select
   k.plan_majflts::int8 as plan_majflts,
   k.plan_nvcsws::int8 as plan_nvcsws,
   k.plan_nivcsws::int8 as plan_nivcsws,
-  s.query as query
+  left(coalesce(s.query, ''), 8000) as query
 from pg_stat_kcache() k
 join pg_stat_statements s
   on s.dbid = k.dbid and s.userid = k.userid and s.queryid = k.queryid
