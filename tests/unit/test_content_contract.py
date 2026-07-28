@@ -2812,6 +2812,20 @@ def test_object_and_index_queries_bound_expensive_size_calls(content_path: Path)
             ), source_id
 
 
+def test_large_indexes_excludes_tables_smaller_than_one_mib(content_path: Path) -> None:
+    content = load_content(content_path)
+    variant = content.queries["indexes.large_indexes"]["variants"][-1]
+    sql = (content.path / "queries" / variant["sql_file"]).read_text(
+        encoding="utf-8"
+    ).lower()
+
+    assert (
+        "tbl.relpages::int8 * current_setting('block_size')::int8 >= 1024 * 1024"
+        in sql
+    )
+    assert "where c.table_size_bytes >= 1024 * 1024" in sql
+
+
 def test_lock_mode_counts_include_bounded_pid_and_relation_samples(
     content_path: Path,
 ) -> None:

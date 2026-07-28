@@ -579,7 +579,7 @@ queries:
     database_scope: current_database
     group: Index Health
     main_view: pg_index
-    description: Indexes larger than half of the table heap, with usage counters.
+    description: Indexes larger than half of a table heap of at least 1 MiB, with usage counters.
     source: queries_collection/pg_index_dba_idx_large_relative_to_table_db_converter.md
     cost: medium
     display:

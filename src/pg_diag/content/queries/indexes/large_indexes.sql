@@ -17,10 +17,18 @@ with candidates as (
   left join pg_stat_user_indexes s on s.indexrelid = idx.oid
   where n.nspname not in ('pg_catalog', 'pg_toast', 'information_schema')
     and tbl.relpages > 0
+    and tbl.relpages::int8 * current_setting('block_size')::int8 >= 1024 * 1024
     and idx.relpages::numeric / tbl.relpages > 0.5
   order by idx.relpages::numeric / nullif(tbl.relpages, 0) desc,
            idx.relpages desc, n.nspname, tbl.relname, idx.relname, i.indexrelid
   limit 100
+),
+sized_candidates as (
+  select
+    c.*,
+    pg_relation_size(c.indrelid)::int8 as table_size_bytes,
+    pg_relation_size(c.indexrelid)::int8 as index_size_bytes
+  from candidates c
 )
 select
   c.indrelid as table_oid,
@@ -29,13 +37,13 @@ select
   c.table_name,
   c.index_name,
   db.stats_reset,
-  pg_relation_size(c.indrelid)::int8 as table_size_bytes,
-  pg_relation_size(c.indexrelid)::int8 as index_size_bytes,
-  (pg_relation_size(c.indexrelid)::numeric * 100 / nullif(pg_relation_size(c.indrelid), 0)) as index_to_table_pct,
+  c.table_size_bytes,
+  c.index_size_bytes,
+  (c.index_size_bytes::numeric * 100 / nullif(c.table_size_bytes, 0)) as index_to_table_pct,
   c.idx_scan,
   c.idx_tup_read,
   c.idx_tup_fetch
-from candidates c
+from sized_candidates c
 left join pg_stat_database db on db.datname = current_database()
-where pg_relation_size(c.indrelid) > 0
+where c.table_size_bytes >= 1024 * 1024
 order by index_to_table_pct desc nulls last, index_size_bytes desc, c.indexrelid
