@@ -10,6 +10,32 @@ are illustrative. Names under `example.net` are reserved for documentation.
 Adapt the examples to the effective `pg_hba.conf`, network policy, TLS setup,
 and failover design of the target environment.
 
+## Table of contents
+
+- [Core principles](#core-principles)
+- [Collection modes and trust boundaries](#collection-modes-and-trust-boundaries)
+- [Controls applied by pg_diag](#controls-applied-by-pg_diag)
+- [Recommended accounts](#recommended-accounts)
+  - [Dedicated PostgreSQL role](#dedicated-postgresql-role)
+  - [Dedicated SSH account](#dedicated-ssh-account)
+  - [Existing monitoring roles](#existing-monitoring-roles)
+  - [Superuser access](#superuser-access)
+- [Credentials and report handling](#credentials-and-report-handling)
+- [Recommended connection patterns](#recommended-connection-patterns)
+  - [Direct database-only access](#direct-database-only-access)
+  - [Full remote collection over SSH](#full-remote-collection-over-ssh)
+  - [Report collection through a jump host](#report-collection-through-a-jump-host)
+    - [Database-only connection through a jump host](#database-only-connection-through-a-jump-host)
+    - [Host and database connection through a jump host](#host-and-database-connection-through-a-jump-host)
+  - [Local Unix-socket access with peer authentication](#local-unix-socket-access-with-peer-authentication)
+  - [Patterns to avoid](#patterns-to-avoid)
+- [Patroni and HAProxy](#patroni-and-haproxy)
+  - [Database-only diagnosis of the current primary](#database-only-diagnosis-of-the-current-primary)
+  - [Full diagnosis of the current primary host](#full-diagnosis-of-the-current-primary-host)
+  - [Cluster-wide evidence](#cluster-wide-evidence)
+  - [Patroni topology decision table](#patroni-topology-decision-table)
+- [Preflight checklist](#preflight-checklist)
+
 ## Core principles
 
 1. Use a dedicated PostgreSQL login role rather than a superuser or an
@@ -47,7 +73,7 @@ REMOTE-DB-ONLY
   Collector host                                  Database endpoint
   +-----------------------------+                 +-----------------------+
   | OS user: diagnostics runner | -- TLS/TCP ---->| PostgreSQL or HAProxy |
-  | DB role: pg_diag            |   :5432/:5000   | DB auth: SCRAM        |
+  | DB role: pgdiag             |   :5432/:5000   | DB auth: SCRAM        |
   +-----------------------------+                 +-----------------------+
 
   SSH: none
@@ -61,12 +87,12 @@ LOCAL
   | OS user: pg_diag_os                                                   |
   | pg-diag --collection-mode local                                       |
   |    |                                                                  |
-  |    +-- TCP 127.0.0.1:5432 + SCRAM ---------------------+               |
-  |    |                                                    |               |
-  |    +-- /var/run/postgresql/.s.PGSQL.5432 + peer -------+               |
-  |                                                         v               |
-  |                                                   PostgreSQL            |
-  | Host probes inspect this operating system                              |
+  |    +-- TCP 127.0.0.1:5432 + SCRAM ---------------------+              |
+  |    |                                                    |             |
+  |    +-- /var/run/postgresql/.s.PGSQL.5432 + peer -------+              |
+  |                                                         v             |
+  |                                                   PostgreSQL          |
+  | Host probes inspect this operating system                             |
   +-----------------------------------------------------------------------+
 
 
@@ -74,11 +100,11 @@ REMOTE
 
   Collector host                         SSH target
   +-----------------------------+         +-------------------------------+
-  | OS user: diagnostics runner |         | sshd :22                     |
-  | DB role: pg_diag            | ==SSH=> | SSH user: pg_diag_ssh        |
-  | asyncpg ->                  | tunnel  | auth: key + known_hosts      |
-  | 127.0.0.1:<dynamic-port>    |         |   +-- host probes            |
-  +-----------------------------+         |   +-- TCP -> <db-host>:5432  |
+  | OS user: diagnostics runner |         | sshd :22                      |
+  | DB role: pgdiag             | ==SSH=> | SSH user: pg_diag_ssh         |
+  | asyncpg ->                  | tunnel  | auth: key + known_hosts       |
+  | 127.0.0.1:<dynamic-port>    |         |   +-- host probes             |
+  +-----------------------------+         |   +-- TCP -> <db-host>:5432   |
                                           +----------------+--------------+
                                                            |
                                                            v
@@ -124,14 +150,38 @@ least-privileged.
 
 ### Dedicated PostgreSQL role
 
-The preferred role has `LOGIN`, membership in `pg_monitor`, and `CONNECT` only
-to databases that must be diagnosed:
+The examples use `pgdiag` because PostgreSQL reserves the `pg_` prefix for
+system roles. The reference grant set implemented by the
+`pg_cluster/roles/pg_roles` Ansible role is:
+
+- `LOGIN` with a managed SCRAM-SHA-256 password;
+- membership in the predefined `pg_monitor` role;
+- `CONNECT` on every existing connectable user database and on `template1`;
+- role-level `default_transaction_read_only=on`;
+- for each already installed `pg_stat_statements`, `pg_stat_kcache`,
+  `pg_wait_sampling`, or `pg_buffercache` extension, `USAGE` on its actual
+  schema;
+- `SELECT` only on the allowlisted read-only extension views:
+  `pg_stat_statements`, `pg_stat_statements_info`, `pg_stat_kcache`,
+  `pg_wait_sampling_current`, `pg_wait_sampling_history`,
+  `pg_wait_sampling_profile`, and `pg_buffercache`, when those objects belong
+  to the corresponding installed extension;
+- `EXECUTE` only on the allowlisted read-only functions
+  `pg_stat_kcache()`, `pg_buffercache_pages()`,
+  `pg_buffercache_summary()`, and `pg_buffercache_usage_counts()`, when those
+  functions belong to the corresponding installed extension.
+
+The role does not install or configure extensions. Missing extensions are
+ignored. It does not grant access to application tables or sequences, bulk
+privileges on extension schemas, or execution of statistics-reset functions.
+This is the complete ready-made grant set; expand it only for a reviewed,
+item-specific requirement.
 
 ```sql
-CREATE ROLE pg_diag LOGIN PASSWORD '<managed-secret>';
-GRANT pg_monitor TO pg_diag;
-GRANT CONNECT ON DATABASE application_db TO pg_diag;
-ALTER ROLE pg_diag SET default_transaction_read_only = on;
+CREATE ROLE pgdiag LOGIN PASSWORD '<managed-secret>';
+GRANT pg_monitor TO pgdiag;
+GRANT CONNECT ON DATABASE application_db TO pgdiag;
+ALTER ROLE pgdiag SET default_transaction_read_only = on;
 ```
 
 Manage the role, grants, password rotation, and revocation through the
@@ -146,15 +196,16 @@ granting it to approved roles, plus matching HBA rules. Do not introduce such
 a revocation on an existing system without assessing every application role.
 
 `pg_monitor` improves visibility into activity and statistics, but it is not a
-promise that every optional item will succeed. Extensions installed in custom
-schemas may require narrowly scoped `USAGE ON SCHEMA` and `EXECUTE` grants.
-Security-sensitive data such as password hashes should remain unavailable to
-the diagnostics role unless there is an explicit, reviewed requirement.
+promise that every optional item will succeed. Apply the complete reference
+grant set in every database to make supported, already installed diagnostic
+extensions visible without granting application-data access. Security-sensitive
+data such as password hashes should remain unavailable to the diagnostics role
+unless there is an explicit, reviewed requirement.
 
 A host-based authentication rule for direct TLS might follow this template:
 
 ```text
-hostssl  application_db  pg_diag  <collector-cidr>  scram-sha-256
+hostssl  application_db  pgdiag  <collector-cidr>  scram-sha-256
 ```
 
 Place it according to the effective HBA ordering and restrict the source
@@ -165,7 +216,7 @@ peer-authenticated connection; TCP still follows the matching `host` or
 To revoke access immediately while preserving the role for investigation:
 
 ```sql
-ALTER ROLE pg_diag NOLOGIN;
+ALTER ROLE pgdiag NOLOGIN;
 ```
 
 ### Dedicated SSH account
@@ -189,7 +240,7 @@ the same name.
 Reusing an exporter role can work, but it couples two tools to one credential
 and privilege lifecycle. Exporters often use Unix-socket peer authentication
 and may not have a password, so the same role may not work through TCP/SCRAM.
-A dedicated `pg_diag` role is easier to audit and revoke.
+A dedicated `pgdiag` role is easier to audit and revoke.
 
 ### Superuser access
 
@@ -204,7 +255,7 @@ Prefer a PostgreSQL passfile over `--password`, a password embedded in a DSN,
 or a long-lived `PGPASSWORD` variable:
 
 ```text
-db.example.net:5432:application_db:pg_diag:<secret>
+db.example.net:5432:application_db:pgdiag:<secret>
 ```
 
 ```bash
@@ -241,7 +292,7 @@ normal end-to-end TLS identity check and has the smallest trust surface.
   Collector                                      PostgreSQL service
   +-------------------------+                    +------------------------+
   | OS user: diag runner    |                    | db.example.net:5432    |
-  | DB role: pg_diag        | -- TLS/SCRAM ----> | certificate name:      |
+  | DB role: pgdiag         | -- TLS/SCRAM ----> | certificate name:      |
   | no SSH privileges       |   verify-full      | db.example.net         |
   +-------------------------+                    +------------------------+
 ```
@@ -249,7 +300,7 @@ normal end-to-end TLS identity check and has the smallest trust surface.
 ```bash
 pg-diag snapshots \
   --collection-mode remote-db-only \
-  --dsn "postgresql://pg_diag@db.example.net:5432/application_db?sslmode=verify-full" \
+  --dsn "postgresql://pgdiag@db.example.net:5432/application_db?sslmode=verify-full" \
   --passfile ~/.pgpass \
   --duration-seconds 900 \
   --interval-seconds 60 \
@@ -270,7 +321,7 @@ pg-diag one-shot \
   --ssh-known-hosts ~/.ssh/pg_diag_known_hosts \
   --host 127.0.0.1 \
   --database application_db \
-  --user pg_diag \
+  --user pgdiag \
   --out reports/application_db
 ```
 
@@ -289,18 +340,18 @@ known PostgreSQL node.
 ```text
   Collector                                  PostgreSQL host
   +-------------------------+                +---------------------------+
-  | DB role: pg_diag        |                | sshd db-node.example.net  |
-  | passfile entry matches: | == SSH :22 ==> | SSH user: pg_diag_ssh    |
+  | DB role: pgdiag         |                | sshd db-node.example.net  |
+  | passfile entry matches: | == SSH :22 ==> | SSH user: pg_diag_ssh     |
   | 127.0.0.1:5432          | key + host key | host probes run here      |
   | asyncpg -> dynamic port |                |         |                 |
   +-------------------------+                |         v                 |
                                              | PostgreSQL 127.0.0.1:5432 |
-                                             | SCRAM role: pg_diag       |
+                                             | SCRAM role: pgdiag        |
                                              +---------------------------+
 ```
 
 ```text
-127.0.0.1:5432:application_db:pg_diag:<secret>
+127.0.0.1:5432:application_db:pgdiag:<secret>
 ```
 
 ```bash
@@ -314,7 +365,7 @@ pg-diag snapshots \
   --host 127.0.0.1 \
   --port 5432 \
   --database application_db \
-  --user pg_diag \
+  --user pgdiag \
   --passfile ~/.pgpass \
   --duration-seconds 900 \
   --interval-seconds 60 \
@@ -333,6 +384,247 @@ Remote mode rejects `sslmode=verify-full` because asyncpg connects to the
 dynamic local address `127.0.0.1`, which prevents verification of the original
 database hostname. Use direct database connectivity when hostname verification
 is mandatory.
+
+### Report collection through a jump host
+
+Use the following patterns when the collector cannot reach the PostgreSQL host
+directly but can reach an SSH jump host. The examples assume that PostgreSQL
+and SSH run on the same target host and that PostgreSQL is reachable from that
+host as `127.0.0.1:${PGDIAG_DB_PORT}`.
+
+#### Database account prerequisite
+
+Create the `pgdiag` database account before opening either tunnel. The
+recommended `pg_cluster/roles/pg_roles` grant set is:
+
+- `LOGIN` with a managed SCRAM-SHA-256 password;
+- membership in `pg_monitor`;
+- `CONNECT` on the databases in scope;
+- `default_transaction_read_only=on`;
+- conditional read-only access to already installed `pg_stat_statements`,
+  `pg_stat_kcache`, `pg_wait_sampling`, and `pg_buffercache` objects, exactly
+  as listed in [Dedicated PostgreSQL role](#dedicated-postgresql-role).
+
+The Ansible role only creates the account and grants access. It does not
+install an extension, grant access to application relations, or grant
+statistics-reset functions.
+
+#### Shared variables
+
+Initialize these variables in every terminal that uses them. Replace all
+placeholder values before running a command:
+
+```bash
+export PGDIAG_DB_USER_PASSWORD='***'
+export PGDIAG_TARGET_HOST='DATABASE_HOST'
+export PGDIAG_TARGET_JUMP_HOST='JUMP_HOST'
+export PGDIAG_DB_NAME='postgres'
+export PGDIAG_DB_USER='pgdiag'
+export PGDIAG_DB_PORT='5005'
+export PGDIAG_DB_FORWARDED_PORT='15005'
+export MY_SSH_KEY='/path/to/private/key'
+export PGDIAG_LOCAL_SSH_PORT='12225'
+export PGDIAG_SSH_USER='debian'
+
+export PGDIAG_REPORT_DIR='reports/CLUSTER_ID'
+
+mkdir -p "$PGDIAG_REPORT_DIR"
+```
+
+Protect the private key and report directory according to the sensitivity of
+the environment. A command-line `--password` is visible to processes that can
+inspect the collector's arguments and may be retained in shell history; use a
+passfile for routine automation.
+
+#### Database-only connection through a jump host
+
+This pattern exposes only the target PostgreSQL port on the collector. It does
+not give `pg_diag` an SSH session on the database host and therefore does not
+collect host evidence.
+
+```text
+pg-diag -> 127.0.0.1:${PGDIAG_DB_FORWARDED_PORT}
+             |
+             +-> jump ${PGDIAG_TARGET_JUMP_HOST}
+                    |
+                    +-> SSH host ${PGDIAG_TARGET_HOST}
+                              |
+                              +-> PostgreSQL 127.0.0.1:${PGDIAG_DB_PORT}
+```
+
+In the first terminal, load the key and keep the forwarding SSH process
+running:
+
+```bash
+eval "$(ssh-agent -s)"
+ssh-add "$MY_SSH_KEY"
+
+ssh \
+  -J "${PGDIAG_SSH_USER}@${PGDIAG_TARGET_JUMP_HOST}" \
+  -N -T \
+  -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=30 \
+  -o ServerAliveCountMax=3 \
+  -L "127.0.0.1:${PGDIAG_DB_FORWARDED_PORT}:127.0.0.1:${PGDIAG_DB_PORT}" \
+  "${PGDIAG_SSH_USER}@${PGDIAG_TARGET_HOST}"
+```
+
+The apparent lack of output is expected: `-N -T` opens no shell and keeps the
+foreground process alive solely to maintain the tunnel. Do not close this
+terminal until collection has finished. The command uses the normal OpenSSH
+host-key checks for both the jump host and target host; verify and pin those
+keys before the run.
+
+If PostgreSQL is not bound to loopback on the target host, replace the second
+`127.0.0.1` in `-L` with the database address as it is reachable from
+`${PGDIAG_TARGET_HOST}`. Do not make that substitution merely because the
+target SSH host has a non-loopback address.
+
+In the second terminal, initialize the shared variables and verify that the
+forwarded endpoint answers:
+
+```bash
+pg_isready \
+  --host 127.0.0.1 \
+  --port "$PGDIAG_DB_FORWARDED_PORT" \
+  --dbname "$PGDIAG_DB_NAME"
+```
+
+Expected output for the example port:
+
+```text
+127.0.0.1:15005 - accepting connections
+```
+
+`pg_isready` proves that a PostgreSQL server responds; it does not validate the
+`pgdiag` password or grants.
+
+Set a database that accepts the diagnostics role. Use `postgres` when the
+application database name is not yet known:
+
+```bash
+export PGDIAG_DB_NAME='some_db_name'
+```
+
+Collect only the database inventory item to discover the databases visible to
+the account:
+
+```bash
+pg-diag one-shot \
+  --collection-mode remote-db-only \
+  --host 127.0.0.1 \
+  --port "$PGDIAG_DB_FORWARDED_PORT" \
+  --database "$PGDIAG_DB_NAME" \
+  --user "$PGDIAG_DB_USER" \
+  --password "$PGDIAG_DB_USER_PASSWORD" \
+  --output-format html \
+  --html-out "${PGDIAG_REPORT_DIR}/${PGDIAG_DB_NAME}_$(date +%Y%m%d_%H%M%S).html" \
+  --item-id overview.database_stats
+```
+
+Collect a complete current database snapshot without host evidence:
+
+```bash
+pg-diag one-shot \
+  --collection-mode remote-db-only \
+  --host 127.0.0.1 \
+  --port "$PGDIAG_DB_FORWARDED_PORT" \
+  --database "$PGDIAG_DB_NAME" \
+  --user "$PGDIAG_DB_USER" \
+  --password "$PGDIAG_DB_USER_PASSWORD" \
+  --output-format html \
+  --html-out "${PGDIAG_REPORT_DIR}/${PGDIAG_DB_NAME}_current_sn_$(date +%Y%m%d_%H%M%S).html"
+```
+
+#### Host and database connection through a jump host
+
+Use this pattern when the report must include both database and operating
+system evidence from `${PGDIAG_TARGET_HOST}`. The outer OpenSSH process exposes
+the target host's SSH port locally. `pg_diag` then creates and manages its own
+database forward inside that SSH connection.
+
+```text
+pg-diag
+  -> SSH 127.0.0.1:${PGDIAG_LOCAL_SSH_PORT}
+  -> jump ${PGDIAG_TARGET_JUMP_HOST}
+  -> SSH ${PGDIAG_TARGET_HOST}:22
+  -> PostgreSQL 127.0.0.1:${PGDIAG_DB_PORT}
+```
+
+In the first terminal, load the key and keep the SSH-port tunnel running:
+
+```bash
+eval "$(ssh-agent -s)"
+ssh-add "$MY_SSH_KEY"
+
+ssh \
+  -N -T \
+  -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=30 \
+  -o ServerAliveCountMax=3 \
+  -L "127.0.0.1:${PGDIAG_LOCAL_SSH_PORT}:${PGDIAG_TARGET_HOST}:22" \
+  "${PGDIAG_SSH_USER}@${PGDIAG_TARGET_JUMP_HOST}"
+```
+
+This command also remains in the foreground without printing a success
+message. An early exit or an `ExitOnForwardFailure` error means the local SSH
+port was not established.
+
+In the second terminal, initialize the shared variables. Because `pg_diag`
+connects to the target SSH server through
+`127.0.0.1:${PGDIAG_LOCAL_SSH_PORT}`, create a dedicated `known_hosts` file
+whose host field matches that local endpoint:
+
+```bash
+export PGDIAG_TUNNEL_KNOWN_HOSTS="$HOME/.ssh/pg_diag_via_jump_known_hosts"
+
+mkdir -p "$HOME/.ssh"
+chmod 700 "$HOME/.ssh"
+
+ssh-keyscan \
+  -p "$PGDIAG_LOCAL_SSH_PORT" \
+  127.0.0.1 > "$PGDIAG_TUNNEL_KNOWN_HOSTS"
+
+test -s "$PGDIAG_TUNNEL_KNOWN_HOSTS" \
+  && chmod 600 "$PGDIAG_TUNNEL_KNOWN_HOSTS" \
+  && ssh-keygen -lf "$PGDIAG_TUNNEL_KNOWN_HOSTS"
+```
+
+Do not continue if `ssh-keyscan` produced an empty file or
+`ssh-keygen -lf` could not parse it. `ssh-keyscan` retrieves a key but does not
+authenticate it: compare the printed fingerprint with a value obtained from
+the target host or another trusted channel. The key is the identity of
+`${PGDIAG_TARGET_HOST}`, stored under the local forwarded endpoint.
+
+Collect a full report with a 20-minute observation window and a 60-second
+sampling interval:
+
+```bash
+pg-diag snapshots \
+  --collection-mode remote \
+  --duration-seconds 1200 \
+  --interval-seconds 60 \
+  --ssh-host 127.0.0.1 \
+  --ssh-port "$PGDIAG_LOCAL_SSH_PORT" \
+  --ssh-user "$PGDIAG_SSH_USER" \
+  --ssh-key "$MY_SSH_KEY" \
+  --ssh-known-hosts "$PGDIAG_TUNNEL_KNOWN_HOSTS" \
+  --host 127.0.0.1 \
+  --port "$PGDIAG_DB_PORT" \
+  --database "$PGDIAG_DB_NAME" \
+  --user "$PGDIAG_DB_USER" \
+  --password "$PGDIAG_DB_USER_PASSWORD" \
+  --output-format html \
+  --html-out "${PGDIAG_REPORT_DIR}/${PGDIAG_DB_NAME}_full_$(date +%Y%m%d_%H%M%S).html"
+```
+
+Here `--host 127.0.0.1` is resolved from the target SSH host, not from the
+collector. The host evidence therefore describes `${PGDIAG_TARGET_HOST}`, and
+the database evidence describes PostgreSQL reached from that same target over
+its loopback interface.
+
+If the private key is passphrase-protected and already loaded into the agent,
+replace `--ssh-key "$MY_SSH_KEY"` with `--ssh-agent`. Do not pass both options.
 
 ### Local Unix-socket access with peer authentication
 
@@ -353,7 +645,7 @@ host and a dedicated operating-system account maps to the PostgreSQL role.
   |          /var/run/postgresql/.s.PGSQL.5432                          |
   |                      | peer                                         |
   |                      v                                              |
-  |          PostgreSQL role: pg_diag                                   |
+  |          PostgreSQL role: pgdiag                                    |
   +---------------------------------------------------------------------+
 ```
 
@@ -363,7 +655,7 @@ sudo -u pg_diag pg-diag snapshots \
   --host /var/run/postgresql \
   --port 5432 \
   --database application_db \
-  --user pg_diag \
+  --user pgdiag \
   --duration-seconds 900 \
   --interval-seconds 60 \
   --out reports/application_db
@@ -406,10 +698,10 @@ examples; use the effective HAProxy configuration.
 ```text
                                Patroni cluster
                           +--------------------------+
-                          | db-1 :5432  PRIMARY     |
-  Collector               | Patroni REST :8008      |
+                          | db-1 :5432  PRIMARY      |
+  Collector               | Patroni REST :8008       |
   +------------------+    +-------------^------------+
-  | DB role: pg_diag |                  |
+  | DB role: pgdiag  |                  |
   | no SSH           |                  | selected by /primary or /master
   +--------+---------+                  |
            |                            |
@@ -419,19 +711,19 @@ examples; use the effective HAProxy configuration.
   | HAProxy                  +----------+
   | db-primary.example.net   |
   | primary frontend :5000   |          +--------------------------+
-  | replica frontend :5001   |          | db-2 :5432  REPLICA     |
-  +--------------------------+          | Patroni REST :8008      |
+  | replica frontend :5001   |          | db-2 :5432  REPLICA      |
+  +--------------------------+          | Patroni REST :8008       |
                                         +--------------------------+
 ```
 
 ```text
-db-primary.example.net:5000:application_db:pg_diag:<secret>
+db-primary.example.net:5000:application_db:pgdiag:<secret>
 ```
 
 ```bash
 pg-diag snapshots \
   --collection-mode remote-db-only \
-  --dsn "postgresql://pg_diag@db-primary.example.net:5000/application_db?sslmode=verify-full" \
+  --dsn "postgresql://pgdiag@db-primary.example.net:5000/application_db?sslmode=verify-full" \
   --passfile ~/.pgpass \
   --duration-seconds 900 \
   --interval-seconds 60 \
@@ -478,8 +770,8 @@ the run, SSH to that node, and connect to its local PostgreSQL port:
                  v
   Collector                              Current Patroni leader
   +-------------------------+            +-----------------------------+
-  | DB role: pg_diag        | ==SSH:22=> | SSH user: pg_diag_ssh      |
-  | dynamic local DB port   |            | host probes inspect db-1   |
+  | DB role: pgdiag         | ==SSH:22=> | SSH user: pg_diag_ssh       |
+  | dynamic local DB port   |            | host probes inspect db-1    |
   +-------------------------+            |            |                |
                                          |            v                |
                                          | PostgreSQL 127.0.0.1:5432   |
