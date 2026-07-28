@@ -662,9 +662,11 @@ sampler_providers:
 
 The async function receives `SamplerProviderContext` and returns
 `SamplerCollection` or an equivalent mapping. It may emit only declared output
-ids. Each sample has `timestamp` and `rows`; each error names the affected output
-in `sampler`. Use `ctx.required_outputs` to avoid unrequested work and
-`ctx.host` for the same bounded local/SSH command contract.
+ids. Each sample has `timestamp` and `rows`; each error or warning names the
+affected output in `sampler`. Warnings preserve successful samples and are
+appropriate for an explicit bounded-coverage diagnostic. Use
+`ctx.required_outputs` to avoid unrequested work and `ctx.host` for the same
+bounded local/SSH command contract.
 
 Metric example:
 

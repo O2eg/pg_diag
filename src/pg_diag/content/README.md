@@ -432,9 +432,12 @@ Top-level `sampler_providers` in `metrics.yaml` is the implementation boundary. 
 declares an importable implementation-layer module, async function, opaque
 provider configuration, and named outputs. Every output declares its collection
 scope and display source file. Metrics may reference only those declared output
-ids. Core validates and transports the generic `samples`/`errors` contract; it
-does not contain provider ids, command names, result fields, or branches for the
-bundled report. The provider chooses how to interpret its opaque configuration.
+ids. Core validates and transports the generic `samples`/`errors`/`warnings`
+contract; it does not contain provider ids, command names, result fields, or
+branches for the bundled report. The provider chooses how to interpret its
+opaque configuration. A warning must name one declared output and keeps
+successfully collected samples usable while attaching an explicit warning
+diagnostic to every metric which consumes that output.
 
 Host-backed providers receive the collector host in `local` mode and the SSH
 host abstraction in `remote` mode. Their shell source files remain in

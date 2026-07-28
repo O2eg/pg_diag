@@ -6,11 +6,19 @@ This instruction belongs to report item `backend_os.backend_proc_io`. The item i
 - Average read/write rates per local PostgreSQL process over the snapshots window.
 - The rates are calculated from two `/proc/<pid>/io` counter reads: one at window start and one at window end.
 - Only a process with the same PID and process start time at both endpoints can be included.
+- Detailed collection is bounded to 2,000 PostgreSQL processes. If the host has
+  more, running or uninterruptible processes are selected first and the
+  remaining capacity follows the `ps` CPU ordering at discovery time.
 
 ## What to watch
 - One backend producing most reads or writes over the full window.
 - Null rates with `io_access=false`; these mean that the counters were not readable, not that I/O was zero.
 - Missing short-lived backends that started or exited inside the window.
+- A `backend_process_limit` warning: the ranking covers only the reported
+  bounded process set and can omit an I/O-heavy backend outside that set.
+- A `backend_process_capture_incomplete` warning: some selected PIDs exited
+  during capture or `/proc/<pid>/stat` was not readable. The warning reports
+  selected and captured counts for both endpoints.
 
 ## Common fault causes
 - I/O-heavy query.
@@ -32,4 +40,8 @@ This instruction belongs to report item `backend_os.backend_proc_io`. The item i
 - Check `io_access` before interpreting the rates.
 - Use the PID and command to correlate with Backend Activity and SQL text.
 - Treat the rates as window averages, not peak measurements.
+- Check the sampled/discovered process counts before treating the table as a
+  complete host-wide Top I/O ranking.
+- For incomplete capture, verify `/proc` mount options such as `hidepid`, the
+  collector OS user, and PostgreSQL process churn during the endpoint reads.
 - Compare with pg_stat_io and OS disk charts.

@@ -956,6 +956,13 @@ def test_collect_snapshots_uses_backend_proc_window_endpoints(tmp_path, monkeypa
         return SamplerCollection(
             samples={"os.backend_proc": endpoint_samples},
             errors=[],
+            warnings=[
+                {
+                    "sampler": "os.backend_proc",
+                    "code": "backend_process_limit",
+                    "message": "limited to 2000 of 10000 processes",
+                }
+            ],
         )
 
     def build_metric_item_stub(planned, metric, db_snapshots, os_samples, *args):
@@ -1023,6 +1030,11 @@ def test_collect_snapshots_uses_backend_proc_window_endpoints(tmp_path, monkeypa
 
     assert call_order == ["chart-window", "provider", "metric"]
     assert artifact["runtime"]["window_endpoint_sampler_count"] == 1
+    assert any(
+        diagnostic.get("code") == "backend_process_limit"
+        and diagnostic.get("level") == "warning"
+        for diagnostic in artifact["diagnostics"]
+    )
 
 
 def test_collect_snapshots_sampler_only_does_not_connect_to_database(

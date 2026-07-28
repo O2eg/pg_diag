@@ -36,10 +36,11 @@ sampler_providers:
   postgresql_backend_proc:
     module: pg_diag.providers.linux
     function: collect_postgresql_backend_proc
-    grace_timeout_ms: 1000
+    grace_timeout_ms: 7000
     config:
       proc_script: samplers/postgresql_backend_proc.sh
       output: os.backend_proc
+      max_processes: 2000
     outputs:
       os.backend_proc:
         collection_scope: window_endpoints

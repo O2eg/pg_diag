@@ -450,8 +450,14 @@ Validate all of the following before relying on this path:
   certificate, or every TLS termination and re-encryption boundary is
   separately authenticated;
 - the HAProxy-to-PostgreSQL network segment is protected as required;
-- a connection drop or server identity change during switchover is treated as
-  a failed or partial run, not silently merged into one timeline.
+- a transient connection drop triggers at most five reconnection attempts,
+  spaced three seconds apart;
+- every replacement connection attempt and stale-connection close is bounded
+  to five seconds;
+- a reconnected session is accepted only when the database name, server
+  version, recovery role, and server address still match the initial session;
+  an identity change during switchover fails the run instead of silently
+  merging two endpoints into one timeline.
 
 Do not use the PostgreSQL port of an arbitrary node when the intent is to
 diagnose the current primary. After a switchover, that endpoint may be a

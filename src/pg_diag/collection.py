@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 import ipaddress
 from pathlib import Path
@@ -26,7 +26,12 @@ from .artifact import (
 )
 from .artifact_schema import validate_artifact
 from .content_loader import ContentPack
-from .errors import PgDiagError, UnsupportedServerVersion
+from .errors import (
+    DatabaseIdentityChangedError,
+    DatabaseUnavailableError,
+    PgDiagError,
+    UnsupportedServerVersion,
+)
 from .executors.common import read_source_text
 from .executors.python import execute_python_item
 from .executors.remote_disabled_shell import skipped_python_item, skipped_shell_item
@@ -44,6 +49,7 @@ from .planner import (
 from .presentation import apply_presentation_contract
 from .progress import ProgressReporter
 from .render.html import render_html
+from .security import redact_error
 from .ssh_transport import (
     SshConfig,
     SshTransport,
@@ -54,7 +60,7 @@ from .ssh_transport import (
 from .validator import has_errors, validate_content
 
 
-@dataclass(frozen=True)
+@dataclass
 class CollectionRun:
     content: ContentPack
     conn: Any | None
@@ -64,6 +70,7 @@ class CollectionRun:
     json_path: Path | None
     html_path: Path | None
     database_connector: DatabaseConnector | None
+    database_identity: dict[str, Any] | None = None
     ssh: SshTransport | None = None
     progress: ProgressReporter | None = None
 
@@ -112,6 +119,7 @@ async def start_collection(
     conn: Any | None = None
     ssh: SshTransport | None = None
     database_connector: DatabaseConnector | None = None
+    database_identity: dict[str, Any] | None = None
     remote_endpoint: tuple[str, int] | None = None
     try:
         effective_connection_kwargs = dict(connection_kwargs)
@@ -148,7 +156,8 @@ async def start_collection(
 
             conn = await connect(dsn=dsn, **effective_connection_kwargs)
             database_connector = DatabaseConnector(dsn, effective_connection_kwargs)
-            runtime_context.update(await detect_runtime_context(conn))
+            database_identity = await detect_runtime_context(conn)
+            runtime_context.update(database_identity)
             await _populate_database_identity(
                 runtime_context,
                 collection_mode=collection_mode,
@@ -193,6 +202,7 @@ async def start_collection(
             json_path=json_path,
             html_path=html_path,
             database_connector=database_connector,
+            database_identity=database_identity,
             ssh=ssh,
             progress=progress,
         )
@@ -453,13 +463,26 @@ async def execute_and_record_report_item(
 ) -> dict[str, Any]:
     collected_at = utc_now()
     try:
-        item = await execute_report_item(
-            run.content,
-            run.conn,
-            planned,
-            run.ssh,
-            run.database_connector,
-        )
+        async def execute(conn: Any) -> dict[str, Any]:
+            return await execute_report_item(
+                run.content,
+                conn,
+                planned,
+                run.ssh,
+                run.database_connector,
+            )
+
+        if (
+            run.database_connector is not None
+            and planned.source_kind in {"query", "python"}
+        ):
+            item = await execute_with_database_reconnect(
+                run,
+                execute,
+                operation=f"item:{planned.item_id}",
+            )
+        else:
+            item = await execute(run.conn)
         item["collected_at"] = collected_at
         extract_item_query_texts(
             item,
@@ -479,6 +502,158 @@ async def execute_and_record_report_item(
         record_item_progress(run, planned, item)
         raise_if_fail_fast(run.fail_fast, item, cause=exc)
         return item
+
+
+async def execute_with_database_reconnect(
+    run: CollectionRun,
+    operation_callback: Callable[[Any], Awaitable[Any]],
+    *,
+    operation: str,
+) -> Any:
+    """Run DB work and retry it on a verified replacement connection."""
+    try:
+        result = await operation_callback(run.conn)
+    except Exception as exc:
+        if not _is_database_disconnect(exc, run.conn):
+            raise
+        last_error: BaseException = exc
+    else:
+        if not _connection_is_closed(run.conn):
+            return result
+        last_error = ConnectionError("the PostgreSQL connection was closed")
+
+    connector = run.database_connector
+    attempts = runtime_config.DATABASE_RECONNECT_ATTEMPTS
+    delay_seconds = runtime_config.DATABASE_RECONNECT_DELAY_SECONDS
+    if connector is None:
+        raise DatabaseUnavailableError(
+            "database host is unavailable and no reconnect configuration is available"
+        ) from last_error
+
+    await close_connection(run.conn)
+    for attempt in range(1, attempts + 1):
+        if run.progress is not None:
+            run.progress.error(
+                f"DB_RECONNECT operation={operation} attempt={attempt}/{attempts} "
+                f"delay_seconds={_format_retry_delay(delay_seconds)}"
+            )
+        await asyncio.sleep(delay_seconds)
+        replacement = None
+        try:
+            replacement = await connector.open(
+                timeout_seconds=runtime_config.DATABASE_RECONNECT_CONNECT_TIMEOUT_SECONDS,
+            )
+            replacement_identity = await detect_runtime_context(replacement)
+            _verify_reconnected_database_identity(run.database_identity, replacement_identity)
+            run.conn = replacement
+            run.database_identity = replacement_identity
+            if run.progress is not None:
+                run.progress.info(
+                    f"DB_RECONNECT operation={operation} attempt={attempt}/{attempts} "
+                    "status=connected"
+                )
+            result = await operation_callback(replacement)
+            if not _connection_is_closed(replacement):
+                return result
+            last_error = ConnectionError(
+                "the PostgreSQL connection closed again during the retried operation"
+            )
+        except DatabaseIdentityChangedError:
+            await close_connection(replacement)
+            raise
+        except Exception as exc:
+            if replacement is not None and not _is_database_disconnect(exc, replacement):
+                await close_connection(replacement)
+                raise
+            last_error = exc
+        await close_connection(replacement)
+        if run.progress is not None:
+            run.progress.error(
+                f"DB_RECONNECT operation={operation} attempt={attempt}/{attempts} "
+                f"status=failed reason={redact_error(last_error)}"
+            )
+
+    raise DatabaseUnavailableError(
+        "database host is unavailable: PostgreSQL connection could not be restored "
+        f"after {attempts} attempts with "
+        f"{_format_retry_delay(delay_seconds)}-second delay; "
+        f"last error: {redact_error(last_error)}"
+    ) from last_error
+
+
+def _connection_is_closed(conn: Any) -> bool:
+    if conn is None:
+        return True
+    is_closed = getattr(conn, "is_closed", None)
+    if not callable(is_closed):
+        return False
+    try:
+        return bool(is_closed())
+    except Exception:
+        return True
+
+
+def _is_database_disconnect(exc: BaseException, conn: Any) -> bool:
+    if _connection_is_closed(conn):
+        return True
+    connection_error_names = {
+        "CannotConnectNowError",
+        "ClientCannotConnectError",
+        "ConnectionDoesNotExistError",
+        "ConnectionFailureError",
+        "ConnectionRefusedError",
+        "ConnectionResetError",
+    }
+    disconnect_fragments = (
+        "connection is closed",
+        "connection was closed",
+        "connection has been closed",
+        "connection lost",
+        "underlying connection is closed",
+    )
+    current: BaseException | None = exc
+    visited: set[int] = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        if isinstance(current, ConnectionError):
+            return True
+        if type(current).__name__ in connection_error_names:
+            return True
+        message = str(current).lower()
+        if any(fragment in message for fragment in disconnect_fragments):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def _verify_reconnected_database_identity(
+    expected: dict[str, Any] | None,
+    actual: dict[str, Any],
+) -> None:
+    if expected is None:
+        return
+    identity_fields = (
+        ("current_database", "database"),
+        ("server_version_num", "server version"),
+        ("in_recovery", "database role"),
+        ("database_host_ip", "server address"),
+    )
+    changes = []
+    for field, label in identity_fields:
+        expected_value = expected.get(field)
+        actual_value = actual.get(field)
+        if expected_value is None or actual_value is None or expected_value == actual_value:
+            continue
+        changes.append(f"{label}: {expected_value!r} -> {actual_value!r}")
+    if changes:
+        raise DatabaseIdentityChangedError(
+            "database identity changed after reconnect; refusing to merge samples "
+            "from different PostgreSQL endpoints (" + ", ".join(changes) + ")"
+        )
+
+
+def _format_retry_delay(value: float) -> str:
+    return str(int(value)) if float(value).is_integer() else str(value)
 
 
 def record_item_progress(
@@ -543,8 +718,29 @@ def finish_collection(
 async def close_connection(conn: Any) -> None:
     if conn is None:
         return
+    close = getattr(conn, "close", None)
+    if not callable(close):
+        return
     try:
-        await conn.close()
+        await asyncio.wait_for(
+            close(),
+            timeout=runtime_config.DATABASE_CONNECTION_CLOSE_TIMEOUT_SECONDS,
+        )
+    except asyncio.CancelledError:
+        _terminate_connection(conn)
+        raise
+    except (asyncio.TimeoutError, TimeoutError):
+        _terminate_connection(conn)
+    except Exception:
+        _terminate_connection(conn)
+
+
+def _terminate_connection(conn: Any) -> None:
+    terminate = getattr(conn, "terminate", None)
+    if not callable(terminate):
+        return
+    try:
+        terminate()
     except Exception:
         pass
 

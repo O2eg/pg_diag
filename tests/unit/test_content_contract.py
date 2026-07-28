@@ -577,6 +577,13 @@ def test_content_pack_exposes_one_effective_document_with_file_provenance(
     assert document["python_sources"] == content.pythons
     assert document["sampler_providers"] == content.sampler_providers
     assert document["field_reference"]["sections/*/items/*/render"]
+    for resolved_path in (
+        "resolved/effective_item_id",
+        "resolved/script_file",
+        "resolved/python_file",
+        "resolved/function",
+    ):
+        assert document["field_reference"][resolved_path]
     assert content.provenance["sections"] == ["report.yaml"]
     assert content.provenance["fallback_items"] == ["report.yaml"]
     assert content.provenance["queries/indexes.redundant_indexes"] == [

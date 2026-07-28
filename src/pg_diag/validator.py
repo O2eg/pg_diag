@@ -78,6 +78,7 @@ REQUIRED_INSTRUCTION_HEADINGS = (
 REQUIRED_RESOLVED_FIELD_REFERENCE_PATHS = {
     "resolved",
     "resolved/item_id",
+    "resolved/effective_item_id",
     "resolved/title",
     "resolved/source_kind",
     "resolved/source_id",
@@ -95,6 +96,9 @@ REQUIRED_RESOLVED_FIELD_REFERENCE_PATHS = {
     "resolved/display/default_sort/direction",
     "resolved/variant_id",
     "resolved/sql_file",
+    "resolved/script_file",
+    "resolved/python_file",
+    "resolved/function",
     "resolved/collection_scope",
 }
 
@@ -1446,7 +1450,7 @@ def _validate_sampler_providers(
 ) -> None:
     scripts_root = content.path / "scripts"
     seen_outputs: dict[str, str] = {}
-    max_grace_ms = runtime_config.HOST_COMMAND_TIMEOUT_SECONDS * 1000
+    max_grace_ms = runtime_config.HOST_COMMAND_TIMEOUT_SECONDS * 2 * 1000
     for provider_id, provider in content.sampler_providers.items():
         location = f"sampler_provider:{provider_id}"
         module = provider.get("module")

@@ -205,6 +205,42 @@ def test_database_connector_opens_named_database_and_closes_connection(monkeypat
     assert conn.closed is True
 
 
+def test_database_connector_reopens_default_database(monkeypatch) -> None:
+    conn = ConnectTestConn()
+    calls = []
+
+    async def fake_connect(dsn=None, **kwargs):
+        calls.append((dsn, kwargs))
+        return conn
+
+    monkeypatch.setattr("pg_diag.executors.sql.connect", fake_connect)
+    connector = DatabaseConnector(
+        None,
+        {
+            "host": "127.0.0.1",
+            "port": 15432,
+            "database": "original",
+            "user": "app",
+        },
+    )
+
+    opened = asyncio.run(connector.open())
+
+    assert opened is conn
+    assert calls == [
+        (
+            None,
+            {
+                "host": "127.0.0.1",
+                "port": 15432,
+                "database": "original",
+                "user": "app",
+            },
+        )
+    ]
+    assert conn.closed is False
+
+
 @pytest.mark.parametrize(
     ("in_recovery", "database_role"),
     [(False, "Primary"), (True, "Secondary")],

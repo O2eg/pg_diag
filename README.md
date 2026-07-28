@@ -864,6 +864,19 @@ Slow chart queries do not create a backlog: stale scheduled points are skipped
 and recorded in report diagnostics. One-time collection and the final endpoint
 queries can make total command runtime longer than `--duration-seconds`.
 
+If the PostgreSQL connection closes during a query item, repeated sample, or
+window-endpoint batch, the collector waits three seconds and makes up to five
+reconnection attempts. Each connection establishment and stale-connection
+close is bounded to five seconds, so an unavailable network cannot leave the
+retry controller waiting indefinitely. A successfully reconnected read-only
+session repeats the interrupted item or the whole interrupted batch; partial
+batch data is discarded. The replacement session must report the same database
+name, server version, recovery role, and server address when those identity
+values are available. An identity change stops the run instead of merging
+samples from different PostgreSQL endpoints. If all attempts fail, the command
+exits with a specific `database host is unavailable` error and does not write a
+misleading complete report.
+
 High-cardinality statement, table, index, and function metric sources keep an
 SQL `ORDER BY ... LIMIT` on every endpoint/sample so a catalog with millions of
 objects cannot fill collector memory. Adjacent bounded samples may legitimately

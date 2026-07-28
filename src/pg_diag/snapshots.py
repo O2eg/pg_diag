@@ -17,8 +17,10 @@ from .artifact import (
     utc_now,
 )
 from .collection import (
+    CollectionRun,
     close_collection,
     execute_and_record_report_item,
+    execute_with_database_reconnect,
     finish_collection,
     raise_if_fail_fast,
     record_item_progress,
@@ -188,6 +190,7 @@ async def collect_snapshots(
                 fail_fast=fail_fast,
                 query_texts=artifact["query_texts"],
                 snapshot_schemas=endpoint_schemas,
+                run=run,
             )
             endpoint_snapshots.append(start_endpoint)
             artifact["diagnostics"].extend(endpoint_diagnostics)
@@ -234,6 +237,7 @@ async def collect_snapshots(
                 snapshot_schemas=artifact["snapshot_schemas"],
                 progress=progress,
                 progress_units_per_sample=sample_progress_units,
+                run=run,
             )
             artifact["runtime"]["snapshot_window_finished_at"] = utc_now()
         artifact["diagnostics"].extend(db_sample_diagnostics)
@@ -249,6 +253,7 @@ async def collect_snapshots(
                 fail_fast=fail_fast,
                 query_texts=artifact["query_texts"],
                 snapshot_schemas=endpoint_schemas,
+                run=run,
             )
             endpoint_snapshots.append(end_endpoint)
             artifact["diagnostics"].extend(endpoint_diagnostics)
@@ -262,11 +267,13 @@ async def collect_snapshots(
         sampler_samples: dict[str, list[dict[str, Any]]] = {}
         diagnostics_by_sampler: dict[str, list[dict[str, Any]]] = {}
         sampler_errors: list[dict[str, str]] = []
+        sampler_warnings: list[dict[str, str]] = []
         if sampler_task is not None:
             try:
                 sampler_collection = await sampler_task
                 sampler_samples = sampler_collection.samples
                 sampler_errors = sampler_collection.errors
+                sampler_warnings = sampler_collection.warnings
             except Exception as exc:
                 sampler_errors.extend(
                     {"sampler": sampler, "message": str(exc)}
@@ -287,6 +294,15 @@ async def collect_snapshots(
             }
             artifact["diagnostics"].append(diagnostic)
             diagnostics_by_sampler.setdefault(error["sampler"], []).append(diagnostic)
+        for warning in sampler_warnings:
+            message = redact_error(warning["message"])
+            diagnostic = {
+                "level": "warning",
+                "code": str(warning.get("code") or "sampler_provider_warning"),
+                "message": f"{warning['sampler']}: {message}",
+            }
+            artifact["diagnostics"].append(diagnostic)
+            diagnostics_by_sampler.setdefault(warning["sampler"], []).append(diagnostic)
 
         source_item_by_query: dict[str, str] = {}
         for item in plan.source_jobs:
@@ -384,6 +400,7 @@ async def _collect_db_samples(
     snapshot_schemas: dict[str, dict[str, Any]] | None = None,
     progress: ProgressReporter | None = None,
     progress_units_per_sample: int = 1,
+    run: CollectionRun | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, dict[str, Any]]]:
     schedule_offsets = runtime_config.snapshots_schedule_offsets(duration_seconds, interval_seconds)
     loop = asyncio.get_running_loop()
@@ -420,14 +437,24 @@ async def _collect_db_samples(
                     units=progress_units_per_sample,
                 )
             continue
-        snapshot, items, error_counts = await _execute_query_batch(
-            content,
-            conn,
-            sampled_queries,
-            fail_fast=fail_fast,
-            query_texts=query_texts,
-            snapshot_schemas=snapshot_schemas,
-        )
+        async def execute_batch(active_conn: Any):
+            return await _execute_query_batch(
+                content,
+                active_conn,
+                sampled_queries,
+                fail_fast=fail_fast,
+                query_texts=query_texts,
+                snapshot_schemas=snapshot_schemas,
+            )
+
+        if run is not None and sampled_queries:
+            snapshot, items, error_counts = await execute_with_database_reconnect(
+                run,
+                execute_batch,
+                operation=f"sample:{index + 1}/{len(schedule_offsets)}",
+            )
+        else:
+            snapshot, items, error_counts = await execute_batch(conn)
         latest_items.update(items)
         sample_error_counts.update(error_counts)
         snapshots.append(snapshot)
@@ -475,15 +502,26 @@ async def _collect_window_endpoint(
     fail_fast: bool = False,
     query_texts: dict[str, str] | None = None,
     snapshot_schemas: dict[str, dict[str, Any]] | None = None,
+    run: CollectionRun | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, dict[str, Any]]]:
-    snapshot, items, error_counts = await _execute_query_batch(
-        content,
-        conn,
-        endpoint_queries,
-        fail_fast=fail_fast,
-        query_texts=query_texts,
-        snapshot_schemas=snapshot_schemas,
-    )
+    async def execute_batch(active_conn: Any):
+        return await _execute_query_batch(
+            content,
+            active_conn,
+            endpoint_queries,
+            fail_fast=fail_fast,
+            query_texts=query_texts,
+            snapshot_schemas=snapshot_schemas,
+        )
+
+    if run is not None:
+        snapshot, items, error_counts = await execute_with_database_reconnect(
+            run,
+            execute_batch,
+            operation=f"window_endpoint:{phase}",
+        )
+    else:
+        snapshot, items, error_counts = await execute_batch(conn)
     diagnostics: list[dict[str, Any]] = []
     if error_counts:
         details = ", ".join(

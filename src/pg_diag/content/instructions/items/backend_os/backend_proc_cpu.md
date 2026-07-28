@@ -6,11 +6,19 @@ This instruction belongs to report item `backend_os.backend_proc_cpu`. The item 
 - Average CPU use per local PostgreSQL process over the snapshots window.
 - The rate is calculated from two `/proc/<pid>/stat` counter reads: one at window start and one at window end.
 - Only a process with the same PID and process start time at both endpoints can be included.
+- Detailed collection is bounded to 2,000 PostgreSQL processes. If the host has
+  more, running or uninterruptible processes are selected first and the
+  remaining capacity follows the `ps` CPU ordering at discovery time.
 
 ## What to watch
 - One PID using most CPU over the full window.
 - Parallel workers consuming CPU as a group.
 - An empty result when PostgreSQL processes started or exited inside the window, or `/proc` is unavailable.
+- A `backend_process_limit` warning: the ranking covers only the reported
+  bounded process set and can omit a backend which became busy later.
+- A `backend_process_capture_incomplete` warning: some selected PIDs exited
+  during capture or `/proc/<pid>/stat` was not readable. The warning reports
+  selected and captured counts for both endpoints.
 
 ## Common fault causes
 - CPU-bound query.
@@ -32,4 +40,8 @@ This instruction belongs to report item `backend_os.backend_proc_cpu`. The item 
 - Use the PID and command to correlate with Backend Activity; this item does not contain a query ID.
 - Group leader and parallel worker PIDs together.
 - Treat the value as a window average, not a peak measurement.
+- Check the sampled/discovered process counts before treating the table as a
+  complete host-wide Top CPU ranking.
+- For incomplete capture, verify `/proc` mount options such as `hidepid`, the
+  collector OS user, and PostgreSQL process churn during the endpoint reads.
 - Run `pg-diag` locally with permissions required for `/proc` access.

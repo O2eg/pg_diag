@@ -171,7 +171,7 @@ field_reference:
     sampler_providers/*: One effective provider manifest selected by provider id.
     sampler_providers/*/module: Importable implementation-layer module called by the generic sampler runtime.
     sampler_providers/*/function: Async provider function name.
-    sampler_providers/*/grace_timeout_ms: Maximum provider shutdown time after the sampling window.
+    sampler_providers/*/grace_timeout_ms: Additional provider completion time after the sampling window; it must cover final bounded host commands and transport latency.
     sampler_providers/*/config: Opaque provider-owned configuration.
     sampler_providers/*/config/*: One provider-specific configuration value.
     sampler_providers/*/outputs: Outputs exported by this provider.
@@ -276,6 +276,7 @@ field_reference:
     instructions/*/path: Instruction file path relative to the content root.
     resolved: Runtime-resolved item configuration produced from the unified document.
     resolved/item_id: Stable section.item identifier of the current report item.
+    resolved/effective_item_id: Item identifier whose source and instruction produced the result; it differs from item_id when a fallback item was used.
     resolved/title: Final title after item and source-manifest inheritance.
     resolved/source_kind: Query, script, metric, or Python source type.
     resolved/source_id: Referenced source-manifest identifier.
@@ -293,4 +294,7 @@ field_reference:
     resolved/display/default_sort/direction: Final initial table sort direction.
     resolved/variant_id: PostgreSQL-version-specific SQL variant selected at planning time.
     resolved/sql_file: SQL file selected for the connected PostgreSQL version.
+    resolved/script_file: Shell script file selected for the report item.
+    resolved/python_file: Python source file selected for the report item.
+    resolved/function: Python collector function selected for the report item.
     resolved/collection_scope: Frequency at which this item or its source is collected.

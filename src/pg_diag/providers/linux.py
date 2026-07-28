@@ -82,20 +82,84 @@ async def collect_postgresql_backend_proc(
     if output_id not in ctx.required_outputs:
         return SamplerCollection(samples={}, errors=[])
     script = _read_script(ctx, str(config["proc_script"]))
+    max_processes = int(config.get("max_processes") or 2000)
+    if max_processes <= 0:
+        raise ValueError("postgresql backend process limit must be positive")
     started = time.monotonic()
     try:
-        start = await _capture_backend_proc_state(ctx, script)
+        capture_started = time.monotonic()
+        start = await _capture_backend_proc_state(
+            ctx,
+            script,
+            arguments=("discover", str(max_processes)),
+        )
+        start_capture_seconds = time.monotonic() - capture_started
         delay = started + ctx.duration_seconds - time.monotonic()
         if delay > 0:
             await asyncio.sleep(delay)
-        end = await _capture_backend_proc_state(ctx, script)
+        selected_pids = tuple(sorted(start["processes"]))
+        capture_started = time.monotonic()
+        end = await _capture_backend_proc_state(
+            ctx,
+            script,
+            arguments=(
+                "selected",
+                str(max_processes),
+                ",".join(str(pid) for pid in selected_pids),
+                str(start["discovered_process_count"]),
+            ),
+        )
+        end_capture_seconds = time.monotonic() - capture_started
         samples = build_backend_proc_window_samples(start, end)
     except Exception as exc:
         return SamplerCollection(
             samples={},
             errors=[{"sampler": output_id, "message": str(exc)}],
         )
-    return SamplerCollection(samples={output_id: samples}, errors=[])
+    warnings: list[dict[str, str]] = []
+    discovered_processes = int(start["discovered_process_count"])
+    if discovered_processes > max_processes:
+        warnings.append(
+            {
+                "sampler": output_id,
+                "code": "backend_process_limit",
+                "message": (
+                    "PostgreSQL backend /proc collection was limited to "
+                    f"{len(selected_pids)} of {discovered_processes} processes "
+                    f"(configured maximum {max_processes}); CPU and I/O rankings "
+                    "may be incomplete. Endpoint capture times: "
+                    f"start={start_capture_seconds:.3f}s, "
+                    f"end={end_capture_seconds:.3f}s"
+                ),
+            }
+        )
+    incomplete_endpoints = []
+    for endpoint_name, state in (("start", start), ("end", end)):
+        selected_count = int(state["selected_process_count"])
+        captured_count = int(state["captured_process_count"])
+        if captured_count < selected_count:
+            incomplete_endpoints.append(
+                f"{endpoint_name}: selected={selected_count}, captured={captured_count}"
+            )
+    if incomplete_endpoints:
+        warnings.append(
+            {
+                "sampler": output_id,
+                "code": "backend_process_capture_incomplete",
+                "message": (
+                    "PostgreSQL backend /proc capture was incomplete ("
+                    + "; ".join(incomplete_endpoints)
+                    + "). Processes may have exited during capture, or the collector "
+                    "may not have permission to read /proc/<pid>/stat. CPU and I/O "
+                    "rankings include only processes captured at both endpoints."
+                ),
+            }
+        )
+    return SamplerCollection(
+        samples={output_id: samples},
+        errors=[],
+        warnings=warnings,
+    )
 
 
 async def _collect_proc_samples(
@@ -282,9 +346,12 @@ def _parse_proc_sample(
 async def _capture_backend_proc_state(
     ctx: SamplerProviderContext,
     script: str,
+    *,
+    arguments: tuple[str, ...],
 ) -> dict[str, Any]:
     result = await ctx.host.run_script(
         script,
+        arguments=arguments,
         timeout=runtime_config.HOST_COMMAND_TIMEOUT_SECONDS,
     )
     if result.returncode != 0:
@@ -294,12 +361,16 @@ async def _capture_backend_proc_state(
     fields = result.stdout.split("\0")
     if fields and fields[-1] == "":
         fields.pop()
-    if len(fields) < 2 or (len(fields) - 2) % 14:
+    if len(fields) < 4 or (len(fields) - 4) % 14:
         raise ValueError("backend /proc probe returned an invalid field frame")
     clock_ticks = int(fields[0])
     monotonic = float(fields[1])
+    discovered_process_count = int(fields[2])
+    selected_process_count = int(fields[3])
+    if discovered_process_count < 0 or selected_process_count < 0:
+        raise ValueError("backend /proc probe returned an invalid process count")
     processes: dict[int, dict[str, Any]] = {}
-    for index in range(2, len(fields), 14):
+    for index in range(4, len(fields), 14):
         values = fields[index:index + 14]
         pid = int(values[0])
         processes[pid] = {
@@ -322,6 +393,9 @@ async def _capture_backend_proc_state(
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "monotonic": monotonic,
         "clock_ticks": clock_ticks,
+        "discovered_process_count": discovered_process_count,
+        "selected_process_count": selected_process_count,
+        "captured_process_count": len(processes),
         "processes": processes,
     }
 

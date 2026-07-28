@@ -79,14 +79,15 @@ class DatabaseConnector:
     dsn: str | None
     connection_kwargs: Mapping[str, Any]
 
-    @asynccontextmanager
-    async def connect(
+    async def open(
         self,
-        database_name: str,
+        database_name: str | None = None,
         *,
         timeout_seconds: float | None = None,
     ):
-        if not isinstance(database_name, str) or not database_name.strip():
+        if database_name is not None and (
+            not isinstance(database_name, str) or not database_name.strip()
+        ):
             raise ValueError("database_name must be a non-empty string")
         if timeout_seconds is not None and (
             not math.isfinite(timeout_seconds) or timeout_seconds <= 0
@@ -94,10 +95,20 @@ class DatabaseConnector:
             raise ValueError("timeout_seconds must be a positive finite number")
 
         connection_kwargs = dict(self.connection_kwargs)
-        connection_kwargs["database"] = database_name
+        if database_name is not None:
+            connection_kwargs["database"] = database_name
         if timeout_seconds is not None:
             connection_kwargs["timeout"] = timeout_seconds
-        conn = await connect(dsn=self.dsn, **connection_kwargs)
+        return await connect(dsn=self.dsn, **connection_kwargs)
+
+    @asynccontextmanager
+    async def connect(
+        self,
+        database_name: str,
+        *,
+        timeout_seconds: float | None = None,
+    ):
+        conn = await self.open(database_name, timeout_seconds=timeout_seconds)
         try:
             yield conn
         finally:

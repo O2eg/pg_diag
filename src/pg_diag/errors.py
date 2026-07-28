@@ -11,6 +11,14 @@ class CommandTimeoutError(PgDiagError):
     """A bounded local or remote host command exceeded its deadline."""
 
 
+class DatabaseUnavailableError(PgDiagError):
+    """The PostgreSQL endpoint remained unavailable after reconnect attempts."""
+
+
+class DatabaseIdentityChangedError(PgDiagError):
+    """A reconnect reached a different PostgreSQL database instance or role."""
+
+
 class ContentLoadError(PgDiagError):
     """Raised when content files cannot be loaded."""
 

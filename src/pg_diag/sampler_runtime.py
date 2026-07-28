@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import importlib
 import inspect
 from pathlib import Path
@@ -31,6 +31,7 @@ class SamplerProviderContext:
 class SamplerCollection:
     samples: SampleMap
     errors: list[dict[str, str]]
+    warnings: list[dict[str, str]] = field(default_factory=list)
 
 
 def sampler_output_registry(content: ContentPack) -> dict[str, dict[str, Any]]:
@@ -103,6 +104,7 @@ async def collect_sampler_providers(
 
     samples: SampleMap = {}
     errors: list[dict[str, str]] = []
+    warnings: list[dict[str, str]] = []
     try:
         results = await asyncio.gather(
             *(task for _provider_id, _outputs, task in tasks),
@@ -130,6 +132,11 @@ async def collect_sampler_providers(
         errors.extend(
             error for error in result.errors if error["sampler"] in selected_outputs
         )
+        warnings.extend(
+            warning
+            for warning in result.warnings
+            if warning["sampler"] in selected_outputs
+        )
         failed_outputs = {error["sampler"] for error in result.errors}
         for output_id in sorted(selected_outputs):
             if output_id not in result.samples and output_id not in failed_outputs:
@@ -139,7 +146,7 @@ async def collect_sampler_providers(
                         "message": f"provider {provider_id} returned no result for {output_id}",
                     }
                 )
-    return SamplerCollection(samples=samples, errors=errors)
+    return SamplerCollection(samples=samples, errors=errors, warnings=warnings)
 
 
 async def _run_provider(
@@ -183,6 +190,7 @@ def _normalize_provider_result(
         result = SamplerCollection(
             samples=dict(raw_result["samples"]),
             errors=list(raw_result["errors"]),
+            warnings=list(raw_result.get("warnings") or []),
         )
     else:
         raise PgDiagError(f"sampler provider {provider_id} returned an invalid result")
@@ -199,6 +207,20 @@ def _normalize_provider_result(
         normalized_errors.append(
             {"sampler": output_id, "message": str(error.get("message") or "sampler failed")}
         )
+    normalized_warnings: list[dict[str, str]] = []
+    for warning in result.warnings:
+        if not isinstance(warning, dict):
+            raise PgDiagError(f"sampler provider {provider_id} returned an invalid warning")
+        output_id = str(warning.get("sampler") or "")
+        if output_id not in declared_outputs:
+            unknown_outputs.add(output_id or "<empty>")
+        normalized_warnings.append(
+            {
+                "sampler": output_id,
+                "code": str(warning.get("code") or "sampler_provider_warning"),
+                "message": str(warning.get("message") or "sampler warning"),
+            }
+        )
     if unknown_outputs:
         raise PgDiagError(
             f"sampler provider {provider_id} returned undeclared outputs: "
@@ -209,7 +231,11 @@ def _normalize_provider_result(
         output_id: _normalize_samples(provider_id, output_id, samples)
         for output_id, samples in result.samples.items()
     }
-    return SamplerCollection(samples=normalized_samples, errors=normalized_errors)
+    return SamplerCollection(
+        samples=normalized_samples,
+        errors=normalized_errors,
+        warnings=normalized_warnings,
+    )
 
 
 def _normalize_samples(
