@@ -1192,6 +1192,12 @@ The bundled content pack includes sections for:
 - Storage, vacuum, wraparound, sequence, and XID horizon diagnostics.
 - Index health checks.
 - Cluster inventory, security, and configuration checks.
+- Users and roles: complete role inventory, direct and effective membership,
+  role administration rights, `ALTER ROLE`/`ALTER DATABASE` settings,
+  database, tablespace, parameter, language, and foreign-data privileges,
+  object privileges by grantee kind, relation, column, and default
+  privileges, row-level security policies, session usage and connection
+  security per role, and `pg_hba`/`pg_ident` rules as parsed by the server.
 - Point-in-time `ldd` dependencies for the PostgreSQL main process selected by
   the connected backend PID, including instance port and PID-chain evidence in
   `local` and `remote` modes.

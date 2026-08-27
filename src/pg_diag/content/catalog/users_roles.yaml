@@ -1,0 +1,527 @@
+queries:
+  roles.inventory:
+    title: Role Inventory
+    group: Users And Roles
+    main_view: pg_roles
+    description: Every visible role with its attributes, connection limit, password validity, predefined-role marker, direct group memberships, direct member count, and per-role setting count.
+    source: pg_diag
+    display:
+      default_sort:
+        column: role_name
+        direction: asc
+    evaluation:
+      summary_title: Role inventory coverage requires review
+      recommendation: Compare the visible role set with the approved role baseline and inspect truncated coverage before treating the inventory as complete.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_inventory_pg10_plus
+        min_pg_version: 100000
+        sql_file: roles/inventory.sql
+
+  roles.password_validity:
+    title: Role Password Validity
+    group: Users And Roles
+    main_view: pg_roles
+    description: Login roles with their password validity state, expiry timestamp, and days until expiry.
+    source: pg_diag
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    evaluation:
+      summary_title: Role password validity requires review
+      recommendation: Remove or lock expired login roles and plan rotation for passwords that expire soon.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_password_validity_pg10_plus
+        min_pg_version: 100000
+        sql_file: roles/password_validity.sql
+
+  roles.group_roles_without_members:
+    title: Group Roles Without Members
+    group: Users And Roles
+    main_view: pg_roles
+    description: NOLOGIN roles that have no members, with their own memberships, settings, database privileges, and default privileges as usage evidence.
+    source: pg_diag
+    display:
+      default_sort:
+        column: role_name
+        direction: asc
+    evaluation:
+      summary_title: Group roles without members require review
+      recommendation: Verify whether each empty group role is still used as an owner, grantee, or template before removing it.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_group_roles_without_members_pg10_plus
+        min_pg_version: 100000
+        sql_file: roles/group_roles_without_members.sql
+
+  roles.object_ownership_by_role:
+    title: Object Ownership By Role
+    database_scope: current_database
+    group: Users And Roles
+    main_view: pg_class
+    description: Sampled counts of schemas, relations, sequences, and functions owned by each role in the connected database plus cluster-wide database and tablespace ownership.
+    source: pg_diag
+    cost: medium
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: sampled_relpages
+        direction: desc
+    evaluation:
+      summary_title: Object ownership coverage requires review
+      recommendation: Treat sampled counts as partial when coverage flags are set and confirm ownership of specific objects with catalog queries.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_object_ownership_by_role_pg10_plus
+        min_pg_version: 100000
+        sql_file: roles/object_ownership_by_role.sql
+
+  roles.membership:
+    title: Role Membership
+    group: Users And Roles
+    main_view: pg_auth_members
+    description: Direct role memberships with grantor and ADMIN, INHERIT, and SET options.
+    source: pg_diag
+    display:
+      default_sort:
+        column: member_role
+        direction: asc
+    evaluation:
+      summary_title: Role membership coverage requires review
+      recommendation: Compare direct memberships with the approved access model and inspect truncated coverage before treating the list as complete.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_membership_pg10_pg15
+        min_pg_version: 100000
+        max_pg_version: 159999
+        sql_file: roles/membership_pg10_pg15.sql
+        column_statuses:
+          inherit_option:
+            status: unsupported
+            reason: Per-membership INHERIT option exists only on PostgreSQL 16 and newer; member_inherits_by_default applies to every membership
+          set_option:
+            status: unsupported
+            reason: Per-membership SET option exists only on PostgreSQL 16 and newer; every member can SET ROLE on older versions
+      - id: roles_membership_pg16_plus
+        min_pg_version: 160000
+        sql_file: roles/membership_pg16_plus.sql
+
+  roles.effective_membership:
+    title: Effective Role Membership
+    group: Users And Roles
+    main_view: pg_auth_members
+    description: Transitive role membership with depth, path, privilege inheritance, SET ROLE ability, and reach into superuser or predefined administrative roles.
+    source: pg_diag
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    evaluation:
+      summary_title: Effective role membership requires review
+      recommendation: Remove indirect paths that let non-superuser roles become superusers or reach predefined administrative roles unless the access model requires them.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_effective_membership_pg10_pg15
+        min_pg_version: 100000
+        max_pg_version: 159999
+        sql_file: roles/effective_membership_pg10_pg15.sql
+      - id: roles_effective_membership_pg16_plus
+        min_pg_version: 160000
+        sql_file: roles/effective_membership_pg16_plus.sql
+
+  roles.admin_option_holders:
+    title: Role Administration Rights
+    group: Users And Roles
+    main_view: pg_auth_members
+    description: Roles that can grant membership in other roles through ADMIN OPTION or the CREATEROLE attribute.
+    source: pg_diag
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    evaluation:
+      summary_title: Role administration rights require review
+      recommendation: Keep ADMIN OPTION and CREATEROLE limited to role-management accounts and remove them from application roles.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_admin_option_holders_pg10_pg15
+        min_pg_version: 100000
+        max_pg_version: 159999
+        sql_file: roles/admin_option_holders_pg10_pg15.sql
+      - id: roles_admin_option_holders_pg16_plus
+        min_pg_version: 160000
+        sql_file: roles/admin_option_holders_pg16_plus.sql
+
+  roles.database_settings:
+    title: Role And Database Settings
+    group: Users And Roles
+    main_view: pg_db_role_setting
+    description: Parameters configured with ALTER ROLE SET, ALTER ROLE IN DATABASE SET, and ALTER DATABASE SET, with the setting context and category.
+    source: pg_diag
+    display:
+      default_sort:
+        column: role_name
+        direction: asc
+    evaluation:
+      summary_title: Role and database settings coverage requires review
+      recommendation: Inspect truncated coverage before treating the per-role and per-database configuration as complete.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_database_settings_pg10_plus
+        min_pg_version: 100000
+        sql_file: roles/database_settings.sql
+
+  roles.database_privileges:
+    title: Database Privileges
+    group: Users And Roles
+    main_view: pg_database
+    description: CONNECT, CREATE, and TEMPORARY privileges on every database by grantee, including the built-in default ACL.
+    source: pg_diag
+    display:
+      default_sort:
+        column: database_name
+        direction: asc
+    evaluation:
+      summary_title: Database privilege coverage requires review
+      recommendation: Inspect truncated coverage before treating database privileges as complete.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_database_privileges_pg10_plus
+        min_pg_version: 100000
+        sql_file: roles/database_privileges.sql
+
+  roles.tablespace_privileges:
+    title: Tablespace Privileges
+    group: Users And Roles
+    main_view: pg_tablespace
+    description: Explicit CREATE privileges on tablespaces by grantee.
+    source: pg_diag
+    display:
+      default_sort:
+        column: tablespace_name
+        direction: asc
+    evaluation:
+      summary_title: Tablespace privilege coverage requires review
+      recommendation: Inspect truncated coverage before treating tablespace privileges as complete.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_tablespace_privileges_pg10_plus
+        min_pg_version: 100000
+        sql_file: roles/tablespace_privileges.sql
+
+  roles.parameter_privileges:
+    title: Parameter Privileges
+    group: Users And Roles
+    main_view: pg_parameter_acl
+    description: SET and ALTER SYSTEM privileges granted on server parameters to non-superuser roles.
+    source: pg_diag
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    evaluation:
+      summary_title: Parameter privileges require review
+      recommendation: Confirm that every parameter grant, especially ALTER SYSTEM, belongs to the intended configuration-management role.
+    requirements:
+      unsupported_versions_reason: pg_parameter_acl and GRANT ON PARAMETER exist only on PostgreSQL 15 and newer
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_parameter_privileges_pg15_plus
+        min_pg_version: 150000
+        sql_file: roles/parameter_privileges.sql
+
+  roles.language_privileges:
+    title: Procedural Language Privileges
+    group: Users And Roles
+    main_view: pg_language
+    description: USAGE privileges on procedural languages by grantee, including the built-in default ACL and the trusted marker.
+    source: pg_diag
+    display:
+      default_sort:
+        column: language_name
+        direction: asc
+    evaluation:
+      summary_title: Procedural language privilege coverage requires review
+      recommendation: Inspect truncated coverage before treating language privileges as complete.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_language_privileges_pg10_plus
+        min_pg_version: 100000
+        sql_file: roles/language_privileges.sql
+
+  roles.foreign_server_access:
+    title: Foreign Data Access By Role
+    database_scope: current_database
+    group: Users And Roles
+    main_view: pg_foreign_server
+    description: USAGE privileges on foreign data wrappers and foreign servers plus user mappings with option names only; option values such as passwords are never collected.
+    source: pg_diag
+    display:
+      default_sort:
+        column: object_name
+        direction: asc
+    evaluation:
+      summary_title: Foreign data access coverage requires review
+      recommendation: Inspect truncated coverage before treating foreign data access as complete.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_foreign_server_access_pg10_plus
+        min_pg_version: 100000
+        sql_file: roles/foreign_server_access.sql
+
+  roles.object_privileges_by_grantee:
+    title: Object Privileges By Grantee
+    database_scope: current_database
+    group: Users And Roles
+    main_view: pg_class
+    description: Aggregated explicit object privileges per grantee, grantee kind, schema, object kind, and privilege type with object counts from bounded relation, function, and type samples.
+    source: pg_diag
+    cost: medium
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: grantee_name
+        direction: asc
+    evaluation:
+      summary_title: Object privilege matrix coverage requires review
+      recommendation: Treat object counts as partial when coverage flags are set and compare login-role, group-role, and PUBLIC footprints with the approved access model.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_object_privileges_by_grantee_pg10_plus
+        min_pg_version: 100000
+        sql_file: roles/object_privileges_by_grantee.sql
+
+  roles.relation_privileges_detail:
+    title: Relation Privileges Detail
+    database_scope: current_database
+    group: Users And Roles
+    main_view: pg_class
+    description: Per-relation explicit privileges by grantee with grantable privileges and grantors for the largest sampled tables, views, sequences, and foreign tables.
+    source: pg_diag
+    cost: medium
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: relpages
+        direction: desc
+    evaluation:
+      summary_title: Relation privilege detail coverage requires review
+      recommendation: Treat the detail as a bounded sample when coverage flags are set and query pg_class.relacl for specific relations outside the sample.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_relation_privileges_detail_pg10_plus
+        min_pg_version: 100000
+        sql_file: roles/relation_privileges_detail.sql
+
+  roles.column_privileges:
+    title: Column Privileges
+    database_scope: current_database
+    group: Users And Roles
+    main_view: pg_attribute
+    description: Column-level privileges by grantee for the largest sampled relations.
+    source: pg_diag
+    cost: medium
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: schema_name
+        direction: asc
+    evaluation:
+      summary_title: Column privilege coverage requires review
+      recommendation: Inspect coverage flags; column privileges on relations outside the sampled set are not shown.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_column_privileges_pg10_plus
+        min_pg_version: 100000
+        sql_file: roles/column_privileges.sql
+
+  roles.default_privileges:
+    title: Default Privileges
+    database_scope: current_database
+    group: Users And Roles
+    main_view: pg_default_acl
+    description: Every ALTER DEFAULT PRIVILEGES entry by defining role, schema, object type, and grantee.
+    source: pg_diag
+    display:
+      default_sort:
+        column: defining_role
+        direction: asc
+    evaluation:
+      summary_title: Default privilege coverage requires review
+      recommendation: Inspect truncated coverage before treating default privileges as complete.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_default_privileges_pg10_plus
+        min_pg_version: 100000
+        sql_file: roles/default_privileges.sql
+
+  roles.rls_policies_by_role:
+    title: Row Level Security Policies By Role
+    database_scope: current_database
+    group: Users And Roles
+    main_view: pg_policy
+    description: Row-level security policies with the command, permissive or restrictive type, target roles, and presence of USING and WITH CHECK expressions.
+    source: pg_diag
+    display:
+      default_sort:
+        column: schema_name
+        direction: asc
+    evaluation:
+      summary_title: Row level security policy coverage requires review
+      recommendation: Inspect truncated coverage before treating the policy list as complete.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_rls_policies_by_role_pg10_plus
+        min_pg_version: 100000
+        sql_file: roles/rls_policies_by_role.sql
+
+  roles.session_usage:
+    title: Session Usage By Role
+    group: Users And Roles
+    main_view: pg_stat_activity
+    description: Current client sessions per role with state counts, connection-limit utilization, databases, client addresses, applications, and session and transaction ages.
+    source: pg_diag
+    display:
+      default_sort:
+        column: session_count
+        direction: desc
+    evaluation:
+      summary_title: Session usage by role requires review
+      recommendation: Raise per-role connection limits or fix pooling for roles near their limit and grant pg_read_all_stats to the collector when session states are hidden.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_session_usage_pg10_plus
+        min_pg_version: 100000
+        sql_file: roles/session_usage.sql
+
+  roles.connection_security:
+    title: Connection Security By Role
+    group: Users And Roles
+    main_view: pg_stat_ssl
+    description: Current client sessions per role split by TLS, GSSAPI encryption, local socket, loopback, and unencrypted remote TCP, with negotiated TLS versions and ciphers.
+    source: pg_diag
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    evaluation:
+      summary_title: Connection security by role requires review
+      recommendation: Enforce TLS or GSSAPI encryption in pg_hba.conf for roles that connect over the network without encryption.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_connection_security_pg10_pg11
+        min_pg_version: 100000
+        max_pg_version: 119999
+        sql_file: roles/connection_security_pg10_pg11.sql
+        column_statuses:
+          gss_encrypted_session_count:
+            status: unsupported
+            reason: pg_stat_gssapi exists only on PostgreSQL 12 and newer
+      - id: roles_connection_security_pg12_plus
+        min_pg_version: 120000
+        sql_file: roles/connection_security_pg12_plus.sql
+
+  roles.large_object_privileges:
+    title: Large Object Privileges
+    database_scope: current_database
+    group: Users And Roles
+    main_view: pg_largeobject_metadata
+    description: Explicit SELECT and UPDATE privileges on large objects aggregated by owner, grantee, and grantee kind from a bounded sample, plus the lo_compat_privileges setting.
+    source: pg_diag
+    display:
+      default_sort:
+        column: owner_name
+        direction: asc
+    evaluation:
+      summary_title: Large object privileges require review
+      recommendation: Keep lo_compat_privileges off and grant large object access to group roles; inspect coverage flags before treating counts as complete.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_large_object_privileges_pg10_plus
+        min_pg_version: 100000
+        sql_file: roles/large_object_privileges.sql
+
+  roles.publication_ownership:
+    title: Publication Ownership
+    database_scope: current_database
+    group: Users And Roles
+    main_view: pg_publication
+    description: Logical replication publications with owner attributes, published operations, FOR ALL TABLES marker, and the sampled count of explicitly published tables.
+    source: pg_diag
+    display:
+      default_sort:
+        column: publication_name
+        direction: asc
+    evaluation:
+      summary_title: Publication ownership coverage requires review
+      recommendation: Inspect truncated coverage before treating the publication list as complete.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_publication_ownership_pg10
+        min_pg_version: 100000
+        max_pg_version: 109999
+        sql_file: roles/publication_ownership_pg10.sql
+        column_statuses:
+          publishes_truncate:
+            status: unsupported
+            reason: Publications publish TRUNCATE only on PostgreSQL 11 and newer
+          publish_via_partition_root:
+            status: unsupported
+            reason: publish_via_partition_root exists only on PostgreSQL 13 and newer
+      - id: roles_publication_ownership_pg11_pg12
+        min_pg_version: 110000
+        max_pg_version: 129999
+        sql_file: roles/publication_ownership_pg11_pg12.sql
+        column_statuses:
+          publish_via_partition_root:
+            status: unsupported
+            reason: publish_via_partition_root exists only on PostgreSQL 13 and newer
+      - id: roles_publication_ownership_pg13_plus
+        min_pg_version: 130000
+        sql_file: roles/publication_ownership_pg13_plus.sql

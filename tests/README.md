@@ -65,6 +65,10 @@ The main unit-test groups are:
 - `test_report_output_paths.py` - one-shot and snapshots output-format selection and JSON/HTML paths,
   secure mirrored progress logs, planner-skipped source suppression, and
   once/endpoints/chart-window execution order selection.
+- `test_users_roles_content.py` - the `users_roles` section contract: item set,
+  database scopes, PostgreSQL 10-18 query variants and column statuses,
+  bounded catalog sampling with coverage flags, and the pg_hba/pg_ident
+  trusted Python sources.
 - `test_ssh_transport.py` - strict AsyncSSH key authentication, known-host
   verification, dynamic PostgreSQL forwarding, stdin shell execution, SFTP
   host access, remote OS sampling, local evaluation of every host-dependent

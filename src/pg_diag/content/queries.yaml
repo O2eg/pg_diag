@@ -27,3 +27,4 @@ query_catalog:
     - catalog/indexes.yaml
     - catalog/security.yaml
     - catalog/dba_extra.yaml
+    - catalog/users_roles.yaml

@@ -277,3 +277,36 @@ python_sources:
     function: collect
     local_only: false
     timeout_ms: 5000
+  roles.hba_rules:
+    targets: [db]
+    title: pg_hba Rules As Seen By The Server
+    description: Client authentication rules from pg_hba_file_rules, including lines the server could not parse, without reading files on the host.
+    python_file: roles/hba_rules.py
+    function: collect
+    timeout_ms: 5000
+    display:
+      default_sort:
+        column: evaluation_order
+        direction: asc
+  roles.ident_mappings:
+    targets: [db]
+    title: pg_ident User Name Maps
+    description: User name maps from pg_ident_file_mappings on PostgreSQL 15 and newer, including lines the server could not parse.
+    python_file: roles/ident_mappings.py
+    function: collect
+    timeout_ms: 5000
+    display:
+      default_sort:
+        column: evaluation_order
+        direction: asc
+  roles.subscription_ownership:
+    targets: [db]
+    title: Subscription Ownership
+    description: Logical replication subscriptions in every database with owner attributes, enabled state, slot name, and publications; the connection string is never read.
+    python_file: roles/subscription_ownership.py
+    function: collect
+    timeout_ms: 5000
+    display:
+      default_sort:
+        column: database_name
+        direction: asc

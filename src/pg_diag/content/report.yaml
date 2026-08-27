@@ -29,6 +29,7 @@ report:
     - Tables
     - Tablespaces
     - Transactions
+    - Users
     - Vacuum
     - WAL
     - Waits
@@ -124,19 +125,19 @@ sections:
           empty_message: Security logging settings match the expected audit posture.
       password_encryption:
         query: security.password_encryption
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: password_encryption is set to scram-sha-256.
       password_complexity:
         query: security.password_complexity
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: Password complexity hooks are active.
       auth_timeout_delay:
         query: security.auth_timeout_delay
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: Authentication timeout and failed-authentication delay settings match the expected posture.
@@ -617,7 +618,7 @@ sections:
         state: collapsed
       replication_roles:
         query: security.replication_roles
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No roles with REPLICATION privilege found.
@@ -762,115 +763,115 @@ sections:
         state: expanded
       excessive_dml_privileges:
         query: security.excessive_dml_privileges
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No PUBLIC or grantable DML privileges found on non-system tables.
       security_definer_functions:
         query: security.security_definer_functions
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No user-defined SECURITY DEFINER functions found.
       function_execute_privileges:
         query: security.function_execute_privileges
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No PUBLIC or grantable EXECUTE privileges found on user-defined functions.
       rls_configuration:
         query: security.rls_configuration
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No inactive or incomplete RLS configurations found.
       default_privileges_public_grants:
         query: security.default_privileges_public_grants
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No risky ALTER DEFAULT PRIVILEGES entries found.
       sequence_privileges:
         query: security.sequence_privileges
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No PUBLIC or grantable sequence privileges found.
       superuser_owned_user_objects:
         query: security.superuser_owned_user_objects
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No user objects owned by superusers found.
       object_owner_drift:
         query: security.object_owner_drift
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No mixed owner drift found for same-kind objects in user schemas.
       database_owner_mismatch:
         query: security.database_owner_mismatch
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No user objects owned outside the connected database owner role.
       schema_owner_drift:
         query: security.schema_owner_drift
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No user objects owned outside their schema owner role.
       object_acl_drift:
         query: security.object_acl_drift
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No inconsistent object ACL signatures found in user schemas.
       direct_user_grants:
         query: security.direct_user_grants
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No object privileges granted directly to login roles found.
       grant_option_holders:
         query: security.grant_option_holders
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No non-owner grant option holders found.
       orphaned_object_owners:
         query: security.orphaned_object_owners
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No no-login user object owner roles requiring verification found.
       sequence_table_owner_mismatch:
         query: security.sequence_table_owner_mismatch
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No sequence/table owner mismatches found.
       security_definer_owner_drift:
         query: security.security_definer_owner_drift
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No SECURITY DEFINER owner drift found.
       extension_objects_acl_drift:
         query: security.extension_objects_acl_drift
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No extension-owned objects with manual ACL entries found.
       rls_table_privilege_mismatch:
         query: security.rls_table_privilege_mismatch
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No broad grants found around RLS-enabled tables.
       unused_privileged_grants:
         query: security.unused_privileged_grants
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No powerful grants on inactive tables found.
@@ -961,77 +962,77 @@ sections:
         state: expanded
       privileged_roles:
         query: cluster.roles_privileges
-        tags: [Security]
+        tags: [Security, Users]
         state: expanded
         render:
           empty_message: No privileged roles visible to the current user.
       privileged_login_roles:
         query: security.privileged_login_roles
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No login-enabled privileged roles visible to the current user.
       role_password_hashes:
         python: security.role_password_hashes
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
       privilege_surface_by_role:
         query: security.privilege_surface_by_role
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No explicit object privilege surface found.
       schema_privilege_matrix:
         query: security.schema_privilege_matrix
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
       login_roles_without_connection_limit:
         query: security.login_roles_without_connection_limit
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: All visible login roles have per-role connection limits.
       predefined_admin_role_membership:
         query: security.predefined_admin_role_membership
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No non-superuser roles inherit predefined administrative roles.
       public_schema_privileges:
         query: security.public_schema_privileges
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No risky grants on schema public found in the connected database.
       non_public_schema_privileges:
         query: security.non_public_schema_privileges
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
         render:
           empty_message: No risky grants on non-public schemas found.
       remote_superuser_access:
         python: security.remote_superuser_access
-        tags: [Security, Sessions]
+        tags: [Security, Sessions, Users]
         state: collapsed
       pg_hba_insecure_auth_methods:
         python: security.pg_hba_insecure_auth_methods
-        tags: [Security]
+        tags: [Security, Users]
         state: expanded
       pg_hba_broad_network_ranges:
         python: security.pg_hba_broad_network_ranges
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
       pg_hba_generic_database_or_user:
         python: security.pg_hba_generic_database_or_user
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
       pg_hba_tls_enforcement:
         python: security.pg_hba_tls_enforcement
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
       pg_hba_file_permissions:
         python: security.pg_hba_file_permissions
-        tags: [Security]
+        tags: [Security, Users]
         state: collapsed
       unix_socket_permissions:
         python: security.unix_socket_permissions
@@ -1079,6 +1080,157 @@ sections:
         query: cluster.tablespaces
         tags: [Tablespaces, Storage]
         state: expanded
+
+  users_roles:
+    title: Users And Roles
+    description: Complete role inventory, membership graph, per-role and per-database settings, and privileges granted to login roles, group roles, and PUBLIC.
+    items:
+      roles_inventory:
+        query: roles.inventory
+        tags: [Security, Users]
+        state: expanded
+      password_validity:
+        query: roles.password_validity
+        tags: [Security, Users]
+        state: collapsed
+        render:
+          empty_message: No login roles are visible to the current user.
+      group_roles_without_members:
+        query: roles.group_roles_without_members
+        tags: [Security, Users]
+        state: collapsed
+        render:
+          empty_message: Every group role has at least one member.
+      object_ownership_by_role:
+        query: roles.object_ownership_by_role
+        tags: [Security, Tables, Users]
+        state: collapsed
+        render:
+          empty_message: No owned user objects, databases, or tablespaces were found in the sampled catalogs.
+      role_membership:
+        query: roles.membership
+        tags: [Security, Users]
+        state: expanded
+        render:
+          empty_message: No role memberships are defined.
+      effective_role_membership:
+        query: roles.effective_membership
+        tags: [Security, Users]
+        state: collapsed
+        render:
+          empty_message: No role memberships are defined.
+      admin_option_holders:
+        query: roles.admin_option_holders
+        tags: [Security, Users]
+        state: collapsed
+        render:
+          empty_message: No role holds ADMIN OPTION on another role or the CREATEROLE attribute.
+      role_database_settings:
+        query: roles.database_settings
+        tags: [Security, Configuration, Users]
+        state: expanded
+        render:
+          empty_message: No ALTER ROLE SET or ALTER DATABASE SET entries are configured.
+      database_privileges:
+        query: roles.database_privileges
+        tags: [Security, Databases, Users]
+        state: expanded
+      tablespace_privileges:
+        query: roles.tablespace_privileges
+        tags: [Security, Tablespaces, Users]
+        state: collapsed
+        render:
+          empty_message: No explicit tablespace privileges are granted beyond the owners.
+      parameter_privileges:
+        query: roles.parameter_privileges
+        tags: [Security, Configuration, Users]
+        state: collapsed
+        render:
+          empty_message: No SET or ALTER SYSTEM parameter privileges are granted.
+      language_privileges:
+        query: roles.language_privileges
+        tags: [Security, Users]
+        state: collapsed
+        render:
+          empty_message: No procedural language privileges are visible beyond the owners.
+      foreign_server_access:
+        query: roles.foreign_server_access
+        tags: [Security, Users]
+        state: collapsed
+        render:
+          empty_message: No foreign data wrapper privileges, foreign server privileges, or user mappings were found.
+      object_privileges_by_grantee:
+        query: roles.object_privileges_by_grantee
+        tags: [Security, Tables, Functions, Users]
+        state: expanded
+        render:
+          empty_message: No explicit object privileges were found in the sampled relations, functions, and types.
+      relation_privileges_detail:
+        query: roles.relation_privileges_detail
+        tags: [Security, Tables, Users]
+        state: collapsed
+        render:
+          empty_message: No explicit relation privileges were found in the sampled relations.
+      column_privileges:
+        query: roles.column_privileges
+        tags: [Security, Tables, Users]
+        state: collapsed
+        render:
+          empty_message: No column-level privileges were found in the sampled relations.
+      default_privileges:
+        query: roles.default_privileges
+        tags: [Security, Users]
+        state: collapsed
+        render:
+          empty_message: No ALTER DEFAULT PRIVILEGES entries are defined in the connected database.
+      rls_policies_by_role:
+        query: roles.rls_policies_by_role
+        tags: [Security, Tables, Users]
+        state: collapsed
+        render:
+          empty_message: No row-level security policies are defined in the connected database.
+      large_object_privileges:
+        query: roles.large_object_privileges
+        tags: [Security, Storage, Users]
+        state: collapsed
+        render:
+          empty_message: No explicit large object privileges are granted beyond the owners.
+      publication_ownership:
+        query: roles.publication_ownership
+        tags: [Security, Replication, Users]
+        state: collapsed
+        render:
+          empty_message: No logical replication publications are defined in the connected database.
+      subscription_ownership:
+        python: roles.subscription_ownership
+        tags: [Security, Replication, Users]
+        state: collapsed
+        render:
+          empty_message: No logical replication subscriptions are defined.
+      session_usage:
+        query: roles.session_usage
+        tags: [Security, Sessions, Users]
+        state: collapsed
+        render:
+          empty_message: No client sessions are visible to the current user.
+      connection_security:
+        query: roles.connection_security
+        tags: [Security, Sessions, Network, Users]
+        state: collapsed
+        render:
+          empty_message: No client sessions are visible to the current user.
+      hba_rules:
+        python: roles.hba_rules
+        tags: [Security, Network, Users]
+        state: collapsed
+        render:
+          empty_message: pg_hba_file_rules returned no rules.
+      ident_mappings:
+        python: roles.ident_mappings
+        tags: [Security, Users]
+        state: collapsed
+        render:
+          empty_message: pg_ident.conf defines no user name maps.
 
   snapshot_charts_os:
     title: Snapshot charts OS
