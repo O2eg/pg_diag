@@ -21,7 +21,7 @@ This instruction belongs to report item `users_roles.hba_rules`. The item is bac
 ## Automatic evaluation
 - `high`: the server reports a parse error for the line.
 - `ok`: all other rules; method and address risks are evaluated by the dedicated pg_hba items.
-- The list covers 3,000 rules; `result_truncated` marks partial coverage.
+- The list covers 3,000 rules; a `[coverage]` row marks partial coverage while listed findings keep their severity.
 
 ## Related report items
 - [cluster_inventory.pg_hba_insecure_auth_methods](#item-cluster_inventory.pg_hba_insecure_auth_methods) — Review insecure authentication methods from the file on the host.

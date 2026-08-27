@@ -21,7 +21,7 @@ This instruction belongs to report item `users_roles.connection_security`. The i
 - `medium`: a role has non-loopback TCP sessions without TLS or GSSAPI encryption.
 - `unknown`: TLS state of other roles is hidden; grant `pg_read_all_stats` to the collector role.
 - `ok`: all other roles.
-- The list covers 1,000 roles with sessions; `result_truncated` marks partial coverage.
+- The list covers 1,000 roles with sessions; a `[coverage]` row marks partial coverage while listed findings keep their severity.
 
 ## Related report items
 - [overview.tls_server_configuration](#item-overview.tls_server_configuration) — Verify the server TLS configuration.

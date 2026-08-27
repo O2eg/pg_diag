@@ -19,7 +19,8 @@ This instruction belongs to report item `users_roles.parameter_privileges`. The 
 ## Automatic evaluation
 - `medium`: a non-superuser holds `ALTER SYSTEM` on a parameter.
 - `unknown`: all other parameter grants; whether they are acceptable depends on the configuration baseline.
-- The list covers 1,000 parameters and 3,000 ACL entries; coverage flags mark partial results and add a `[coverage]` row.
+- `ok`: entries of superuser grantees, which already hold every privilege.
+- The list covers 1,000 parameters and 3,000 ACL entries; coverage flags mark partial results and add a `[coverage]` row while listed findings keep their severity.
 
 ## Related report items
 - [overview.pg_settings](#item-overview.pg_settings) — Check the current values of the granted parameters.

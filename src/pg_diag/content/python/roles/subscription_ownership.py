@@ -64,6 +64,14 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
         row = dict(record)
         row["result_truncated"] = truncated
         rows.append(row)
+    if truncated:
+        rows.append(
+            {
+                **{key: None for key in rows[0] if key != "result_truncated"},
+                "subscription_name": "[coverage]",
+                "result_truncated": True,
+            }
+        )
 
     severity_level = "unknown" if truncated else "ok"
     issues = {}

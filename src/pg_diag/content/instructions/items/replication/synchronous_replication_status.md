@@ -5,7 +5,8 @@ This instruction belongs to report item `replication.synchronous_replication_sta
 ## What this item shows
 - `synchronous_standby_names` parsed into `sync_method` (`FIRST`, `ANY`, or `none`), `required_sync_count`, and one row per configured standby name in priority order (`*` matches every sender).
 - For each name: connected senders that match it, how many of them are `sync` or `quorum`, the best `sync_state`, and the largest replay lag.
-- Cluster totals: connected senders, `sync`, `quorum`, and `potential` counts, `quorum_satisfied`, `synchronous_commit`, `commit_waits_for_standby`, and sessions waiting in `SyncRep`.
+- Cluster totals: connected senders, `sync`, `quorum`, and `potential` counts, `quorum_satisfied`, sessions waiting in `SyncRep`, and `in_recovery`.
+- `synchronous_commit` is the collector session's value; `synchronous_commit_override_count` and `synchronous_commit_overrides` list `ALTER ROLE` and `ALTER DATABASE` overrides, because the effective level differs per session and may be changed per transaction.
 - With an empty `synchronous_standby_names`, one `[none]` row documents asynchronous replication.
 
 ## What to watch
@@ -20,10 +21,11 @@ This instruction belongs to report item `replication.synchronous_replication_sta
 - `FIRST n` with fewer than `n` reachable standbys after a failure.
 
 ## Automatic evaluation
-- `high`: the quorum is not satisfied and `synchronous_commit` waits for standbys.
-- `medium`: the quorum is not satisfied but commits do not wait, or a configured standby has no connected sender while other candidates keep the quorum.
-- `unknown`: names are configured but `synchronous_commit` is `off` or `local` at the server level, or the name or sender sample was truncated (100 names, 1,000 senders).
-- `ok`: quorum satisfied, or asynchronous replication.
+- `high`: the quorum is not satisfied and sessions are waiting in `SyncRep`, or the quorum is not satisfied while `synchronous_commit` waits for standbys and no per-role or per-database override exists.
+- `medium`: the quorum is not satisfied but overrides make the effective level session-dependent, the quorum is not satisfied while the collector session does not wait, or a configured standby has no connected sender while other candidates keep the quorum.
+- `unknown`: the quorum is satisfied but overrides exist, or names are configured while the collector session uses `off` or `local`.
+- `ok`: quorum satisfied, asynchronous replication, or a server in recovery (the setting applies only after promotion).
+- A `[coverage]` row is added when names (100), senders (1,000), or overrides (100) were truncated; proven findings keep their severity.
 - `SyncRep` waiters are counted from `pg_stat_activity`; sessions of other roles are visible only with `pg_read_all_stats`.
 
 ## Related report items

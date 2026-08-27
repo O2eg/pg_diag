@@ -2,7 +2,8 @@ with senders as (
   select
     r.*,
     case
-      when pg_catalog.pg_is_in_recovery() then pg_catalog.pg_last_wal_replay_lsn()
+      when pg_catalog.pg_is_in_recovery()
+        then coalesce(pg_catalog.pg_last_wal_receive_lsn(), pg_catalog.pg_last_wal_replay_lsn())
       else pg_catalog.pg_current_wal_lsn()
     end as local_wal_lsn
   from pg_catalog.pg_stat_replication r

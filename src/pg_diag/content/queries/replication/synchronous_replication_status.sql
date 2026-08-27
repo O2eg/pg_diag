@@ -1,12 +1,38 @@
 with settings as (
   select
     btrim(current_setting('synchronous_standby_names')) as names_setting,
-    current_setting('synchronous_commit') as synchronous_commit
+    current_setting('synchronous_commit') as synchronous_commit,
+    pg_catalog.pg_is_in_recovery() as in_recovery
+),
+overrides_bounded as (
+  select
+    case
+      when s.setrole = 0 then 'database ' || coalesce(d.datname::text, '[unknown]')
+      when s.setdatabase = 0 then 'role ' || coalesce(r.rolname::text, '[unknown]')
+      else 'role ' || coalesce(r.rolname::text, '[unknown]') || ' in database '
+        || coalesce(d.datname::text, '[unknown]')
+    end as scope,
+    substr(c.entry, strpos(c.entry, '=') + 1) as value
+  from pg_catalog.pg_db_role_setting s
+  cross join lateral unnest(s.setconfig) c(entry)
+  left join pg_catalog.pg_roles r on r.oid = s.setrole
+  left join pg_catalog.pg_database d on d.oid = s.setdatabase
+  where split_part(c.entry, '=', 1) = 'synchronous_commit'
+  order by scope
+  limit 101
+),
+overrides as (
+  select
+    count(*)::int8 as override_count,
+    string_agg(o.scope || ': ' || o.value, '; ' order by o.scope) as override_list,
+    (select count(*) > 100 from overrides_bounded) as overrides_truncated
+  from (select * from overrides_bounded limit 100) o
 ),
 parsed as (
   select
     names_setting,
     synchronous_commit,
+    in_recovery,
     case
       when names_setting = '' then 'none'
       when names_setting ~ '(?i)^any\s+\d+\s*\(' then 'ANY'
@@ -29,6 +55,7 @@ configured_names_bounded as (
     p.required_sync_count,
     p.synchronous_commit,
     p.commit_waits_for_standby,
+    p.in_recovery,
     trim(both '"' from btrim(n.entry)) as standby_name,
     n.ord
   from parsed p
@@ -51,7 +78,8 @@ senders_bounded as (
     r.sync_priority,
     pg_catalog.pg_wal_lsn_diff(
       case
-        when pg_catalog.pg_is_in_recovery() then pg_catalog.pg_last_wal_replay_lsn()
+        when pg_catalog.pg_is_in_recovery()
+          then coalesce(pg_catalog.pg_last_wal_receive_lsn(), pg_catalog.pg_last_wal_replay_lsn())
         else pg_catalog.pg_current_wal_lsn()
       end,
       r.replay_lsn
@@ -104,6 +132,7 @@ name_rows as (
     c.required_sync_count::int8 as required_sync_count,
     c.synchronous_commit,
     c.commit_waits_for_standby,
+    c.in_recovery,
     (
       select count(*)::int8 from senders s
       where c.standby_name = '*' or lower(s.application_name) = lower(c.standby_name)
@@ -143,6 +172,9 @@ findings as (
     n.required_sync_count,
     n.synchronous_commit,
     n.commit_waits_for_standby,
+    o.override_count as synchronous_commit_override_count,
+    o.override_list as synchronous_commit_overrides,
+    n.in_recovery,
     n.matching_sender_count,
     n.matching_sync_sender_count,
     n.best_sync_state,
@@ -157,16 +189,29 @@ findings as (
     cov.names_truncated,
     cov.senders_truncated,
     case
-      when cov.names_truncated or cov.senders_truncated then 'unknown'
+      when n.in_recovery then 'ok'
+      when not q.quorum_satisfied and w.syncrep_waiting_sessions > 0 then 'high'
+      when not q.quorum_satisfied and o.override_count > 0 then 'medium'
       when not q.quorum_satisfied and n.commit_waits_for_standby then 'high'
       when not q.quorum_satisfied then 'medium'
       when n.matching_sender_count = 0 then 'medium'
+      when o.override_count > 0 then 'unknown'
       when not n.commit_waits_for_standby then 'unknown'
       else 'ok'
     end as risk_level,
     case
-      when cov.names_truncated or cov.senders_truncated
-        then 'Configured standby names or WAL senders were truncated; the synchronous status is partial'
+      when n.in_recovery
+        then 'Server is in recovery; synchronous_standby_names applies only after promotion'
+      when not q.quorum_satisfied and w.syncrep_waiting_sessions > 0
+        then 'Synchronous quorum is not satisfied and ' || w.syncrep_waiting_sessions::text
+          || ' session(s) are waiting in SyncRep: commits wait for '
+          || n.required_sync_count::text || ' synchronous standby(s) but only '
+          || (case when n.sync_method = 'ANY' then t.quorum_sender_count else t.sync_sender_count end)::text
+          || ' candidate(s) are connected'
+      when not q.quorum_satisfied and o.override_count > 0
+        then 'Synchronous quorum is not satisfied; synchronous_commit is overridden for '
+          || o.override_count::text
+          || ' role or database setting(s), so sessions that use a waiting level stall while others proceed'
       when not q.quorum_satisfied and n.commit_waits_for_standby
         then 'Synchronous quorum is not satisfied: commits wait for '
           || n.required_sync_count::text || ' synchronous standby(s) but only '
@@ -177,17 +222,22 @@ findings as (
           || ' lets commits proceed without standby confirmation'
       when n.matching_sender_count = 0
         then 'Configured standby is not connected; the quorum is satisfied by other candidates'
+      when o.override_count > 0
+        then 'synchronous_commit is overridden for ' || o.override_count::text
+          || ' role or database setting(s); the effective durability level differs per session'
       when not n.commit_waits_for_standby
         then 'synchronous_standby_names is configured but synchronous_commit=' || n.synchronous_commit
-          || ' does not wait for standby confirmation at the server level'
+          || ' does not wait for standby confirmation in the collector session'
       else ''
     end as risk_reason
   from name_rows n
   cross join sender_totals t
   cross join quorum q
   cross join waiters w
+  cross join overrides o
   cross join coverage cov
-)
+),
+combined as (
 select * from findings
 union all
 select
@@ -197,6 +247,9 @@ select
   0::int8,
   p.synchronous_commit,
   p.commit_waits_for_standby,
+  o.override_count,
+  o.override_list,
+  p.in_recovery,
   t.sender_count,
   0::int8,
   case when t.sender_count > 0 then 'async' else 'absent' end,
@@ -215,6 +268,42 @@ select
 from parsed p
 cross join sender_totals t
 cross join waiters w
+cross join overrides o
 cross join coverage cov
 where p.sync_method = 'none'
+union all
+select
+  '[coverage]'::text,
+  null::int8,
+  p.sync_method,
+  p.required_sync_count::int8,
+  p.synchronous_commit,
+  p.commit_waits_for_standby,
+  o.override_count,
+  o.override_list,
+  p.in_recovery,
+  null::int8,
+  null::int8,
+  ''::text,
+  null::int8,
+  null::float8,
+  t.sender_count,
+  t.sync_sender_count,
+  t.quorum_sender_count,
+  t.potential_sender_count,
+  null::boolean,
+  w.syncrep_waiting_sessions,
+  cov.names_truncated,
+  cov.senders_truncated,
+  'unknown'::text,
+  'Configured standby names, WAL senders, or synchronous_commit overrides were truncated; findings above are proven but the list is incomplete'::text
+from parsed p
+cross join sender_totals t
+cross join waiters w
+cross join overrides o
+cross join coverage cov
+where cov.names_truncated or cov.senders_truncated or o.overrides_truncated
+)
+select *
+from combined
 order by configured_position nulls last, standby_name

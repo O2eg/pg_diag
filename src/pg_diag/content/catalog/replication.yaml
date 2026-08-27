@@ -226,7 +226,7 @@ queries:
     title: Replication Capacity
     group: Replication
     main_view: pg_settings
-    description: Replication limits compared with current usage - WAL senders, replication slots and origins, logical replication workers, wal_level, and WAL retention settings.
+    description: Replication limits compared with current usage - WAL senders, replication slots, tracked replication origins, logical replication workers, wal_level, and WAL retention settings.
     source: pg_diag
     display:
       default_sort:
@@ -251,9 +251,13 @@ queries:
         min_pg_version: 160000
         max_pg_version: 169999
         sql_file: replication/replication_capacity_pg16.sql
-      - id: replication_capacity_pg17_plus
+      - id: replication_capacity_pg17
         min_pg_version: 170000
-        sql_file: replication/replication_capacity_pg17_plus.sql
+        max_pg_version: 179999
+        sql_file: replication/replication_capacity_pg17.sql
+      - id: replication_capacity_pg18_plus
+        min_pg_version: 180000
+        sql_file: replication/replication_capacity_pg18_plus.sql
 
   replication.subscription_table_sync:
     title: Subscription Table Synchronization

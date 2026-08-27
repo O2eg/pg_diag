@@ -1,4 +1,4 @@
-with publications_bounded as (
+with recursive publications_bounded as (
   select p.oid, p.pubname, p.puballtables, p.pubupdate, p.pubdelete
   from pg_catalog.pg_publication p
   order by p.pubname, p.oid
@@ -51,6 +51,21 @@ explicit_bounded as (
 explicit_members as (
   select * from explicit_bounded limit 10000
 ),
+partition_tree(pubid, root_oid, relid, depth) as (
+  select e.prpubid, e.prrelid, e.prrelid, 0
+  from explicit_members e
+  union all
+  select t.pubid, t.root_oid, i.inhrelid, t.depth + 1
+  from partition_tree t
+  join pg_catalog.pg_inherits i on i.inhparent = t.relid
+  where t.depth < 8
+),
+partition_tree_bounded as (
+  select * from partition_tree limit 20001
+),
+explicit_expanded as (
+  select * from partition_tree_bounded limit 20000
+),
 schema_members_bounded as (
   select pn.pnpubid, pn.pnnspid
   from pg_catalog.pg_publication_namespace pn
@@ -62,17 +77,20 @@ schema_members as (
   select * from schema_members_bounded limit 1000
 ),
 published_bounded as (
-  select p.oid as pubid, 'all tables'::text as publish_mode, t.*
+  select p.oid as pubid, 'all tables'::text as publish_mode, null::oid as root_oid, t.*
   from publications p
   cross join table_candidates t
   where p.puballtables
   union all
-  select e.prpubid, 'table'::text, c.oid, c.relname, c.relnamespace, c.relkind, c.relreplident,
+  select x.pubid,
+    case when x.depth = 0 then 'table'::text else 'partition'::text end,
+    case when x.depth = 0 then null::oid else x.root_oid end,
+    c.oid, c.relname, c.relnamespace, c.relkind, c.relreplident,
     c.relpersistence, greatest(coalesce(c.relpages, 0), 0)::int8
-  from explicit_members e
-  join pg_catalog.pg_class c on c.oid = e.prrelid
+  from explicit_expanded x
+  join pg_catalog.pg_class c on c.oid = x.relid
   union all
-  select sm.pnpubid, 'schema'::text, t.*
+  select sm.pnpubid, 'schema'::text, null::oid, t.*
   from schema_members sm
   join table_candidates t on t.relnamespace = sm.pnnspid
   limit 20001
@@ -86,6 +104,7 @@ classified as (
     pub.pubupdate,
     pub.pubdelete,
     x.publish_mode,
+    x.root_oid,
     n.nspname,
     x.relname,
     x.relkind,
@@ -105,14 +124,15 @@ classified as (
   from published x
   join publications pub on pub.oid = x.pubid
   join pg_catalog.pg_namespace n on n.oid = x.relnamespace
+  where x.relkind = 'r'
 ),
 ranked_findings as (
   select
     c.pubname::text as publication_name,
     c.publish_mode,
+    c.root_oid::regclass::text as published_root,
     c.nspname::text as schema_name,
     c.relname::text as table_name,
-    case c.relkind when 'p' then 'partitioned table' else 'table' end as relation_kind,
     case c.relreplident
       when 'd' then 'default'
       when 'n' then 'nothing'
@@ -129,7 +149,7 @@ ranked_findings as (
     case
       when c.relpersistence = 'u' then 1
       when (c.relreplident = 'n' or (c.relreplident = 'd' and not c.has_primary_key))
-        and (c.pubupdate or c.pubdelete) and c.relkind = 'r' then 0
+        and (c.pubupdate or c.pubdelete) then 0
       when (c.relreplident = 'n' or (c.relreplident = 'd' and not c.has_primary_key)) then 2
       else 3
     end as risk_rank
@@ -149,6 +169,7 @@ coverage as (
     ) as candidate_sample_truncated,
     (
       (select count(*) > 10000 from explicit_bounded)
+      or (select count(*) > 20000 from partition_tree_bounded)
       or (select count(*) > 1000 from schema_members_bounded)
       or (select count(*) > 20000 from published_bounded)
     ) as membership_sample_truncated,
@@ -161,9 +182,9 @@ combined as (
   select
     f.publication_name,
     f.publish_mode,
+    f.published_root,
     f.schema_name,
     f.table_name,
-    f.relation_kind,
     f.replica_identity,
     f.has_primary_key,
     f.replica_identity_index,
@@ -176,43 +197,37 @@ combined as (
     cov.result_truncated,
     f.risk_rank,
     case
-      when cov.candidate_sample_truncated or cov.membership_sample_truncated or cov.result_truncated
-        then 'unknown'
       when f.risk_rank = 0 then 'high'
       when f.risk_rank = 1 then 'medium'
       else 'unknown'
     end as risk_level,
     case
-      when cov.candidate_sample_truncated or cov.membership_sample_truncated or cov.result_truncated
-        then 'Published table sample was truncated; replica identity findings are partial'
       when f.risk_rank = 0
         then 'Published table has no usable replica identity: UPDATE and DELETE on the publisher fail until a primary key or REPLICA IDENTITY is defined'
       when f.risk_rank = 1
         then 'Unlogged table is included in a publication but its changes are never replicated'
       when f.replica_identity = 'full'
         then 'REPLICA IDENTITY FULL sends every column on UPDATE and DELETE; verify the WAL and subscriber cost'
-      when f.relation_kind = 'partitioned table'
-        then 'Partitioned parent without replica identity; verify the replica identity of every leaf partition'
       else 'Publication publishes inserts only; UPDATE and DELETE would fail if they were published'
     end as risk_reason
   from findings f
   cross join coverage cov
   union all
   select
-    '[coverage]'::text, ''::text, ''::text, ''::text, ''::text, ''::text, false, null::text, ''::text,
+    '[coverage]'::text, ''::text, null::text, ''::text, ''::text, ''::text, false, null::text, ''::text,
     false, false, 0::int8,
     cov.candidate_sample_truncated, cov.membership_sample_truncated, cov.result_truncated,
     9, 'unknown'::text,
-    'The bounded publication, table, or membership sample was truncated; an empty result is not a clean result'::text
+    'The bounded publication, table, partition, or membership sample was truncated; findings above are proven but the list is incomplete'::text
   from coverage cov
   where cov.candidate_sample_truncated or cov.membership_sample_truncated or cov.result_truncated
 )
 select
   publication_name,
   publish_mode,
+  published_root,
   schema_name,
   table_name,
-  relation_kind,
   replica_identity,
   has_primary_key,
   replica_identity_index,

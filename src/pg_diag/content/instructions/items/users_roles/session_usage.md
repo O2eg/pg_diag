@@ -22,7 +22,7 @@ This instruction belongs to report item `users_roles.session_usage`. The item is
 - `medium`: sessions use at least 90 percent of the per-role connection limit, or a role with a zero limit still has sessions.
 - `unknown`: session states of other roles are hidden; grant `pg_read_all_stats` to the collector role.
 - `ok`: all other roles.
-- The list covers 1,000 roles with sessions; `result_truncated` marks partial coverage.
+- The list covers 1,000 roles with sessions; a `[coverage]` row marks partial coverage while listed findings keep their severity.
 
 ## Related report items
 - [activity_locks.connection_pressure](#item-activity_locks.connection_pressure) — Compare with server-wide connection pressure.

@@ -39,8 +39,8 @@ VARIANTS = {
         130000: "replication_capacity_pg13_pg15",
         150000: "replication_capacity_pg13_pg15",
         160000: "replication_capacity_pg16",
-        170000: "replication_capacity_pg17_plus",
-        180000: "replication_capacity_pg17_plus",
+        170000: "replication_capacity_pg17",
+        180000: "replication_capacity_pg18_plus",
     },
     "replication.publication_replica_identity": {
         100000: "replication_publication_replica_identity_pg10_pg14",
@@ -125,18 +125,26 @@ def test_replication_capacity_variants_track_worker_and_wal_keep_columns(
     assert "leader_pid is not null" in pg16
     assert "max_parallel_apply_workers_per_subscription" in pg16
     assert "worker_type" not in pg16
-    pg17 = _sql(content_path, "replication/replication_capacity_pg17_plus.sql")
+    pg17 = _sql(content_path, "replication/replication_capacity_pg17.sql")
     assert "worker_type = 'parallel apply'" in pg17
+    assert "max_active_replication_origins" not in pg17
+    pg18 = _sql(content_path, "replication/replication_capacity_pg18_plus.sql")
+    assert "current_setting('max_active_replication_origins')" in pg18
     for name in (
         "replication_capacity_pg10_pg12.sql",
         "replication_capacity_pg13_pg15.sql",
         "replication_capacity_pg16.sql",
-        "replication_capacity_pg17_plus.sql",
+        "replication_capacity_pg17.sql",
+        "replication_capacity_pg18_plus.sql",
     ):
         sql = _sql(content_path, "replication/" + name)
         assert "backend_type = 'walsender'" in sql, name
-        assert "pg_replication_origin" in sql, name
+        assert "from pg_catalog.pg_replication_origin_status" not in sql, name
+        assert "origin_using_worker_count" in sql, name
         assert "utilization_pct" in sql, name
+        assert "pg_last_wal_receive_lsn" in sql, name
+        # wal_keep is informational: retained slot WAL is only compared with max_slot_wal_keep_size
+        assert "when f.resource = 'wal_keep' and" not in sql, name
 
 
 def test_synchronous_status_parses_first_and_any_quorums(content_path: Path) -> None:
@@ -147,7 +155,12 @@ def test_synchronous_status_parses_first_and_any_quorums(content_path: Path) -> 
     assert "wait_event = 'syncrep'" in sql
     assert "quorum_satisfied" in sql
     assert "'[none]'::text" in sql
+    assert "'[coverage]'::text" in sql
     assert "limit 101" in sql and "limit 1001" in sql
+    assert "pg_db_role_setting" in sql and "synchronous_commit_override_count" in sql
+    assert "when n.in_recovery then 'ok'" in sql
+    assert "syncrep_waiting_sessions > 0 then 'high'" in sql
+    assert "pg_last_wal_receive_lsn" in sql
 
 
 def test_standby_recovery_state_never_exposes_the_connection_string(content_path: Path) -> None:
@@ -188,6 +201,8 @@ def test_publication_replica_identity_bounds_tables_before_index_lookups(
             assert flag in sql, (name, flag)
         assert "'[coverage]'" in sql, name
         assert "relpersistence = 'u'" in sql, name
+        assert "pg_inherits" in sql and "partition_tree" in sql, name
+        assert "where x.relkind = 'r'" in sql, name
     assert "pg_publication_namespace" in _sql(
         content_path, "replication/publication_replica_identity_pg15_plus.sql"
     )
@@ -251,3 +266,33 @@ def test_replication_chart_metrics_are_planned_from_dedicated_sources(content_pa
     once_items = {item.item_key: item for item in one_shot.items if item.section_id == "replication"}
     for key in NEW_ITEMS:
         assert once_items[key].status == "planned", key
+
+
+def test_truncation_never_demotes_proven_findings(content_path: Path) -> None:
+    finding_queries = (
+        "replication/synchronous_replication_status.sql",
+        "replication/subscription_table_sync.sql",
+        "replication/publication_replica_identity_pg10_pg14.sql",
+        "replication/publication_replica_identity_pg15_plus.sql",
+        "roles/password_validity.sql",
+        "roles/effective_membership_pg10_pg15.sql",
+        "roles/effective_membership_pg16_plus.sql",
+        "roles/admin_option_holders_pg10_pg15.sql",
+        "roles/admin_option_holders_pg16_plus.sql",
+        "roles/parameter_privileges.sql",
+        "roles/session_usage.sql",
+        "roles/connection_security_pg10_pg11.sql",
+        "roles/connection_security_pg12_plus.sql",
+    )
+    for relative in finding_queries:
+        sql = _sql(content_path, relative)
+        assert re.search(r"truncated\s+then\s+'unknown'", sql) is None, relative
+        assert "'[coverage]'" in sql, relative
+
+
+def test_effective_membership_carries_admin_option_on_pg16(content_path: Path) -> None:
+    sql = _sql(content_path, "roles/effective_membership_pg16_plus.sql")
+    assert "am.set_option or am.admin_option" in sql
+    assert "am.inherit_option or am.admin_option" in sql
+    assert "admin_option_in_path" in sql
+    assert "pg_last_wal_receive_lsn" in _sql(content_path, "metrics/replication_sender_lag_bytes.sql")

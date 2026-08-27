@@ -4,7 +4,7 @@ This instruction belongs to report item `snapshot_charts_db.replication_sender_l
 
 ## What this item shows
 - For every WAL sender observed during the snapshot window: the byte distance between the local WAL position and the standby's sent, flushed, and replayed positions at every sample.
-- One series group per sender (`application_name`, client address, and PID), so a reconnecting standby appears as a new group.
+- One series group per sender (`application_name`, client address, and PID), so a reconnecting standby appears as a new group. On a cascading standby the local position is the last received WAL, because a cascading sender forwards WAL that is not replayed yet.
 
 ## What to watch
 - Replay lag that grows steadily while sent lag stays flat: the standby cannot apply WAL as fast as it receives it (slow storage, recovery conflicts, or paused replay).

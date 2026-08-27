@@ -20,7 +20,7 @@ This instruction belongs to report item `users_roles.password_validity`. The ite
 - `medium`: the password validity has expired while the role still exists and can log in.
 - `unknown`: the password expires within 30 days, or a superuser login role has no expiry.
 - `ok`: all other login roles.
-- The list covers the first 5,000 login roles; `result_truncated` marks partial coverage.
+- The list covers the first 5,000 login roles; a `[coverage]` row marks partial coverage while listed findings keep their severity.
 
 ## Related report items
 - [cluster_inventory.role_password_hashes](#item-cluster_inventory.role_password_hashes) — Check password hash strength when superuser access is available.

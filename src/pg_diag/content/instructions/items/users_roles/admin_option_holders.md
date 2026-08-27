@@ -19,7 +19,7 @@ This instruction belongs to report item `users_roles.admin_option_holders`. The 
 ## Automatic evaluation
 - `medium`: a non-superuser holds `ADMIN OPTION` or `CREATEROLE`.
 - `ok`: superusers, which already administer every role.
-- The list covers 3,000 admin-option memberships and 1,000 `CREATEROLE` roles; `result_truncated` marks partial coverage.
+- The list covers 3,000 admin-option memberships and 1,000 `CREATEROLE` roles; a `[coverage]` row marks partial coverage while listed findings keep their severity.
 
 ## Related report items
 - [users_roles.role_membership](#item-users_roles.role_membership) — Review the memberships that administration rights can change.

@@ -60,13 +60,10 @@ select
   f.grantor,
   coverage.result_truncated,
   case
-    when coverage.result_truncated then 'unknown'
     when f.superuser then 'ok'
     else 'medium'
   end as risk_level,
   case
-    when coverage.result_truncated
-      then 'Administrative membership sample was truncated; the list is partial'
     when f.superuser
       then 'Superuser already administers every role'
     when f.administration_source = 'CREATEROLE'
@@ -85,7 +82,7 @@ select
   null::text,
   true,
   'unknown'::text,
-  'Administrative membership sample was truncated; an empty finding set is not a clean result'::text
+  'Administrative membership sample was truncated; findings above are proven but the list is incomplete'::text
 from coverage
 where coverage.result_truncated
 )

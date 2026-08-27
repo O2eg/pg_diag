@@ -78,15 +78,12 @@ select
   f.can_set_role,
   f.membership_truncated,
   case
-    when f.membership_truncated then 'unknown'
     when f.inherited_role_is_superuser and not f.member_is_superuser then 'high'
     when f.inherited_role_attributes <> '' and not f.member_is_superuser then 'medium'
     when f.inherited_role_is_predefined and not f.member_is_superuser then 'medium'
     else 'ok'
   end as risk_level,
   case
-    when f.membership_truncated
-      then 'Role membership traversal exceeded 3000 rows; the effective membership list is partial'
     when f.inherited_role_is_superuser and not f.member_is_superuser
       then 'Non-superuser role can become a superuser role through membership'
     when f.inherited_role_attributes <> '' and not f.member_is_superuser
@@ -112,7 +109,7 @@ select
   false,
   true,
   'unknown'::text,
-  'Role membership traversal exceeded 3000 rows; the bounded list is partial and an empty result is not a clean result'::text
+  'Role membership traversal exceeded 3000 rows; findings above are proven but the list is incomplete'::text
 from coverage
 where coverage.membership_truncated
 )

@@ -58,15 +58,12 @@ findings as (
     ps.sampled_not_ready_tables,
     cov.result_truncated,
     case
-      when cov.result_truncated then 'unknown'
       when r.srsubstate = 'r' then 'ok'
       when sw.pid is not null then 'unknown'
       when coalesce(aw.apply_worker_running, false) then 'medium'
       else 'unknown'
     end as risk_level,
     case
-      when cov.result_truncated
-        then 'More than 3000 subscription tables exist; the synchronization list is partial'
       when r.srsubstate = 'r' then ''
       when sw.pid is not null
         then 'Initial table synchronization is in progress'
@@ -82,9 +79,19 @@ findings as (
   left join pg_catalog.pg_class c on c.oid = r.srrelid
   left join pg_catalog.pg_namespace n on n.oid = c.relnamespace
   cross join coverage cov
+),
+combined as (
+  select * from findings
+  union all
+  select
+    '[coverage]'::text, false, ''::text, ''::text, ''::text, ''::text, null::text, null::int, false,
+    null::int8, null::int8, null::int8, true, 'unknown'::text,
+    'More than 3000 subscription tables exist; findings above are proven but the list is incomplete'::text
+  from coverage
+  where coverage.result_truncated
 )
 select *
-from findings
+from combined
 order by
   case risk_level when 'medium' then 0 when 'unknown' then 1 else 2 end,
   subscription_name,

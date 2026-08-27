@@ -21,7 +21,7 @@ This instruction belongs to report item `replication.subscription_table_sync`. T
 - `ok`: the table is ready.
 - `unknown`: synchronization is in progress with a running worker, or the apply worker is not running.
 - `medium`: the table is not ready, no synchronization worker runs for it, and the apply worker is running.
-- Up to 3,000 subscription tables are listed, not-ready tables first; `result_truncated` marks partial coverage.
+- Up to 3,000 subscription tables are listed, not-ready tables first; a `[coverage]` row marks partial coverage while listed findings keep their severity.
 
 ## Related report items
 - [replication.subscription_workers](#item-replication.subscription_workers) — Check apply and synchronization worker errors and lag.

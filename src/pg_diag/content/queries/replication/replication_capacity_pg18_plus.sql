@@ -64,7 +64,7 @@ subscription_workers as (
     select
       subid,
       count(*) filter (where relid is not null)::int8 as sync_workers,
-      count(*) filter (where leader_pid is not null)::int8 as parallel_workers
+      count(*) filter (where worker_type = 'parallel apply')::int8 as parallel_workers
     from pg_catalog.pg_stat_subscription
     group by subid
   ) per_sub on per_sub.subid = w.subid
@@ -99,9 +99,9 @@ resources as (
   select
     3,
     'replication_origins',
-    'max_replication_slots',
-    current_setting('max_replication_slots'),
-    current_setting('max_replication_slots')::int8,
+    'max_active_replication_origins',
+    current_setting('max_active_replication_origins'),
+    current_setting('max_active_replication_origins')::int8,
     o.origin_using_worker_count,
     'running subscription apply and synchronization workers, each holding one tracked origin (lower bound; '
       || o.created_origin_count::text

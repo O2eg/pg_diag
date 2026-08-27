@@ -1,7 +1,8 @@
 with current_lsn as (
   select
     case
-      when pg_catalog.pg_is_in_recovery() then pg_catalog.pg_last_wal_replay_lsn()
+      when pg_catalog.pg_is_in_recovery()
+        then coalesce(pg_catalog.pg_last_wal_receive_lsn(), pg_catalog.pg_last_wal_replay_lsn())
       else pg_catalog.pg_current_wal_lsn()
     end as lsn
 ),
@@ -42,8 +43,16 @@ slots as (
   from (select * from slots_bounded limit 10000) b
 ),
 origins as (
-  select count(*)::int8 as origin_count
-  from (select roident from pg_catalog.pg_replication_origin limit 10000) o
+  select
+    (
+      select count(*)::int8
+      from (select roident from pg_catalog.pg_replication_origin limit 10000) created
+    ) as created_origin_count,
+    (
+      select count(*)::int8
+      from pg_catalog.pg_stat_subscription w
+      where w.pid is not null
+    ) as origin_using_worker_count
 ),
 subscription_workers as (
   select
@@ -93,8 +102,10 @@ resources as (
     'max_replication_slots',
     current_setting('max_replication_slots'),
     current_setting('max_replication_slots')::int8,
-    o.origin_count,
-    'replication origins share the max_replication_slots limit'
+    o.origin_using_worker_count,
+    'running subscription apply and synchronization workers, each holding one tracked origin (lower bound; '
+      || o.created_origin_count::text
+      || ' origin(s) are created and pg_replication_origin_status needs superuser)'
   from origins o
   union all
   select
@@ -139,8 +150,8 @@ resources as (
     'wal_keep_segments',
     current_setting('wal_keep_segments'),
     (current_setting('wal_keep_segments')::int8 * pg_catalog.pg_size_bytes(current_setting('wal_segment_size')))::int8,
-    sl.max_retained_wal_bytes,
-    'WAL kept for standbys without a slot; used_value shows the largest WAL retained by any slot'
+    null::int8,
+    'WAL kept for standbys that stream without a slot; independent of slot retention'
   from slots sl
 
 ),
@@ -176,7 +187,7 @@ select
     when f.resource = 'wal_level' and current_setting('wal_level') <> 'logical'
       and (select publication_count from publications) > 0 then 'medium'
     when f.resource = 'wal_level' then 'ok'
-    when f.resource in ('wal_keep', 'slot_wal_keep') and f.utilization_pct >= 80 then 'medium'
+    when f.resource = 'slot_wal_keep' and f.utilization_pct >= 80 then 'medium'
     when f.resource in ('wal_keep', 'slot_wal_keep') then 'ok'
     when f.utilization_pct >= 100 then 'high'
     when f.utilization_pct >= 90 then 'medium'
@@ -188,8 +199,6 @@ select
       then 'Publications exist but wal_level is not logical; subscribers cannot decode changes'
     when f.resource = 'slot_wal_keep' and f.utilization_pct >= 80
       then 'A replication slot retains at least 80 percent of max_slot_wal_keep_size and will be invalidated when the limit is exceeded'
-    when f.resource = 'wal_keep' and f.utilization_pct >= 80
-      then 'Retained slot WAL approaches the wal_keep setting'
     when f.resource in ('wal_level', 'wal_keep', 'slot_wal_keep') then ''
     when f.utilization_pct >= 100
       then 'All ' || f.resource || ' are in use; new standbys, backups, or workers cannot start'

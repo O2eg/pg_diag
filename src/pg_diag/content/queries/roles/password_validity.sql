@@ -28,7 +28,8 @@ classified as (
 ),
 coverage as (
   select (select count(*) > 5000 from login_roles_bounded) as result_truncated
-)
+),
+combined as (
 select
   c.rolname::text as role_name,
   c.rolsuper as superuser,
@@ -40,15 +41,12 @@ select
   end as days_until_expiry,
   coverage.result_truncated,
   case
-    when coverage.result_truncated then 'unknown'
     when c.validity_state = 'expired' then 'medium'
     when c.validity_state = 'expires within 30 days' then 'unknown'
     when c.validity_state = 'no expiry' and c.rolsuper then 'unknown'
     else 'ok'
   end as risk_level,
   case
-    when coverage.result_truncated
-      then 'More than 5000 login roles exist; the validity list is partial'
     when c.validity_state = 'expired'
       then 'Password validity has expired but the role still exists and can authenticate through non-password methods'
     when c.validity_state = 'expires within 30 days'
@@ -59,11 +57,20 @@ select
   end as risk_reason
 from classified c
 cross join coverage
+union all
+select
+  '[coverage]'::text, false, null::timestamptz, 'unknown'::text, null::int8, true, 'unknown'::text,
+  'More than 5000 login roles exist; findings above are proven but the list is incomplete'::text
+from coverage
+where coverage.result_truncated
+)
+select *
+from combined
 order by
-  case c.validity_state
+  case validity_state
     when 'expired' then 0
     when 'expires within 30 days' then 1
     when 'valid' then 2
     else 3
   end,
-  c.rolname
+  role_name

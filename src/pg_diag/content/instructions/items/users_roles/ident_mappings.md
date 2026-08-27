@@ -19,7 +19,7 @@ This instruction belongs to report item `users_roles.ident_mappings`. The item i
 ## Automatic evaluation
 - `high`: the server reports a parse error for the line.
 - `ok`: all other mappings.
-- The list covers 3,000 mappings; `result_truncated` marks partial coverage.
+- The list covers 3,000 mappings; a `[coverage]` row marks partial coverage while listed findings keep their severity.
 
 ## Related report items
 - [users_roles.hba_rules](#item-users_roles.hba_rules) — Find the authentication rules that reference each map.

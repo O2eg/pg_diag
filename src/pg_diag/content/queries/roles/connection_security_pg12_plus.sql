@@ -62,14 +62,11 @@ select
   p.min_tls_cipher_bits,
   coverage.result_truncated,
   case
-    when coverage.result_truncated then 'unknown'
     when p.remote_unencrypted_session_count > 0 then 'medium'
     when p.encryption_unknown_session_count > 0 then 'unknown'
     else 'ok'
   end as risk_level,
   case
-    when coverage.result_truncated
-      then 'More than 1000 roles have sessions; the connection security list is partial'
     when p.remote_unencrypted_session_count > 0
       then 'Role has non-loopback TCP sessions without TLS or GSSAPI encryption'
     when p.encryption_unknown_session_count > 0
@@ -79,4 +76,11 @@ select
 from per_role p
 left join pg_catalog.pg_roles r on r.rolname = p.usename
 cross join coverage
-order by p.session_count desc, role_name
+union all
+select
+  '[coverage]'::text, false, 0::int8, 0::int8, null::int8, 0::int8, 0::int8, 0::int8, 0::int8, null::text, null::text, null::int8,
+  true, 'unknown'::text,
+  'More than 1000 roles have sessions; findings above are proven but the list is incomplete'::text
+from coverage
+where coverage.result_truncated
+order by session_count desc, role_name

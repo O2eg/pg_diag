@@ -41,14 +41,11 @@ select
   coverage.candidate_sample_truncated,
   coverage.acl_expansion_truncated,
   case
-    when coverage.candidate_sample_truncated or coverage.acl_expansion_truncated then 'unknown'
     when coalesce(gr.rolsuper, false) then 'ok'
     when g.privilege_type = 'ALTER SYSTEM' then 'medium'
     else 'unknown'
   end as risk_level,
   case
-    when coverage.candidate_sample_truncated or coverage.acl_expansion_truncated
-      then 'Parameter ACL sample was truncated; parameter privileges are partial'
     when coalesce(gr.rolsuper, false)
       then 'Superuser already holds every parameter privilege; this entry records the grantor side of the ACL'
     when g.privilege_type = 'ALTER SYSTEM'
@@ -70,7 +67,7 @@ select
   coverage.candidate_sample_truncated,
   coverage.acl_expansion_truncated,
   'unknown'::text,
-  'Parameter ACL sample was truncated; an empty result is not a clean result'::text
+  'Parameter ACL sample was truncated; findings above are proven but the list is incomplete'::text
 from coverage
 where coverage.candidate_sample_truncated or coverage.acl_expansion_truncated
 order by parameter_name, grantee_name, privilege_type

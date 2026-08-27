@@ -81,14 +81,24 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
         if row.get("error"):
             row["risk_level"] = "high"
             row["risk_reason"] = "The server could not parse this pg_ident.conf line; it is ignored until the file is corrected"
-        elif truncated:
-            row["risk_level"] = "unknown"
-            row["risk_reason"] = f"More than {MAPPING_LIMIT} pg_ident.conf mappings exist; the list is partial"
         else:
             row["risk_level"] = "ok"
             row["risk_reason"] = ""
         row["result_truncated"] = truncated
         rows.append(row)
+    if truncated:
+        rows.append(
+            {
+                **{key: None for key in rows[0] if key not in ("risk_level", "risk_reason", "result_truncated")},
+                "map_name": "[coverage]",
+                "risk_level": "unknown",
+                "risk_reason": (
+                    f"More than {MAPPING_LIMIT} pg_ident.conf mappings exist; findings above are proven "
+                    "but the list is incomplete"
+                ),
+                "result_truncated": True,
+            }
+        )
 
     error_rows = [row for row in rows if row["risk_level"] == "high"]
     severity_level = "high" if error_rows else ("unknown" if truncated else "ok")

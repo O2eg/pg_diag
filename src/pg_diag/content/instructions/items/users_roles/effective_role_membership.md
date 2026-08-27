@@ -4,7 +4,7 @@ This instruction belongs to report item `users_roles.effective_role_membership`.
 
 ## What this item shows
 - The transitive closure of role membership: for each member, every role reachable through one or more `GRANT role` edges with `depth` and the full `path`.
-- `inherits_privileges` shows whether object privileges flow automatically along the whole path; `can_set_role` shows whether `SET ROLE` to the reached role is allowed (always true before PostgreSQL 16).
+- `inherits_privileges` shows whether object privileges flow automatically along the whole path; `can_set_role` shows whether `SET ROLE` to the reached role is allowed (always true before PostgreSQL 16). On PostgreSQL 16 and newer an edge granted `WITH ADMIN OPTION` counts as inheritable and settable because the member can re-grant itself `SET TRUE` or `INHERIT TRUE`; `admin_option_in_path` marks such paths.
 - Whether the reached role is a superuser or a predefined `pg_*` role, and its strong attributes in `inherited_role_attributes` (`CREATEROLE`, `CREATEDB`, `REPLICATION`, `BYPASSRLS`); role attributes are never inherited but become available after `SET ROLE`.
 
 ## What to watch
@@ -21,7 +21,7 @@ This instruction belongs to report item `users_roles.effective_role_membership`.
 - `high`: a non-superuser reaches a superuser role and can `SET ROLE` to it.
 - `medium`: a non-superuser can `SET ROLE` to a role with `CREATEROLE`, `CREATEDB`, `REPLICATION`, or `BYPASSRLS`, or reaches a predefined administrative role with inheritance or `SET ROLE`.
 - `ok`: all other paths.
-- Traversal is bounded to 3,000 rows and a depth of 32; `membership_truncated` marks partial coverage and adds a `[coverage]` row.
+- Traversal is bounded to 3,000 rows and a depth of 32; `membership_truncated` marks partial coverage and adds a `[coverage]` row while listed findings keep their severity.
 
 ## Related report items
 - [users_roles.role_membership](#item-users_roles.role_membership) — Inspect the individual edges that form each path.

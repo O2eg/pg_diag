@@ -1,11 +1,12 @@
-with recursive closure(member, role, depth, path, inherits, can_set) as (
+with recursive closure(member, role, depth, path, inherits, can_set, admin_in_path) as (
   select
     am.member,
     am.roleid,
     1,
     array[am.member, am.roleid],
-    am.inherit_option,
-    am.set_option
+    am.inherit_option or am.admin_option,
+    am.set_option or am.admin_option,
+    am.admin_option
   from pg_catalog.pg_auth_members am
   join pg_catalog.pg_roles m on m.oid = am.member
   where m.rolname !~ '^pg_'
@@ -17,8 +18,9 @@ with recursive closure(member, role, depth, path, inherits, can_set) as (
     am.roleid,
     c.depth + 1,
     c.path || am.roleid,
-    c.inherits and am.inherit_option,
-    c.can_set and am.set_option
+    c.inherits and (am.inherit_option or am.admin_option),
+    c.can_set and (am.set_option or am.admin_option),
+    c.admin_in_path or am.admin_option
   from closure c
   join pg_catalog.pg_auth_members am on am.member = c.role
   where not am.roleid = any(c.path)
@@ -57,6 +59,7 @@ findings as (
     ) as path,
     c.inherits as inherits_privileges,
     c.can_set as can_set_role,
+    c.admin_in_path as admin_option_in_path,
     coverage.membership_truncated
   from closure_sample c
   join pg_catalog.pg_roles m on m.oid = c.member
@@ -77,9 +80,9 @@ select
   f.path,
   f.inherits_privileges,
   f.can_set_role,
+  f.admin_option_in_path,
   f.membership_truncated,
   case
-    when f.membership_truncated then 'unknown'
     when f.inherited_role_is_superuser and not f.member_is_superuser and f.can_set_role then 'high'
     when f.inherited_role_attributes <> '' and not f.member_is_superuser and f.can_set_role then 'medium'
     when f.inherited_role_is_predefined and not f.member_is_superuser
@@ -87,12 +90,10 @@ select
     else 'ok'
   end as risk_level,
   case
-    when f.membership_truncated
-      then 'Role membership traversal exceeded 3000 rows; the effective membership list is partial'
     when f.inherited_role_is_superuser and not f.member_is_superuser and f.can_set_role
-      then 'Non-superuser role can become a superuser role through SET ROLE'
+      then 'Non-superuser role can become a superuser role through SET ROLE or by granting itself SET with ADMIN OPTION'
     when f.inherited_role_attributes <> '' and not f.member_is_superuser and f.can_set_role
-      then 'Non-superuser role can obtain ' || f.inherited_role_attributes || ' through SET ROLE'
+      then 'Non-superuser role can obtain ' || f.inherited_role_attributes || ' through SET ROLE or by granting itself SET with ADMIN OPTION'
     when f.inherited_role_is_predefined and not f.member_is_superuser
       and (f.inherits_privileges or f.can_set_role)
       then 'Role reaches a predefined PostgreSQL administrative role'
@@ -113,9 +114,10 @@ select
   null::text,
   false,
   false,
+  false,
   true,
   'unknown'::text,
-  'Role membership traversal exceeded 3000 rows; the bounded list is partial and an empty result is not a clean result'::text
+  'Role membership traversal exceeded 3000 rows; findings above are proven but the list is incomplete'::text
 from coverage
 where coverage.membership_truncated
 )

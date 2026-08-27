@@ -65,15 +65,12 @@ select
   f.*,
   coverage.result_truncated,
   case
-    when coverage.result_truncated then 'unknown'
     when f.limit_utilization_pct >= 90 then 'medium'
     when f.connection_limit = 0 then 'medium'
     when f.state_hidden_count > 0 then 'unknown'
     else 'ok'
   end as risk_level,
   case
-    when coverage.result_truncated
-      then 'More than 1000 roles have sessions; the usage list is partial'
     when f.limit_utilization_pct >= 90
       then 'Role sessions use at least 90 percent of the per-role connection limit'
     when f.connection_limit = 0
@@ -84,4 +81,11 @@ select
   end as risk_reason
 from findings f
 cross join coverage
-order by f.session_count desc, f.role_name
+union all
+select
+  '[coverage]'::text, false, null::int4, 0::int8, null::float8, 0::int8, 0::int8, 0::int8, 0::int8, 0::int8, 0::int8, 0::int8,
+  null::text, null::float8, null::float8, true, 'unknown'::text,
+  'More than 1000 roles have sessions; findings above are proven but the list is incomplete'::text
+from coverage
+where coverage.result_truncated
+order by session_count desc, role_name

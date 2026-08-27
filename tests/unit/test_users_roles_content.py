@@ -474,3 +474,23 @@ def test_effective_membership_flags_strong_role_attributes(content_path: Path) -
         content_path / "queries" / "roles" / "effective_membership_pg10_pg15.sql"
     ).read_text(encoding="utf-8").lower()
     assert "f.inherited_role_attributes <> '' and not f.member_is_superuser then 'medium'" in legacy
+
+
+def test_hba_rules_truncation_adds_coverage_row_without_demoting(content_path: Path) -> None:
+    module = _load_source(content_path, "roles/hba_rules.py")
+    base = {
+        "evaluation_order": 1, "file_name": None, "rule_number": None, "line_number": 1,
+        "connection_type": "host", "databases": "all", "user_names": "all", "address": "0.0.0.0",
+        "netmask": "0.0.0.0", "auth_method": "trust", "options": None, "error": None,
+    }
+    rows = [dict(base, evaluation_order=i, line_number=i) for i in range(module.RULE_LIMIT + 1)]
+    rows[0]["error"] = "bad line"
+    result = asyncio.run(module.collect(_ctx(_FakeConn(160000, rows))))
+    columns = [column["name"] for column in result.result["columns"]]
+    risk = columns.index("risk_level")
+    kind = columns.index("connection_type")
+    assert result.result["rows"][0][risk] == "high"
+    assert result.result["rows"][-1][kind] == "[coverage]"
+    assert result.result["rows"][-1][risk] == "unknown"
+    assert len(result.result["rows"]) == module.RULE_LIMIT + 1
+    assert result.severity_level == "high"

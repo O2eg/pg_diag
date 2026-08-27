@@ -3,7 +3,8 @@
 This instruction belongs to report item `replication.replication_capacity`. The item is backed by `replication.capacity` (SQL query).
 
 ## What this item shows
-- One row per replication resource with its limit, current usage, remaining capacity, and utilization: WAL senders (`max_wal_senders`), replication slots and replication origins (`max_replication_slots`), logical replication workers, synchronization workers per subscription, parallel apply workers per subscription (PostgreSQL 16 and newer), `wal_level`, `wal_keep_size` or `wal_keep_segments`, and `max_slot_wal_keep_size` (PostgreSQL 13 and newer) compared with the largest WAL retained by a slot.
+- One row per replication resource with its limit, current usage, remaining capacity, and utilization: WAL senders (`max_wal_senders`), replication slots (`max_replication_slots`), replication origins (`max_replication_slots`, or `max_active_replication_origins` on PostgreSQL 18 and newer; the limit applies to tracked origins, which only superusers can read from `pg_replication_origin_status`, so usage is the number of running subscription apply and synchronization workers as a lower bound, with the created origin count in `detail`), logical replication workers, synchronization workers per subscription, parallel apply workers per subscription (PostgreSQL 16 and newer), `wal_level`, and `max_slot_wal_keep_size` (PostgreSQL 13 and newer) compared with the largest WAL retained by a slot.
+- `wal_keep_size` or `wal_keep_segments` is listed for reference only; it protects standbys without a slot and is independent of slot retention.
 - `detail` breaks usage down, for example streaming versus backup senders or active versus inactive slots.
 
 ## What to watch
@@ -20,7 +21,7 @@ This instruction belongs to report item `replication.replication_capacity`. The 
 
 ## Automatic evaluation
 - `high`: a counted resource is fully used.
-- `medium`: usage is at least 90 percent of a counted limit, slot retention is at least 80 percent of `max_slot_wal_keep_size` or `wal_keep_size`, or publications exist while `wal_level` is not logical.
+- `medium`: usage is at least 90 percent of a counted limit, slot retention is at least 80 percent of `max_slot_wal_keep_size`, or publications exist while `wal_level` is not logical.
 - `ok`: all other rows.
 - Usage is sampled with bounded catalog reads (10,000 slots, origins, or publications).
 
