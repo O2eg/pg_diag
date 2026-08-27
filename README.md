@@ -1188,7 +1188,10 @@ The bundled content pack includes sections for:
 - Snapshot delta/rate workload summaries.
 - Table, index, and function workload counters.
 - Optional wait sampling data when available.
-- Replication, WAL, checkpoints, and I/O views.
+- Replication, WAL, checkpoints, and I/O views, including synchronous quorum
+  status, standby recovery state, replication capacity limits, subscription
+  table synchronization, published tables without replica identity, and
+  sender and standby lag charts in snapshots mode.
 - Storage, vacuum, wraparound, sequence, and XID horizon diagnostics.
 - Index health checks.
 - Cluster inventory, security, and configuration checks.

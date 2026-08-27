@@ -1586,7 +1586,7 @@ def test_validator_rejects_invalid_scope_defaults_and_section_switch(
     )
 
 
-@pytest.mark.parametrize("section_id, expected_count", [("replication", 8), ("wal_io_checkpoints", 7)])
+@pytest.mark.parametrize("section_id, expected_count", [("replication", 13), ("wal_io_checkpoints", 7)])
 def test_replication_and_wal_instructions_define_complete_interpretation_contract(
     content_path: Path,
     section_id: str,
@@ -2759,7 +2759,7 @@ def test_remaining_chart_sections_have_complete_and_consistent_contracts(
         for section_id, _item_key, item_id, _item in iter_report_items(content)
         if section_id in {"snapshot_charts_os", "snapshot_charts_db"}
     ]
-    assert len(chart_items) == 43
+    assert len(chart_items) == 48
     for item_id in chart_items:
         assert "## Automatic evaluation" in content.instructions[item_id]["text"], item_id
 

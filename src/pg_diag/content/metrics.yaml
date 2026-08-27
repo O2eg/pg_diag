@@ -2234,6 +2234,106 @@ metrics:
         - {name: sync_error_count_delta, value_ref: counters.sync_error_count, transform: delta, pg_type: float8}
         - {name: conflict_count_delta, value_ref: counters.conflict_count, transform: delta, pg_type: float8}
 
+  replication.sender_lag_bytes:
+    title: Replication Sender Lag Bytes
+    source_query: metrics.replication_sender_lag_bytes
+    targets: [db]
+    requires_collection: every_snapshot
+    partition_by:
+      - dimensions.sender
+    series:
+      - name: sent lag
+        value_ref: gauges.sent_lag_bytes
+        transform: gauge
+        unit: bytes
+      - name: flush lag
+        value_ref: gauges.flush_lag_bytes
+        transform: gauge
+        unit: bytes
+      - name: replay lag
+        value_ref: gauges.replay_lag_bytes
+        transform: gauge
+        unit: bytes
+    chart:
+      kind: line
+      unit: bytes
+
+  replication.sender_lag_seconds:
+    title: Replication Sender Lag Seconds
+    source_query: metrics.replication_sender_lag_seconds
+    targets: [db]
+    requires_collection: every_snapshot
+    partition_by:
+      - dimensions.sender
+    series:
+      - name: write lag
+        value_ref: gauges.write_lag_seconds
+        transform: gauge
+        unit: seconds
+      - name: flush lag
+        value_ref: gauges.flush_lag_seconds
+        transform: gauge
+        unit: seconds
+      - name: replay lag
+        value_ref: gauges.replay_lag_seconds
+        transform: gauge
+        unit: seconds
+    chart:
+      kind: line
+      unit: seconds
+
+  replication.standby_wal_rate:
+    title: Standby WAL Receive And Replay Rate
+    source_query: metrics.standby_wal_rate
+    targets: [db]
+    requires_collection: every_snapshot
+    partition_by:
+      - dimensions.scope
+    series:
+      - name: received
+        value_ref: counters.receive_bytes
+        transform: rate
+        unit: bytes/s
+      - name: replayed
+        value_ref: counters.replay_bytes
+        transform: rate
+        unit: bytes/s
+    chart:
+      kind: line
+      unit: bytes/s
+
+  replication.standby_replay_lag_bytes:
+    title: Standby Receive To Replay Lag
+    source_query: metrics.standby_replay_lag_bytes
+    targets: [db]
+    requires_collection: every_snapshot
+    partition_by:
+      - dimensions.scope
+    series:
+      - name: receive-replay lag
+        value_ref: gauges.receive_replay_lag_bytes
+        transform: gauge
+        unit: bytes
+    chart:
+      kind: area
+      unit: bytes
+
+  replication.standby_replay_delay:
+    title: Standby Replay Delay
+    source_query: metrics.standby_replay_delay
+    targets: [db]
+    requires_collection: every_snapshot
+    partition_by:
+      - dimensions.scope
+    series:
+      - name: replay delay
+        value_ref: gauges.replay_delay_seconds
+        transform: gauge
+        unit: seconds
+    chart:
+      kind: line
+      unit: seconds
+
   buffer_cache.utilization:
     title: Buffer Cache Utilization
     database_scope: all_databases

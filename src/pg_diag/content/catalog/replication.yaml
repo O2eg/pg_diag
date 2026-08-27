@@ -158,3 +158,149 @@ queries:
       - id: replication_recovery_prefetch_pg15_plus
         min_pg_version: 150000
         sql_file: replication/recovery_prefetch_pg15.sql
+
+  replication.synchronous_status:
+    title: Synchronous Replication Status
+    group: Replication
+    main_view: pg_stat_replication
+    description: Parsed synchronous_standby_names (FIRST/ANY quorum, configured standby names) compared with connected WAL senders and sessions waiting in SyncRep.
+    source: pg_diag
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    evaluation:
+      summary_title: Synchronous replication requires review
+      recommendation: Restore the configured synchronous standbys or adjust synchronous_standby_names before commits stall in SyncRep.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: replication_synchronous_status_pg10_plus
+        min_pg_version: 100000
+        sql_file: replication/synchronous_replication_status.sql
+
+  replication.standby_recovery_state:
+    title: Standby Recovery State
+    group: Replication
+    main_view: pg_stat_wal_receiver
+    description: Recovery role, replay pause state, receive and replay positions, timeline, control-file recovery data, redacted primary connection target, slot usage, and standby-side settings.
+    source: pg_diag
+    display:
+      default_sort:
+        column: server_role
+        direction: asc
+    evaluation:
+      summary_title: Standby recovery state requires review
+      recommendation: Resume WAL replay, attach the standby to a replication slot, or adjust standby feedback and delay settings according to the recovery policy.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: replication_standby_recovery_state_pg10_pg11
+        min_pg_version: 100000
+        max_pg_version: 119999
+        sql_file: replication/standby_recovery_state_pg10_pg11.sql
+        column_statuses:
+          primary_slot_name:
+            status: unsupported
+            reason: recovery.conf settings are exposed as parameters only on PostgreSQL 12 and newer; the WAL receiver slot name is shown instead
+          recovery_min_apply_delay:
+            status: unsupported
+            reason: recovery.conf settings are exposed as parameters only on PostgreSQL 12 and newer
+          recovery_target_timeline:
+            status: unsupported
+            reason: recovery.conf settings are exposed as parameters only on PostgreSQL 12 and newer
+          restore_command_configured:
+            status: unsupported
+            reason: recovery.conf settings are exposed as parameters only on PostgreSQL 12 and newer
+      - id: replication_standby_recovery_state_pg12_pg13
+        min_pg_version: 120000
+        max_pg_version: 139999
+        sql_file: replication/standby_recovery_state_pg12_pg13.sql
+      - id: replication_standby_recovery_state_pg14_plus
+        min_pg_version: 140000
+        sql_file: replication/standby_recovery_state_pg14_plus.sql
+
+  replication.capacity:
+    title: Replication Capacity
+    group: Replication
+    main_view: pg_settings
+    description: Replication limits compared with current usage - WAL senders, replication slots and origins, logical replication workers, wal_level, and WAL retention settings.
+    source: pg_diag
+    display:
+      default_sort:
+        column: utilization_pct
+        direction: desc
+    evaluation:
+      summary_title: Replication capacity requires review
+      recommendation: Raise the exhausted limit, remove unused slots or workers, or set wal_level=logical before adding standbys, backups, or subscribers.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: replication_capacity_pg10_pg12
+        min_pg_version: 100000
+        max_pg_version: 129999
+        sql_file: replication/replication_capacity_pg10_pg12.sql
+      - id: replication_capacity_pg13_pg15
+        min_pg_version: 130000
+        max_pg_version: 159999
+        sql_file: replication/replication_capacity_pg13_pg15.sql
+      - id: replication_capacity_pg16
+        min_pg_version: 160000
+        max_pg_version: 169999
+        sql_file: replication/replication_capacity_pg16.sql
+      - id: replication_capacity_pg17_plus
+        min_pg_version: 170000
+        sql_file: replication/replication_capacity_pg17_plus.sql
+
+  replication.subscription_table_sync:
+    title: Subscription Table Synchronization
+    database_scope: current_database
+    group: Replication
+    main_view: pg_subscription_rel
+    description: Per-table synchronization state of logical subscriptions with running synchronization workers and per-subscription ready counts.
+    source: pg_diag
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    evaluation:
+      summary_title: Subscription table synchronization requires review
+      recommendation: Investigate tables that stay outside the ready state, free synchronization worker slots, and check the publisher before refreshing the subscription.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: replication_subscription_table_sync_pg10_plus
+        min_pg_version: 100000
+        sql_file: replication/subscription_table_sync.sql
+
+  replication.publication_replica_identity:
+    title: Published Tables Without Replica Identity
+    database_scope: current_database
+    group: Replication
+    main_view: pg_publication
+    description: Tables in publications whose replica identity cannot support UPDATE and DELETE replication, plus unlogged and REPLICA IDENTITY FULL tables, from bounded publication and table samples.
+    source: pg_diag
+    cost: medium
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    evaluation:
+      summary_title: Published tables require a replica identity
+      recommendation: Add a primary key or REPLICA IDENTITY USING INDEX to published tables before UPDATE or DELETE statements fail on the publisher.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: replication_publication_replica_identity_pg10_pg14
+        min_pg_version: 100000
+        max_pg_version: 149999
+        sql_file: replication/publication_replica_identity_pg10_pg14.sql
+      - id: replication_publication_replica_identity_pg15_plus
+        min_pg_version: 150000
+        sql_file: replication/publication_replica_identity_pg15_plus.sql

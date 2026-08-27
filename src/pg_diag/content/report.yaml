@@ -612,6 +612,30 @@ sections:
         state: expanded
         render:
           empty_message: No logical subscriptions.
+      synchronous_replication_status:
+        query: replication.synchronous_status
+        tags: [Replication, Transactions]
+        state: collapsed
+      standby_recovery_state:
+        query: replication.standby_recovery_state
+        tags: [Replication, WAL, Configuration]
+        state: collapsed
+      replication_capacity:
+        query: replication.capacity
+        tags: [Replication, Configuration]
+        state: collapsed
+      subscription_table_sync:
+        query: replication.subscription_table_sync
+        tags: [Replication, Tables]
+        state: collapsed
+        render:
+          empty_message: No logical subscription tables in the connected database.
+      publication_tables_replica_identity:
+        query: replication.publication_replica_identity
+        tags: [Replication, Tables]
+        state: collapsed
+        render:
+          empty_message: Every sampled published table has a usable replica identity.
       recovery_prefetch:
         query: replication.recovery_prefetch
         tags: [Replication]
@@ -1418,6 +1442,36 @@ sections:
         metric: objects.indexes_top_reads_per_fetch
         tags: [Indexes]
         state: collapsed
+      replication_sender_lag_bytes:
+        metric: replication.sender_lag_bytes
+        tags: [Replication, WAL]
+        state: collapsed
+        render:
+          empty_message: No WAL sender showed a non-zero byte lag during the snapshot window, or no WAL senders were connected.
+      replication_sender_lag_seconds:
+        metric: replication.sender_lag_seconds
+        tags: [Replication, WAL]
+        state: collapsed
+        render:
+          empty_message: No WAL sender reported a non-zero time lag during the snapshot window, or no WAL senders were connected.
+      standby_wal_rate:
+        metric: replication.standby_wal_rate
+        tags: [Replication, WAL]
+        state: collapsed
+        render:
+          empty_message: This server is not in recovery; standby WAL rates apply only to standbys.
+      standby_replay_lag_bytes:
+        metric: replication.standby_replay_lag_bytes
+        tags: [Replication, WAL]
+        state: collapsed
+        render:
+          empty_message: No receive-to-replay lag was observed, or this server is not in recovery.
+      standby_replay_delay:
+        metric: replication.standby_replay_delay
+        tags: [Replication, WAL]
+        state: collapsed
+        render:
+          empty_message: This server is not in recovery; replay delay applies only to standbys.
 
   buffer_cache:
     title: Buffer Cache

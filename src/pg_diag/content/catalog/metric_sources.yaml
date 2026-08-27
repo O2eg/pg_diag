@@ -1208,3 +1208,123 @@ queries:
         min_pg_version: 170000
         sql_file: metrics/statements_io_delta_pg17_plus.sql
         semantic_columns: *metrics_statements_io_delta_semantics
+
+  metrics.replication_sender_lag_bytes:
+    title: Replication Sender Lag Bytes Chart Source
+    group: Metric Sources
+    main_view: pg_stat_replication
+    description: Per-sender sent, flush, and replay byte lag gauges used only by the Replication Sender Lag Bytes chart.
+    source: pg_diag
+    display:
+      default_sort:
+        column: sender
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_replication_sender_lag_bytes_pg10_plus
+        min_pg_version: 100000
+        sql_file: metrics/replication_sender_lag_bytes.sql
+        semantic_columns:
+          dimensions:
+            sender: sender
+          gauges:
+            sent_lag_bytes: sent_lag_bytes
+            flush_lag_bytes: flush_lag_bytes
+            replay_lag_bytes: replay_lag_bytes
+
+  metrics.replication_sender_lag_seconds:
+    title: Replication Sender Lag Seconds Chart Source
+    group: Metric Sources
+    main_view: pg_stat_replication
+    description: Per-sender write, flush, and replay time lag gauges used only by the Replication Sender Lag Seconds chart.
+    source: pg_diag
+    display:
+      default_sort:
+        column: sender
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_replication_sender_lag_seconds_pg10_plus
+        min_pg_version: 100000
+        sql_file: metrics/replication_sender_lag_seconds.sql
+        semantic_columns:
+          dimensions:
+            sender: sender
+          gauges:
+            write_lag_seconds: write_lag_seconds
+            flush_lag_seconds: flush_lag_seconds
+            replay_lag_seconds: replay_lag_seconds
+
+  metrics.standby_wal_rate:
+    title: Standby WAL Rate Chart Source
+    group: Metric Sources
+    main_view: pg_stat_wal_receiver
+    description: Standby-side received and replayed WAL positions used only by the Standby WAL Receive And Replay Rate chart; returns no rows on a primary.
+    source: pg_diag
+    display:
+      default_sort:
+        column: scope
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_standby_wal_rate_pg10_plus
+        min_pg_version: 100000
+        sql_file: metrics/standby_wal_rate.sql
+        semantic_columns:
+          dimensions:
+            scope: scope
+          counters:
+            receive_bytes: receive_bytes
+            replay_bytes: replay_bytes
+
+  metrics.standby_replay_lag_bytes:
+    title: Standby Replay Lag Chart Source
+    group: Metric Sources
+    main_view: pg_stat_wal_receiver
+    description: Standby-side receive-to-replay byte lag gauge used only by the Standby Receive To Replay Lag chart; returns no rows on a primary.
+    source: pg_diag
+    display:
+      default_sort:
+        column: scope
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_standby_replay_lag_bytes_pg10_plus
+        min_pg_version: 100000
+        sql_file: metrics/standby_replay_lag_bytes.sql
+        semantic_columns:
+          dimensions:
+            scope: scope
+          gauges:
+            receive_replay_lag_bytes: receive_replay_lag_bytes
+
+  metrics.standby_replay_delay:
+    title: Standby Replay Delay Chart Source
+    group: Metric Sources
+    main_view: pg_stat_wal_receiver
+    description: Standby-side replay delay gauge used only by the Standby Replay Delay chart; returns no rows on a primary.
+    source: pg_diag
+    display:
+      default_sort:
+        column: scope
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_standby_replay_delay_pg10_plus
+        min_pg_version: 100000
+        sql_file: metrics/standby_replay_delay.sql
+        semantic_columns:
+          dimensions:
+            scope: scope
+          gauges:
+            replay_delay_seconds: replay_delay_seconds
