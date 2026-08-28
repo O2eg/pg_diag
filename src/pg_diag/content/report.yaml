@@ -1131,10 +1131,16 @@ sections:
         state: collapsed
         render:
           empty_message: No owned user objects, databases, or tablespaces were found in the sampled catalogs.
+      role_members:
+        query: roles.group_members
+        tags: [Security, Users]
+        state: expanded
+        render:
+          empty_message: No role has any direct members.
       role_membership:
         query: roles.membership
         tags: [Security, Users]
-        state: expanded
+        state: collapsed
         render:
           empty_message: No role memberships are defined.
       effective_role_membership:

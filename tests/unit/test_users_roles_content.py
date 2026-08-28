@@ -18,6 +18,7 @@ EXPECTED_ITEMS = (
     "password_validity",
     "group_roles_without_members",
     "object_ownership_by_role",
+    "role_members",
     "role_membership",
     "effective_role_membership",
     "admin_option_holders",
@@ -99,7 +100,7 @@ def test_users_roles_section_declares_expected_items(content_path: Path) -> None
     expanded = [key for key, item in section["items"].items() if item.get("state") == "expanded"]
     assert expanded == [
         "roles_inventory",
-        "role_membership",
+        "role_members",
         "role_database_settings",
         "database_privileges",
         "object_privileges_by_grantee",

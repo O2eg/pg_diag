@@ -86,6 +86,27 @@ queries:
         min_pg_version: 100000
         sql_file: roles/object_ownership_by_role.sql
 
+  roles.group_members:
+    title: Role Members
+    group: Users And Roles
+    main_view: pg_auth_members
+    description: Roles with at least one direct member, with the direct member count and member name lists split into login roles and NOLOGIN group roles.
+    source: pg_diag
+    display:
+      default_sort:
+        column: direct_member_count
+        direction: desc
+    evaluation:
+      summary_title: Role member coverage requires review
+      recommendation: Compare each role's member lists with the approved access model and inspect truncated coverage before treating the lists as complete.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: roles_group_members_pg10_plus
+        min_pg_version: 100000
+        sql_file: roles/group_members.sql
+
   roles.membership:
     title: Role Membership
     group: Users And Roles
