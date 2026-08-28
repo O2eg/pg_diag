@@ -1858,7 +1858,7 @@ __ECHARTS_JS__
 
     .table-toolbar {
       display: grid;
-      grid-template-columns: minmax(180px, 1fr) minmax(120px, max-content) auto auto minmax(130px, max-content);
+      grid-template-columns: minmax(120px, 1fr) minmax(120px, max-content) auto auto minmax(130px, max-content) auto;
       gap: 8px;
       align-items: center;
       padding: 9px;
@@ -1868,11 +1868,21 @@ __ECHARTS_JS__
     }
 
     .table-toolbar.no-pagination {
-      grid-template-columns: minmax(180px, 1fr) max-content;
+      grid-template-columns: minmax(120px, 1fr) max-content auto;
     }
 
     .table-toolbar.single-row {
-      grid-template-columns: 1fr;
+      grid-template-columns: 1fr auto;
+    }
+
+    .table-export {
+      position: relative;
+    }
+
+    .chart-export-menu.table-export-menu {
+      top: calc(100% + 4px);
+      right: 0;
+      min-width: 168px;
     }
 
     .table-toolbar.single-row .row-counter {
@@ -2380,6 +2390,7 @@ __HIGHLIGHT_JS__
     bindMetaModalControls();
     bindInstructionModalControls();
     bindChartExportMenuControls();
+    bindTableExportMenuControls();
     bindPageScrollControls();
     applyReportFilters();
 
@@ -5584,6 +5595,22 @@ __HIGHLIGHT_JS__
       const counter = document.createElement("div");
       counter.className = "row-counter";
 
+      const exportControl = document.createElement("div");
+      exportControl.className = "table-export";
+      const exportButton = document.createElement("button");
+      exportButton.type = "button";
+      exportButton.className = "btn";
+      exportButton.textContent = "Export";
+      exportButton.title = "Export all filtered rows";
+      exportButton.setAttribute("aria-haspopup", "menu");
+      const exportMenu = document.createElement("div");
+      exportMenu.className = "chart-export-menu table-export-menu";
+      exportMenu.setAttribute("role", "menu");
+      exportMenu.setAttribute("aria-label", "Export table");
+      exportMenu.hidden = true;
+      exportControl.appendChild(exportButton);
+      exportControl.appendChild(exportMenu);
+
       if (showFilter) {
         toolbar.appendChild(filter);
       }
@@ -5593,6 +5620,7 @@ __HIGHLIGHT_JS__
         toolbar.appendChild(next);
       }
       toolbar.appendChild(counter);
+      toolbar.appendChild(exportControl);
       shell.appendChild(toolbar);
 
       const scroll = document.createElement("div");
@@ -5629,6 +5657,7 @@ __HIGHLIGHT_JS__
       shell.appendChild(scroll);
 
       const state = {
+        item,
         rows,
         rowIndexes: new Map(rows.map((row, index) => [row, index])),
         cellStatuses: buildCellStatusMap(result.cell_statuses),
@@ -5675,6 +5704,31 @@ __HIGHLIGHT_JS__
         state.page = Math.min(maxPage(state), state.page + 1);
         refreshTable(state);
       });
+      exportButton.addEventListener("click", () => toggleTableExportMenu(exportMenu));
+      for (const option of [
+        {label: "Export to CSV", format: "csv", raw: false},
+        {label: "Export to XLSX", format: "xlsx", raw: false},
+        {label: "Export to MD", format: "md", raw: false},
+        {label: "Export raw to CSV", format: "csv", raw: true},
+        {label: "Export raw to XLSX", format: "xlsx", raw: true},
+        {label: "Export raw to MD", format: "md", raw: true},
+      ]) {
+        const menuItem = document.createElement("button");
+        menuItem.type = "button";
+        menuItem.setAttribute("role", "menuitem");
+        menuItem.textContent = option.label;
+        menuItem.addEventListener("click", () => {
+          exportMenu.hidden = true;
+          if (option.format === "csv") {
+            downloadTableCsv(state, option.raw);
+          } else if (option.format === "xlsx") {
+            downloadTableXlsx(state, option.raw);
+          } else {
+            downloadTableMd(state, option.raw);
+          }
+        });
+        exportMenu.appendChild(menuItem);
+      }
 
       tableViews.push(state);
       refreshTable(state);
@@ -5983,6 +6037,316 @@ __HIGHLIGHT_JS__
         return 0;
       }
       return Math.ceil(state.filteredRows.length / state.pageSize) - 1;
+    }
+
+    function toggleTableExportMenu(menu) {
+      closeTableExportMenus(menu);
+      menu.hidden = !menu.hidden;
+      if (!menu.hidden) {
+        menu.querySelector("button").focus({preventScroll: true});
+      }
+    }
+
+    function closeTableExportMenus(except) {
+      document.querySelectorAll(".table-export-menu").forEach((menu) => {
+        if (menu !== except) {
+          menu.hidden = true;
+        }
+      });
+    }
+
+    function bindTableExportMenuControls() {
+      document.addEventListener("pointerdown", (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target || !target.closest(".table-export")) {
+          closeTableExportMenus();
+        }
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          closeTableExportMenus();
+        }
+      });
+    }
+
+    function tableExportValue(state, row, column, raw) {
+      const originalIndex = state.rowIndexes.get(row);
+      const status = state.cellStatuses.get(originalIndex + "\u0000" + column.name)
+        || state.columnStatuses[column.name]
+        || null;
+      const value = Array.isArray(row) ? row[column.sourceIndex] : undefined;
+      if (!raw) {
+        return displayValue(value, column, row, state.columns, status).text;
+      }
+      if (status) {
+        return statusLabel(status.status);
+      }
+      if (value === undefined || value === null) {
+        return "";
+      }
+      if (typeof value === "object") {
+        return stringifyValue(value);
+      }
+      return value;
+    }
+
+    function tableExportData(state, raw) {
+      return {
+        header: state.columns.map((column) => tableColumnLabel(column)),
+        rows: state.filteredRows.map(
+          (row) => state.columns.map((column) => tableExportValue(state, row, column, raw))
+        ),
+      };
+    }
+
+    function tableExportFileName(state, raw) {
+      return chartExportFileName(state.item) + (raw ? ".raw" : "");
+    }
+
+    function downloadBlobAsFile(blob, fileName) {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+
+    function downloadTableCsv(state, raw) {
+      const data = tableExportData(state, raw);
+      const lines = [data.header, ...data.rows].map((row) => row.map(csvCell).join(","));
+      const csv = "\uFEFF" + lines.join("\r\n") + "\r\n";
+      const blob = new Blob([csv], {type: "text/csv;charset=utf-8"});
+      downloadBlobAsFile(blob, tableExportFileName(state, raw) + ".csv");
+    }
+
+    function downloadTableXlsx(state, raw) {
+      const data = tableExportData(state, raw);
+      const blob = buildXlsxBlob(chartExportFileName(state.item), data.header, data.rows);
+      downloadBlobAsFile(blob, tableExportFileName(state, raw) + ".xlsx");
+    }
+
+    function downloadTableMd(state, raw) {
+      const item = state.item;
+      const data = tableExportData(state, raw);
+      const lines = [];
+      const heading = [sectionTitleForItem(item), item.title || item.item_id || ""]
+        .filter(Boolean)
+        .join(" / ");
+      lines.push("# " + heading, "");
+      if (item.item_id) {
+        lines.push("Item: `" + item.item_id + "`", "");
+      }
+      const source = sourceText(item);
+      if (source) {
+        const fence = mdCodeFence(source);
+        lines.push("## Source (" + sourceKindLabel(item.source_kind) + ")", "");
+        lines.push(fence + sourceLanguage(item));
+        lines.push(source.replace(/\s+$/, ""));
+        lines.push(fence, "");
+      }
+      const instruction = instructionText(item);
+      if (instruction) {
+        lines.push("## Instruction", "");
+        lines.push(demoteMarkdownHeadings(instruction.trim(), 2), "");
+      }
+      lines.push("## Data", "");
+      lines.push("| " + data.header.map(mdTableCell).join(" | ") + " |");
+      lines.push("| " + data.header.map(() => "---").join(" | ") + " |");
+      for (const row of data.rows) {
+        lines.push("| " + row.map(mdTableCell).join(" | ") + " |");
+      }
+      const blob = new Blob([lines.join("\n") + "\n"], {type: "text/markdown;charset=utf-8"});
+      downloadBlobAsFile(blob, tableExportFileName(state, raw) + ".md");
+    }
+
+    function sectionTitleForItem(item) {
+      const itemId = String((item || {}).item_id || "");
+      for (const section of artifact.sections || []) {
+        if ((section.items || []).includes(itemId)) {
+          return section.title || section.section_id || "";
+        }
+      }
+      return "";
+    }
+
+    function mdCodeFence(text) {
+      let fence = "```";
+      while (text.includes(fence)) {
+        fence += "`";
+      }
+      return fence;
+    }
+
+    function demoteMarkdownHeadings(text, depth) {
+      const prefix = "#".repeat(depth);
+      let inFence = false;
+      return String(text).split("\n").map((line) => {
+        if (/^\s*(```|~~~)/.test(line)) {
+          inFence = !inFence;
+          return line;
+        }
+        if (!inFence && /^#{1,4} /.test(line)) {
+          return prefix + line;
+        }
+        return line;
+      }).join("\n");
+    }
+
+    function mdTableCell(value) {
+      return String(value == null ? "" : value)
+        .replace(/\\/g, "\\\\")
+        .replace(/\|/g, "\\|")
+        .replace(/\r\n|\r|\n/g, "<br>");
+    }
+
+    const XLSX_CELL_TEXT_LIMIT = 32767;
+
+    function xmlEscapeText(value) {
+      return String(value)
+        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    function xlsxColumnName(index) {
+      let name = "";
+      let remaining = index + 1;
+      while (remaining > 0) {
+        const digit = (remaining - 1) % 26;
+        name = String.fromCharCode(65 + digit) + name;
+        remaining = Math.floor((remaining - 1) / 26);
+      }
+      return name;
+    }
+
+    function xlsxCellXml(value, columnIndex, rowNumber) {
+      const reference = xlsxColumnName(columnIndex) + rowNumber;
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return '<c r="' + reference + '"><v>' + String(value) + "</v></c>";
+      }
+      const text = String(value).slice(0, XLSX_CELL_TEXT_LIMIT);
+      return '<c r="' + reference + '" t="inlineStr"><is><t xml:space="preserve">'
+        + xmlEscapeText(text)
+        + "</t></is></c>";
+    }
+
+    function buildXlsxBlob(sheetNameSource, header, rows) {
+      const sheetName = (String(sheetNameSource).replace(/[\\/?*[\]:]/g, "_").slice(0, 31)) || "Data";
+      const sheetRows = [header, ...rows].map((row, rowIndex) => {
+        const cells = row.map((value, columnIndex) => xlsxCellXml(value, columnIndex, rowIndex + 1));
+        return '<row r="' + (rowIndex + 1) + '">' + cells.join("") + "</row>";
+      });
+      const xmlHeader = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+      const sheetXml = xmlHeader
+        + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        + "<sheetData>" + sheetRows.join("") + "</sheetData></worksheet>";
+      const workbookXml = xmlHeader
+        + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+        + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        + '<sheets><sheet name="' + xmlEscapeText(sheetName).replace(/"/g, "&quot;")
+        + '" sheetId="1" r:id="rId1"/></sheets></workbook>';
+      const workbookRels = xmlHeader
+        + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        + '<Relationship Id="rId1"'
+        + ' Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"'
+        + ' Target="worksheets/sheet1.xml"/></Relationships>';
+      const rootRels = xmlHeader
+        + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        + '<Relationship Id="rId1"'
+        + ' Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"'
+        + ' Target="xl/workbook.xml"/></Relationships>';
+      const contentTypes = xmlHeader
+        + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        + '<Default Extension="xml" ContentType="application/xml"/>'
+        + '<Override PartName="/xl/workbook.xml"'
+        + ' ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        + '<Override PartName="/xl/worksheets/sheet1.xml"'
+        + ' ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>';
+      const encoder = new TextEncoder();
+      return buildStoredZipBlob([
+        {name: "[Content_Types].xml", data: encoder.encode(contentTypes)},
+        {name: "_rels/.rels", data: encoder.encode(rootRels)},
+        {name: "xl/workbook.xml", data: encoder.encode(workbookXml)},
+        {name: "xl/_rels/workbook.xml.rels", data: encoder.encode(workbookRels)},
+        {name: "xl/worksheets/sheet1.xml", data: encoder.encode(sheetXml)},
+      ]);
+    }
+
+    let zipCrcTable = null;
+
+    function zipCrc32(bytes) {
+      if (!zipCrcTable) {
+        zipCrcTable = new Int32Array(256);
+        for (let n = 0; n < 256; n += 1) {
+          let c = n;
+          for (let k = 0; k < 8; k += 1) {
+            c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+          }
+          zipCrcTable[n] = c;
+        }
+      }
+      let crc = -1;
+      for (let i = 0; i < bytes.length; i += 1) {
+        crc = (crc >>> 8) ^ zipCrcTable[(crc ^ bytes[i]) & 0xFF];
+      }
+      return (crc ^ -1) >>> 0;
+    }
+
+    function buildStoredZipBlob(entries) {
+      const encoder = new TextEncoder();
+      const now = new Date();
+      const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | Math.floor(now.getSeconds() / 2);
+      const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+      const chunks = [];
+      const centralRecords = [];
+      let offset = 0;
+      for (const entry of entries) {
+        const name = encoder.encode(entry.name);
+        const crc = zipCrc32(entry.data);
+        const local = new DataView(new ArrayBuffer(30));
+        local.setUint32(0, 0x04034b50, true);
+        local.setUint16(4, 20, true);
+        local.setUint16(10, dosTime, true);
+        local.setUint16(12, dosDate, true);
+        local.setUint32(14, crc, true);
+        local.setUint32(18, entry.data.length, true);
+        local.setUint32(22, entry.data.length, true);
+        local.setUint16(26, name.length, true);
+        chunks.push(new Uint8Array(local.buffer), name, entry.data);
+        centralRecords.push({name, crc, size: entry.data.length, offset});
+        offset += 30 + name.length + entry.data.length;
+      }
+      const centralStart = offset;
+      for (const record of centralRecords) {
+        const central = new DataView(new ArrayBuffer(46));
+        central.setUint32(0, 0x02014b50, true);
+        central.setUint16(4, 20, true);
+        central.setUint16(6, 20, true);
+        central.setUint16(12, dosTime, true);
+        central.setUint16(14, dosDate, true);
+        central.setUint32(16, record.crc, true);
+        central.setUint32(20, record.size, true);
+        central.setUint32(24, record.size, true);
+        central.setUint16(28, record.name.length, true);
+        central.setUint32(42, record.offset, true);
+        chunks.push(new Uint8Array(central.buffer), record.name);
+        offset += 46 + record.name.length;
+      }
+      const end = new DataView(new ArrayBuffer(22));
+      end.setUint32(0, 0x06054b50, true);
+      end.setUint16(8, centralRecords.length, true);
+      end.setUint16(10, centralRecords.length, true);
+      end.setUint32(12, offset - centralStart, true);
+      end.setUint32(16, centralStart, true);
+      chunks.push(new Uint8Array(end.buffer));
+      return new Blob(chunks, {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
     }
 
     function rowMatches(row, query, columns, cellStatuses, originalIndex) {
