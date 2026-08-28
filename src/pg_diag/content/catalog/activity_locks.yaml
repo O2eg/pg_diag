@@ -51,3 +51,30 @@ queries:
       - id: locks_lock_waits_pg14_plus
         min_pg_version: 140000
         sql_file: locks/lock_waits.sql
+
+  locks.blocking_lock_tree:
+    title: Blocking Lock Tree
+    database_scope: current_database
+    group: Activity & Locks
+    main_view: pg_locks
+    description: Recursive blocker-to-blocked chains from every root blocker, with depth, path, and the number of sessions each root holds.
+    source: pg_diag
+    cost: medium
+    display:
+      default_sort:
+        column: tree_order
+        direction: asc
+    evaluation:
+      summary_title: Lock cascades require review
+      recommendation: Resolve the root session that blocks the most sessions first, and validate transaction ownership before cancelling or terminating it.
+    collection:
+      default: once
+      supports: [once, every_snapshot]
+    variants:
+      - id: locks_blocking_lock_tree_pg10_pg13
+        min_pg_version: 100000
+        max_pg_version: 139999
+        sql_file: locks/blocking_lock_tree_pg10_pg13.sql
+      - id: locks_blocking_lock_tree_pg14_plus
+        min_pg_version: 140000
+        sql_file: locks/blocking_lock_tree.sql

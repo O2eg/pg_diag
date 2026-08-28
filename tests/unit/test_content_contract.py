@@ -832,7 +832,7 @@ def test_overview_instructions_have_interpretation_sections(content_path: Path) 
         for section_id, _item_key, item_id, _item in iter_report_items(content)
         if section_id == "overview"
     ]
-    assert len(overview_item_ids) == 14
+    assert len(overview_item_ids) == 17
     for item_id in overview_item_ids:
         text = content.instructions[item_id]["text"]
         assert "## What to watch" in text, item_id
@@ -864,7 +864,7 @@ def test_activity_lock_instructions_define_complete_interpretation_contract(
         for section_id, _item_key, item_id, _item in iter_report_items(content)
         if section_id == "activity_locks"
     ]
-    assert len(item_ids) == 10
+    assert len(item_ids) == 11
     for item_id in item_ids:
         text = content.instructions[item_id]["text"]
         assert "This instruction belongs to" in text, item_id
@@ -1938,7 +1938,7 @@ def test_storage_vacuum_defines_complete_once_contract(content_path: Path) -> No
         for section_id, _key, item_id, item in iter_report_items(content)
         if section_id == "storage_vacuum"
     ]
-    assert len(items) == 8
+    assert len(items) == 11
     for item_id, item in items:
         text = content.instructions[item_id]["text"]
         assert "This instruction belongs to" in text, item_id

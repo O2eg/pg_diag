@@ -648,6 +648,27 @@ queries:
         min_pg_version: 100000
         sql_file: cluster/pending_restart_settings.sql
 
+  cluster.configuration_file_errors:
+    title: Configuration File Errors
+    group: Cluster Inventory
+    main_view: pg_file_settings
+    description: Configuration file entries the server cannot apply and entries overridden by later settings, with file name and line number.
+    source: pg_diag
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    evaluation:
+      summary_title: Configuration file entries require review
+      recommendation: Fix entries with errors before the next restart or reload silently drops them, and remove overridden duplicates to keep the configuration unambiguous.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: cluster_configuration_file_errors_pg10_plus
+        min_pg_version: 100000
+        sql_file: cluster/configuration_file_errors.sql
+
   cluster.tablespaces:
     title: Tablespaces
     group: Cluster Inventory

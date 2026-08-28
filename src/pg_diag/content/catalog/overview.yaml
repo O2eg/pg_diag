@@ -38,6 +38,69 @@ queries:
         min_pg_version: 90400
         sql_file: cluster/settings.sql
 
+  cluster.version_eol_status:
+    title: Version End-Of-Life Status
+    group: Overview
+    main_view: pg_settings
+    description: The server major version compared with the community end-of-life schedule.
+    source: pg_diag
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    evaluation:
+      summary_title: PostgreSQL version support status requires review
+      recommendation: Plan and execute a major upgrade before the running version stops receiving security and bug fixes.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: cluster_version_eol_status_pg10_plus
+        min_pg_version: 100000
+        sql_file: cluster/version_eol_status.sql
+
+  cluster.durability_safety_settings:
+    title: Durability Safety Settings
+    group: Overview
+    main_view: pg_settings
+    description: fsync, full_page_writes, and the cluster-wide synchronous_commit default with their durability risk.
+    source: pg_diag
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    evaluation:
+      summary_title: Durability settings require review
+      recommendation: Re-enable fsync and full_page_writes unless the storage stack provably guarantees durability, and confirm that a non-default synchronous_commit is an accepted policy.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: cluster_durability_safety_settings_pg10_plus
+        min_pg_version: 100000
+        sql_file: cluster/durability_safety_settings.sql
+
+  cluster.corruption_suppression_settings:
+    title: Corruption Suppression Settings
+    group: Overview
+    main_view: pg_settings
+    description: Settings that hide or amplify data corruption when enabled - ignore_checksum_failure, zero_damaged_pages, and ignore_invalid_pages.
+    source: pg_diag
+    display:
+      default_sort:
+        column: risk_level
+        direction: desc
+    evaluation:
+      summary_title: Corruption suppression settings require review
+      recommendation: Keep these settings off outside a supervised data-rescue session and investigate why any of them is enabled.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: cluster_corruption_suppression_settings_pg10_plus
+        min_pg_version: 100000
+        sql_file: cluster/corruption_suppression_settings.sql
+
   cluster.stat_reset_times:
     title: Statistics Reset Times
     group: Overview

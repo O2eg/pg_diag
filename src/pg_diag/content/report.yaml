@@ -109,10 +109,24 @@ sections:
         python: cluster.pg_controldata
         tags: [Configuration, Storage]
         state: collapsed
+      version_eol_status:
+        query: cluster.version_eol_status
+        tags: [Configuration]
+        state: collapsed
       pg_settings:
         query: cluster.settings
         tags: [Configuration]
         state: expanded
+      durability_safety_settings:
+        query: cluster.durability_safety_settings
+        tags: [Configuration, Storage]
+        state: collapsed
+      corruption_suppression_settings:
+        query: cluster.corruption_suppression_settings
+        tags: [Configuration, Storage]
+        state: collapsed
+        render:
+          empty_message: No corruption suppression settings are visible; check pg_settings directly.
       stat_reset_times:
         query: cluster.stat_reset_times
         tags: [Databases]
@@ -412,6 +426,12 @@ sections:
         state: expanded
         render:
           empty_message: No lock waits detected.
+      blocking_lock_tree:
+        query: locks.blocking_lock_tree
+        tags: [Locks, Sessions]
+        state: collapsed
+        render:
+          empty_message: No blocking chains detected.
       lock_modes:
         query: locks.lock_modes
         tags: [Locks]
@@ -753,12 +773,30 @@ sections:
         query: storage.table_size_detailed
         tags: [Tables, Storage]
         state: expanded
+      table_bloat_candidates:
+        query: storage.table_bloat_candidates
+        tags: [Tables, Storage, Vacuum]
+        state: collapsed
+        render:
+          empty_message: No table of 10 MB or more is visible in the connected database.
+      index_bloat_candidates:
+        query: storage.index_bloat_candidates
+        tags: [Indexes, Storage, Vacuum]
+        state: collapsed
+        render:
+          empty_message: No index of 10 MB or more is visible in the connected database.
       data_checksums:
         query: security.data_checksums
         tags: [Security]
         state: expanded
         render:
           empty_message: Data checksums are enabled and no checksum failures were reported.
+      unlogged_tables:
+        query: storage.unlogged_tables
+        tags: [Tables, Storage]
+        state: collapsed
+        render:
+          empty_message: No user tables or sequences use UNLOGGED persistence.
 
   object_workload:
     title: Object Workload
@@ -899,6 +937,12 @@ sections:
         state: collapsed
         render:
           empty_message: No powerful grants on inactive tables found.
+      disabled_triggers:
+        query: objects.disabled_triggers
+        tags: [Tables]
+        state: collapsed
+        render:
+          empty_message: No disabled user triggers found.
 
   backend_os:
     title: Per-Backend OS
@@ -974,6 +1018,18 @@ sections:
         state: collapsed
         render:
           empty_message: No indexes larger than half of their table heap detected.
+      unvalidated_constraints:
+        query: indexes.unvalidated_constraints
+        tags: [Indexes, Tables]
+        state: collapsed
+        render:
+          empty_message: Every CHECK and FOREIGN KEY constraint is validated.
+      collation_version_mismatches:
+        query: indexes.collation_version_mismatches
+        tags: [Indexes, Storage]
+        state: collapsed
+        render:
+          empty_message: Every tracked collation matches the version currently provided by the operating system.
 
   cluster_inventory:
     title: Cluster Inventory
@@ -1100,6 +1156,12 @@ sections:
         state: expanded
         render:
           empty_message: No settings pending restart.
+      configuration_file_errors:
+        query: cluster.configuration_file_errors
+        tags: [Configuration]
+        state: collapsed
+        render:
+          empty_message: Every configuration file entry is applied and none carries an error.
       tablespaces:
         query: cluster.tablespaces
         tags: [Tablespaces, Storage]

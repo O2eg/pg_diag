@@ -44,3 +44,53 @@ queries:
       - id: indexes_unused_indexes_pg10_plus
         min_pg_version: 100000
         sql_file: indexes/unused_indexes.sql
+
+  indexes.unvalidated_constraints:
+    title: Unvalidated Constraints
+    database_scope: current_database
+    group: Index Health
+    main_view: pg_constraint
+    description: CHECK and FOREIGN KEY constraints left NOT VALID, whose existing rows are unchecked.
+    source: pg_diag
+    display:
+      default_sort:
+        column: schema_name
+        direction: asc
+    evaluation:
+      summary_title: Unvalidated constraints require review
+      recommendation: Run VALIDATE CONSTRAINT during a low-traffic window so existing rows are checked and the planner can use the constraint.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: indexes_unvalidated_constraints_pg10_plus
+        min_pg_version: 100000
+        sql_file: indexes/unvalidated_constraints.sql
+
+  indexes.collation_version_mismatches:
+    title: Collation Version Mismatches
+    database_scope: current_database
+    group: Index Health
+    main_view: pg_collation
+    description: Collations whose recorded version differs from what the operating system currently provides, with the count of dependent relations.
+    source: pg_diag
+    display:
+      default_sort:
+        column: collation_name
+        direction: asc
+    evaluation:
+      summary_title: Collation version mismatches require review
+      recommendation: REINDEX indexes that depend on the changed collations and refresh the recorded versions with ALTER COLLATION or ALTER DATABASE REFRESH COLLATION VERSION.
+    requirements:
+      unsupported_versions_reason: Collation version tracking appeared in PostgreSQL 13
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: indexes_collation_version_mismatches_pg13_pg14
+        min_pg_version: 130000
+        max_pg_version: 149999
+        sql_file: indexes/collation_version_mismatches_pg13_pg14.sql
+      - id: indexes_collation_version_mismatches_pg15_plus
+        min_pg_version: 150000
+        sql_file: indexes/collation_version_mismatches_pg15_plus.sql

@@ -235,3 +235,25 @@ queries:
             calls: calls
             total_time_ms: total_time_ms
             self_time_ms: self_time_ms
+
+  objects.disabled_triggers:
+    title: Disabled User Triggers
+    database_scope: current_database
+    group: Object Workload
+    main_view: pg_trigger
+    description: User triggers that are disabled and do not fire.
+    source: pg_diag
+    display:
+      default_sort:
+        column: schema_name
+        direction: asc
+    evaluation:
+      summary_title: Disabled triggers require review
+      recommendation: Confirm each disabled trigger is intentional and documented; re-enable the rest and reconcile any data the trigger should have maintained.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: objects_disabled_triggers_pg10_plus
+        min_pg_version: 100000
+        sql_file: objects/disabled_triggers.sql

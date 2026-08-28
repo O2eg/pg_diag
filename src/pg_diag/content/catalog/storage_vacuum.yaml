@@ -45,3 +45,73 @@ queries:
       - id: storage_table_size_detailed_all
         min_pg_version: 100000
         sql_file: storage/table_size_detailed.sql
+
+  storage.unlogged_tables:
+    title: Unlogged Relations
+    database_scope: current_database
+    group: Storage & Vacuum
+    main_view: pg_class
+    description: User tables and sequences with UNLOGGED persistence, which are emptied on crash recovery and not replicated.
+    source: pg_diag
+    display:
+      default_sort:
+        column: total_bytes
+        direction: desc
+    evaluation:
+      summary_title: Unlogged relations require review
+      recommendation: Confirm every unlogged relation holds only reconstructible data, and convert the rest with ALTER TABLE SET LOGGED.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: storage_unlogged_tables_pg10_plus
+        min_pg_version: 100000
+        sql_file: storage/unlogged_tables.sql
+
+  storage.table_bloat_candidates:
+    title: Table Bloat Candidates
+    database_scope: current_database
+    group: Storage & Vacuum
+    main_view: pg_class
+    description: Statistical bloat estimate for the largest tables and materialized views, with expected size, wasted bytes, and estimation quality.
+    source: pg_diag
+    cost: medium
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: wasted_bytes
+        direction: desc
+    evaluation:
+      summary_title: Table bloat candidates require review
+      recommendation: Verify high estimates with pgstattuple_approx during a quiet window before planning VACUUM FULL, pg_repack, or CLUSTER; the estimate alone is not a rewrite order.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: storage_table_bloat_candidates_pg10_plus
+        min_pg_version: 100000
+        sql_file: storage/table_bloat_candidates.sql
+
+  storage.index_bloat_candidates:
+    title: Index Bloat Candidates
+    database_scope: current_database
+    group: Storage & Vacuum
+    main_view: pg_index
+    description: Statistical bloat estimate for the largest btree indexes, with expected size, wasted bytes, usage counters, and estimation quality.
+    source: pg_diag
+    cost: medium
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: wasted_bytes
+        direction: desc
+    evaluation:
+      summary_title: Index bloat candidates require review
+      recommendation: Verify high estimates before planning REINDEX CONCURRENTLY, and treat non-btree indexes as unassessed rather than healthy.
+    collection:
+      default: once
+      supports: [once]
+    variants:
+      - id: storage_index_bloat_candidates_pg10_plus
+        min_pg_version: 100000
+        sql_file: storage/index_bloat_candidates.sql
