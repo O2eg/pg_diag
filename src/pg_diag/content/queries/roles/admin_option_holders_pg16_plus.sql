@@ -22,6 +22,7 @@ createrole_roles as (
 findings as (
   select
     m.rolname::text as role_name,
+    m.oid::int8 as role_oid,
     m.rolcanlogin as can_login,
     m.rolsuper as superuser,
     'ADMIN OPTION'::text as administration_source,
@@ -36,6 +37,7 @@ findings as (
 
   select
     r.rolname::text,
+    r.oid::int8,
     r.rolcanlogin,
     r.rolsuper,
     'CREATEROLE'::text,

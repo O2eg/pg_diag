@@ -47,6 +47,7 @@ coverage as (
 )
 select
   p.usename::text as role_name,
+  r.oid::int8 as role_oid,
   coalesce(r.rolsuper, false) as superuser,
   p.session_count,
   p.tls_session_count,
@@ -76,7 +77,7 @@ left join pg_catalog.pg_roles r on r.rolname = p.usename
 cross join coverage
 union all
 select
-  '[coverage]'::text, false, 0::int8, 0::int8, null::int8, 0::int8, 0::int8, 0::int8, 0::int8, null::text, null::text, null::int8,
+  '[coverage]'::text, null::int8, false, 0::int8, 0::int8, null::int8, 0::int8, 0::int8, 0::int8, 0::int8, null::text, null::text, null::int8,
   true, 'unknown'::text,
   'More than 1000 roles have sessions; findings above are proven but the list is incomplete'::text
 from coverage

@@ -19,6 +19,7 @@ from .artifact import (
 from .collection import (
     CollectionRun,
     close_collection,
+    collect_report_object_ddl,
     execute_and_record_report_item,
     execute_with_database_reconnect,
     finish_collection,
@@ -63,6 +64,7 @@ async def collect_snapshots(
     tags: Iterable[str] | None = None,
     progress: ProgressReporter | None = None,
     strip_meta: bool = False,
+    disable_ddl: bool = False,
 ) -> dict[str, Any]:
     window_error = runtime_config.validate_snapshots_window(duration_seconds, interval_seconds)
     if window_error:
@@ -362,6 +364,7 @@ async def collect_snapshots(
                 )
                 record_item_progress(run, planned, artifact["items"][planned.item_id])
 
+        await collect_report_object_ddl(run, enabled=not disable_ddl)
         return finish_collection(
             run,
             runtime_updates={"snapshot_count": len(snapshots)},

@@ -15,7 +15,9 @@ coverage as (
 select
   n.nspname as schema_name,
   t.relname as table_name,
+  t.oid::int8 as table_oid,
   s.conname as constraint_name,
+  s.oid::int8 as constraint_oid,
   case s.contype when 'f' then 'FOREIGN KEY' when 'c' then 'CHECK' else s.contype::text end as constraint_type,
   fn.nspname as referenced_schema,
   ft.relname as referenced_table,

@@ -35,6 +35,7 @@ relation_candidates as (
 relation_grants_bounded as (
     select
         coalesce(grantee.rolname::text, 'PUBLIC') as grantee_name,
+        grantee.oid::int8 as grantee_oid,
         coalesce(grantee.rolcanlogin, false) as grantee_can_login,
         case c.relkind when 'S' then 'sequence' else 'relation' end as object_kind,
         e.privilege_type,
@@ -65,6 +66,7 @@ function_candidates as (
 function_grants_bounded as (
     select
         coalesce(grantee.rolname::text, 'PUBLIC') as grantee_name,
+        grantee.oid::int8 as grantee_oid,
         coalesce(grantee.rolcanlogin, false) as grantee_can_login,
         'function'::text as object_kind,
         e.privilege_type,
@@ -93,6 +95,7 @@ schema_candidates as (
 schema_grants_bounded as (
     select
         coalesce(grantee.rolname::text, 'PUBLIC') as grantee_name,
+        grantee.oid::int8 as grantee_oid,
         coalesce(grantee.rolcanlogin, false) as grantee_can_login,
         'schema'::text as object_kind,
         e.privilege_type,
@@ -116,6 +119,7 @@ explicit_grants as (
 ranked_findings as (
     select
         grantee_name,
+        grantee_oid,
         grantee_can_login,
         count(*) as sampled_explicit_privilege_count,
         count(*) filter (where object_kind = 'schema') as sampled_schema_privilege_count,
@@ -125,7 +129,7 @@ ranked_findings as (
         count(*) filter (where is_grantable) as sampled_grant_option_count,
         string_agg(distinct privilege_type, ', ' order by privilege_type) as sampled_privilege_types
     from explicit_grants
-    group by grantee_name, grantee_can_login
+    group by grantee_name, grantee_oid, grantee_can_login
     order by sampled_explicit_privilege_count desc, grantee_name
     limit 1001
 ),
@@ -149,6 +153,7 @@ findings as (
 )
 select
     findings.grantee_name,
+    findings.grantee_oid,
     findings.grantee_can_login,
     findings.sampled_explicit_privilege_count,
     findings.sampled_schema_privilege_count,
@@ -171,6 +176,7 @@ cross join coverage
 union all
 select
     '[coverage]'::text,
+    null::int8,
     false,
     0::int8,
     0::int8,

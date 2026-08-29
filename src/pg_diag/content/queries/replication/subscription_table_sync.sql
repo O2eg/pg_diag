@@ -41,6 +41,7 @@ findings as (
     coalesce(aw.apply_worker_running, false) as apply_worker_running,
     n.nspname::text as schema_name,
     c.relname::text as table_name,
+    r.srrelid::int8 as table_oid,
     r.srsubstate::text as state_code,
     case r.srsubstate
       when 'i' then 'initialize'
@@ -84,7 +85,7 @@ combined as (
   select * from findings
   union all
   select
-    '[coverage]'::text, false, ''::text, ''::text, ''::text, ''::text, null::text, null::int, false,
+    '[coverage]'::text, false, ''::text, ''::text, null::int8, ''::text, ''::text, null::text, null::int, false,
     null::int8, null::int8, null::int8, true, 'unknown'::text,
     'More than 3000 subscription tables exist; findings above are proven but the list is incomplete'::text
   from coverage

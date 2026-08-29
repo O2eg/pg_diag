@@ -57,6 +57,7 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
         "sections",
         "items",
         "query_texts",
+        "object_ddl",
         "snapshot_schemas",
         "snapshots",
         "diagnostics",
@@ -168,6 +169,19 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
     _validate_snapshot_schemas(snapshot_schemas, set(units))
     _validate_snapshots(artifact["snapshots"], artifact["items"], snapshot_schemas, set(units))
     _validate_diagnostics(artifact["diagnostics"], "Artifact diagnostics")
+    object_ddl = artifact["object_ddl"]
+    if not isinstance(object_ddl, dict):
+        raise ValidationError("Artifact field 'object_ddl' must be a mapping")
+    for key, entry in object_ddl.items():
+        if (
+            not isinstance(key, str)
+            or not isinstance(entry, dict)
+            or any(not isinstance(entry.get(field), str) for field in ("kind", "identifier", "ddl"))
+        ):
+            raise ValidationError(
+                "Artifact field 'object_ddl' must map oid strings to "
+                "{kind, identifier, ddl} string mappings"
+            )
     query_texts = artifact["query_texts"]
     if not isinstance(query_texts, dict) or any(
         not isinstance(key, str) or not isinstance(value, str)

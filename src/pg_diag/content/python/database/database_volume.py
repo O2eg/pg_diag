@@ -201,7 +201,7 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
     for database in databases:
         source = dict(database)
         database_name = str(source["database_name"])
-        row = _empty_row(database_name)
+        row = _empty_row(database_name, int(source["database_oid"]))
         if not source.get("allows_connections"):
             await _collect_size_from_main_connection(ctx, source, row)
             row["collection_status"] = "connections disabled"
@@ -318,9 +318,10 @@ async def _database_size(conn: Any, database_oid: int | None = None) -> int:
     return int(value)
 
 
-def _empty_row(database_name: str) -> dict[str, Any]:
+def _empty_row(database_name: str, database_oid: int | None = None) -> dict[str, Any]:
     return {
         "database_name": database_name,
+        "database_oid": database_oid,
         "database_size_bytes": None,
         **dict.fromkeys(COUNT_COLUMNS),
         "collection_status": "ok",

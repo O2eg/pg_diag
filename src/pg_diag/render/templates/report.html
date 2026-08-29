@@ -1055,6 +1055,47 @@ __ECHARTS_JS__
       tab-size: 2;
     }
 
+    .hover-preview[hidden] {
+      display: none;
+    }
+
+    .hover-preview {
+      position: fixed;
+      z-index: 60;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      max-width: min(760px, calc(100vw - 32px));
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);
+    }
+
+    .hover-preview-title {
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel-soft);
+    }
+
+    .hover-preview-body {
+      margin: 0;
+      padding: 10px 14px;
+      max-height: 55vh;
+      overflow: auto;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .hover-preview-body code {
+      white-space: pre;
+    }
+
     .source-modal[hidden] {
       display: none;
     }
@@ -1618,11 +1659,23 @@ __ECHARTS_JS__
     .table-shell {
       border: 1px solid var(--line);
       border-radius: 8px;
-      overflow: hidden;
+      overflow: visible;
       background: var(--panel);
       width: 100%;
       min-width: 0;
       max-width: 100%;
+    }
+
+    .table-shell > .table-toolbar {
+      border-radius: 7px 7px 0 0;
+    }
+
+    .table-shell > .table-scroll {
+      border-radius: 0 0 7px 7px;
+    }
+
+    .table-shell > .table-scroll:first-child {
+      border-radius: 7px;
     }
 
     .snapshot-table-result {
@@ -1883,6 +1936,11 @@ __ECHARTS_JS__
       top: calc(100% + 4px);
       right: 0;
       min-width: 168px;
+    }
+
+    .chart-export-menu.table-export-menu.drop-up {
+      top: auto;
+      bottom: calc(100% + 4px);
     }
 
     .table-toolbar.single-row .row-counter {
@@ -2309,6 +2367,30 @@ __HIGHLIGHT_JS__
     const runtime = artifact.runtime;
     const items = artifact.items;
     const queryTexts = artifact.query_texts;
+    const objectDdl = artifact.object_ddl || {};
+    const OBJECT_OID_COLUMN_SUFFIXES = [
+      "table_oid",
+      "relation_oid",
+      "index_oid",
+      "sequence_oid",
+      "function_oid",
+      "constraint_oid",
+      "trigger_oid",
+      "database_oid",
+      "role_oid",
+      "owner_oid",
+      "grantee_oid",
+      "tablespace_oid",
+    ];
+    const OBJECT_OID_COLUMN_NAMES = [
+      "relid",
+      "indexrelid",
+      "datid",
+      "dbid",
+      "userid",
+      "usesysid",
+      "funcid",
+    ];
     const contentConfig = artifact.content;
     const contentDocument = contentConfig.document;
     const contentProvenance = contentConfig.provenance;
@@ -6043,7 +6125,32 @@ __HIGHLIGHT_JS__
       closeTableExportMenus(menu);
       menu.hidden = !menu.hidden;
       if (!menu.hidden) {
+        positionTableExportMenu(menu);
         menu.querySelector("button").focus({preventScroll: true});
+      }
+    }
+
+    function positionTableExportMenu(menu) {
+      menu.classList.remove("drop-up");
+      const menuRect = menu.getBoundingClientRect();
+      let limitTop = 0;
+      let limitBottom = window.innerHeight;
+      let node = menu.parentElement;
+      while (node && node !== document.body) {
+        const style = window.getComputedStyle(node);
+        if (style.overflowY !== "visible" || style.overflowX !== "visible") {
+          const nodeRect = node.getBoundingClientRect();
+          limitTop = nodeRect.top;
+          limitBottom = nodeRect.bottom;
+          break;
+        }
+        node = node.parentElement;
+      }
+      const anchorRect = menu.parentElement.getBoundingClientRect();
+      const fitsBelow = menuRect.bottom <= limitBottom;
+      const fitsAbove = anchorRect.top - limitTop >= menuRect.height + 8;
+      if (!fitsBelow && fitsAbove) {
+        menu.classList.add("drop-up");
       }
     }
 
@@ -6374,6 +6481,8 @@ __HIGHLIGHT_JS__
       content.className = isComplex ? "json-cell cell-content" : "cell-content";
       if (!isComplex && canOpenQueryText(column, value)) {
         content.appendChild(renderQueryIdButton(text, value));
+      } else if (!isComplex && canOpenObjectDdl(column, value)) {
+        content.appendChild(renderObjectDdlButton(text, value));
       } else {
         setHighlightableText(content, text);
       }
@@ -6402,18 +6511,185 @@ __HIGHLIGHT_JS__
       button.title = "Show query";
       setHighlightableText(button, label);
       button.addEventListener("click", () => openQueryTextModal(queryId));
+      bindHoverPreview(button, () => {
+        const text = queryTextForId(queryId);
+        return text ? {title: "Query: " + queryIdToText(queryId), text: text} : null;
+      });
       return button;
+    }
+
+    let hoverPreviewElement = null;
+    let hoverPreviewShowTimer = 0;
+    let hoverPreviewHideTimer = 0;
+
+    function hoverPreviewEl() {
+      if (hoverPreviewElement) {
+        return hoverPreviewElement;
+      }
+      const wrap = document.createElement("div");
+      wrap.className = "hover-preview";
+      wrap.hidden = true;
+      const title = document.createElement("div");
+      title.className = "hover-preview-title";
+      const body = document.createElement("pre");
+      body.className = "hover-preview-body";
+      const code = document.createElement("code");
+      code.className = "language-sql";
+      body.appendChild(code);
+      wrap.appendChild(title);
+      wrap.appendChild(body);
+      wrap.addEventListener("mouseenter", () => {
+        window.clearTimeout(hoverPreviewHideTimer);
+      });
+      wrap.addEventListener("mouseleave", scheduleHoverPreviewHide);
+      document.body.appendChild(wrap);
+      document.addEventListener("scroll", (event) => {
+        if (hoverPreviewElement && !hoverPreviewElement.hidden
+            && hoverPreviewElement.contains(event.target)) {
+          return;
+        }
+        hideHoverPreview();
+      }, true);
+      window.addEventListener("resize", hideHoverPreview);
+      hoverPreviewElement = wrap;
+      return wrap;
+    }
+
+    function hideHoverPreview() {
+      window.clearTimeout(hoverPreviewShowTimer);
+      window.clearTimeout(hoverPreviewHideTimer);
+      if (hoverPreviewElement) {
+        hoverPreviewElement.hidden = true;
+      }
+    }
+
+    function scheduleHoverPreviewHide() {
+      window.clearTimeout(hoverPreviewHideTimer);
+      hoverPreviewHideTimer = window.setTimeout(hideHoverPreview, 180);
+    }
+
+    function showHoverPreview(anchor, titleText, sqlText) {
+      const el = hoverPreviewEl();
+      el.querySelector(".hover-preview-title").textContent = titleText;
+      const code = el.querySelector("code");
+      code.textContent = sqlText;
+      code.className = "language-sql";
+      code.removeAttribute("data-highlighted");
+      if (window.hljs && typeof window.hljs.highlightElement === "function") {
+        window.hljs.highlightElement(code);
+      }
+      el.querySelector(".hover-preview-body").scrollTop = 0;
+      el.hidden = false;
+      el.style.visibility = "hidden";
+      el.style.left = "0px";
+      el.style.top = "0px";
+      const rect = anchor.getBoundingClientRect();
+      const size = el.getBoundingClientRect();
+      let left = Math.min(rect.left, window.innerWidth - size.width - 12);
+      if (left < 8) {
+        left = 8;
+      }
+      let top = rect.bottom + 8;
+      if (top + size.height > window.innerHeight - 8) {
+        top = rect.top - size.height - 8;
+        if (top < 8) {
+          top = Math.max(8, window.innerHeight - size.height - 8);
+        }
+      }
+      el.style.left = left + "px";
+      el.style.top = top + "px";
+      el.style.visibility = "";
+    }
+
+    function bindHoverPreview(button, resolvePayload) {
+      button.addEventListener("mouseenter", () => {
+        window.clearTimeout(hoverPreviewHideTimer);
+        window.clearTimeout(hoverPreviewShowTimer);
+        hoverPreviewShowTimer = window.setTimeout(() => {
+          const payload = resolvePayload();
+          if (payload && payload.text) {
+            showHoverPreview(button, payload.title, payload.text);
+          }
+        }, 100);
+      });
+      button.addEventListener("mouseleave", () => {
+        window.clearTimeout(hoverPreviewShowTimer);
+        scheduleHoverPreviewHide();
+      });
+      button.addEventListener("click", hideHoverPreview);
     }
 
     function columnSearchText(value, column, row, columns, status) {
       const display = displayValue(value, column, row, columns, status).text;
       const queryText = canOpenQueryText(column, value) ? queryTextForId(value) : "";
+      const ddlEntry = canOpenObjectDdl(column, value) ? objectDdlEntry(value) : null;
+      const ddlText = ddlEntry ? (ddlEntry.identifier || "") + " " + (ddlEntry.ddl || "") : "";
       const statusReason = status && status.reason ? status.reason : "";
-      return (display + " " + statusReason + " " + queryText).toLowerCase();
+      return (display + " " + statusReason + " " + queryText + " " + ddlText).toLowerCase();
     }
 
     function canOpenQueryText(column, value) {
       return isQueryIdColumn(column) && Boolean(queryTextForId(value));
+    }
+
+    function isObjectOidColumn(column) {
+      const name = String((column || {}).name || "");
+      return OBJECT_OID_COLUMN_NAMES.indexOf(name) !== -1
+        || OBJECT_OID_COLUMN_SUFFIXES.some((suffix) => name.endsWith(suffix));
+    }
+
+    function objectDdlEntry(value) {
+      if (value === undefined || value === null) {
+        return null;
+      }
+      const key = String(value).trim();
+      if (!key || !Object.prototype.hasOwnProperty.call(objectDdl, key)) {
+        return null;
+      }
+      return objectDdl[key];
+    }
+
+    function canOpenObjectDdl(column, value) {
+      return isObjectOidColumn(column) && Boolean(objectDdlEntry(value));
+    }
+
+    function renderObjectDdlButton(label, value) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "query-id-button";
+      button.title = "Show DDL";
+      setHighlightableText(button, label);
+      button.addEventListener("click", () => openObjectDdlModal(value));
+      bindHoverPreview(button, () => {
+        const entry = objectDdlEntry(value);
+        if (!entry || !entry.ddl) {
+          return null;
+        }
+        return {
+          title: "DDL: " + (entry.kind || "object") + " " + (entry.identifier || ""),
+          text: String(entry.ddl),
+        };
+      });
+      return button;
+    }
+
+    function openObjectDdlModal(value) {
+      const entry = objectDdlEntry(value);
+      if (!entry || !entry.ddl) {
+        return;
+      }
+      currentSourceText = String(entry.ddl);
+      const modal = document.getElementById("sourceModal");
+      const title = document.getElementById("sourceModalTitle");
+      const code = document.getElementById("sourceCode");
+      title.textContent = "Show DDL: " + (entry.kind || "object") + " " + (entry.identifier || "");
+      code.textContent = currentSourceText;
+      code.className = "language-sql";
+      code.removeAttribute("data-highlighted");
+      if (window.hljs && typeof window.hljs.highlightElement === "function") {
+        window.hljs.highlightElement(code);
+      }
+      showReportModal(modal, "closeSource");
     }
 
     function isQueryIdColumn(column) {

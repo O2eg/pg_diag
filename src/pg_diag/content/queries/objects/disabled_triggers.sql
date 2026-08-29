@@ -15,7 +15,9 @@ coverage as (
 select
   n.nspname as schema_name,
   c.relname as table_name,
+  c.oid::int8 as table_oid,
   s.tgname as trigger_name,
+  s.oid::int8 as trigger_oid,
   pg_catalog.pg_get_triggerdef(s.oid) as definition,
   coverage.result_truncated,
   'medium' as risk_level,

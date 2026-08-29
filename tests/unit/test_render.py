@@ -171,6 +171,13 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
             }
         },
         "query_texts": {"123": "select * from pg_class where oid = $1"},
+        "object_ddl": {
+            "16412": {
+                "kind": "table",
+                "identifier": "public.accounts",
+                "ddl": "CREATE TABLE public.accounts (\n    id integer NOT NULL\n);",
+            }
+        },
         "snapshot_schemas": {},
         "snapshots": [],
         "diagnostics": [],
@@ -457,6 +464,11 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "openQueryTextModal(queryId)" in html
     assert "Show query: " in html
     assert '"query_texts":{"123":"select * from pg_class where oid = $1"}' in html
+    assert "const objectDdl = artifact.object_ddl || {};" in html
+    assert "openObjectDdlModal(value)" in html
+    assert "Show DDL: " in html
+    assert '"identifier":"public.accounts"' in html
+    assert '"table_oid"' in html and "OBJECT_OID_COLUMN_SUFFIXES" in html
     assert 'id="metaModal"' in html
     assert 'id="metaTotalTab"' in html
     assert 'id="metaRawTab"' in html
@@ -628,7 +640,13 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "updatePageScrollControls" in html
     assert "progress < 0.9" in html
     assert "setScrollButtonVisible" in html
-    assert ".table-shell {\n      border: 1px solid var(--line);\n      border-radius: 8px;\n      overflow: hidden;\n      background: var(--panel);\n      width: 100%;" in html
+    assert ".table-shell {\n      border: 1px solid var(--line);\n      border-radius: 8px;\n      overflow: visible;\n      background: var(--panel);\n      width: 100%;" in html
+    assert ".chart-export-menu.table-export-menu.drop-up" in html
+    assert "positionTableExportMenu(menu)" in html
+    assert ".hover-preview-body {" in html
+    assert "max-height: 55vh;" in html
+    assert "bindHoverPreview(button," in html
+    assert "showHoverPreview(button, payload.title, payload.text)" in html
     assert ".table-scroll {\n      max-height: 72vh;\n      width: 100%;\n      max-width: 100%;" in html
     assert ".item-error" in html
     assert "ERROR_ITEM_STATUSES" in html

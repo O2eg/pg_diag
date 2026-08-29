@@ -56,6 +56,7 @@ expanded_acl_bounded as (
     select
         c.nspname::text as schema_name,
         c.relname::text as table_name,
+        c.oid::int8 as table_oid,
         pg_catalog.pg_get_userbyid(c.relowner)::text as table_owner,
         coalesce(grantee.rolname::text, 'PUBLIC') as grantee_name,
         coalesce(grantee.rolcanlogin, false) as grantee_can_login,
@@ -94,8 +95,10 @@ findings as (
 select
     findings.schema_name,
     findings.table_name,
+    findings.table_oid,
     findings.table_owner,
     findings.grantee_name,
+    nullif(findings.grantee_oid, 0)::int8 as grantee_oid,
     findings.grantee_can_login,
     findings.privilege_type,
     findings.is_grantable,
@@ -115,8 +118,10 @@ union all
 select
     '[coverage]'::text,
     ''::text,
+    null::int8,
     ''::text,
     ''::text,
+    null::int8,
     false,
     ''::text,
     false,

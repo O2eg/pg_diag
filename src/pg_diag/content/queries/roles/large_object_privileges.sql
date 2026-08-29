@@ -37,7 +37,9 @@ grants as (
 ranked_findings as (
   select
     pg_catalog.pg_get_userbyid(g.lomowner)::text as owner_name,
+    g.lomowner::int8 as owner_oid,
     coalesce(gr.rolname::text, 'PUBLIC') as grantee_name,
+    gr.oid::int8 as grantee_oid,
     case
       when gr.oid is null then 'PUBLIC'
       when gr.rolcanlogin then 'login role'

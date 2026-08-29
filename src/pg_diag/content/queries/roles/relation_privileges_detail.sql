@@ -38,6 +38,7 @@ relation_candidates as (
 ),
 grants_bounded as (
   select
+    c.oid,
     c.nspname,
     c.relname,
     c.relkind,
@@ -76,6 +77,7 @@ coverage as (
 select
   g.nspname::text as schema_name,
   g.relname::text as relation_name,
+  g.oid::int8 as relation_oid,
   case g.relkind
     when 'r' then 'table'
     when 'p' then 'partitioned table'
@@ -116,6 +118,7 @@ union all
 select
   '[coverage]'::text,
   ''::text,
+  null::int8,
   ''::text,
   ''::text,
   0::int8,

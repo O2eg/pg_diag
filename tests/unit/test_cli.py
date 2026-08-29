@@ -580,6 +580,7 @@ def test_render_from_json_cli(repo_root: Path, tmp_path: Path) -> None:
             }
         },
         "query_texts": {},
+        "object_ddl": {},
         "snapshot_schemas": {},
         "snapshots": [],
         "diagnostics": [],

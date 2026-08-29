@@ -41,6 +41,7 @@ select
     else g.defaclobjtype::text
   end as object_type,
   coalesce(gr.rolname::text, 'PUBLIC') as grantee_name,
+  gr.oid::int8 as grantee_oid,
   case
     when gr.oid is null then 'PUBLIC'
     when gr.rolcanlogin then 'login role'
@@ -69,6 +70,7 @@ select
   ''::text,
   ''::text,
   ''::text,
+  null::int8,
   ''::text,
   ''::text,
   false,

@@ -9,6 +9,7 @@ databases as (
 ),
 grants_bounded as (
   select
+    db.oid,
     db.datname,
     db.datdba,
     db.datallowconn,
@@ -32,6 +33,7 @@ coverage as (
 )
 select
   g.datname::text as database_name,
+  g.oid::int8 as database_oid,
   pg_catalog.pg_get_userbyid(g.datdba)::text as database_owner,
   g.datallowconn as allows_connections,
   coalesce(gr.rolname::text, 'PUBLIC') as grantee_name,

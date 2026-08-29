@@ -323,7 +323,7 @@ presentation_catalog:
   rules:
     - match: {name_regex: '(^|_)(lsn)($|_)'}
       descriptor: {value_kind: lsn, semantic_role: identifier, quantity: lsn, unit: none, encoding: json_string}
-    - match: {name_regex: '(^|_)(id|oid|pid|xid|xmin|xmax|txid|queryid|query_id|dbid|userid|datid|relid|subid|sys_id|timeline|tli|port|inode)$'}
+    - match: {name_regex: '(^|_)(id|oid|pid|xid|xmin|xmax|txid|queryid|query_id|dbid|userid|usesysid|datid|relid|indexrelid|funcid|subid|sys_id|timeline|tli|port|inode)$'}
       descriptor: {semantic_role: identifier, quantity: identifier, unit: none}
     - match: {name_regex: '(^|_)(id|oid|pid|xid|xmin|xmax|txid|query_id|tli|port)$'}
       descriptor: {semantic_role: identifier, quantity: identifier, unit: none}

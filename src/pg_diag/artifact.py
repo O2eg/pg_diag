@@ -73,6 +73,7 @@ def create_artifact(
         "sections": plan.sections,
         "items": {},
         "query_texts": {},
+        "object_ddl": {},
         "snapshot_schemas": {},
         "snapshots": [],
         "diagnostics": [],

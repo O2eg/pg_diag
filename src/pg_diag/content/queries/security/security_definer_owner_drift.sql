@@ -32,6 +32,7 @@ coverage as (
 select
     n.nspname::text as schema_name,
     p.proname::text as function_name,
+    p.oid::int8 as function_oid,
     pg_get_function_identity_arguments(p.oid) as function_arguments,
     pg_catalog.pg_get_userbyid(p.proowner)::text as function_owner,
     pg_catalog.pg_get_userbyid(n.nspowner)::text as schema_owner,
@@ -53,6 +54,7 @@ union all
 select
     '[coverage]'::text,
     ''::text,
+    null::int8,
     ''::text,
     ''::text,
     ''::text,

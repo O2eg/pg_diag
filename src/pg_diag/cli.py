@@ -247,6 +247,11 @@ def _add_report_output_file_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Omit item source, instruction, and configuration metadata from reports",
     )
+    parser.add_argument(
+        "--disable-ddl",
+        action="store_true",
+        help="Skip DDL extraction for object oids referenced by report items",
+    )
 
 
 def _add_report_selection_args(parser: argparse.ArgumentParser) -> None:
@@ -557,6 +562,7 @@ def cmd_one_shot(args: argparse.Namespace) -> int:
                 tags=requested_tags,
                 progress=progress,
                 strip_meta=args.strip_meta,
+                disable_ddl=args.disable_ddl,
             )
         )
     except Exception as exc:
@@ -657,6 +663,7 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
                 tags=requested_tags,
                 progress=progress,
                 strip_meta=args.strip_meta,
+                disable_ddl=args.disable_ddl,
             )
         )
     except Exception as exc:

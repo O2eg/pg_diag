@@ -1,9 +1,11 @@
 select
     seq_ns.nspname as sequence_schema,
     seq.relname as sequence_name,
+    seq.oid::int8 as sequence_oid,
     pg_catalog.pg_get_userbyid(seq.relowner) as sequence_owner,
     tbl_ns.nspname as table_schema,
     tbl.relname as table_name,
+    tbl.oid::int8 as table_oid,
     att.attname as column_name,
     pg_catalog.pg_get_userbyid(tbl.relowner) as table_owner,
     'unknown' as risk_level,

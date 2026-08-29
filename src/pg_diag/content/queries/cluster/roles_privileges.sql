@@ -1,5 +1,6 @@
 select
   rolname,
+  oid::int8 as role_oid,
   rolsuper,
   rolcreatedb,
   rolcreaterole,

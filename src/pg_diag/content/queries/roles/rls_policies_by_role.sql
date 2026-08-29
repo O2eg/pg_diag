@@ -21,6 +21,7 @@ coverage as (
 select
   n.nspname::text as schema_name,
   c.relname::text as table_name,
+  c.oid::int8 as table_oid,
   pg_catalog.pg_get_userbyid(c.relowner)::text as table_owner,
   c.relrowsecurity as rls_enabled,
   c.relforcerowsecurity as rls_forced,

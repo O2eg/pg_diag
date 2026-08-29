@@ -165,6 +165,7 @@ def _artifact(*, title: str = "Test", data: str = "ok") -> dict:
             }
         },
         "query_texts": {},
+        "object_ddl": {},
         "snapshot_schemas": {},
         "snapshots": [],
         "diagnostics": [],

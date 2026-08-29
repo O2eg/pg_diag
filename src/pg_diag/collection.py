@@ -26,6 +26,7 @@ from .artifact import (
 )
 from .artifact_schema import validate_artifact
 from .content_loader import ContentPack
+from .object_ddl import collect_object_ddl
 from .errors import (
     DatabaseIdentityChangedError,
     DatabaseUnavailableError,
@@ -683,6 +684,30 @@ def raise_if_fail_fast(
     if cause is None:
         raise error
     raise error from cause
+
+
+async def collect_report_object_ddl(run: CollectionRun, *, enabled: bool) -> None:
+    """Fill artifact['object_ddl'] from oids referenced by collected items."""
+    runtime = run.artifact["runtime"]
+    run.artifact.setdefault("object_ddl", {})
+    if not enabled:
+        runtime["ddl_extraction"] = "disabled"
+        return
+    if run.conn is None or not runtime.get("database_connected"):
+        runtime["ddl_extraction"] = "unavailable"
+        return
+    try:
+        server_version_num = int(runtime.get("server_version_num") or 0)
+        if not server_version_num:
+            server_version_num = int(await run.conn.fetchval("show server_version_num"))
+        run.artifact["object_ddl"] = await asyncio.wait_for(
+            collect_object_ddl(run.conn, server_version_num, run.artifact),
+            timeout=runtime_config.OBJECT_DDL_TIMEOUT_SECONDS,
+        )
+        runtime["ddl_extraction"] = "collected"
+    except Exception as exc:  # noqa: BLE001 - DDL extras must never fail the report
+        run.artifact["object_ddl"] = {}
+        runtime["ddl_extraction"] = f"failed: {type(exc).__name__}: {exc}"
 
 
 def finish_collection(

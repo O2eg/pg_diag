@@ -32,6 +32,7 @@ select
   g.spcname::text as tablespace_name,
   pg_catalog.pg_get_userbyid(g.spcowner)::text as tablespace_owner,
   coalesce(gr.rolname::text, 'PUBLIC') as grantee_name,
+  gr.oid::int8 as grantee_oid,
   case
     when gr.oid is null then 'PUBLIC'
     when gr.rolcanlogin then 'login role'
@@ -59,6 +60,7 @@ select
   '[coverage]'::text,
   ''::text,
   ''::text,
+  null::int8,
   ''::text,
   ''::text,
   false,

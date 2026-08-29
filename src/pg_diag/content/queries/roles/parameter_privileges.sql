@@ -29,6 +29,7 @@ coverage as (
 select
   g.parname::text as parameter_name,
   coalesce(gr.rolname::text, 'PUBLIC') as grantee_name,
+  gr.oid::int8 as grantee_oid,
   case
     when gr.oid is null then 'PUBLIC'
     when gr.rolcanlogin then 'login role'
@@ -59,6 +60,7 @@ union all
 select
   '[coverage]'::text,
   ''::text,
+  null::int8,
   ''::text,
   false,
   ''::text,

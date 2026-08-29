@@ -98,6 +98,7 @@ estimated as (
 select
   e.index_schema as schema_name,
   e.index_name,
+  e.oid::int8 as index_oid,
   e.table_schema || '.' || e.table_name as table_name,
   e.amname as index_type,
   (e.relpages::numeric * e.bs)::int8 as index_bytes,

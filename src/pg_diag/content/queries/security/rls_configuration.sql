@@ -35,6 +35,7 @@ policy_summary as (
 select
   t.schema_name,
   t.table_name,
+  t.oid::int8 as table_oid,
   case t.relkind when 'p' then 'partitioned table' else 'table' end as relation_kind,
   t.rls_enabled,
   t.rls_forced_for_owner,

@@ -94,6 +94,7 @@ estimated as (
 select
   e.nspname as schema_name,
   e.relname as table_name,
+  e.oid::int8 as table_oid,
   case e.relkind when 'r' then 'table' when 'm' then 'materialized view' else e.relkind::text end as relation_kind,
   (e.relpages::numeric * e.bs)::int8 as table_bytes,
   (coalesce(tc.relpages, 0)::numeric * e.bs)::int8 as toast_bytes,

@@ -39,6 +39,7 @@ coverage as (
 select
   p.pubname::text as publication_name,
   pg_catalog.pg_get_userbyid(p.pubowner)::text as owner_name,
+  p.pubowner::int8 as owner_oid,
   coalesce(r.rolcanlogin, false) as owner_can_login,
   coalesce(r.rolsuper, false) as owner_is_superuser,
   p.puballtables as all_tables,

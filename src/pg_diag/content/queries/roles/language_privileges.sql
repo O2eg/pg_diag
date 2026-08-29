@@ -36,6 +36,7 @@ select
   g.lanpltrusted as is_trusted,
   pg_catalog.pg_get_userbyid(g.lanowner)::text as language_owner,
   coalesce(gr.rolname::text, 'PUBLIC') as grantee_name,
+  gr.oid::int8 as grantee_oid,
   case
     when gr.oid is null then 'PUBLIC'
     when gr.rolcanlogin then 'login role'

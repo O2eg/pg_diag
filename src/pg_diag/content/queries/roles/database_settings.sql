@@ -23,6 +23,7 @@ select
   end as scope,
   coalesce(r.rolname::text, '[all roles]') as role_name,
   coalesce(d.datname::text, '[all databases]') as database_name,
+  nullif(s.setdatabase, 0)::int8 as database_oid,
   (s.setdatabase = 0 or d.datname = current_database()) as applies_to_current_database,
   split_part(s.setting_entry, '=', 1) as setting_name,
   substr(s.setting_entry, strpos(s.setting_entry, '=') + 1) as setting_value,

@@ -1,6 +1,8 @@
 select
   datname,
+  datid::int8 as datid,
   usename,
+  usesysid::int8 as usesysid,
   application_name,
   client_addr::text as client_addr,
   pid,

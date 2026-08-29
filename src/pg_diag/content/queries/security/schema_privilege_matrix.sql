@@ -20,6 +20,7 @@ expanded_schema_grants_bounded as (
     select
         s.schema_oid,
         coalesce(grantee.rolname::text, 'PUBLIC') as grantee_name,
+        grantee.oid::int8 as grantee_oid,
         e.privilege_type,
         e.is_grantable
     from user_schemas s

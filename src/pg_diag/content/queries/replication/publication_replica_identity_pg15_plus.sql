@@ -105,6 +105,7 @@ classified as (
     pub.pubdelete,
     x.publish_mode,
     x.root_oid,
+    x.oid,
     n.nspname,
     x.relname,
     x.relkind,
@@ -133,6 +134,7 @@ ranked_findings as (
     c.root_oid::regclass::text as published_root,
     c.nspname::text as schema_name,
     c.relname::text as table_name,
+    c.oid::int8 as table_oid,
     case c.relreplident
       when 'd' then 'default'
       when 'n' then 'nothing'
@@ -185,6 +187,7 @@ combined as (
     f.published_root,
     f.schema_name,
     f.table_name,
+    f.table_oid,
     f.replica_identity,
     f.has_primary_key,
     f.replica_identity_index,
@@ -214,7 +217,7 @@ combined as (
   cross join coverage cov
   union all
   select
-    '[coverage]'::text, ''::text, null::text, ''::text, ''::text, ''::text, false, null::text, ''::text,
+    '[coverage]'::text, ''::text, null::text, ''::text, ''::text, null::int8, ''::text, false, null::text, ''::text,
     false, false, 0::int8,
     cov.candidate_sample_truncated, cov.membership_sample_truncated, cov.result_truncated,
     9, 'unknown'::text,
@@ -228,6 +231,7 @@ select
   published_root,
   schema_name,
   table_name,
+  table_oid,
   replica_identity,
   has_primary_key,
   replica_identity_index,

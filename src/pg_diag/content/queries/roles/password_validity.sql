@@ -15,6 +15,7 @@ login_roles as (
 ),
 classified as (
   select
+    r.oid,
     r.rolname,
     r.rolsuper,
     r.rolvaliduntil,
@@ -32,6 +33,7 @@ coverage as (
 combined as (
 select
   c.rolname::text as role_name,
+  c.oid::int8 as role_oid,
   c.rolsuper as superuser,
   case when c.rolvaliduntil = 'infinity' then null else c.rolvaliduntil end as valid_until,
   c.validity_state,
@@ -59,7 +61,7 @@ from classified c
 cross join coverage
 union all
 select
-  '[coverage]'::text, false, null::timestamptz, 'unknown'::text, null::int8, true, 'unknown'::text,
+  '[coverage]'::text, null::int8, false, null::timestamptz, 'unknown'::text, null::int8, true, 'unknown'::text,
   'More than 5000 login roles exist; findings above are proven but the list is incomplete'::text
 from coverage
 where coverage.result_truncated

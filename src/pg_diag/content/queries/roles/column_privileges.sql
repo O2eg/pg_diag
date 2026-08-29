@@ -13,7 +13,7 @@ table_candidates as (
   select * from table_roots_bounded limit 5000
 ),
 column_roots_bounded as (
-  select t.nspname, t.relname, t.relowner, t.relpages, a.attname, a.attnum, a.attacl
+  select t.oid, t.nspname, t.relname, t.relowner, t.relpages, a.attname, a.attnum, a.attacl
   from table_candidates t
   join pg_catalog.pg_attribute a on a.attrelid = t.oid
   where a.attnum > 0
@@ -27,6 +27,7 @@ column_candidates as (
 ),
 grants_bounded as (
   select
+    c.oid,
     c.nspname,
     c.relname,
     c.relowner,
@@ -64,6 +65,7 @@ coverage as (
 select
   g.nspname::text as schema_name,
   g.relname::text as relation_name,
+  g.oid::int8 as relation_oid,
   g.attname::text as column_name,
   pg_catalog.pg_get_userbyid(g.relowner)::text as owner_name,
   coalesce(gr.rolname::text, 'PUBLIC') as grantee_name,
@@ -97,6 +99,7 @@ union all
 select
   '[coverage]'::text,
   ''::text,
+  null::int8,
   ''::text,
   ''::text,
   ''::text,

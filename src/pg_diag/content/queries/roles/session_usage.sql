@@ -41,6 +41,7 @@ coverage as (
 findings as (
   select
     p.usename::text as role_name,
+    r.oid::int8 as role_oid,
     coalesce(r.rolsuper, false) as superuser,
     r.rolconnlimit as connection_limit,
     p.session_count,
@@ -83,7 +84,7 @@ from findings f
 cross join coverage
 union all
 select
-  '[coverage]'::text, false, null::int4, 0::int8, null::float8, 0::int8, 0::int8, 0::int8, 0::int8, 0::int8, 0::int8, 0::int8,
+  '[coverage]'::text, null::int8, false, null::int4, 0::int8, null::float8, 0::int8, 0::int8, 0::int8, 0::int8, 0::int8, 0::int8, 0::int8,
   null::text, null::float8, null::float8, true, 'unknown'::text,
   'More than 1000 roles have sessions; findings above are proven but the list is incomplete'::text
 from coverage

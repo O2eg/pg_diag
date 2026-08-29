@@ -23,6 +23,7 @@ sequence_acl_bounded as (
   select
     c.nspname::text as schema_name,
     c.relname::text as sequence_name,
+    c.oid::int8 as sequence_oid,
     pg_catalog.pg_get_userbyid(c.relowner)::text as owner_name,
     acl.grantor,
     acl.grantee,
@@ -61,8 +62,10 @@ findings as (
 select
   findings.schema_name,
   findings.sequence_name,
+  findings.sequence_oid,
   findings.owner_name,
   case when findings.grantee = 0 then 'PUBLIC' else pg_catalog.pg_get_userbyid(findings.grantee)::text end as grantee,
+  nullif(findings.grantee, 0)::int8 as grantee_oid,
   pg_catalog.pg_get_userbyid(findings.grantor)::text as grantor,
   findings.privilege_type,
   findings.is_grantable,
@@ -88,8 +91,10 @@ union all
 select
   '[coverage]'::text,
   ''::text,
+  null::int8,
   ''::text,
   ''::text,
+  null::int8,
   ''::text,
   ''::text,
   false,

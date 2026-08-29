@@ -9,6 +9,7 @@ from typing import Any
 from . import runtime_config
 from .collection import (
     close_collection,
+    collect_report_object_ddl,
     execute_and_record_report_item,
     finish_collection,
     record_item_progress,
@@ -34,6 +35,7 @@ async def collect_one_shot(
     tags: Iterable[str] | None = None,
     progress: ProgressReporter | None = None,
     strip_meta: bool = False,
+    disable_ddl: bool = False,
 ) -> dict[str, Any]:
     run = await start_collection(
         content=content,
@@ -59,6 +61,7 @@ async def collect_one_shot(
                 record_item_progress(run, planned)
                 continue
             await execute_and_record_report_item(run, planned)
+        await collect_report_object_ddl(run, enabled=not disable_ddl)
         return finish_collection(run, strip_meta=strip_meta)
     finally:
         await close_collection(run)

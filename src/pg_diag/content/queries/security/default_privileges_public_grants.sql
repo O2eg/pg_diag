@@ -42,6 +42,7 @@ expanded_default_acl as (
 normalized as (
   select
     pg_catalog.pg_get_userbyid(defaclrole)::text as owner_name,
+    defaclrole::int8 as owner_oid,
     case
       when defaclnamespace = 0 then '<all schemas>'
       else defaclnamespace::regnamespace::text

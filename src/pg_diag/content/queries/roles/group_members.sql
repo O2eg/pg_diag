@@ -35,6 +35,7 @@ coverage as (
 )
 select
   g.rolname::text as role_name,
+  g.oid::int8 as role_oid,
   g.rolcanlogin as can_login,
   (g.rolname ~ '^pg_') as is_predefined,
   gr.direct_member_count,

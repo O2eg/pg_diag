@@ -18,6 +18,7 @@ coverage as (
 select
   n.nspname as schema_name,
   s.relname as relation_name,
+  s.oid::int8 as relation_oid,
   case s.relkind when 'r' then 'table' when 'S' then 'sequence' else s.relkind::text end as relation_kind,
   pg_catalog.pg_total_relation_size(s.oid) as total_bytes,
   coverage.result_truncated,
