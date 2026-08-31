@@ -16,6 +16,7 @@ from .artifact import (
     item_from_plan,
     utc_now,
 )
+from .logscan import collect_report_server_log
 from .collection import (
     CollectionRun,
     close_collection,
@@ -65,6 +66,7 @@ async def collect_snapshots(
     progress: ProgressReporter | None = None,
     strip_meta: bool = False,
     disable_ddl: bool = False,
+    log_depth_time_min: int | None = None,
 ) -> dict[str, Any]:
     window_error = runtime_config.validate_snapshots_window(duration_seconds, interval_seconds)
     if window_error:
@@ -177,7 +179,12 @@ async def collect_snapshots(
 
         # Point-in-time tables describe the start of the diagnostic run, not an
         # arbitrary state after the sampling window has already elapsed.
+        deferred_log_items = [
+            planned for planned in once_items if planned.item_id.startswith("server_log.")
+        ]
         for planned in once_items:
+            if planned.item_id.startswith("server_log."):
+                continue  # consumes the log window collected after the sampling window
             await execute_and_record_report_item(run, planned)
 
         endpoint_snapshots: list[dict[str, Any]] = []
@@ -351,6 +358,10 @@ async def collect_snapshots(
                 artifact["items"][planned.item_id] = item_error_from_exception(planned, exc)
                 record_item_progress(run, planned, artifact["items"][planned.item_id])
                 raise_if_fail_fast(fail_fast, artifact["items"][planned.item_id])
+
+        await collect_report_server_log(run, depth_minutes=log_depth_time_min)
+        for planned in deferred_log_items:
+            await execute_and_record_report_item(run, planned)
 
         for planned in plan.items:
             if planned.item_id not in artifact["items"]:

@@ -729,6 +729,7 @@ def test_remote_host_only_collection_uses_ssh_without_database_tunnel(
         planned: PlannedItem,
         ssh: Any,
         database_connector: Any,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         assert conn is None
         assert ssh is not None

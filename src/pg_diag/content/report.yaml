@@ -15,6 +15,7 @@ report:
     - Indexes
     - Kernel
     - Locks
+    - Logs
     - Maintenance
     - Memory
     - Network
@@ -1323,6 +1324,77 @@ sections:
         state: collapsed
         render:
           empty_message: pg_ident.conf defines no user name maps.
+
+  server_log:
+    title: Server Log
+    description: PostgreSQL csvlog evidence for the window requested with --log-depth-time-min; without the flag every item here is skipped.
+    items:
+      error_chronology:
+        python: server_log.error_chronology
+        tags: [Logs]
+        state: expanded
+        render:
+          empty_message: No ERROR, FATAL, or PANIC records in the collected log window.
+      top_errors:
+        python: server_log.top_errors
+        tags: [Logs]
+        state: expanded
+        render:
+          empty_message: No errors in the collected log window.
+      top_warnings:
+        python: server_log.top_warnings
+        tags: [Logs]
+        state: collapsed
+        render:
+          empty_message: No warnings in the collected log window.
+      crash_recovery_events:
+        python: server_log.crash_recovery_events
+        tags: [Logs]
+        state: expanded
+        render:
+          empty_message: No crash, recovery, or corruption markers in the collected log window.
+      deadlock_events:
+        python: server_log.deadlock_events
+        tags: [Logs, Locks]
+        state: collapsed
+        render:
+          empty_message: No deadlocks in the collected log window.
+      authentication_failures:
+        python: server_log.authentication_failures
+        tags: [Logs, Security, Users]
+        state: collapsed
+        render:
+          empty_message: No authentication failures in the collected log window.
+      autovacuum_runs:
+        python: server_log.autovacuum_runs
+        tags: [Logs, Vacuum, Maintenance]
+        state: collapsed
+        render:
+          empty_message: No autovacuum runs in the collected log window; check log_autovacuum_min_duration if runs were expected.
+      checkpoints:
+        python: server_log.checkpoints
+        tags: [Logs, Checkpoints, WAL]
+        state: collapsed
+        render:
+          empty_message: No checkpoint events in the collected log window; check log_checkpoints if events were expected.
+      archiver_failures:
+        python: server_log.archiver_failures
+        tags: [Logs, WAL, Storage]
+        state: expanded
+        render:
+          empty_message: No archive_command failures in the collected log window.
+      wraparound_pressure:
+        python: server_log.wraparound_pressure
+        tags: [Logs, Vacuum, Transactions]
+        state: expanded
+        render:
+          empty_message: No transaction ID wraparound warnings in the collected log window.
+      log_files_overview:
+        python: server_log.log_files_overview
+        tags: [Logs, Storage, Configuration]
+        state: collapsed
+        render:
+          empty_message: pg_ls_logdir lists no csvlog files.
 
   snapshot_charts_os:
     title: Snapshot charts OS

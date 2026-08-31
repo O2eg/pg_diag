@@ -271,6 +271,7 @@ async def execute_report_item(
     planned: PlannedItem,
     ssh: SshTransport | None = None,
     database_connector: DatabaseConnector | None = None,
+    server_log: Any = None,
 ) -> dict[str, Any]:
     primary_item = await _execute_source_item(
         content,
@@ -278,6 +279,7 @@ async def execute_report_item(
         planned,
         ssh,
         database_connector,
+        server_log,
     )
     trigger = _fallback_trigger(primary_item, planned.fallback_on)
     if trigger is None or planned.fallback_item is None:
@@ -288,6 +290,7 @@ async def execute_report_item(
         planned.fallback_item,
         ssh,
         database_connector,
+        server_log,
     )
     return _replace_with_fallback_item(
         planned,
@@ -304,6 +307,7 @@ async def _execute_source_item(
     planned: PlannedItem,
     ssh: SshTransport | None,
     database_connector: DatabaseConnector | None,
+    server_log: Any = None,
 ) -> dict[str, Any]:
     if planned.status == "unsupported":
         return item_from_plan(
@@ -351,6 +355,7 @@ async def _execute_source_item(
             planned,
             ssh,
             database_connector,
+            server_log=server_log,
         )
     if planned.source_kind == "metric":
         return item_from_plan(
@@ -471,6 +476,7 @@ async def execute_and_record_report_item(
                 planned,
                 run.ssh,
                 run.database_connector,
+                server_log=getattr(run, "server_log", None),
             )
 
         if (

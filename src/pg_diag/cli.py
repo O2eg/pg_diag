@@ -37,6 +37,7 @@ from .planner import (
 from .progress import ProgressReporter, report_log_path
 from .render.html import render_from_json
 from .security import redact_error
+from .logscan import model as logscan_model
 from .one_shot import collect_one_shot
 from .snapshots import collect_snapshots
 from .ssh_transport import SshConfig
@@ -252,6 +253,31 @@ def _add_report_output_file_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Skip DDL extraction for object oids referenced by report items",
     )
+    parser.add_argument(
+        "--log-depth-time-min",
+        nargs="?",
+        const=logscan_model.DEPTH_DEFAULT_MINUTES,
+        default=None,
+        type=_parse_log_depth_argument,
+        metavar="MINUTES",
+        help=(
+            "Collect and parse csvlog server logs for the last N minutes "
+            f"(bare flag: {logscan_model.DEPTH_DEFAULT_MINUTES}; 0 disables; "
+            f"max {logscan_model.DEPTH_MAX_MINUTES}). Off when not given."
+        ),
+    )
+
+
+def _parse_log_depth_argument(value: str) -> int:
+    try:
+        minutes = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"invalid minutes value: {value!r}") from exc
+    if minutes < 0 or minutes > logscan_model.DEPTH_MAX_MINUTES:
+        raise argparse.ArgumentTypeError(
+            f"--log-depth-time-min must be between 0 and {logscan_model.DEPTH_MAX_MINUTES}"
+        )
+    return minutes
 
 
 def _add_report_selection_args(parser: argparse.ArgumentParser) -> None:
@@ -563,6 +589,7 @@ def cmd_one_shot(args: argparse.Namespace) -> int:
                 progress=progress,
                 strip_meta=args.strip_meta,
                 disable_ddl=args.disable_ddl,
+                log_depth_time_min=args.log_depth_time_min,
             )
         )
     except Exception as exc:
@@ -664,6 +691,7 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
                 progress=progress,
                 strip_meta=args.strip_meta,
                 disable_ddl=args.disable_ddl,
+                log_depth_time_min=args.log_depth_time_min,
             )
         )
     except Exception as exc:

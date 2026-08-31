@@ -493,6 +493,29 @@ class SshTransport:
             stderr=result.stderr or "",
         )
 
+    async def run_script_bytes(
+        self,
+        script: bytes,
+        *,
+        arguments: tuple[str, ...] = (),
+        timeout: float,
+    ) -> _RawCommandResult:
+        """Run a script from stdin with binary stdout/stderr.
+
+        Same wrapper (and remote process-group kill on timeout) as
+        run_script(), but without UTF-8 decoding: log payloads are bytes and a
+        stray byte must not break the channel before the sanitizer.
+        """
+        quoted = " ".join(shlex.quote(argument) for argument in arguments)
+        suffix = f" {quoted}" if quoted else ""
+        wrapper = shlex.quote(REMOTE_SCRIPT_WRAPPER)
+        return await self._run(
+            f"LC_ALL=C LANG=C exec /bin/sh -c {wrapper} pg-diag-script{suffix}",
+            input_data=script,
+            timeout=timeout,
+            encoding=None,
+        )
+
     async def run_bytes(
         self,
         command: str,

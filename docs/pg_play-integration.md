@@ -26,6 +26,14 @@ envelope. Report files are described by paths and SHA-256 hashes. Partial
 collection remains `partial`; it is not promoted to success merely because a
 JSON artifact exists.
 
+Orchestrators may pass `--log-depth-time-min N` (0-1440) to the collection
+commands to enable the `server_log` section for the last `N` minutes of the
+server csvlog; pg_play forwards `spec.diagnostics.log_depth_time_min` this
+way. The log phase never fails the report: its outcome is recorded in
+`runtime.log_collection` (`{status, reason, coverage}`), and the section is
+collected only in `local` and `remote` collection modes (see
+`access-best-practices.md`, "Server log access").
+
 `summarize` validates the artifact schema before returning deterministic
 counts, completeness, severities, collection statuses, snapshot count, and
 fallback degradation. A successful replacement may keep completeness at 100%

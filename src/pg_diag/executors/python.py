@@ -43,6 +43,7 @@ class PythonSourceContext:
     source_path: Path
     host: HostAccess
     database_connector: DatabaseConnector | None = None
+    server_log: Any = None  # logscan phase output: .window (LogWindow|None) and .marker (dict)
 
     def connect_database(
         self,
@@ -74,6 +75,7 @@ async def execute_python_item(
     planned: PlannedItem,
     ssh_transport: SshTransport | None = None,
     database_connector: DatabaseConnector | None = None,
+    server_log: Any = None,
 ) -> dict[str, Any]:
     started = time.perf_counter()
     source_id = planned.source_id or ""
@@ -102,6 +104,7 @@ async def execute_python_item(
             source_path=source_path,
             host=host,
             database_connector=database_connector,
+            server_log=server_log,
         )
         raw_result = await asyncio.wait_for(
             _load_and_call_source(

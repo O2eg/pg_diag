@@ -23,6 +23,9 @@ in core dispatch, validation, or metric rendering.
 - [PostgreSQL access best practices](https://github.com/O2eg/pg_diag/blob/main/docs/access-best-practices.md) - secure
   connection patterns, least-privilege accounts, SSH and TLS boundaries,
   pooler caveats, and Patroni/HAProxy topologies.
+- [Maximizing report coverage](https://github.com/O2eg/pg_diag/blob/main/docs/server-configuration.md) - which
+  extensions and statistics/logging parameters to enable on the server so the
+  report carries the maximum amount of evidence, with restart/reload notes.
 - [Content pack overview](https://github.com/O2eg/pg_diag/blob/main/src/pg_diag/content/README.md) - bundled report structure, SQL
   catalogs, host scripts, trusted Python sources, metrics, collection modes,
   and validation.
@@ -45,6 +48,7 @@ in core dispatch, validation, or metric rendering.
 - [Run one-shot reports](#run-one-shot-reports)
 - [Run repeated snapshots](#run-repeated-snapshots)
 - [Select report items](#select-report-items)
+- [Collect server logs](#collect-server-logs)
 - [Collection timing and metric evaluation](#collection-timing-and-metric-evaluation)
 - [Output files and exit status](#output-files-and-exit-status)
 
@@ -1040,6 +1044,63 @@ Python, metric, or sampler catalog identifiers. In `snapshots` mode:
 In `one-shot` mode a selected metric is not executed and the final report has
 no visible item because interval data is unavailable. The skip reason remains
 visible in stdout and `report.log`.
+
+## Collect Server Logs
+
+`--log-depth-time-min` adds the `server_log` report section: pg_diag reads the
+server `csvlog` files for a bounded time window, collapses floods of identical
+errors into series, sanitizes messages, and renders items such as the error
+chronology, top errors and warnings by frequency, crash and recovery markers,
+deadlocks, and authentication failures.
+
+Flag semantics:
+
+- flag absent — logs are not collected and every `server_log` item is skipped;
+- `--log-depth-time-min` without a value — the last 10 minutes;
+- `--log-depth-time-min N` — the last `N` minutes (`0` disables, maximum 1440);
+- works with both `one-shot` and `snapshots`; the window ends when the log
+  phase starts, which is after all other items (and after the sampling window
+  in snapshots mode).
+
+```bash
+pg-diag one-shot \
+  --host 127.0.0.1 \
+  --port 5432 \
+  --database appdb \
+  --user pgdiag \
+  --collection-mode local \
+  --log-depth-time-min 30 \
+  --out reports/appdb_with_logs
+```
+
+Collection mode support:
+
+| Collection mode | Server log collection |
+|---|---|
+| `local` | Supported: pg_diag reads the csvlog files directly on the host |
+| `remote` | Supported: an ephemeral shell harvester filters the logs on the SSH target (needs a shell-capable SSH account; SFTP-only accounts report `unsupported`) |
+| `remote-db-only` | Not supported by design; items report `unsupported` |
+
+Requirements on the server: `logging_collector = on`, `csvlog` in
+`log_destination`, English or C `lc_messages`, and read access to the log
+directory for the OS user running `pg-diag`. The complete privilege setup,
+including the ACL commands and the `log_file_mode` interaction, is documented
+in [docs/access-best-practices.md](docs/access-best-practices.md#server-log-access-optional).
+No additional PostgreSQL grants are needed: the reference `pgdiag` role already
+covers `pg_ls_logdir()`, `pg_current_logfile()`, and the log-related settings
+through `pg_monitor`.
+
+The current release ships eleven log items: the error chronology, top errors
+and top warnings by frequency, crash and recovery markers, deadlocks,
+authentication failures, autovacuum runs, checkpoints, WAL archiver failures,
+transaction ID wraparound pressure, and the log files overview (the last one
+needs only `pg_monitor`, no log-content access). An SFTP fallback for
+shell-less SSH accounts is planned but deliberately not part of this release.
+
+The artifact records the phase outcome in `runtime.log_collection`
+(`{status, reason, coverage}`); `coverage` states the requested and actually
+covered window, scanned bytes, and truncation reasons, so an incomplete window
+is always visible instead of silently passing as healthy.
 
 ## Collection Timing and Metric Evaluation
 

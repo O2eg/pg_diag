@@ -16,6 +16,7 @@ from .collection import (
     start_collection,
 )
 from .content_loader import ContentPack
+from .logscan import collect_report_server_log
 from .progress import ProgressReporter
 from .ssh_transport import SshConfig
 
@@ -36,6 +37,7 @@ async def collect_one_shot(
     progress: ProgressReporter | None = None,
     strip_meta: bool = False,
     disable_ddl: bool = False,
+    log_depth_time_min: int | None = None,
 ) -> dict[str, Any]:
     run = await start_collection(
         content=content,
@@ -56,10 +58,17 @@ async def collect_one_shot(
     try:
         if progress is not None:
             progress.configure(len(run.plan.items))
+        deferred = []
         for planned in run.plan.items:
             if planned.status == "skipped":
                 record_item_progress(run, planned)
                 continue
+            if planned.item_id.startswith("server_log."):
+                deferred.append(planned)  # consumes the log window collected below
+                continue
+            await execute_and_record_report_item(run, planned)
+        await collect_report_server_log(run, depth_minutes=log_depth_time_min)
+        for planned in deferred:
             await execute_and_record_report_item(run, planned)
         await collect_report_object_ddl(run, enabled=not disable_ddl)
         return finish_collection(run, strip_meta=strip_meta)

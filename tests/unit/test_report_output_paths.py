@@ -713,7 +713,7 @@ def test_collect_snapshots_skips_empty_window_for_requested_once_item(
             "capabilities": {},
         }
 
-    async def execute_once_stub(content, conn, item, ssh, database_connector):
+    async def execute_once_stub(content, conn, item, ssh, database_connector, **kwargs):
         calls.append(f"once:{item.item_id}")
         return item_from_plan(item, collection_status="ok", result={"kind": "none"})
 
@@ -815,7 +815,7 @@ def test_collect_snapshots_runs_static_items_before_chart_window(tmp_path, monke
             "capabilities": {},
         }
 
-    async def execute_once_stub(content, conn, planned, ssh, database_connector):
+    async def execute_once_stub(content, conn, planned, ssh, database_connector, **kwargs):
         assert ssh is None
         assert database_connector.connection_kwargs == {
             "server_settings": {

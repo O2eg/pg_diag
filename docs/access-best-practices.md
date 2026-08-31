@@ -20,6 +20,7 @@ and failover design of the target environment.
   - [Dedicated SSH account](#dedicated-ssh-account)
   - [Existing monitoring roles](#existing-monitoring-roles)
   - [Superuser access](#superuser-access)
+- [Server log access (optional)](#server-log-access-optional)
 - [Credentials and report handling](#credentials-and-report-handling)
 - [Recommended connection patterns](#recommended-connection-patterns)
   - [Direct database-only access](#direct-database-only-access)
@@ -248,6 +249,94 @@ Do not use the `postgres` role for routine diagnostics. A time-limited
 superuser credential can be an emergency fallback when complete evidence is
 more important than least privilege, but it should require explicit approval,
 controlled delivery, rapid rotation, and protected report storage.
+
+## Server log access (optional)
+
+`pg-diag ... --log-depth-time-min` collects and parses the server `csvlog`
+files for a bounded window. Log content is read by the collector process from
+the filesystem — never through SQL file-access functions — so the setup below
+is about PostgreSQL logging configuration and operating-system permissions.
+
+### What NOT to grant
+
+Do not give the `pgdiag` role `EXECUTE` on `pg_read_file()` /
+`pg_read_binary_file()` and do not grant `pg_read_server_files`. The path
+restriction to the data directory is not a protection: the data directory
+contains the heap files of every table, including `pg_authid` with password
+hashes, and these functions bypass all in-database privilege checks. `pg_diag`
+never uses them and its log collection does not need them.
+
+No additional database grants are required at all: the reference `pgdiag` role
+already covers `pg_ls_logdir()`, `pg_current_logfile()`, and the
+superuser-only settings `log_directory` / `data_directory` through
+`pg_monitor` (which includes `pg_read_all_settings`).
+
+### PostgreSQL logging configuration
+
+```ini
+logging_collector = on              # requires a restart
+log_destination  = 'stderr,csvlog'  # sighup
+log_directory    = '/var/log/postgresql'   # recommended outside the data directory
+log_file_mode    = 0640             # sighup; REQUIRED for the ACL below to work
+log_rotation_age  = 1d
+log_rotation_size = 100MB
+lc_messages = 'C'                   # or en_*; localized logs make pattern
+                                    # matching unreliable and the items report
+                                    # unsupported instead of a false "no errors"
+```
+
+### Filesystem permissions
+
+Grant read access to the log directory with a POSIX ACL for the OS account
+that runs the collector (`local` mode) or the dedicated SSH account
+(`remote` mode):
+
+```bash
+setfacl -m  u:pg_diag_ssh:rX /var/log/postgresql          # directory traversal
+setfacl -m  u:pg_diag_ssh:r  /var/log/postgresql/*.csv    # files that already exist
+setfacl -dm u:pg_diag_ssh:r  /var/log/postgresql          # future rotated files
+```
+
+All three commands are required: the directory ACL alone grants traversal but
+not the content of files created before it, and the default ACL applies only
+to files created after it.
+
+Why `log_file_mode = 0640` is mandatory: the ACL mask of a newly created file
+is the default ACL mask AND-ed with the group bits of the creation mode. With
+the default `log_file_mode = 0600` the group bits are zero, so the named-user
+entry on every newly rotated file is masked to nothing and access silently
+disappears after the first rotation. Verify after the next rotation:
+
+```bash
+getfacl /var/log/postgresql/postgresql-*.csv | grep effective
+# no "#effective:---" lines may appear
+```
+
+Do not use group membership instead of the ACL: the `adm` group exposes all
+system logs, and the `postgres` group on a cluster initialized with group
+access (`initdb -g`, PostgreSQL 11+) exposes the whole data directory. If
+`log_directory` stays inside the data directory, the account additionally
+needs traverse (`--x`) on the data directory itself — moving logs outside is
+cleaner.
+
+### Verification
+
+Smoke-check as the collector account:
+
+```bash
+sudo -u pg_diag_ssh sh -c \
+  'f=$(ls /var/log/postgresql/*.csv | tail -1) && tail -c 4096 "$f" | head -c 200'
+```
+
+If the check fails with correct ACLs, inspect SELinux or AppArmor denials.
+
+### Collection mode support
+
+| Collection mode | Server log collection |
+|---|---|
+| `local` | Supported: the collector reads csvlog files directly |
+| `remote` | Supported: an ephemeral POSIX-sh harvester filters logs on the SSH target (requires a shell-capable SSH account and standard tools: awk, tail, head, sed, cut, sort; a degraded probe reports `unsupported`) |
+| `remote-db-only` | Not supported by design: there is no safe SQL path to log content |
 
 ## Credentials and report handling
 

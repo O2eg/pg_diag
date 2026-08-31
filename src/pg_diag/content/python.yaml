@@ -310,3 +310,124 @@ python_sources:
       default_sort:
         column: database_name
         direction: asc
+  server_log.error_chronology:
+    targets: [db]
+    title: Error Chronology From Server Log
+    description: The newest 100 series of ERROR, FATAL, and PANIC records from csvlog with adjacent identical errors collapsed into one series, so floods of one repeated error do not push unique errors out of the list.
+    python_file: server_log/error_chronology.py
+    function: collect
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: first_time
+        direction: desc
+  server_log.top_errors:
+    targets: [db]
+    title: Top Errors By Frequency
+    description: The 100 most frequent error fingerprints in the collected log window with occurrence counts, first and last time seen, and how many users and databases were affected.
+    python_file: server_log/top_errors.py
+    function: collect
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: occurrences
+        direction: desc
+  server_log.top_warnings:
+    targets: [db]
+    title: Top Warnings By Frequency
+    description: The 100 most frequent WARNING fingerprints in the collected log window with occurrence counts and first and last time seen.
+    python_file: server_log/top_warnings.py
+    function: collect
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: occurrences
+        direction: desc
+  server_log.crash_recovery_events:
+    targets: [db]
+    title: Crash And Recovery Events
+    description: Backend and postmaster crashes, crash recovery markers, and invalid-page corruption evidence from the server log; any row is an incident-grade finding.
+    python_file: server_log/crash_recovery_events.py
+    function: collect
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: log_time
+        direction: desc
+  server_log.deadlock_events:
+    targets: [db]
+    title: Deadlock Events
+    description: Deadlocks (SQLSTATE 40P01) recorded in the collected log window with the sanitized message naming the sessions involved.
+    python_file: server_log/deadlock_events.py
+    function: collect
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: log_time
+        direction: desc
+  server_log.authentication_failures:
+    targets: [db]
+    title: Authentication Failures
+    description: Failed login attempts grouped by user, client address, and database with counts and first and last time seen.
+    python_file: server_log/authentication_failures.py
+    function: collect
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: failures
+        direction: desc
+  server_log.autovacuum_runs:
+    targets: [db]
+    title: Autovacuum Runs From Server Log
+    description: Chronology of automatic vacuum and analyze runs recorded in csvlog with the relation, optional elapsed seconds, and the first line of the report; visible only when log_autovacuum_min_duration is not -1.
+    python_file: server_log/autovacuum_runs.py
+    function: collect
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: log_time
+        direction: desc
+  server_log.checkpoints:
+    targets: [db]
+    title: Checkpoints From Server Log
+    description: Checkpoint and restartpoint starting and complete events with the trigger reason, buffers written, and write/sync/total timings; requires log_checkpoints.
+    python_file: server_log/checkpoints.py
+    function: collect
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: log_time
+        direction: desc
+  server_log.archiver_failures:
+    targets: [db]
+    title: WAL Archiver Failures
+    description: Failed archive_command invocations from the server log; any row means un-archived WAL is accumulating and the WAL archive has a gap.
+    python_file: server_log/archiver_failures.py
+    function: collect
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: first_time
+        direction: desc
+  server_log.wraparound_pressure:
+    targets: [db]
+    title: Transaction ID Wraparound Pressure
+    description: Wraparound protection warnings and stop-stage errors from the server log, surfaced as an incident-grade finding instead of drowning among ordinary warnings.
+    python_file: server_log/wraparound_pressure.py
+    function: collect
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: first_time
+        direction: desc
+  server_log.log_files_overview:
+    targets: [db]
+    title: Server Log Files Overview
+    description: Inventory of csvlog files from pg_ls_logdir with sizes, rotation settings, and findings about disabled rotation or runaway log growth; works without read access to the log content.
+    python_file: server_log/log_files_overview.py
+    function: collect
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: modification
+        direction: desc
