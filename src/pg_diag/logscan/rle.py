@@ -162,6 +162,7 @@ def merge_client_series(
     *,
     gap_seconds: float,
     merge: Callable,
+    can_merge: Callable | None = None,
 ) -> Iterator:
     """Stream-RLE over an item's record stream (plan §3, client layer).
 
@@ -181,7 +182,7 @@ def merge_client_series(
                 and client_host(record.connection_from) == client_host(head.connection_from)
             )
             gap = (record.log_time - head.last_time).total_seconds()
-            if same and 0 <= gap <= gap_seconds:
+            if same and 0 <= gap <= gap_seconds and (can_merge is None or can_merge(head, record)):
                 head = merge(head, record)
                 continue
             yield head

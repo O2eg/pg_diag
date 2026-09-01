@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import posixpath
+import re
 import time
 from dataclasses import asdict, replace
 from typing import Any
@@ -42,6 +43,9 @@ from .sources import LocalLogSource, LogScanSource
 
 _INSUFFICIENT_PRIVILEGE = "42501"
 _SUPPORTED_LOCALE_PREFIXES = ("C", "POSIX", "en_", "en.", "English")
+_LOCK_WAIT_EVENT_RE = re.compile(
+    r"^process \d+ (?:still waiting for|acquired) \w+ on .+ after \d+(?:\.\d+)? ms"
+)
 
 _PG_TO_PYTHON_ENCODING = {
     "UTF8": "utf-8",
@@ -401,7 +405,12 @@ def _build_window(
         records = [replace(record, count_complete=False) for record in records]
     records.sort(key=lambda record: (record.log_time, record.last_time))
     merged = list(
-        merge_client_series(records, gap_seconds=SERIES_GAP_SECONDS, merge=_merge_records)
+        merge_client_series(
+            records,
+            gap_seconds=SERIES_GAP_SECONDS,
+            merge=_merge_records,
+            can_merge=_can_merge_client_records,
+        )
     )
     truncated = bool(stats.truncation_reasons)
     coverage = LogCoverage(
@@ -440,6 +449,10 @@ def _record_from_series(
         if reparsed is not None and reparsed.log_time is not None:
             parsed = reparsed
     message = sanitize_text(parsed.message or "")
+    # detail is internal evidence, already bounded by ScanRequest.raw_record_cap.
+    # Keep it intact so item parsers can reach structured suffixes beyond the
+    # display-oriented LINE_CAP used for messages.
+    detail = sanitize_text(parsed.detail) if parsed.detail else None
     last_time = parse_timestamp(series.last_ts) or parsed.log_time
     return LogRecord(
         log_time=parsed.log_time,
@@ -458,6 +471,7 @@ def _record_from_series(
         count_complete=True,
         encoding_degraded=parsed.encoding_degraded,
         fingerprint=fingerprint(message),
+        detail=detail,
     )
 
 
@@ -470,3 +484,13 @@ def _merge_records(head: LogRecord, nxt: LogRecord) -> LogRecord:
         count_complete=head.count_complete and nxt.count_complete,
         encoding_degraded=head.encoding_degraded or nxt.encoding_degraded,
     )
+
+
+def _can_merge_client_records(head: LogRecord, nxt: LogRecord) -> bool:
+    """Keep lock-wait events distinct: their numeric fields are semantics.
+
+    Generic fingerprints deliberately normalize numbers for flood grouping.
+    For log_lock_waits, however, those numbers carry the waiter, target and
+    duration, so merging would retain only the first event's values.
+    """
+    return not (_LOCK_WAIT_EVENT_RE.match(head.message) or _LOCK_WAIT_EVENT_RE.match(nxt.message))

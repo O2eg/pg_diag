@@ -343,7 +343,7 @@ presentation_catalog:
       descriptor: {semantic_role: counter_delta, quality: exact}
     - match: {name_regex: '(_ms_per_sec$|_time_ms_per_sec$)'}
       descriptor: {value_kind: decimal, semantic_role: rate, quantity: milliseconds, unit: milliseconds/s, quality: derived, encoding: json_number}
-    - match: {name_regex: '(^time_ms$|_time_ms$|_time_ms_delta$|_latency_ms$|^blocked_ms$|_tx_ms$|_duration_ms$|_elapsed_ms$)'}
+    - match: {name_regex: '(^time_ms$|_time_ms$|_time_ms_delta$|_latency_ms$|^blocked_ms$|^wait_ms$|_tx_ms$|_duration_ms$|_elapsed_ms$)'}
       descriptor: {value_kind: decimal, semantic_role: duration, quantity: milliseconds, unit: milliseconds, encoding: json_number}
     - match: {name_regex: '(^time_s$|_time_s$|_seconds$|_duration_seconds$|_age_seconds$|^seconds_|_seconds_)'}
       descriptor: {value_kind: decimal, semantic_role: duration, quantity: seconds, unit: seconds, encoding: json_number}

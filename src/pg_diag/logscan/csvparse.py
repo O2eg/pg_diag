@@ -53,6 +53,7 @@ class ParsedRecord:
     severity: str | None
     sql_state: str | None
     message: str | None
+    detail: str | None
     user_name: str | None
     database_name: str | None
     process_id: int | None
@@ -121,6 +122,7 @@ def parse_record(
         severity=_get(11),
         sql_state=_get(12),
         message=_get(13),
+        detail=_get(14),
         user_name=_get(1),
         database_name=_get(2),
         process_id=_int(_get(3)),

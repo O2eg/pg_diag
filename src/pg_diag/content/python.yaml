@@ -431,3 +431,14 @@ python_sources:
       default_sort:
         column: modification
         direction: desc
+  server_log.lock_waits:
+    targets: [db]
+    title: Lock Waits From Server Log
+    description: History of lock waits longer than deadlock_timeout from the server log, including resolved waits with their final duration, the holding process, and the wait queue depth; requires log_lock_waits.
+    python_file: server_log/lock_waits.py
+    function: collect
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: wait_ms
+        direction: desc

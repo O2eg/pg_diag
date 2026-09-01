@@ -175,6 +175,7 @@ def test_metric_table_columns_declare_output_types(content_path: Path) -> None:
         ("blks_read_bytes_delta", "float8", ("integer", "counter_delta", "bytes")),
         ("total_blks_read_per_sec", "float8", ("decimal", "rate", "blocks/s")),
         ("plan_time_ms_per_sec", "float8", ("decimal", "rate", "milliseconds/s")),
+        ("wait_ms", "float8", ("decimal", "duration", "milliseconds")),
         ("postmaster_uptime_s", "int8", ("decimal", "duration", "seconds")),
         ("clock", "int8", ("integer", "gauge", "hertz")),
         ("xact_start", "timestamptz", ("timestamp", "state", "none")),

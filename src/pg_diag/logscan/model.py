@@ -121,6 +121,9 @@ class LogRecord:
     count_complete: bool
     encoding_degraded: bool
     fingerprint: str
+    # Sanitized csvlog detail column. It is internal evidence bounded by
+    # RAW_RECORD_CAP, not a display value bounded by LINE_CAP.
+    detail: str | None = None
 
 
 @dataclass(frozen=True)

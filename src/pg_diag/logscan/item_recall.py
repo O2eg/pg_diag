@@ -50,6 +50,12 @@ ITEM_RECALL: dict[str, RecallClauses] = {
         ]
     ),
     "server_log.archiver_failures": compile_clauses([["archive command failed"]]),
+    "server_log.lock_waits": compile_clauses(
+        [
+            [",LOG,00000,", "process ", " still waiting for ", " after "],
+            [",LOG,00000,", "process ", " acquired ", " after "],
+        ]
+    ),
     "server_log.wraparound_pressure": compile_clauses(
         [
             ["must be vacuumed within"],

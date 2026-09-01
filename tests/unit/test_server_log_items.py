@@ -30,6 +30,7 @@ def _record(
     user: str = "alice",
     connection_from: str | None = "10.0.0.1:5000",
     count_complete: bool = True,
+    detail: str | None = None,
 ) -> LogRecord:
     when = BASE + timedelta(seconds=offset_s)
     return LogRecord(
@@ -49,6 +50,7 @@ def _record(
         count_complete=count_complete,
         encoding_degraded=False,
         fingerprint=fingerprint(message),
+        detail=detail,
     )
 
 
@@ -227,11 +229,10 @@ def _by(result):
 def test_autovacuum_runs_parses_relation_and_elapsed() -> None:
     module = _load("autovacuum_runs")
     records = [
-        _record(1, "LOG", 'automatic vacuum of table "appdb.public.orders": index scans: 1',
-                sql_state=None),
+        _record(1, "LOG", 'automatic vacuum of table "appdb.public.orders": index scans: 1'),
         _record(2, "LOG",
                 'automatic analyze of table "appdb.public.users" system usage: '
-                "CPU: user: 0.01 s, system: 0.00 s, elapsed: 2.34 s", sql_state=None),
+                "CPU: user: 0.01 s, system: 0.00 s, elapsed: 2.34 s"),
         _record(3, "ERROR", "unrelated"),
     ]
     result = module.collect(_context(_window(records)))
@@ -248,10 +249,10 @@ def test_autovacuum_runs_parses_relation_and_elapsed() -> None:
 def test_checkpoints_parses_and_flags_forced() -> None:
     module = _load("checkpoints")
     records = [
-        _record(1, "LOG", "checkpoint starting: wal", sql_state=None),
+        _record(1, "LOG", "checkpoint starting: wal"),
         _record(2, "LOG",
                 "checkpoint complete: wrote 1234 buffers (7.5%); 1 WAL file(s) added; "
-                "write=26.5 s, sync=0.1 s, total=26.7 s", sql_state=None),
+                "write=26.5 s, sync=0.1 s, total=26.7 s"),
     ]
     result = module.collect(_context(_window(records)))
     rows = _by(result)
@@ -265,8 +266,7 @@ def test_checkpoints_parses_and_flags_forced() -> None:
 def test_archiver_failures_high() -> None:
     module = _load("archiver_failures")
     records = [
-        _record(1, "LOG",
-                "archive command failed with exit code 1", sql_state=None, repeat=25),
+        _record(1, "LOG", "archive command failed with exit code 1", repeat=25),
         _record(2, "ERROR", "unrelated"),
     ]
     result = module.collect(_context(_window(records)))
@@ -349,7 +349,145 @@ def test_log_files_overview_works_when_content_unavailable() -> None:
 
 
 def test_batch2_empty_statuses() -> None:
-    for name in ("autovacuum_runs", "checkpoints", "archiver_failures", "wraparound_pressure"):
+    for name in (
+        "autovacuum_runs",
+        "checkpoints",
+        "archiver_failures",
+        "wraparound_pressure",
+        "lock_waits",
+    ):
         module = _load(name)
         result = module.collect(_context(_window([])))
         assert result.collection_status == "empty", name
+
+
+def test_lock_waits_parses_waiting_and_acquired() -> None:
+    module = _load("lock_waits")
+    records = [
+        _record(
+            1,
+            "LOG",
+            "process 4155 still waiting for AccessShareLock on relation 16423 of "
+            "database 16401 after 1000.123 ms",
+            detail="Process holding the lock: 4152. Wait queue: 4155, 4157, 4158.",
+        ),
+        _record(
+            5,
+            "LOG",
+            "process 4155 acquired AccessShareLock on relation 16423 of database "
+            "16401 after 4500.700 ms",
+        ),
+        _record(7, "ERROR", "unrelated error"),
+    ]
+    result = module.collect(_context(_window(records)))
+    rows = _by(result)
+    assert len(rows) == 2
+    assert rows[0]["event"] == "acquired"
+    assert rows[0]["wait_ms"] == 4500.7
+    assert rows[1]["event"] == "waiting"
+    assert rows[1]["relation_oid"] == 16423
+    assert rows[1]["database_oid"] == 16401
+    assert rows[1]["holder_pids"] == "4152"
+    assert rows[1]["queue_depth"] == 3
+    assert result.severity_level == "medium"
+
+
+def test_lock_waits_high_on_access_exclusive() -> None:
+    module = _load("lock_waits")
+    records = [
+        _record(
+            1,
+            "LOG",
+            "process 900 still waiting for AccessExclusiveLock on relation 16423 of "
+            "database 16401 after 12000.000 ms",
+        ),
+    ]
+    result = module.collect(_context(_window(records)))
+    assert result.severity_level == "high"
+    assert result.issues["summary"]["status"] == "fail"
+
+
+def test_lock_waits_tuple_and_transaction_targets() -> None:
+    module = _load("lock_waits")
+    records = [
+        _record(
+            1,
+            "LOG",
+            "process 1 still waiting for ShareLock on transaction 778 after 1001.0 ms",
+        ),
+        _record(
+            2,
+            "LOG",
+            "process 2 still waiting for ExclusiveLock on tuple (0,10) of relation "
+            "16423 of database 16401 after 1002.0 ms",
+        ),
+    ]
+    rows = _by(module.collect(_context(_window(records))))
+    kinds = {row["target_kind"] for row in rows}
+    assert kinds == {"transaction", "tuple"}
+    tuple_row = next(row for row in rows if row["target_kind"] == "tuple")
+    assert tuple_row["relation_oid"] == 16423
+
+
+def test_lock_waits_parses_detail_beyond_display_line_cap() -> None:
+    module = _load("lock_waits")
+    queue = list(range(5000, 5700))
+    detail = (
+        "Process holding the lock: 4152. Wait queue: " + ", ".join(str(pid) for pid in queue) + "."
+    )
+    record = _record(
+        1,
+        "LOG",
+        "process 4155 still waiting for AccessShareLock on relation 16423 of "
+        "database 16401 after 1000.123 ms",
+        detail=detail,
+    )
+
+    row = _by(module.collect(_context(_window([record]))))[0]
+
+    assert len(detail) > 2000
+    assert row["holder_pids"] == "4152"
+    assert row["queue_depth"] == len(queue)
+
+
+def test_lock_waits_limit_does_not_hide_older_high_severity_event() -> None:
+    module = _load("lock_waits")
+    records = [
+        _record(
+            0,
+            "LOG",
+            "process 1 still waiting for AccessExclusiveLock on relation 1 of "
+            "database 1 after 120000.0 ms",
+        )
+    ]
+    records.extend(
+        _record(
+            offset,
+            "LOG",
+            f"process {offset + 1} still waiting for AccessShareLock on relation "
+            f"{offset + 1} of database 1 after 1000.0 ms",
+        )
+        for offset in range(1, 201)
+    )
+
+    result = module.collect(_context(_window(records)))
+
+    assert len(_by(result)) == 200
+    assert result.severity_level == "high"
+    assert "120000 ms" in result.issues["summary"]["description"]
+    assert "newest 200" in result.issues["summary"]["description"]
+
+
+def test_lock_waits_nonempty_result_discloses_incomplete_coverage() -> None:
+    module = _load("lock_waits")
+    record = _record(
+        1,
+        "LOG",
+        "process 1 still waiting for AccessShareLock on relation 1 of database 1 "
+        "after 1000.0 ms",
+        count_complete=False,
+    )
+
+    result = module.collect(_context(_window([record], ranking_complete=False)))
+
+    assert "Counts are lower bounds" in result.issues["summary"]["description"]

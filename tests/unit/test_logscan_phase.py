@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import csv
 from datetime import datetime, timedelta, timezone
+import io
 from types import SimpleNamespace
 
 from pg_diag.artifact_schema import _validate_json_data
+from pg_diag.logscan.model import LINE_CAP
 from pg_diag.logscan.phase import collect_report_server_log
 
 
@@ -173,6 +176,71 @@ def test_phase_collected_local_end_to_end(tmp_path) -> None:
     assert coverage["ranking_complete"] is True
     assert coverage["locale_supported"] is True
     assert run.server_log_window is window
+
+
+def test_phase_keeps_lock_wait_events_distinct_and_detail_intact(tmp_path) -> None:
+    now = datetime(2026, 8, 31, 10, 30)
+    messages = [
+        "process 10 still waiting for AccessShareLock on relation 100 of database 1 "
+        "after 1000.0 ms",
+        "process 20 still waiting for AccessShareLock on relation 200 of database 1 "
+        "after 95000.0 ms",
+        "process 30 still waiting for AccessShareLock on relation 300 of database 1 "
+        "after 45000.0 ms",
+    ]
+    queue = ", ".join(str(pid) for pid in range(5000, 5700))
+    detail = f"Process holding the lock: 4152. Wait queue: {queue}."
+    body = ""
+    for index, message in enumerate(messages):
+        fields = [
+            (now - timedelta(seconds=3 - index)).strftime("%Y-%m-%d %H:%M:%S.000 UTC"),
+            "alice",
+            "appdb",
+            str((index + 1) * 10),
+            "127.0.0.1:5000",
+            "s",
+            str(index + 1),
+            "SELECT",
+            "start",
+            "3/44",
+            "778",
+            "LOG",
+            "00000",
+            message,
+            detail if index == 0 else "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "loc",
+            "app",
+            "client backend",
+            "",
+            "7",
+        ]
+        output = io.StringIO()
+        csv.writer(output, lineterminator="\n").writerow(fields)
+        body += output.getvalue()
+    (tmp_path / "a.csv").write_text(body)
+    rows = [
+        {
+            "name": "a.csv",
+            "size": (tmp_path / "a.csv").stat().st_size,
+            "modification": now.replace(tzinfo=timezone.utc),
+        }
+    ]
+    conn = FakeConn(_facts(tmp_path, now), rows, [{"datname": "appdb", "encoding": "UTF8"}])
+    run = _run(conn)
+    run.plan.items[0] = SimpleNamespace(item_id="server_log.lock_waits", status="planned")
+
+    window = asyncio.run(collect_report_server_log(run, depth_minutes=10))
+
+    assert window is not None
+    assert [record.message for record in window.records] == messages
+    assert len(window.records[0].detail or "") > LINE_CAP
+    assert window.records[0].detail == detail
 
 
 def test_phase_collected_remote_via_local_sh(tmp_path) -> None:

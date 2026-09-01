@@ -1389,6 +1389,12 @@ sections:
         state: expanded
         render:
           empty_message: No transaction ID wraparound warnings in the collected log window.
+      lock_waits:
+        python: server_log.lock_waits
+        tags: [Logs, Locks, Sessions]
+        state: collapsed
+        render:
+          empty_message: No lock waits longer than deadlock_timeout in the collected log window; check log_lock_waits if waits were expected.
       log_files_overview:
         python: server_log.log_files_overview
         tags: [Logs, Storage, Configuration]

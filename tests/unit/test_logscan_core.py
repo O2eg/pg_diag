@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from pg_diag.logscan import csvparse, recall, rle, sanitize
+from pg_diag.logscan.item_recall import clauses_for_items
 from pg_diag.logscan.model import RawSeries
 
 
@@ -31,6 +32,18 @@ def test_recall_awk_condition_escapes() -> None:
     clauses = recall.compile_clauses([['say "hi"', "a\\b12"]])
     condition = recall.to_awk_condition(clauses)
     assert condition == '(index($0, "say \\"hi\\"") > 0 && index($0, "a\\\\b12") > 0)'
+
+
+def test_lock_wait_recall_rejects_unrelated_multiline_continuations() -> None:
+    clauses = clauses_for_items(("server_log.lock_waits",))
+    record = (
+        b"2026-08-31 10:00:00 UTC,u,d,1,c,s,1,SELECT,start,3/4,1,"
+        b"LOG,00000,process 1 acquired ShareLock on transaction 42 after 1500.0 ms"
+    )
+    continuation = b"the client acquired a connection after retrying the pool"
+
+    assert recall.matches(record, clauses)
+    assert not recall.matches(continuation, clauses)
 
 
 # --- sanitizer ---
@@ -106,6 +119,15 @@ def test_parse_record_pg14_full() -> None:
     assert parsed.backend_type == "client backend"
     assert parsed.connection_from == "127.0.0.1:5000"
     assert not parsed.partial
+
+
+def test_parse_record_extracts_detail() -> None:
+    raw = _record26()
+    fields = raw.decode().split(",")
+    fields[14] = '"Process holding the lock: 4152. Wait queue: 4155."'
+    parsed = csvparse.parse_record(",".join(fields).encode(), server_version_num=160000)
+    assert parsed is not None
+    assert parsed.detail == "Process holding the lock: 4152. Wait queue: 4155."
 
 
 def test_parse_record_quoted_comma_field() -> None:
