@@ -27,14 +27,30 @@ def render_html(artifact: dict[str, Any], *, validate: bool = True) -> str:
     replacements = {
         "__TITLE__": title,
         "__PAYLOAD__": payload,
-        "__ECHARTS_JS__": _inline_script(
-            _read_render_resource("vendor", "echarts-6.1.0.min.js")
-        ),
+        "__ECHARTS_JS__": _inline_script(_read_render_resource("vendor", "echarts-6.1.0.min.js")),
         "__HIGHLIGHT_JS__": _inline_script(
             _read_render_resource("vendor", "highlight-11.11.1.min.js")
         ),
         "__HIGHLIGHT_CSS__": _inline_style(
             _read_render_resource("vendor", "highlight-github-dark-11.11.1.min.css")
+        ),
+        "__PG_EXPLAIN_VIEWER_THEME_CSS__": _inline_style(
+            _read_render_resource("vendor", "pg-explain-viewer-0.7.2-theme.css")
+        ),
+        "__PG_EXPLAIN_VIEWER_CSS__": _inline_style(
+            _read_render_resource("vendor", "pg-explain-viewer-0.7.2.css")
+        ),
+        "__PG_EXPLAIN_VIEWER_EXPR_JS__": _inline_script(
+            _read_render_resource("vendor", "pg-explain-viewer-0.7.2-expr.js")
+        ),
+        "__PG_EXPLAIN_VIEWER_SQL_JS__": _inline_script(
+            _read_render_resource("vendor", "pg-explain-viewer-0.7.2-sql.js")
+        ),
+        "__PG_EXPLAIN_VIEWER_JS__": _inline_script(
+            _read_render_resource("vendor", "pg-explain-viewer-0.7.2.js")
+        ),
+        "__PG_EXPLAIN_VIEWER_RENDER_JS__": _inline_script(
+            _read_render_resource("vendor", "pg-explain-viewer-0.7.2-render.js")
         ),
         "__THIRD_PARTY_LICENSES__": _inline_script(_third_party_licenses()),
     }
@@ -96,6 +112,8 @@ def _third_party_licenses() -> str:
         + _read_render_resource("vendor", "echarts-6.1.0.LICENSE-d3.txt"),
         "highlight.js 11.11.1 - BSD-3-Clause license\n\n"
         + _read_render_resource("vendor", "highlight-11.11.1.LICENSE.txt"),
+        "pg-explain-viewer 0.7.2 - MIT license\n\n"
+        + _read_render_resource("vendor", "pg-explain-viewer-0.7.2.LICENSE.txt"),
     ]
     return "\n\n".join(section.rstrip() for section in sections) + "\n"
 
@@ -130,16 +148,10 @@ def _publicize_artifact_for_render(artifact: dict[str, Any]) -> dict[str, Any]:
         ]
     public_artifact["sections"] = public_sections
     visible_item_ids = {
-        item_id
-        for section in public_sections
-        for item_id in section.get("items") or []
+        item_id for section in public_sections for item_id in section.get("items") or []
     }
     public_artifact["items"] = deepcopy(
-        {
-            item_id: item
-            for item_id, item in all_items.items()
-            if item_id in visible_item_ids
-        }
+        {item_id: item for item_id, item in all_items.items() if item_id in visible_item_ids}
     )
 
     return public_artifact

@@ -14,6 +14,7 @@ from datetime import datetime
 
 CHUNK_BYTES = 1_048_576
 RAW_RECORD_CAP = 8_192
+AUTO_EXPLAIN_RAW_RECORD_CAP = 65_536
 LINE_CAP = 2_000
 SCAN_BUDGET_BYTES = 64 * 1_048_576
 WIRE_BUDGET_BYTES = 8 * 1_048_576
@@ -48,9 +49,9 @@ class LogFileInfo:
 
 @dataclass(frozen=True)
 class RawSeries:
-    """Transport-level run: physically adjacent identical records.
+    """Transport-level run: physically adjacent identical logical records.
 
-    ``raw_record`` is the untruncated-or-capped first raw CSV line of the run;
+    ``raw_record`` is the untruncated-or-capped raw CSV record of the run;
     parsing, sanitizing, and display truncation happen on the collector only.
     """
 
@@ -124,6 +125,29 @@ class LogRecord:
     # Sanitized csvlog detail column. It is internal evidence bounded by
     # RAW_RECORD_CAP, not a display value bounded by LINE_CAP.
     detail: str | None = None
+    auto_explain_plan: "AutoExplainPlan | None" = None
+
+
+@dataclass(frozen=True)
+class AutoExplainPlan:
+    """Safe metadata extracted from one auto_explain log record.
+
+    ``viewer_plan`` retains only the collector-sanitized record, bounded by the
+    auto_explain raw-record cap, so the self-contained report can open it in the
+    embedded read-only plan viewer without exposing the original log text. The
+    optional query sample is sanitized and capped at 300 characters for the
+    chart tooltip; format/root/node metadata proves that the multiline plan
+    itself was recognized rather than loosely matched.
+    """
+
+    duration_ms: float
+    plan_format: str
+    root_node_type: str | None
+    node_count: int
+    parsed: bool
+    complete: bool
+    query_sample: str | None
+    viewer_plan: str | None = None
 
 
 @dataclass(frozen=True)
@@ -157,6 +181,8 @@ class ServerLogContext:
     window: "LogWindow | None"
     marker: dict
     inventory: "dict | None" = None
+    mode: str | None = None
+    interval_seconds: float | None = None
 
 
 @dataclass(frozen=True)

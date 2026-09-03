@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
 import subprocess
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -34,13 +36,16 @@ class LocalShellTransport:
             capture_output=True,
             timeout=timeout,
         )
-        return SimpleNamespace(
-            returncode=proc.returncode, stdout=proc.stdout, stderr=proc.stderr
-        )
+        return SimpleNamespace(returncode=proc.returncode, stdout=proc.stdout, stderr=proc.stderr)
 
 
-def _record(ts: datetime, severity: str = "LOG", message: str = "noise",
-            user: str = "alice", db: str = "appdb") -> str:
+def _record(
+    ts: datetime,
+    severity: str = "LOG",
+    message: str = "noise",
+    user: str = "alice",
+    db: str = "appdb",
+) -> str:
     stamp = ts.strftime("%Y-%m-%d %H:%M:%S.000 UTC")
     return (
         f"{stamp},{user},{db},42,127.0.0.1:5,s,7,SELECT,start,3/44,778,"
@@ -53,16 +58,26 @@ def _info(tmp_path, name: str) -> LogFileInfo:
     return LogFileInfo(name=name, size=path.stat().st_size, modification=BASE)
 
 
-def _request(tmp_path, files, window_from: datetime,
-             window_to: datetime | None = None, **kwargs) -> ScanRequest:
+def _multiline_record(ts: datetime, message: str) -> str:
+    row = _record(ts, "LOG", "placeholder").rstrip("\n").split(",")
+    row[13] = message
+    output = io.StringIO(newline="")
+    csv.writer(output, lineterminator="\n").writerow(row)
+    return output.getvalue()
+
+
+def _request(
+    tmp_path, files, window_from: datetime, window_to: datetime | None = None, **kwargs
+) -> ScanRequest:
     if window_to is None:
         window_to = window_from + timedelta(hours=1)
+    recall_clauses = kwargs.pop("recall_clauses", RECALL)
     return ScanRequest(
         log_directory=str(tmp_path),
         files=tuple(files),
         window_from_ts=window_from.strftime("%Y-%m-%d %H:%M:%S"),
         window_to_ts=window_to.strftime("%Y-%m-%d %H:%M:%S"),
-        recall_clauses=RECALL,
+        recall_clauses=recall_clauses,
         **kwargs,
     )
 
@@ -74,8 +89,7 @@ def _scan(request: ScanRequest):
 def test_harvester_equals_local_source(tmp_path) -> None:
     body = _record(BASE + timedelta(seconds=1), "ERROR", "unique one")
     body += "".join(
-        _record(BASE + timedelta(seconds=2), "ERROR", "syntax error near X")
-        for _ in range(500)
+        _record(BASE + timedelta(seconds=2), "ERROR", "syntax error near X") for _ in range(500)
     )
     body += _record(BASE + timedelta(seconds=3), "LOG", "in between noise")
     body += _record(BASE + timedelta(seconds=4), "ERROR", "unique two")
@@ -89,6 +103,53 @@ def test_harvester_equals_local_source(tmp_path) -> None:
     assert [s.first_ts for s in remote.series] == [s.first_ts for s in local.series]
     assert [s.raw_record for s in remote.series] == [s.raw_record for s in local.series]
     assert remote.stats.matched_lines == local.stats.matched_lines == 502
+
+
+def test_harvester_equals_local_for_multiline_auto_explain(tmp_path) -> None:
+    message = (
+        'duration: 1200.5 ms  plan:\n{"Query Text":"select 1","Plan":{\n'
+        '  "Node Type":"Aggregate",\n  "Plans":[{"Node Type":"Result"}]\n}}'
+    )
+    body = _multiline_record(BASE + timedelta(seconds=1), message)
+    body += _multiline_record(BASE + timedelta(seconds=2), message)
+    (tmp_path / "a.csv").write_text(body)
+    auto_recall = compile_clauses([[",LOG,00000,", "duration: ", " ms  plan:"]])
+    request = _request(
+        tmp_path,
+        [_info(tmp_path, "a.csv")],
+        BASE,
+        recall_clauses=auto_recall,
+    )
+
+    remote = _scan(request)
+    local = asyncio.run(LocalLogSource(str(tmp_path)).scan(request))
+
+    assert len(remote.series) == len(local.series) == 2
+    assert [series.raw_record for series in remote.series] == [
+        series.raw_record for series in local.series
+    ]
+    assert [series.last_lineno for series in remote.series] == [
+        series.last_lineno for series in local.series
+    ]
+    assert all(series.count == 1 for series in remote.series)
+
+
+def test_harvester_matches_local_multiline_raw_cap(tmp_path) -> None:
+    message = "duration: 1 ms  plan:\n" + ("x" * 500)
+    (tmp_path / "a.csv").write_text(_multiline_record(BASE + timedelta(seconds=1), message))
+    auto_recall = compile_clauses([[",LOG,00000,", "duration: ", " ms  plan:"]])
+    request = _request(
+        tmp_path,
+        [_info(tmp_path, "a.csv")],
+        BASE,
+        recall_clauses=auto_recall,
+        raw_record_cap=128,
+    )
+    remote = _scan(request)
+    local = asyncio.run(LocalLogSource(str(tmp_path)).scan(request))
+    assert len(remote.series) == len(local.series) == 1
+    assert remote.series[0].raw_record == local.series[0].raw_record
+    assert remote.series[0].raw_truncated and local.series[0].raw_truncated
 
 
 def test_harvester_identity_not_merged(tmp_path) -> None:
@@ -107,8 +168,7 @@ def test_harvester_window_bounds(tmp_path) -> None:
     body += _record(BASE + timedelta(minutes=90), "ERROR", "after window")
     (tmp_path / "a.csv").write_text(body)
     result = _scan(
-        _request(tmp_path, [_info(tmp_path, "a.csv")], BASE,
-                 window_to=BASE + timedelta(minutes=30))
+        _request(tmp_path, [_info(tmp_path, "a.csv")], BASE, window_to=BASE + timedelta(minutes=30))
     )
     assert sum(s.count for s in result.series) == 50
 
@@ -118,9 +178,7 @@ def test_harvester_binary_search_on_boundary_file(tmp_path) -> None:
         _record(BASE - timedelta(minutes=60) + timedelta(seconds=i), "ERROR", "old")
         for i in range(500)
     )
-    fresh = "".join(
-        _record(BASE + timedelta(seconds=i), "ERROR", "fresh") for i in range(5)
-    )
+    fresh = "".join(_record(BASE + timedelta(seconds=i), "ERROR", "fresh") for i in range(5))
     (tmp_path / "a.csv").write_text(old + fresh)
     result = _scan(_request(tmp_path, [_info(tmp_path, "a.csv")], BASE))
     assert sum(s.count for s in result.series) == 5
@@ -161,9 +219,7 @@ def test_harvester_wire_budget_stops(tmp_path) -> None:
         for i in range(200)
     )
     (tmp_path / "a.csv").write_text(body)
-    result = _scan(
-        _request(tmp_path, [_info(tmp_path, "a.csv")], BASE, wire_budget_bytes=2048)
-    )
+    result = _scan(_request(tmp_path, [_info(tmp_path, "a.csv")], BASE, wire_budget_bytes=2048))
     assert "return_limit_hit" in result.stats.truncation_reasons
     assert result.series
 
@@ -181,8 +237,7 @@ def test_harvester_unterminated_tail_dropped(tmp_path) -> None:
 def test_parse_output_rejects_truncated_protocol() -> None:
     stats = ScanStats()
     with pytest.raises(HarvesterProtocolError):
-        parse_output(b"CAPS\tv1\tok\tstat-gnu\nRUN\t1\t1\t1\tts\tts\t100\t0\nshort\n",
-                     stats=stats)
+        parse_output(b"CAPS\tv1\tok\tstat-gnu\nRUN\t1\t1\t1\tts\tts\t100\t0\nshort\n", stats=stats)
     stats = ScanStats()
     with pytest.raises(HarvesterProtocolError):
         parse_output(b"CAPS\tv1\tok\tstat-gnu\n", stats=stats)  # no DONE
@@ -190,14 +245,14 @@ def test_parse_output_rejects_truncated_protocol() -> None:
 
 def test_parse_output_degraded_caps_is_unavailable() -> None:
     with pytest.raises(HarvesterUnavailableError):
-        parse_output(b"CAPS\tv1\tdegraded\tmissing-awk\nDONE\t0\tdegraded\n",
-                     stats=ScanStats())
+        parse_output(b"CAPS\tv1\tdegraded\tmissing-awk\nDONE\t0\tdegraded\n", stats=ScanStats())
 
 
 def test_harvester_unreadable_file_is_not_a_clean_empty(tmp_path) -> None:
     """mode-000 file: the producer fails while awk exits 0 (no pipefail in sh);
     the side-channel must turn that into files_unreadable, never a clean read."""
     import os
+
     path = tmp_path / "a.csv"
     path.write_text(_record(BASE + timedelta(seconds=1), "ERROR", "hidden"))
     os.chmod(path, 0)

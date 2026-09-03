@@ -30,6 +30,82 @@ from .rle import PhysicalRle, ts_prefix
 
 _TS_COMPARE_LEN = 19  # YYYY-MM-DD HH:MM:SS
 _SERIES_WIRE_OVERHEAD = 64
+_QUOTE = 0x22
+
+
+class _LogicalRecordAssembler:
+    """Assemble newline-containing PostgreSQL CSV records with a hard cap."""
+
+    def __init__(self, raw_record_cap: int) -> None:
+        self._cap = raw_record_cap
+        self.active = False
+        self.matched = False
+        self.in_quotes = False
+        self.first_lineno = 0
+        self.last_lineno = 0
+        self.raw = bytearray()
+        self.raw_length = 0
+
+    def start(self, lineno: int, line: bytes, *, matched: bool) -> None:
+        self.active = True
+        self.matched = matched
+        self.in_quotes = False
+        self.first_lineno = self.last_lineno = lineno
+        self.raw.clear()
+        self.raw_length = 0
+        self._append(line, separator=False)
+
+    def continuation(self, lineno: int, line: bytes) -> None:
+        self.last_lineno = lineno
+        self._append(line, separator=True)
+
+    def take(self) -> tuple[int, int, bytes, bool, bool]:
+        result = (
+            self.first_lineno,
+            self.last_lineno,
+            bytes(self.raw),
+            self.raw_length > self._cap,
+            self.matched,
+        )
+        self.active = False
+        self.matched = False
+        self.in_quotes = False
+        self.raw.clear()
+        self.raw_length = 0
+        return result
+
+    def discard(self) -> bool:
+        matched = self.matched
+        self.active = False
+        self.matched = False
+        self.in_quotes = False
+        self.raw.clear()
+        self.raw_length = 0
+        return matched
+
+    def _append(self, line: bytes, *, separator: bool) -> None:
+        if separator:
+            self.raw_length += 1
+            if len(self.raw) < self._cap:
+                self.raw.extend(b"\n"[: self._cap - len(self.raw)])
+        self.raw_length += len(line)
+        if len(self.raw) < self._cap:
+            self.raw.extend(line[: self._cap - len(self.raw)])
+        self.in_quotes = _quote_state(line, self.in_quotes)
+
+
+def _quote_state(line: bytes, in_quotes: bool) -> bool:
+    index = 0
+    while index < len(line):
+        if line[index] != _QUOTE:
+            index += 1
+            continue
+        if in_quotes and index + 1 < len(line) and line[index + 1] == _QUOTE:
+            index += 2
+            continue
+        in_quotes = not in_quotes
+        index += 1
+    return in_quotes
 
 
 class LogScanSource:
@@ -230,10 +306,7 @@ class LocalLogSource(LogScanSource):
         return True
 
     def _deadline_hit(self, request: ScanRequest, stats: ScanStats) -> bool:
-        if (
-            request.deadline_monotonic is not None
-            and time.monotonic() > request.deadline_monotonic
-        ):
+        if request.deadline_monotonic is not None and time.monotonic() > request.deadline_monotonic:
             stats.truncation_reasons.add(REASON_TIME_LIMIT)
             return True
         return False
@@ -249,11 +322,12 @@ class LocalLogSource(LogScanSource):
         series: list,
         wire_used: int,
     ) -> tuple[int, bool]:
-        """Read [start, size) only, feed matched in-window lines through RLE."""
+        """Read [start, size), assemble CSV records, and feed matches through RLE."""
         handle.seek(start)
         window_from = request.window_from_ts[:_TS_COMPARE_LEN]
         window_to = request.window_to_ts[:_TS_COMPARE_LEN]
         rle = PhysicalRle(file_name, request.raw_record_cap)
+        assembler = _LogicalRecordAssembler(request.raw_record_cap)
         pending = b""
         lineno = 0
         stop = False
@@ -272,29 +346,43 @@ class LocalLogSource(LogScanSource):
             pending = lines.pop()  # unterminated tail: kept back (plan §15.4)
             for line in lines:
                 lineno += 1
-                if not recall.matches(line, request.recall_clauses):
+                if assembler.active:
+                    assembler.continuation(lineno, line)
+                else:
+                    is_match = recall.matches(line, request.recall_clauses)
+                    ts = ts_prefix(line)
+                    if not _looks_like_ts(ts):
+                        if is_match:
+                            stats.dropped_lines += 1
+                        continue
+                    assembler.start(lineno, line, matched=is_match)
+                if assembler.in_quotes:
                     continue
-                ts = ts_prefix(line)
-                if not _looks_like_ts(ts):
-                    # Continuation line of a multiline record matched the
-                    # recall pattern: not a record start, drop it.
-                    stats.dropped_lines += 1
+                first_lineno, last_lineno, raw, raw_truncated, is_match = assembler.take()
+                if not is_match:
                     continue
+                ts = ts_prefix(raw)
                 stamp = ts[:_TS_COMPARE_LEN]
                 if stamp < window_from or stamp > window_to:
                     # Out-of-window records (including a series head before
                     # the boundary) must not be counted — review finding.
                     continue
                 stats.matched_lines += 1
-                emitted = rle.feed(lineno, line)
+                emitted = rle.feed(
+                    first_lineno,
+                    raw,
+                    last_lineno=last_lineno,
+                    raw_truncated=raw_truncated,
+                )
                 if emitted is not None:
-                    wire_used, stop = self._emit(
-                        emitted, series, wire_used, request, stats
-                    )
+                    wire_used, stop = self._emit(emitted, series, wire_used, request, stats)
                     if stop:
                         break
         if pending:
             stats.dropped_lines += 1  # in-flight write without trailing newline
+            assembler.discard()
+        elif assembler.active and assembler.discard():
+            stats.dropped_lines += 1  # matched logical record has no closing CSV quote
         emitted = rle.flush()
         if emitted is not None and not stop:
             wire_used, stop = self._emit(emitted, series, wire_used, request, stats)

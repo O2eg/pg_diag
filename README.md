@@ -1051,7 +1051,8 @@ visible in stdout and `report.log`.
 server `csvlog` files for a bounded time window, collapses floods of identical
 errors into series, sanitizes messages, and renders items such as the error
 chronology, top errors and warnings by frequency, crash and recovery markers,
-deadlocks, and authentication failures.
+deadlocks, authentication failures, and a stacked time chart of slow-query
+plans written by `auto_explain`.
 
 Flag semantics:
 
@@ -1090,12 +1091,18 @@ No additional PostgreSQL grants are needed: the reference `pgdiag` role already
 covers `pg_ls_logdir()`, `pg_current_logfile()`, and the log-related settings
 through `pg_monitor`.
 
-The current release ships eleven log items: the error chronology, top errors
+The current release ships thirteen log items: the error chronology, top errors
 and top warnings by frequency, crash and recovery markers, deadlocks,
 authentication failures, autovacuum runs, checkpoints, WAL archiver failures,
-transaction ID wraparound pressure, and the log files overview (the last one
-needs only `pg_monitor`, no log-content access). An SFTP fallback for
-shell-less SSH accounts is planned but deliberately not part of this release.
+transaction ID wraparound pressure, lock waits, `auto_explain` plans by
+duration, and the log files overview (the last one needs only `pg_monitor`, no
+log-content access). The `auto_explain` chart uses clock-aligned one-minute
+columns and keeps the ten longest logged queries in each minute. Every stacked
+block represents one query; its tooltip shows the exact log timestamp,
+duration, and a sanitized query sample capped at 300 characters. Clicking a
+block opens its sanitized, bounded plan in the bundled read-only
+`pg-explain-viewer`. An SFTP fallback for shell-less SSH
+accounts is planned but deliberately not part of this release.
 
 The artifact records the phase outcome in `runtime.log_collection`
 (`{status, reason, coverage}`); `coverage` states the requested and actually
@@ -1427,8 +1434,9 @@ python -m ruff check pg_diag tests
 
 The `pg_diag` source code is distributed under the
 [MIT License](https://github.com/O2eg/pg_diag/blob/main/LICENSE). Self-contained
-HTML reports bundle Apache ECharts under Apache-2.0 and highlight.js plus the
-ECharts d3 components under BSD-3-Clause. Their complete license and notice
+HTML reports bundle Apache ECharts under Apache-2.0, highlight.js plus the
+ECharts d3 components under BSD-3-Clause, and `pg-explain-viewer` under MIT.
+Their complete license and notice
 files are listed in
 [THIRD_PARTY_LICENSES.txt](https://github.com/O2eg/pg_diag/blob/main/src/pg_diag/render/vendor/THIRD_PARTY_LICENSES.txt)
 and are included in both source and wheel distributions. The complete package

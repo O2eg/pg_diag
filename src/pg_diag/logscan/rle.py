@@ -3,7 +3,7 @@
 Two independent layers:
 
 * :class:`PhysicalRle` — transport-level, provably safe: collapses only
-  physically adjacent records whose identity fields (user, database, pid,
+  physically adjacent logical records whose identity fields (user, database, pid,
   client) AND record tail are byte-identical. Never merges across files or
   ranges.
 * :func:`merge_client_series` — item-facing stream RLE over parsed, sanitized
@@ -101,27 +101,40 @@ class PhysicalRle:
         self._raw: bytes = b""
         self._raw_truncated = False
 
-    def feed(self, lineno: int, line: bytes) -> RawSeries | None:
-        """Feed one matched physical line; may emit the previous run."""
+    def feed(
+        self,
+        lineno: int,
+        line: bytes,
+        *,
+        last_lineno: int | None = None,
+        raw_truncated: bool = False,
+    ) -> RawSeries | None:
+        """Feed one matched logical record; may emit the previous run."""
+        record_last_lineno = lineno if last_lineno is None else last_lineno
         parts = split_key(line)
         key: tuple[bytes, bytes]
-        if parts is not None:
+        raw_truncated = raw_truncated or len(line) > self._cap
+        # A collapsed auto_explain run cannot be attributed to exact time
+        # buckets.  Truncated records also lack a provably complete identity.
+        no_merge = raw_truncated or b" ms  plan:" in line
+        if parts is not None and not no_merge:
             key = parts
         else:
             key = (b"\x00unparsed", str(lineno).encode())
         ts = ts_prefix(line)
         if self._count and key == self._key and lineno == self._last_lineno + 1:
             self._count += 1
-            self._last_lineno = lineno
+            self._last_lineno = record_last_lineno
             self._last_ts = ts
             return None
         emitted = self.flush()
         self._key = key
         self._count = 1
-        self._first_lineno = self._last_lineno = lineno
+        self._first_lineno = lineno
+        self._last_lineno = record_last_lineno
         self._first_ts = self._last_ts = ts
         self._raw = line[: self._cap]
-        self._raw_truncated = len(line) > self._cap
+        self._raw_truncated = raw_truncated
         return emitted
 
     def flush(self) -> RawSeries | None:

@@ -6,6 +6,7 @@ import asyncio
 import csv
 from datetime import datetime, timedelta, timezone
 import io
+import json
 from types import SimpleNamespace
 
 from pg_diag.artifact_schema import _validate_json_data
@@ -178,6 +179,37 @@ def test_phase_collected_local_end_to_end(tmp_path) -> None:
     assert run.server_log_window is window
 
 
+def test_old_inventory_files_do_not_trigger_candidate_window_limit(tmp_path) -> None:
+    now = datetime(2026, 8, 31, 10, 30)
+    body = _record(now - timedelta(seconds=10), "ERROR", "current")
+    (tmp_path / "current.csv").write_text(body)
+    rows = [
+        {
+            "name": "current.csv",
+            "size": (tmp_path / "current.csv").stat().st_size,
+            "modification": now.replace(tzinfo=timezone.utc),
+            "in_window": True,
+        }
+    ]
+    rows.extend(
+        {
+            "name": f"old-{index:02d}.csv",
+            "size": 10,
+            "modification": (now - timedelta(days=index + 1)).replace(tzinfo=timezone.utc),
+            "in_window": False,
+        }
+        for index in range(64)
+    )
+    facts = _facts(tmp_path, now, current_csvlog="log/current.csv")
+    run = _run(FakeConn(facts, rows, []))
+
+    window = asyncio.run(collect_report_server_log(run, depth_minutes=10))
+
+    assert window is not None
+    assert window.coverage.ranking_complete
+    assert "candidate_limit_hit" not in window.coverage.truncation_reasons
+
+
 def test_phase_keeps_lock_wait_events_distinct_and_detail_intact(tmp_path) -> None:
     now = datetime(2026, 8, 31, 10, 30)
     messages = [
@@ -243,6 +275,91 @@ def test_phase_keeps_lock_wait_events_distinct_and_detail_intact(tmp_path) -> No
     assert window.records[0].detail == detail
 
 
+def test_phase_extracts_large_multiline_auto_explain_plan_without_query_text(tmp_path) -> None:
+    now = datetime(2026, 8, 31, 10, 30)
+    query_text = "select 'do-not-retain' /* " + ("x" * 9_000) + " */"
+    message = "duration: 1234.5 ms  plan:\n" + json.dumps(
+        {
+            "Query Text": query_text,
+            "Plan": {
+                "Node Type": "Aggregate",
+                "Plans": [{"Node Type": "Seq Scan"}],
+            },
+        },
+        indent=2,
+    )
+    fields = [
+        (now - timedelta(seconds=1)).strftime("%Y-%m-%d %H:%M:%S.000 UTC"),
+        "alice",
+        "appdb",
+        "42",
+        "c",
+        "s",
+        "7",
+        "SELECT",
+        "start",
+        "3/44",
+        "778",
+        "WARNING",  # auto_explain.log_level is configurable
+        "00000",
+        message,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "loc",
+        "app",
+        "client backend",
+        "",
+        "7",
+    ]
+    output = io.StringIO(newline="")
+    csv.writer(output, lineterminator="\n").writerow(fields)
+    (tmp_path / "a.csv").write_text(output.getvalue())
+    rows = [
+        {
+            "name": "a.csv",
+            "size": (tmp_path / "a.csv").stat().st_size,
+            "modification": now.replace(tzinfo=timezone.utc),
+        }
+    ]
+    facts = _facts(
+        tmp_path,
+        now,
+        log_timezone="UTC",
+        log_utc_offset_seconds=0,
+    )
+    run = _run(FakeConn(facts, rows, [{"datname": "appdb", "encoding": "UTF8"}]))
+    run.plan.items[0] = SimpleNamespace(item_id="server_log.auto_explain_plans", status="planned")
+    run.artifact["runtime"].update({"mode": "snapshots", "interval_seconds": 5})
+
+    window = asyncio.run(collect_report_server_log(run, depth_minutes=10))
+
+    assert window is not None
+    assert len(window.records) == 1
+    plan = window.records[0].auto_explain_plan
+    assert plan is not None
+    assert plan.duration_ms == 1234.5
+    assert plan.plan_format == "json"
+    assert plan.root_node_type == "Aggregate"
+    assert plan.node_count == 2
+    assert plan.parsed and plan.complete
+    assert plan.query_sample is not None
+    assert "do-not-retain" not in plan.query_sample
+    assert len(plan.query_sample) == 303
+    assert plan.query_sample.endswith("...")
+    assert plan.viewer_plan is not None
+    assert "do-not-retain" not in plan.viewer_plan
+    assert "'[LITERAL]'" in plan.viewer_plan
+    assert "do-not-retain" not in window.records[0].message
+    assert run.server_log.mode == "snapshots"
+    assert run.server_log.interval_seconds == 5
+    assert run.server_log.inventory["settings"]["log_timezone"] == "UTC"
+
+
 def test_phase_collected_remote_via_local_sh(tmp_path) -> None:
     import subprocess
 
@@ -250,7 +367,9 @@ def test_phase_collected_remote_via_local_sh(tmp_path) -> None:
         async def run_script_bytes(self, script, *, arguments=(), timeout):
             proc = subprocess.run(
                 ["/bin/sh", "-s", "--", *arguments],
-                input=script, capture_output=True, timeout=timeout,
+                input=script,
+                capture_output=True,
+                timeout=timeout,
             )
             return SimpleNamespace(
                 returncode=proc.returncode, stdout=proc.stdout, stderr=proc.stderr
@@ -258,9 +377,7 @@ def test_phase_collected_remote_via_local_sh(tmp_path) -> None:
 
     now = datetime(2026, 8, 31, 10, 30)
     body = _record(now - timedelta(minutes=2), "ERROR", "remote unique")
-    body += "".join(
-        _record(now - timedelta(minutes=1), "ERROR", "remote flood") for _ in range(50)
-    )
+    body += "".join(_record(now - timedelta(minutes=1), "ERROR", "remote flood") for _ in range(50))
     (tmp_path / "a.csv").write_text(body)
     rows = [
         {

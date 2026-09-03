@@ -1,7 +1,7 @@
 """CSV log record parsing on the collector (plan §4 phase 4, §15.5).
 
-Input is one raw physical line: the first line of a possibly multiline csvlog
-record. An unterminated quoted field therefore yields fewer columns than the
+Input is one logical csvlog record, which may contain physical newlines inside
+quoted fields. A transport-capped record can still yield fewer columns than the
 server major promises; such records are marked ``partial`` instead of failing.
 """
 
@@ -83,7 +83,7 @@ def parse_record(
     server_version_num: int,
     encoding: str = "utf-8",
 ) -> ParsedRecord | None:
-    """Parse one raw first-line of a csvlog record; None if it is no record."""
+    """Parse one raw logical csvlog record; None if it is no record."""
     degraded = False
     try:
         text = raw.decode(encoding)

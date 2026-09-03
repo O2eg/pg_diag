@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
-from pg_diag.logscan.model import LogCoverage, LogRecord, LogWindow
+from pg_diag.logscan.model import AutoExplainPlan, LogCoverage, LogRecord, LogWindow
 from pg_diag.logscan.rle import fingerprint
 
 CONTENT = Path("src/pg_diag/content/python/server_log")
@@ -31,6 +31,7 @@ def _record(
     connection_from: str | None = "10.0.0.1:5000",
     count_complete: bool = True,
     detail: str | None = None,
+    auto_explain_plan: AutoExplainPlan | None = None,
 ) -> LogRecord:
     when = BASE + timedelta(seconds=offset_s)
     return LogRecord(
@@ -51,6 +52,7 @@ def _record(
         encoding_degraded=False,
         fingerprint=fingerprint(message),
         detail=detail,
+        auto_explain_plan=auto_explain_plan,
     )
 
 
@@ -77,10 +79,18 @@ def _window(records, *, ranking_complete: bool = True, locale_supported: bool = 
     )
 
 
-def _context(window=None, marker=None):
+def _context(window=None, marker=None, *, mode=None, interval_seconds=None, inventory=None):
     if marker is None:
         marker = {"status": "collected", "reason": None, "coverage": {}}
-    return SimpleNamespace(server_log=SimpleNamespace(window=window, marker=marker))
+    return SimpleNamespace(
+        server_log=SimpleNamespace(
+            window=window,
+            marker=marker,
+            mode=mode,
+            interval_seconds=interval_seconds,
+            inventory=inventory,
+        )
+    )
 
 
 def test_status_mapping_matrix() -> None:
@@ -176,14 +186,32 @@ def test_deadlock_events_filter() -> None:
 def test_authentication_failures_grouping() -> None:
     module = _load("authentication_failures")
     records = [
-        _record(1, "FATAL", 'password authentication failed for user "svc"',
-                sql_state="28P01", user="svc", repeat=10,
-                connection_from="10.0.0.1:50001"),
-        _record(90, "FATAL", 'password authentication failed for user "svc"',
-                sql_state="28P01", user="svc", repeat=5,
-                connection_from="10.0.0.1:50777"),
-        _record(3, "FATAL", "no pg_hba.conf entry for host", sql_state="28000",
-                user="other", connection_from="10.9.9.9:1"),
+        _record(
+            1,
+            "FATAL",
+            'password authentication failed for user "svc"',
+            sql_state="28P01",
+            user="svc",
+            repeat=10,
+            connection_from="10.0.0.1:50001",
+        ),
+        _record(
+            90,
+            "FATAL",
+            'password authentication failed for user "svc"',
+            sql_state="28P01",
+            user="svc",
+            repeat=5,
+            connection_from="10.0.0.1:50777",
+        ),
+        _record(
+            3,
+            "FATAL",
+            "no pg_hba.conf entry for host",
+            sql_state="28000",
+            user="other",
+            connection_from="10.9.9.9:1",
+        ),
         _record(4, "ERROR", "ordinary error"),
     ]
     result = module.collect(_context(_window(records)))
@@ -219,6 +247,140 @@ def test_empty_window_is_empty_status() -> None:
         assert result.severity_level == "ok", name
 
 
+def test_auto_explain_chart_keeps_top_ten_queries_per_minute() -> None:
+    module = _load("auto_explain_plans")
+
+    def plan(
+        duration_ms: float,
+        query_sample: str,
+        plan_format: str = "json",
+    ) -> AutoExplainPlan:
+        if plan_format == "json":
+            viewer_body = '{"Query Text":"' + query_sample + '","Plan":{"Node Type":"Result"}}'
+        else:
+            viewer_body = f"Query Text: {query_sample}\nResult  (cost=0.00..0.01 rows=1 width=4)"
+        return AutoExplainPlan(
+            duration_ms,
+            plan_format,
+            "Result",
+            1,
+            True,
+            True,
+            query_sample,
+            f"duration: {duration_ms} ms  plan:\n{viewer_body}",
+        )
+
+    records = [
+        _record(
+            offset,
+            "LOG",
+            auto_explain_plan=plan(offset * 100.0, f"select {offset}"),
+        )
+        for offset in range(1, 13)
+    ]
+    records.extend(
+        [
+            _record(61, "LOG", auto_explain_plan=plan(5_000, "select slow")),
+            _record(62, "LOG", auto_explain_plan=plan(2_000, "select less_slow", "text")),
+        ]
+    )
+    inventory = {
+        "window_from": "2026-08-31 10:00:00",
+        "collected_to": "2026-08-31 10:01:20",
+        "settings": {"log_utc_offset_seconds": 0},
+    }
+    result = module.collect(
+        _context(
+            _window(records),
+            mode="snapshots",
+            interval_seconds=5,
+            inventory=inventory,
+        )
+    )
+    assert result.collection_status == "ok"
+    assert result.result["chart"]["kind"] == "stacked_column"
+    assert result.result["chart"]["quantity"] == "milliseconds"
+    assert result.result["chart"]["unit"] == "milliseconds"
+    assert result.result["bucket_seconds"] == 60
+    assert result.result["top_queries_per_bucket"] == 10
+    assert result.result["plan_count"] == 14
+    assert result.result["displayed_plan_count"] == 12
+    assert result.result["omitted_plan_count"] == 2
+    assert result.result["parsed_plan_count"] == 14
+    assert result.result["plan_format_counts"] == {"json": 13, "text": 1}
+    assert result.result["chart"]["show_legend"] is False
+    assert result.result["chart"]["tooltip_kind"] == "query_event"
+    assert len(result.result["series"]) == 10
+    assert [series["name"] for series in result.result["series"]] == [
+        f"Rank {rank}" for rank in range(10, 0, -1)
+    ]
+    slowest = result.result["series"][-1]["points"]
+    second = result.result["series"][-2]["points"]
+    assert [point["value"] for point in slowest] == [1_200, 5_000]
+    assert [point["tooltip"]["duration_ms"] for point in slowest] == [1_200, 5_000]
+    assert [point["tooltip"]["query_sample"] for point in slowest] == [
+        "select 12",
+        "select slow",
+    ]
+    assert [point["tooltip"]["duration_ms"] for point in second] == [1_100, 2_000]
+    first_minute_values = [series["points"][0]["value"] for series in result.result["series"]]
+    first_minute_colors = [series["points"][0]["color"] for series in result.result["series"]]
+    assert first_minute_values == list(range(300, 1_300, 100))
+    assert first_minute_colors[0] == "#facc15"
+    assert first_minute_colors[-1] == "#ef4444"
+    assert len(set(first_minute_colors)) == 10
+    second_minute_points = [
+        series["points"][1] for series in result.result["series"] if series["points"][1]["value"]
+    ]
+    assert [point["value"] for point in second_minute_points] == [2_000, 5_000]
+    assert [point["color"] for point in second_minute_points] == ["#facc15", "#ef4444"]
+    assert slowest[0]["viewer"] == {
+        "plan_text": (
+            "duration: 1200.0 ms  plan:\n"
+            '{"Query Text":"select 12","Plan":{"Node Type":"Result"}}'
+        ),
+        "plan_format": "json",
+        "read_only": True,
+    }
+    assert result.result["series"][-3]["points"][1]["value"] == 0
+    assert "tooltip" not in result.result["series"][-3]["points"][1]
+    assert "viewer" not in result.result["series"][-3]["points"][1]
+
+
+def test_auto_explain_chart_always_uses_aligned_minute_buckets() -> None:
+    module = _load("auto_explain_plans")
+    plan = AutoExplainPlan(10_000, "yaml", "Result", 1, True, True, "select 1")
+    record = _record(301, "LOG", auto_explain_plan=plan)
+    inventory = {
+        "window_from": "2026-08-31 09:58:00",
+        "collected_to": "2026-08-31 10:07:00",
+        "settings": {"log_utc_offset_seconds": 10_800},
+    }
+    result = module.collect(_context(_window([record]), mode="one-shot", inventory=inventory))
+    assert result.result["bucket_seconds"] == 60
+    series = result.result["series"][-1]
+    assert series["points"][0]["t"] == "2026-08-31T09:58:00+03:00"
+    assert series["points"][-1]["t"] == "2026-08-31T10:07:00+03:00"
+    assert [point["value"] for point in series["points"]] == [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        10_000,
+        0,
+        0,
+    ]
+    assert series["points"][7]["color"] == "#ef4444"
+    assert series["points"][7]["tooltip"] == {
+        "log_time": "2026-08-31T10:05:01+03:00",
+        "duration_ms": 10_000,
+        "query_sample": "select 1",
+    }
+
+
 def _by(result):
     res = result.result
     cols = [c["name"] if isinstance(c, dict) else c for c in res["columns"]]
@@ -230,9 +392,12 @@ def test_autovacuum_runs_parses_relation_and_elapsed() -> None:
     module = _load("autovacuum_runs")
     records = [
         _record(1, "LOG", 'automatic vacuum of table "appdb.public.orders": index scans: 1'),
-        _record(2, "LOG",
-                'automatic analyze of table "appdb.public.users" system usage: '
-                "CPU: user: 0.01 s, system: 0.00 s, elapsed: 2.34 s"),
+        _record(
+            2,
+            "LOG",
+            'automatic analyze of table "appdb.public.users" system usage: '
+            "CPU: user: 0.01 s, system: 0.00 s, elapsed: 2.34 s",
+        ),
         _record(3, "ERROR", "unrelated"),
     ]
     result = module.collect(_context(_window(records)))
@@ -250,9 +415,12 @@ def test_checkpoints_parses_and_flags_forced() -> None:
     module = _load("checkpoints")
     records = [
         _record(1, "LOG", "checkpoint starting: wal"),
-        _record(2, "LOG",
-                "checkpoint complete: wrote 1234 buffers (7.5%); 1 WAL file(s) added; "
-                "write=26.5 s, sync=0.1 s, total=26.7 s"),
+        _record(
+            2,
+            "LOG",
+            "checkpoint complete: wrote 1234 buffers (7.5%); 1 WAL file(s) added; "
+            "write=26.5 s, sync=0.1 s, total=26.7 s",
+        ),
     ]
     result = module.collect(_context(_window(records)))
     rows = _by(result)
@@ -280,9 +448,13 @@ def test_archiver_failures_high() -> None:
 def test_wraparound_pressure_parses_database() -> None:
     module = _load("wraparound_pressure")
     records = [
-        _record(1, "WARNING",
-                'database "appdb" must be vacuumed within 5000000 transactions',
-                sql_state="01000", repeat=3),
+        _record(
+            1,
+            "WARNING",
+            'database "appdb" must be vacuumed within 5000000 transactions',
+            sql_state="01000",
+            repeat=3,
+        ),
     ]
     result = module.collect(_context(_window(records)))
     rows = _by(result)
@@ -304,8 +476,13 @@ def _inventory(files=None, **settings_overrides):
     settings.update(settings_overrides)
     if files is None:
         files = [
-            {"name": "a.csv", "size_bytes": 1000, "modification": "2026-08-31 10:00:00",
-             "in_window": True, "is_current": True},
+            {
+                "name": "a.csv",
+                "size_bytes": 1000,
+                "modification": "2026-08-31 10:00:00",
+                "in_window": True,
+                "is_current": True,
+            },
         ]
     return {
         "files": files,

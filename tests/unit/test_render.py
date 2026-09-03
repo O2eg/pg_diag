@@ -16,8 +16,16 @@ def _column(name: str, value_kind: str, encoding: str, **extra) -> dict:
         "name": name,
         "label": name,
         "value_kind": value_kind,
-        "semantic_role": "identifier" if name == "query_id" else "state" if value_kind == "timestamp" else "label",
-        "quantity": "identifier" if name == "query_id" else "timestamp" if value_kind == "timestamp" else "text",
+        "semantic_role": "identifier"
+        if name == "query_id"
+        else "state"
+        if value_kind == "timestamp"
+        else "label",
+        "quantity": "identifier"
+        if name == "query_id"
+        else "timestamp"
+        if value_kind == "timestamp"
+        else "text",
         "unit": "none",
         "quality": "exact",
         "nullable": True,
@@ -31,8 +39,14 @@ def _without_vendor_bundles(html: str) -> str:
     blocks = [
         ('<script id="pg-diag-third-party-licenses"', "</script>"),
         ('<style id="highlight-theme"', "</style>"),
+        ('<style id="pg-explain-viewer-theme"', "</style>"),
+        ('<style id="pg-explain-viewer-styles"', "</style>"),
         ('<script id="echarts-library"', "</script>"),
         ('<script id="highlight-library"', "</script>"),
+        ('<script id="pg-explain-viewer-expr-library"', "</script>"),
+        ('<script id="pg-explain-viewer-sql-library"', "</script>"),
+        ('<script id="pg-explain-viewer-library"', "</script>"),
+        ('<script id="pg-explain-viewer-render-library"', "</script>"),
     ]
     result = html
     for start_marker, end_marker in blocks:
@@ -76,7 +90,11 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
                         "title": "Item",
                         "display": {"default_sort": {"column": "value", "direction": "asc"}},
                         "variants": [
-                            {"id": "test_query_all", "min_pg_version": 140000, "sql_file": "test/query.sql"},
+                            {
+                                "id": "test_query_all",
+                                "min_pg_version": 140000,
+                                "sql_file": "test/query.sql",
+                            },
                         ],
                     },
                 },
@@ -123,9 +141,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
             "finished_at": "2026-07-04T22:28:20.925292+00:00",
         },
         "display": {"table": {"page_size": 25}},
-        "sections": [
-            {"section_id": "s", "title": "S", "state": "expanded", "items": ["s.i"]}
-        ],
+        "sections": [{"section_id": "s", "title": "S", "state": "expanded", "items": ["s.i"]}],
         "items": {
             "s.i": {
                 "item_id": "s.i",
@@ -145,12 +161,14 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
                         _column("snapshot_time", "timestamp", "json_string", pg_type="timestamptz"),
                         _column("captured_at", "timestamp", "json_string", pg_type="timestamptz"),
                     ],
-                    "rows": [[
-                        "</script><script>alert(1)</script>",
-                        "123",
-                        "2026-05-29T21:27:17.123456+00:00",
-                        "2026-05-29T21:27:18.283630+00:00",
-                    ]],
+                    "rows": [
+                        [
+                            "</script><script>alert(1)</script>",
+                            "123",
+                            "2026-05-29T21:27:17.123456+00:00",
+                            "2026-05-29T21:27:18.283630+00:00",
+                        ]
+                    ],
                     "row_count": 1,
                 },
                 "source_metadata": {
@@ -195,7 +213,9 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert '"15", "50"' not in app_html
     assert "const showFilter = rows.length > 1" in app_html
     assert "const showPaginationControls = rows.length > 25" in app_html
-    assert 'const collectedAt = item.source_kind === "metric" ? null : item.collected_at' in app_html
+    assert (
+        'const collectedAt = item.source_kind === "metric" ? null : item.collected_at' in app_html
+    )
     assert "formatBrowserTimestamp(rawValue)" in app_html
     assert 'String(column.pgType || "").toLowerCase() === "timestamptz"' in app_html
     assert "container.appendChild(empty)" in app_html
@@ -208,11 +228,11 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert ".table-toolbar.no-pagination" in app_html
     assert ".table-toolbar.single-row" in app_html
     assert "table.single-cell-table td" in app_html
-    assert 'if (rows.length === 1 && columns.length === 1)' in app_html
+    assert "if (rows.length === 1 && columns.length === 1)" in app_html
     assert 'table.classList.add("single-cell-table")' in app_html
-    assert '--code-panel-bg: #f6f8fa' in app_html
+    assert "--code-panel-bg: #f6f8fa" in app_html
     assert 'html[data-theme="light"] .scroll-jump' in app_html
-    assert 'background: #ffffff' in app_html
+    assert "background: #ffffff" in app_html
     assert 'html[data-theme="light"] .source-code-shell .hljs' in app_html
     assert 'html[data-theme="light"] .meta-raw-shell .hljs' in app_html
     assert 'html[data-theme="light"] .hljs-keyword' in app_html
@@ -221,9 +241,16 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert 'html[data-theme="light"] .hljs-subst' in app_html
     assert 'id="itemTypeFilter"' in html
     assert 'id="tagFilter"' in html
-    assert html.index('id="tagFilter"') < html.index('id="itemTypeFilter"') < html.index('id="collectionStatusFilter"') < html.index('id="severityLevelFilter"')
+    assert (
+        html.index('id="tagFilter"')
+        < html.index('id="itemTypeFilter"')
+        < html.index('id="collectionStatusFilter"')
+        < html.index('id="severityLevelFilter"')
+    )
     assert '<button id="expandAll" type="button" class="btn">Expand all</button>' in html
-    assert '<button id="expandAll" type="button" class="btn primary">Expand all</button>' not in html
+    assert (
+        '<button id="expandAll" type="button" class="btn primary">Expand all</button>' not in html
+    )
     assert 'id="visibleSummary"' in html
     assert "filter-summary-panel" in html
     assert "filter-summary-actions" in html
@@ -245,10 +272,12 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "if (stripMeta || !instructionText(item))" in html
     assert "if (stripMeta) {\n        return null;\n      }" in html
     assert "if (buttons.childElementCount)" in html
-    assert html.index("buttons.appendChild(sourceButton)") < html.index(
-        "buttons.appendChild(instructionButton)"
-    ) < html.index("buttons.appendChild(metaButton)")
-    assert "const tag = document.getElementById(\"tagFilter\").value" in html
+    assert (
+        html.index("buttons.appendChild(sourceButton)")
+        < html.index("buttons.appendChild(instructionButton)")
+        < html.index("buttons.appendChild(metaButton)")
+    )
+    assert 'const tag = document.getElementById("tagFilter").value' in html
     assert "if (leftEmpty !== rightEmpty)" in html
     assert "if ((leftNumber === null) !== (rightNumber === null))" in html
     assert "const matchesTag = !tag || (item.__tags || []).includes(tag)" in html
@@ -297,8 +326,8 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert 'return "OK"' in html
     assert ".summary-label" in html
     assert 'id="generatorInfo"' in html
-    assert "generator.name || \"pg_diag\"" in html
-    assert "generatorName + \" version \" + generatorVersion" in html
+    assert 'generator.name || "pg_diag"' in html
+    assert 'generatorName + " version " + generatorVersion' in html
     assert "https://github.com/O2eg/pg_diag" in html
     assert "https://o2eg.com/" in html
     assert "https://t.me/O2egg" in html
@@ -310,7 +339,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "project-link-icon" in html
     assert "formatRuntimeValue(entry[0], entry[1])" in html
     assert "formatBrowserTimestamp(value)" in html
-    assert "timeZoneName: \"short\"" in html
+    assert 'timeZoneName: "short"' in html
     assert 'id="runtimeDetails"' in html
     assert "collector_host" in html
     assert '<h1 id="reportTitle">Test</h1>' in html
@@ -350,6 +379,12 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "__ECHARTS_JS__" not in html
     assert "__HIGHLIGHT_JS__" not in html
     assert "__HIGHLIGHT_CSS__" not in html
+    assert "__PG_EXPLAIN_VIEWER_THEME_CSS__" not in html
+    assert "__PG_EXPLAIN_VIEWER_CSS__" not in html
+    assert "__PG_EXPLAIN_VIEWER_EXPR_JS__" not in html
+    assert "__PG_EXPLAIN_VIEWER_SQL_JS__" not in html
+    assert "__PG_EXPLAIN_VIEWER_JS__" not in html
+    assert "__PG_EXPLAIN_VIEWER_RENDER_JS__" not in html
     assert "__THIRD_PARTY_LICENSES__" not in html
     assert "ApexCharts" not in html
     assert 'window.echarts.init(pending.container, null, {renderer: "svg"})' in html
@@ -361,6 +396,10 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "const padding = 60000" in html
     assert "chartColors(series)" in html
     assert '(result.chart || {}).series_order === "configured"' in html
+    assert "(result.chart || {}).show_legend !== false" in html
+    assert '(result.chart || {}).tooltip_kind === "query_event"' in html
+    assert "buildQueryEventEChartsTooltip(params)" in html
+    assert "point.data.pgDiagTooltip" in html
     assert 'chartKind === "stacked_column" || chartKind === "stacked_bar"' in html
     assert "left._average - right._average || left._sourceIndex - right._sourceIndex" in html
     assert "right._average - left._average || left._sourceIndex - right._sourceIndex" in html
@@ -401,24 +440,26 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert 'panel.setAttribute("role", "group")' in html
     assert "createEChartsLegendPanel(entry)" in html
     assert 'entry.chart.dispatchAction({type: "legendToggleSelect", name: seriesName})' in html
-    assert "show: exporting" in html
+    assert "show: exporting && showLegend" in html
     assert 'entry.chart.dispatchAction({type: "dataZoom"' in html
     assert "dataZoomSelectActive: false" in html
     assert "bindEChartsPan(entry)" in html
     assert "entry.panDrag = {" in html
     assert "range.end - range.start >= 99.999" in html
     assert "zoomEChart(entry, 0.8)" in html
-    assert '"mousemove",\n          moveEChartsPan,\n          {capture: true, passive: false}' in html
+    assert (
+        '"mousemove",\n          moveEChartsPan,\n          {capture: true, passive: false}' in html
+    )
     assert "function moveEChartsPan(event)" in html
     assert "downloadEChartsCsv(entry)" in html
     assert 'new Blob([csv], {type: "text/csv;charset=utf-8"})' in html
     assert 'icon: "path://M2 8h7V2h6v6h7L12 20z"' in html
-    assert "chartTitle(item.title || \"\", axisScale.label)" in html
+    assert 'chartTitle(item.title || "", axisScale.label)' in html
     assert "formatChartAxisValue(value, unit, axisScale)" in html
     assert "formatChartTooltipValue(entry.value, unit, scale)" in html
     assert "buildSortedEChartsTooltip(params, unit, xType, scale)" in html
     assert "chartScalableUnitLabel(unit, quantity)" in html
-    assert 'formatter: (params) => formatChartAxisValue(params.value, unit, axisScale)' in html
+    assert "formatter: (params) => formatChartAxisValue(params.value, unit, axisScale)" in html
     assert "right.value - left.value || left.seriesIndex - right.seriesIndex" in html
     assert 'type: isBar ? "shadow" : "cross"' in html
     assert "formatChartTimeCoordinate(value)" in html
@@ -426,7 +467,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "enableChartTooltipScrolling(pending.shell)" in html
     assert 'className: "pg-diag-echarts-tooltip"' in html
     assert "enterable: true" in html
-    assert 'trigger: "axis"' in html
+    assert 'trigger: queryEventTooltip ? "item" : "axis"' in html
     assert 'target.closest(".pg-diag-chart-tooltip-rows")' in html
     assert "rows.scrollTop = next" in html
     assert "event.stopImmediatePropagation()" in html
@@ -437,23 +478,41 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "stored.hasFiniteValue = stored.hasFiniteValue || Number.isFinite(numeric)" in html
     assert "const firstFinite = grid.findIndex" in html
     assert "return grid.slice(firstFinite, lastFinite + 1)" in html
-    assert "valuesByX.has(coordinate.key) ? valuesByX.get(coordinate.key) : null" in html
+    assert "const stored = valuesByX.get(coordinate.key)" in html
+    assert "renderedPoint.pgDiagTooltip = point.tooltip" in html
+    assert "renderedPoint.pgDiagViewer = point.viewer" in html
+    assert "renderedPoint.itemStyle = {color: safeChartColor(point.color)}" in html
     assert "Number.isFinite(point.y) && point.y !== 0" in html
     assert "Array.isArray(point.value) ? point.value[1] : point.value" in html
     assert "rawValue === null || rawValue === undefined" in html
     assert "formatChartSeriesLabel(seriesName)" in html
-    assert 'const queryIdMatch = /^(.*)\\.(-?\\d+)$/.exec(rawName)' in html
+    assert "const queryIdMatch = /^(.*)\\.(-?\\d+)$/.exec(rawName)" in html
     assert 'baseLabel + " / SQL: " + shortQuery' in html
-    assert ".replace(/</g, \"&lt;\")" in html
+    assert '.replace(/</g, "&lt;")' in html
     assert "chartAxisScale(series, unit" in html
     assert 'unit === "bytes" || unit === "bytes/s"' in html
     assert '["B/s", "KiB/s", "MiB/s", "GiB/s"' in html
     assert "Highlight.js v11.11.1" in html
     assert 'id="sourceModal"' in html
+    assert 'id="planViewerModal"' in html
+    assert 'class="source-modal plan-viewer-modal"' in html
+    assert ".plan-viewer-modal {" in html
+    assert "place-items: start center;" in html
+    assert "max-height: calc(100dvh - clamp(24px, 6vh, 48px));" in html
+    assert 'id="pg-explain-viewer-library"' in html
+    assert "pg-explain-viewer 0.7.2 - MIT license" in html
+    assert 'chart.on("click", openQueryPlanViewerFromChart)' in html
+    assert "window.PgPlan.parse(planText)" in html
+    assert "window.PgPlanRender.render(root, plan" in html
+    assert "viewer.read_only !== true" in html
+    assert "document.documentElement.dataset.pvTheme = normalized" in html
     assert "html.report-modal-open,\n    body.report-modal-open" in html
     assert "overscroll-behavior: none;" in html
     assert "overscroll-behavior: contain;" in html
-    assert 'const REPORT_MODAL_IDS = ["sourceModal", "metaModal", "instructionModal"]' in html
+    assert (
+        'const REPORT_MODAL_IDS = ["sourceModal", "metaModal", "instructionModal", "planViewerModal"]'
+        in html
+    )
     assert "syncReportModalScrollLock()" in html
     assert 'showReportModal(modal, "closeSource")' in html
     assert 'showReportModal(modal, "closeMeta")' in html
@@ -473,8 +532,8 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert 'id="metaTotalTab"' in html
     assert 'id="metaRawTab"' in html
     assert 'role="tablist" aria-label="Metadata view"' in html
-    assert '>Total</button>' in html
-    assert '>Raw</button>' in html
+    assert ">Total</button>" in html
+    assert ">Raw</button>" in html
     assert 'selectMetaTab("total")' in html
     assert 'selectMetaTab("raw")' in html
     assert "buildRawItemConfiguration(currentMetaItem)" in html
@@ -497,7 +556,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "const contentProvenance = contentConfig.provenance;" in html
     assert "const contentFieldReference = contentDocument.field_reference;" in html
     assert '"queries/test.query":["queries.yaml","catalog/test.yaml"]' in html
-    assert ".meta-tab[aria-selected=\"true\"]" in html
+    assert '.meta-tab[aria-selected="true"]' in html
     assert ".meta-raw-shell" in html
     assert 'id="instructionModal"' in html
     assert "sourceActionLabel(item)" in html
@@ -518,7 +577,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert '"path":"instructions/items/s/i.md"' in html
     assert "Item instruction" in html
     assert "itemMetaRows(item)" in html
-    assert "appendMetaRows(rows, \"source\", item.source_metadata || {})" in html
+    assert 'appendMetaRows(rows, "source", item.source_metadata || {})' in html
     assert "renderItemIssues(item)" in html
     assert "SEVERITY_LEVEL_ORDER" in html
     assert "severity-dot" in html
@@ -581,17 +640,25 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "setDetailsOpen(details, !details.open, true)" in html
     assert "details.section {\n      box-sizing: border-box;" in html
     assert "details.item {\n      box-sizing: border-box;" in html
-    assert "transition: background-color 300ms ease, color 300ms ease, border-color 300ms ease" in html
+    assert (
+        "transition: background-color 300ms ease, color 300ms ease, border-color 300ms ease" in html
+    )
     assert ".details-content" in html
-    assert ".details-content {\n      display: grid;\n      grid-template-rows: 1fr;\n      min-width: 0;" in html
+    assert (
+        ".details-content {\n      display: grid;\n      grid-template-rows: 1fr;\n      min-width: 0;"
+        in html
+    )
     assert ".details-content-inner {\n      min-height: 0;\n      min-width: 0;" in html
     assert "grid-template-rows: 0fr" in html
     assert "grid-template-rows: 1fr" in html
-    assert "details[open]:not(.is-opening):not(.is-closing) > .details-content > .details-content-inner" in html
+    assert (
+        "details[open]:not(.is-opening):not(.is-closing) > .details-content > .details-content-inner"
+        in html
+    )
     assert "details.item[open]:not(.is-opening):not(.is-closing)" in html
     assert "overflow: visible" in html
     assert "wrapDetailsContent(body)" in html
-    assert "details.classList.add(\"is-opening\")" in html
+    assert 'details.classList.add("is-opening")' in html
     assert "window.setTimeout(" in html
     assert "chartResizeScopes" in html
     assert "flushChartResize" in html
@@ -609,18 +676,18 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert ".section-control-button.expand::before" in html
     assert ".section-control-button.collapse::before" in html
     assert 'button.className = "section-control-button expand"' in html
-    assert 'button.dataset.action = action' in html
+    assert "button.dataset.action = action" in html
     assert 'button.setAttribute("aria-label", label)' in html
     assert 'buttonNode.dataset.action === "expand"' in html
     assert "updateSectionControlButton(button)" in html
-    assert "querySelectorAll(\":scope > details.item\")" in html
+    assert 'querySelectorAll(":scope > details.item")' in html
     assert "DATA_TYPE_ORDER" in html
     assert "renderDataTypeIcons" in html
     assert "sectionDataTypes(section)" in html
     assert "itemDataType(item)" in html
     assert "itemRenderOptions(item)" in html
-    assert "itemEmptyMessage(item, \"No rows\")" in html
-    assert "itemEmptyMessage(item, \"No chart data\")" in html
+    assert 'itemEmptyMessage(item, "No rows")' in html
+    assert 'itemEmptyMessage(item, "No chart data")' in html
     assert "shouldRenderReasonAsResult(item)" in html
     assert "renderReasonResult(item)" in html
     assert 'collectionStatus(item) !== "unsupported"' in html
@@ -629,7 +696,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert 'status === "unsupported"' in html
     assert 'sourceKind === "python"' in html
     assert "details.dataset.itemType = itemDataType(item)" in html
-    assert "const itemType = document.getElementById(\"itemTypeFilter\").value" in html
+    assert 'const itemType = document.getElementById("itemTypeFilter").value' in html
     assert "const matchesType = !itemType || item.dataset.itemType === itemType" in html
     assert "data-type-icon" in html
     assert "Plain text" in html
@@ -640,14 +707,20 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "updatePageScrollControls" in html
     assert "progress < 0.9" in html
     assert "setScrollButtonVisible" in html
-    assert ".table-shell {\n      border: 1px solid var(--line);\n      border-radius: 8px;\n      overflow: visible;\n      background: var(--panel);\n      width: 100%;" in html
+    assert (
+        ".table-shell {\n      border: 1px solid var(--line);\n      border-radius: 8px;\n      overflow: visible;\n      background: var(--panel);\n      width: 100%;"
+        in html
+    )
     assert ".chart-export-menu.table-export-menu.drop-up" in html
     assert "positionTableExportMenu(menu)" in html
     assert ".hover-preview-body {" in html
     assert "max-height: 55vh;" in html
     assert "bindHoverPreview(button," in html
     assert "showHoverPreview(button, payload.title, payload.text)" in html
-    assert ".table-scroll {\n      max-height: 72vh;\n      width: 100%;\n      max-width: 100%;" in html
+    assert (
+        ".table-scroll {\n      max-height: 72vh;\n      width: 100%;\n      max-width: 100%;"
+        in html
+    )
     assert ".item-error" in html
     assert "ERROR_ITEM_STATUSES" in html
     assert 'new Set(["error"])' in html

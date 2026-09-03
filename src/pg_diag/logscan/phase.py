@@ -16,13 +16,16 @@ from typing import Any
 
 from ..security import redact_error
 
+from .auto_explain import parse_auto_explain
 from .csvparse import parse_record, parse_timestamp
 from .harvester import BashHarvesterSource, HarvesterUnavailableError
 from .model import (
+    AUTO_EXPLAIN_RAW_RECORD_CAP,
     DEPTH_MAX_MINUTES,
     LINE_CAP,
     MAX_CANDIDATE_FILES,
     PHASE_WALLCLOCK_SECONDS,
+    RAW_RECORD_CAP,
     REASON_CANDIDATE_LIMIT,
     REASON_PARSE_ERRORS,
     SERIES_GAP_SECONDS,
@@ -71,6 +74,11 @@ select
   current_setting('log_rotation_size') as log_rotation_size,
   current_setting('log_truncate_on_rotation') as log_truncate_on_rotation,
   current_setting('log_filename') as log_filename,
+  current_setting('log_timezone') as log_timezone,
+  extract(epoch from (
+    (current_timestamp at time zone current_setting('log_timezone'))
+      - (current_timestamp at time zone 'UTC')
+  ))::int as log_utc_offset_seconds,
   current_setting('server_version_num')::int as server_version_num,
   pg_catalog.pg_current_logfile('csvlog') as current_csvlog,
   to_char(
@@ -116,19 +124,27 @@ from pg_catalog.pg_database
 async def collect_report_server_log(run: Any, *, depth_minutes: int | None) -> LogWindow | None:
     """Collect and parse the csvlog window; record runtime['log_collection']."""
     if depth_minutes is None or depth_minutes == 0:
-        _finish(run, None, {
-            "status": "skipped",
-            "reason": "log collection disabled (--log-depth-time-min not set)",
-            "coverage": None,
-        })
+        _finish(
+            run,
+            None,
+            {
+                "status": "skipped",
+                "reason": "log collection disabled (--log-depth-time-min not set)",
+                "coverage": None,
+            },
+        )
         return None
     enabled_items = _enabled_server_log_items(run)
     if not enabled_items:
-        _finish(run, None, {
-            "status": "skipped",
-            "reason": "no server_log items selected for this run",
-            "coverage": None,
-        })
+        _finish(
+            run,
+            None,
+            {
+                "status": "skipped",
+                "reason": "no server_log items selected for this run",
+                "coverage": None,
+            },
+        )
         return None
     try:
         inventory, window = await asyncio.wait_for(
@@ -144,18 +160,26 @@ async def collect_report_server_log(run: Any, *, depth_minutes: int | None) -> L
         )
         return None
     except (TimeoutError, asyncio.TimeoutError):
-        _finish(run, None, {
-            "status": "error",
-            "reason": f"log collection exceeded {PHASE_WALLCLOCK_SECONDS:.0f}s wall clock",
-            "coverage": None,
-        })
+        _finish(
+            run,
+            None,
+            {
+                "status": "error",
+                "reason": f"log collection exceeded {PHASE_WALLCLOCK_SECONDS:.0f}s wall clock",
+                "coverage": None,
+            },
+        )
         return None
     except Exception as exc:  # noqa: BLE001 - the phase must never fail the report
-        _finish(run, None, {
-            "status": "error",
-            "reason": f"{type(exc).__name__}: {redact_error(exc)}",
-            "coverage": None,
-        })
+        _finish(
+            run,
+            None,
+            {
+                "status": "error",
+                "reason": f"{type(exc).__name__}: {redact_error(exc)}",
+                "coverage": None,
+            },
+        )
         return None
     coverage = asdict(window.coverage)
     coverage["truncation_reasons"] = list(coverage["truncation_reasons"])
@@ -176,7 +200,17 @@ def _finish(
     inventory: dict[str, Any] | None = None,
 ) -> None:
     run.artifact["runtime"]["log_collection"] = marker
-    run.server_log = ServerLogContext(window=window, marker=marker, inventory=inventory)
+    runtime = run.artifact.get("runtime") or {}
+    interval_seconds = runtime.get("interval_seconds")
+    run.server_log = ServerLogContext(
+        window=window,
+        marker=marker,
+        inventory=inventory,
+        mode=str(runtime.get("mode")) if runtime.get("mode") is not None else None,
+        interval_seconds=(
+            float(interval_seconds) if isinstance(interval_seconds, (int, float)) else None
+        ),
+    )
     run.server_log_window = window
 
 
@@ -205,12 +239,15 @@ def _build_inventory(
         "files": files,
         "file_count_total": int(totals["file_count"]) if totals is not None else len(files),
         "total_bytes": int(totals["total_bytes"]) if totals is not None else 0,
+        "window_from": str(facts["window_from"]),
         "collected_to": window_to,
         "settings": {
             "logging_collector": str(facts["logging_collector"]),
             "log_destination": str(facts["log_destination"]),
             "log_directory": str(facts["log_directory"]),
             "log_filename": str(facts["log_filename"]),
+            "log_timezone": str(facts.get("log_timezone") or "UTC"),
+            "log_utc_offset_seconds": int(facts.get("log_utc_offset_seconds") or 0),
             "log_rotation_age": str(facts["log_rotation_age"]),
             "log_rotation_size": str(facts["log_rotation_size"]),
             "log_truncate_on_rotation": str(facts["log_truncate_on_rotation"]),
@@ -278,9 +315,7 @@ async def _collect(run: Any, *, depth_minutes: int) -> tuple[dict[str, Any], Log
             inventory=inventory,
         )
     if not facts["current_csvlog"]:
-        raise _PhaseUnavailable(
-            "pg_current_logfile('csvlog') is empty", inventory=inventory
-        )
+        raise _PhaseUnavailable("pg_current_logfile('csvlog') is empty", inventory=inventory)
 
     log_directory = str(facts["log_directory"])
     if not log_directory.startswith("/"):
@@ -289,7 +324,10 @@ async def _collect(run: Any, *, depth_minutes: int) -> tuple[dict[str, Any], Log
     server_version_num = int(facts["server_version_num"])
 
     candidate_rows = [row for row in rows if row["in_window"]]
-    candidate_overflow = len(rows) > MAX_CANDIDATE_FILES
+    # The listing is newest-first. Seeing an out-of-window row proves that all
+    # omitted older rows are outside the requested window too; only 65
+    # consecutive in-window rows mean the 64-file scan candidate cap was hit.
+    candidate_overflow = len(rows) > MAX_CANDIDATE_FILES and all(row["in_window"] for row in rows)
     candidates: list[LogFileInfo] = []
     for row in candidate_rows[:MAX_CANDIDATE_FILES]:
         modification = row["modification"]
@@ -298,11 +336,10 @@ async def _collect(run: Any, *, depth_minutes: int) -> tuple[dict[str, Any], Log
             LogFileInfo(name=str(row["name"]), size=int(row["size"]), modification=naive)
         )
     if not candidates:
-        raise _PhaseUnavailable(
-            "no csvlog files within the requested window", inventory=inventory
-        )
+        raise _PhaseUnavailable("no csvlog files within the requested window", inventory=inventory)
 
-    clauses = clauses_for_items(_enabled_server_log_items(run))
+    enabled_items = _enabled_server_log_items(run)
+    clauses = clauses_for_items(enabled_items)
     if not clauses:
         # Only inventory-capability items are enabled: no content scan needed.
         result = ScanResult(series=[], stats=ScanStats(files_seen=len(candidates)))
@@ -314,6 +351,11 @@ async def _collect(run: Any, *, depth_minutes: int) -> tuple[dict[str, Any], Log
             window_from_ts=window_from,
             window_to_ts=window_to,
             recall_clauses=clauses,
+            raw_record_cap=(
+                AUTO_EXPLAIN_RAW_RECORD_CAP
+                if "server_log.auto_explain_plans" in enabled_items
+                else RAW_RECORD_CAP
+            ),
             deadline_monotonic=time.monotonic() + PHASE_WALLCLOCK_SECONDS * 0.9,
         )
         try:
@@ -347,9 +389,7 @@ def _select_source(collection_mode: str, log_directory: str, ssh: Any) -> LogSca
         if ssh is None:
             raise _PhaseUnavailable("remote log collection needs the SSH transport")
         return BashHarvesterSource(ssh)
-    raise _PhaseUnavailable(
-        "server log collection requires local or remote (SSH) collection mode"
-    )
+    raise _PhaseUnavailable("server log collection requires local or remote (SSH) collection mode")
 
 
 async def _database_encodings(conn: Any) -> dict[str, str]:
@@ -448,7 +488,12 @@ def _record_from_series(
         )
         if reparsed is not None and reparsed.log_time is not None:
             parsed = reparsed
-    message = sanitize_text(parsed.message or "")
+    raw_message = parsed.message or ""
+    auto_explain_plan = parse_auto_explain(
+        raw_message,
+        complete=not (parsed.partial or series.raw_truncated),
+    )
+    message = sanitize_text(raw_message)
     # detail is internal evidence, already bounded by ScanRequest.raw_record_cap.
     # Keep it intact so item parsers can reach structured suffixes beyond the
     # display-oriented LINE_CAP used for messages.
@@ -472,6 +517,7 @@ def _record_from_series(
         encoding_degraded=parsed.encoding_degraded,
         fingerprint=fingerprint(message),
         detail=detail,
+        auto_explain_plan=auto_explain_plan,
     )
 
 
@@ -493,4 +539,9 @@ def _can_merge_client_records(head: LogRecord, nxt: LogRecord) -> bool:
     For log_lock_waits, however, those numbers carry the waiter, target and
     duration, so merging would retain only the first event's values.
     """
-    return not (_LOCK_WAIT_EVENT_RE.match(head.message) or _LOCK_WAIT_EVENT_RE.match(nxt.message))
+    return not (
+        head.auto_explain_plan is not None
+        or nxt.auto_explain_plan is not None
+        or _LOCK_WAIT_EVENT_RE.match(head.message)
+        or _LOCK_WAIT_EVENT_RE.match(nxt.message)
+    )

@@ -13,3 +13,11 @@ Source: https://www.npmjs.com/package/highlight.js/v/11.11.1
 License: BSD-3-Clause
 The complete BSD-3-Clause license is distributed beside this file and embedded
 into every HTML report.
+
+pg-explain-viewer 0.7.2
+Source: https://github.com/O2eg/pg_explain_viewer/tree/v0.7.2
+Revision: fd8ed5f4dc79d4b9b166f3bccf8399e676fa6574
+License: MIT
+The four JavaScript modules and two CSS stylesheets are vendored from the
+tagged revision. The complete MIT license is distributed beside this file and
+embedded into every HTML report.

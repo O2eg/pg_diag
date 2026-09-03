@@ -87,9 +87,13 @@ Notes:
   a measurable cost on high-QPS clusters — enable deliberately.
 - Missing extensions do not break the run: the affected items report
   `unsupported` with the missing capability named.
-- `auto_explain` (preload-only library) is a useful companion for humans —
-  plans of slow queries land in the server log — but no report item parses
-  its output today.
+- `auto_explain` (preload-only library) writes plans of slow queries to the
+  server log. `server_log.auto_explain_plans` reconstructs multiline csvlog
+  records and recognizes text/JSON/XML/YAML plans. The chart keeps the ten
+  longest queries per clock-aligned minute; tooltips contain a sanitized query
+  sample capped at 300 characters. Clicking a block opens its collector-
+  sanitized, bounded plan in the self-contained report's read-only viewer;
+  original unsanitized log text is never retained in the artifact.
 
 ## Statistics parameters
 
@@ -122,6 +126,9 @@ is documented in
 | `log_checkpoints` | `on` (default since PG15) | `checkpoints`: trigger reason, buffers, write/sync timings |
 | `log_autovacuum_min_duration` | `0` (or a ms threshold) | `autovacuum_runs`: per-run chronology with relations |
 | `log_lock_waits` | `on` | Lock-wait history from the log (waits longer than `deadlock_timeout`); also enriches the error chronology |
+| `auto_explain.log_min_duration` | workload-specific threshold | `auto_explain_plans`: ten longest logged queries per minute |
+| `auto_explain.log_format` | `json` recommended | Machine-readable plan validation; text, XML, and YAML are also recognized |
+| `auto_explain.log_parameter_max_length` | `0` | Avoid logging bind-parameter values alongside plans |
 | `log_temp_files` | `0` (or a KB threshold) | Temp-file spill evidence in the log (planned item; already useful raw) |
 | `log_connections` / `log_disconnections` | optional | Connection-churn evidence; high volume — enable deliberately |
 

@@ -1395,6 +1395,12 @@ sections:
         state: collapsed
         render:
           empty_message: No lock waits longer than deadlock_timeout in the collected log window; check log_lock_waits if waits were expected.
+      auto_explain_plans:
+        python: server_log.auto_explain_plans
+        tags: [Logs, SQL]
+        state: collapsed
+        render:
+          empty_message: No query plans logged by auto_explain in the collected log window; check auto_explain preload, sample rate, and duration threshold.
       log_files_overview:
         python: server_log.log_files_overview
         tags: [Logs, Storage, Configuration]

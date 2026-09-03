@@ -56,6 +56,7 @@ ITEM_RECALL: dict[str, RecallClauses] = {
             [",LOG,00000,", "process ", " acquired ", " after "],
         ]
     ),
+    "server_log.auto_explain_plans": compile_clauses([["duration: ", " ms  plan:"]]),
     "server_log.wraparound_pressure": compile_clauses(
         [
             ["must be vacuumed within"],

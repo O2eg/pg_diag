@@ -8,6 +8,12 @@
   <style id="highlight-theme">
 __HIGHLIGHT_CSS__
   </style>
+  <style id="pg-explain-viewer-theme">
+__PG_EXPLAIN_VIEWER_THEME_CSS__
+  </style>
+  <style id="pg-explain-viewer-styles">
+__PG_EXPLAIN_VIEWER_CSS__
+  </style>
   <script id="echarts-library">
 __ECHARTS_JS__
   </script>
@@ -1128,6 +1134,72 @@ __ECHARTS_JS__
       grid-template-rows: auto auto minmax(0, 1fr);
     }
 
+    .plan-viewer-modal {
+      place-items: start center;
+      padding-block: clamp(12px, 3vh, 24px);
+      overflow: hidden;
+    }
+
+    .plan-viewer-dialog {
+      width: min(1500px, 100%);
+      max-height: calc(100vh - 48px);
+      max-height: calc(100dvh - clamp(24px, 6vh, 48px));
+    }
+
+    .plan-viewer-shell {
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      overscroll-behavior: contain;
+      padding: 14px;
+      background: var(--panel);
+    }
+
+    .plan-viewer-shell .pv {
+      --pv-bg: var(--panel);
+      --pv-fg: var(--text);
+      --pv-fg-muted: var(--muted);
+      --pv-border: var(--line);
+      --pv-border-strong: var(--line-strong);
+      --pv-row-hover: var(--panel-soft);
+      --pv-row-total-bg: var(--row-alt-bg);
+      --pv-detail-bg: var(--panel-soft);
+      --pv-thead-bg: var(--table-head-bg);
+      --pv-accent: var(--accent);
+      --pv-accent-soft: var(--accent-soft);
+      --pv-accent-fg: var(--accent-fg);
+      --pv-accent-contrast: var(--accent-contrast);
+      --pv-code-bg: var(--code-panel-bg);
+      --pv-code-fg: var(--code-panel-fg);
+    }
+
+    .plan-viewer-context {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 18px;
+      margin: 0 0 12px;
+      padding: 9px 11px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .plan-viewer-context strong {
+      color: var(--text);
+    }
+
+    .plan-viewer-error {
+      margin: 0;
+      padding: 12px;
+      border: 1px solid var(--err-fg);
+      border-radius: 6px;
+      background: var(--err-bg);
+      color: var(--err-fg);
+      white-space: pre-wrap;
+    }
+
     .source-dialog-header {
       display: flex;
       align-items: center;
@@ -1873,6 +1945,16 @@ __ECHARTS_JS__
       font-variant-numeric: tabular-nums;
     }
 
+    .pg-diag-chart-tooltip-action {
+      padding: 7px 11px;
+      border-bottom: 1px solid var(--line);
+      background: var(--accent);
+      color: var(--accent-contrast);
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      text-align: center;
+    }
+
     .pg-diag-chart-tooltip-rows {
       max-height: 360px;
       overflow-x: hidden;
@@ -1907,6 +1989,30 @@ __ECHARTS_JS__
       font-weight: 700;
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
+    }
+
+    .pg-diag-chart-tooltip-detail-row {
+      display: grid;
+      grid-template-columns: max-content minmax(0, 1fr);
+      align-items: start;
+      gap: 10px;
+      padding: 5px 11px;
+    }
+
+    .pg-diag-chart-tooltip-detail-label {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .pg-diag-chart-tooltip-detail-value {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font-variant-numeric: tabular-nums;
+      white-space: normal;
+    }
+
+    .pg-diag-chart-tooltip-query {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
 
     .table-toolbar {
@@ -2352,6 +2458,20 @@ __ECHARTS_JS__
       <div id="instructionBody" class="instruction-shell"></div>
     </div>
   </div>
+  <div id="planViewerModal" class="source-modal plan-viewer-modal" role="dialog" aria-modal="true" aria-labelledby="planViewerModalTitle" hidden>
+    <div class="source-dialog plan-viewer-dialog">
+      <div class="source-dialog-header">
+        <h2 id="planViewerModalTitle" class="source-dialog-title">Query plan (read-only)</h2>
+        <div class="source-dialog-actions">
+          <button id="closePlanViewer" type="button" class="btn">Close</button>
+        </div>
+      </div>
+      <div id="planViewerShell" class="plan-viewer-shell">
+        <div id="planViewerContext" class="plan-viewer-context"></div>
+        <div id="planViewerRoot"></div>
+      </div>
+    </div>
+  </div>
   <div class="page-scroll-controls" aria-label="Page scroll controls">
     <button id="scrollToTop" type="button" class="scroll-jump scroll-up" aria-label="Scroll to top" title="Scroll to top"></button>
     <button id="scrollToBottom" type="button" class="scroll-jump scroll-down" aria-label="Scroll to bottom" title="Scroll to bottom"></button>
@@ -2359,6 +2479,18 @@ __ECHARTS_JS__
   <script id="pg-diag-artifact" type="application/json">__PAYLOAD__</script>
   <script id="highlight-library">
 __HIGHLIGHT_JS__
+  </script>
+  <script id="pg-explain-viewer-expr-library">
+__PG_EXPLAIN_VIEWER_EXPR_JS__
+  </script>
+  <script id="pg-explain-viewer-sql-library">
+__PG_EXPLAIN_VIEWER_SQL_JS__
+  </script>
+  <script id="pg-explain-viewer-library">
+__PG_EXPLAIN_VIEWER_JS__
+  </script>
+  <script id="pg-explain-viewer-render-library">
+__PG_EXPLAIN_VIEWER_RENDER_JS__
   </script>
   <script>
     "use strict";
@@ -2450,9 +2582,10 @@ __HIGHLIGHT_JS__
     const CELL_COLLAPSED_LINE_LIMIT = 6;
     const DETAILS_ANIMATION_MS = 300;
     const CHART_QUERY_LABEL_MAX_CHARS = 80;
-    const REPORT_MODAL_IDS = ["sourceModal", "metaModal", "instructionModal"];
+    const REPORT_MODAL_IDS = ["sourceModal", "metaModal", "instructionModal", "planViewerModal"];
     let currentSourceText = "";
     let currentMetaItem = null;
+    let currentPlanViewer = null;
     let scrollControlsRaf = 0;
     let chartResizeRaf = 0;
     const chartResizeScopes = new Set();
@@ -2471,6 +2604,7 @@ __HIGHLIGHT_JS__
     bindSourceModalControls();
     bindMetaModalControls();
     bindInstructionModalControls();
+    bindPlanViewerModalControls();
     bindChartExportMenuControls();
     bindTableExportMenuControls();
     bindPageScrollControls();
@@ -4397,6 +4531,20 @@ __HIGHLIGHT_JS__
       copyButton.textContent = "Copy";
     }
 
+    function closePlanViewer(hideModal = true) {
+      if (currentPlanViewer && typeof currentPlanViewer.destroy === "function") {
+        currentPlanViewer.destroy();
+      } else if (window.PgPlanRender && typeof window.PgPlanRender.destroy === "function") {
+        window.PgPlanRender.destroy(document.getElementById("planViewerRoot"));
+      }
+      currentPlanViewer = null;
+      document.getElementById("planViewerRoot").replaceChildren();
+      document.getElementById("planViewerContext").replaceChildren();
+      if (hideModal) {
+        hideReportModal(document.getElementById("planViewerModal"));
+      }
+    }
+
     async function copyCurrentSource() {
       if (!currentSourceText) {
         return;
@@ -4593,11 +4741,16 @@ __HIGHLIGHT_JS__
           echartsResizeObserver.observe(pending.container);
         }
         chart.on("datazoom", (event) => rememberEChartsZoom(entry, event));
+        if ((pending.result.chart || {}).tooltip_kind === "query_event") {
+          chart.on("click", openQueryPlanViewerFromChart);
+        }
         chart.setOption(buildEChartsOptions(entry), {notMerge: true});
         chart.resize();
         bindEChartsPan(entry);
-        entry.legendPanel = createEChartsLegendPanel(entry);
-        pending.shell.appendChild(entry.legendPanel);
+        if (chartLegendVisible(pending.result)) {
+          entry.legendPanel = createEChartsLegendPanel(entry);
+          pending.shell.appendChild(entry.legendPanel);
+        }
         entry.exportMenu = createEChartsExportMenu(entry);
         pending.shell.appendChild(entry.exportMenu);
         pending.container.dataset.chartReady = "true";
@@ -4664,12 +4817,27 @@ __HIGHLIGHT_JS__
             const numeric = point.value === null || point.value === undefined
               ? null
               : Number(point.value);
-            valuesByX.set(coordinate.key, Number.isFinite(numeric) ? numeric : null);
+            valuesByX.set(coordinate.key, {
+              y: Number.isFinite(numeric) ? numeric : null,
+              color: typeof point.color === "string" ? point.color : "",
+              tooltip: point.tooltip && typeof point.tooltip === "object"
+                ? point.tooltip
+                : null,
+              viewer: point.viewer && typeof point.viewer === "object"
+                ? point.viewer
+                : null,
+            });
           }
-          const data = xGrid.map((coordinate) => ({
-            x: coordinate.value,
-            y: valuesByX.has(coordinate.key) ? valuesByX.get(coordinate.key) : null,
-          }));
+          const data = xGrid.map((coordinate) => {
+            const stored = valuesByX.get(coordinate.key);
+            return {
+              x: coordinate.value,
+              y: stored ? stored.y : null,
+              color: stored ? stored.color : "",
+              tooltip: stored ? stored.tooltip : null,
+              viewer: stored ? stored.viewer : null,
+            };
+          });
           const finiteValues = data.map((point) => point.y).filter((value) => Number.isFinite(value));
           const total = finiteValues.reduce((sum, value) => sum + value, 0);
           const average = finiteValues.length ? total / finiteValues.length : Number.NEGATIVE_INFINITY;
@@ -4752,16 +4920,33 @@ __HIGHLIGHT_JS__
       const colors = chartColors(series);
       const categoryValues = series.length ? series[0].data.map((point) => point.x) : [];
       const zoomRange = entry.zoomRange || {start: 0, end: 100};
-      const legendData = eChartsLegendData(series, chartKind);
-      const legendLayout = eChartsLegendLayout(entry, legendData);
+      const showLegend = chartLegendVisible(result);
+      const legendData = showLegend ? eChartsLegendData(series, chartKind) : [];
+      const legendLayout = showLegend
+        ? eChartsLegendLayout(entry, legendData)
+        : {chartHeight: CHART_MIN_HEIGHT_PX, height: 0, width: 0};
+      const queryEventTooltip = (result.chart || {}).tooltip_kind === "query_event";
 
       const renderedSeries = series.map((source, seriesIndex) => {
         const color = colors[seriesIndex];
         const data = source.data.map((point) => {
-          if (xType === "datetime") {
-            return [Date.parse(point.x), point.y];
+          const value = xType === "datetime"
+            ? [Date.parse(point.x), point.y]
+            : point.y;
+          if (!point.tooltip && !point.color && !point.viewer) {
+            return value;
           }
-          return point.y;
+          const renderedPoint = {value};
+          if (point.tooltip) {
+            renderedPoint.pgDiagTooltip = point.tooltip;
+          }
+          if (point.color) {
+            renderedPoint.itemStyle = {color: safeChartColor(point.color)};
+          }
+          if (point.viewer) {
+            renderedPoint.pgDiagViewer = point.viewer;
+          }
+          return renderedPoint;
         });
         return {
           name: source.name,
@@ -4772,6 +4957,7 @@ __HIGHLIGHT_JS__
           showSymbol: false,
           connectNulls: false,
           barMaxWidth: 48,
+          cursor: queryEventTooltip ? "pointer" : "default",
           itemStyle: {
             color,
             borderRadius: isBar ? [2, 2, 0, 0] : 0,
@@ -4798,11 +4984,11 @@ __HIGHLIGHT_JS__
           left: 18,
           right: 26,
           top: 68,
-          bottom: exporting ? legendLayout.height + 24 : 44,
+          bottom: exporting && showLegend ? legendLayout.height + 24 : 44,
           containLabel: true,
         },
         legend: {
-          show: exporting,
+          show: exporting && showLegend,
           type: "plain",
           data: legendData,
           left: 18,
@@ -4866,7 +5052,7 @@ __HIGHLIGHT_JS__
         },
         tooltip: {
           show: !exporting,
-          trigger: "axis",
+          trigger: queryEventTooltip ? "item" : "axis",
           renderMode: "html",
           className: "pg-diag-echarts-tooltip",
           confine: true,
@@ -4883,12 +5069,9 @@ __HIGHLIGHT_JS__
             crossStyle: {color: theme.muted},
             label: {backgroundColor: theme.panelSoft, color: theme.text},
           },
-          formatter: (params) => buildSortedEChartsTooltip(
-            params,
-            unit,
-            xType,
-            axisScale,
-          ),
+          formatter: (params) => queryEventTooltip
+            ? buildQueryEventEChartsTooltip(params)
+            : buildSortedEChartsTooltip(params, unit, xType, axisScale),
         },
         dataZoom: [{
           type: "inside",
@@ -4954,6 +5137,10 @@ __HIGHLIGHT_JS__
       return chartKind === "stacked_column" || chartKind === "stacked_bar"
         ? names.reverse()
         : names;
+    }
+
+    function chartLegendVisible(result) {
+      return (result.chart || {}).show_legend !== false;
     }
 
     function eChartsLegendLayout(entry, legendData) {
@@ -5203,8 +5390,11 @@ __HIGHLIGHT_JS__
       }
       const width = Math.max(Math.round(entry.container.clientWidth), 640);
       const chartKind = (entry.result.chart || {}).kind || "line";
-      const legendData = eChartsLegendData(entry.series, chartKind);
-      const legendLayout = eChartsLegendLayout(entry, legendData);
+      const showLegend = chartLegendVisible(entry.result);
+      const legendData = showLegend ? eChartsLegendData(entry.series, chartKind) : [];
+      const legendLayout = showLegend
+        ? eChartsLegendLayout(entry, legendData)
+        : {chartHeight: CHART_MIN_HEIGHT_PX, height: 0, width: 0};
       const height = Math.max(legendLayout.chartHeight, CHART_MIN_HEIGHT_PX);
       const exportContainer = document.createElement("div");
       exportContainer.style.position = "fixed";
@@ -5378,6 +5568,123 @@ __HIGHLIGHT_JS__
         + '<div class="pg-diag-chart-tooltip-title">' + title + '</div>'
         + '<div class="pg-diag-chart-tooltip-rows">' + rows + '</div>'
         + '</div>';
+    }
+
+    function buildQueryEventEChartsTooltip(params) {
+      const point = Array.isArray(params) ? params[0] : params;
+      const metadata = point && point.data && typeof point.data === "object"
+        ? point.data.pgDiagTooltip
+        : null;
+      if (!metadata || typeof metadata !== "object") {
+        return "";
+      }
+      const duration = Number(metadata.duration_ms);
+      const durationLabel = Number.isFinite(duration)
+        ? formatDecimalValue(duration, 3) + " ms"
+        : "Unavailable";
+      const querySample = String(metadata.query_sample || "Query text unavailable");
+      const viewer = point.data.pgDiagViewer;
+      const clickHint = viewer && typeof viewer === "object" && viewer.read_only === true
+        ? '<div class="pg-diag-chart-tooltip-action">Click to show explain</div>'
+        : "";
+      const rows = [
+        ["Date/time", String(metadata.log_time || "Unavailable"), ""],
+        ["Duration", durationLabel, ""],
+        ["Query", querySample, "pg-diag-chart-tooltip-query"],
+      ].map((entry) => {
+        return '<div class="pg-diag-chart-tooltip-detail-row">'
+          + '<span class="pg-diag-chart-tooltip-detail-label">' + escapeChartLabel(entry[0]) + '</span>'
+          + '<span class="pg-diag-chart-tooltip-detail-value ' + entry[2] + '">' + escapeChartLabel(entry[1]) + '</span>'
+          + '</div>';
+      }).join("");
+      return '<div class="pg-diag-chart-tooltip">'
+        + clickHint
+        + '<div class="pg-diag-chart-tooltip-title">auto_explain query</div>'
+        + '<div class="pg-diag-chart-tooltip-rows">' + rows + '</div>'
+        + '</div>';
+    }
+
+    function openQueryPlanViewerFromChart(params) {
+      const data = params && params.data && typeof params.data === "object"
+        ? params.data
+        : null;
+      const viewer = data && data.pgDiagViewer;
+      const tooltip = data && data.pgDiagTooltip;
+      if (!viewer || typeof viewer !== "object" || viewer.read_only !== true) {
+        return;
+      }
+      openQueryPlanViewer(viewer, tooltip);
+    }
+
+    function openQueryPlanViewer(viewer, tooltip = null) {
+      const planText = String((viewer || {}).plan_text || "");
+      if (!planText) {
+        return;
+      }
+      closePlanViewer(false);
+      const modal = document.getElementById("planViewerModal");
+      const title = document.getElementById("planViewerModalTitle");
+      const context = document.getElementById("planViewerContext");
+      const root = document.getElementById("planViewerRoot");
+      const shell = document.getElementById("planViewerShell");
+      const format = String(viewer.plan_format || "unknown").toUpperCase();
+      title.textContent = "Query plan (read-only) · " + format;
+      renderPlanViewerContext(context, tooltip);
+      root.replaceChildren();
+      shell.scrollTop = 0;
+      shell.scrollLeft = 0;
+      showReportModal(modal, "closePlanViewer");
+      try {
+        if (!window.PgPlan || !window.PgPlanRender) {
+          throw new Error("Bundled pg-explain-viewer is unavailable");
+        }
+        const plan = window.PgPlan.parse(planText);
+        currentPlanViewer = window.PgPlanRender.render(root, plan, {
+          defaultTab: "plan",
+        });
+        fitPlanViewerNodeColumns(root);
+      } catch (error) {
+        const message = document.createElement("pre");
+        message.className = "plan-viewer-error";
+        message.textContent = "The bundled viewer could not parse this plan.\n"
+          + String(error && error.message ? error.message : error);
+        root.replaceChildren(message);
+      }
+    }
+
+    function fitPlanViewerNodeColumns(root) {
+      for (const table of root.querySelectorAll(".pv-table")) {
+        const cells = [...table.querySelectorAll("td.pv-nodecell")];
+        if (!cells.length) {
+          continue;
+        }
+        const currentWidth = Math.max(...cells.map((cell) => cell.clientWidth));
+        const contentWidth = Math.max(...cells.map((cell) => cell.scrollWidth));
+        if (contentWidth <= currentWidth) {
+          continue;
+        }
+        const requiredWidth = Math.ceil(contentWidth) + "px";
+        for (const cell of cells) {
+          cell.style.minWidth = requiredWidth;
+        }
+      }
+    }
+
+    function renderPlanViewerContext(container, tooltip) {
+      container.replaceChildren();
+      const values = [
+        ["Date/time", String((tooltip || {}).log_time || "Unavailable")],
+        ["Duration", Number.isFinite(Number((tooltip || {}).duration_ms))
+          ? formatDecimalValue(Number(tooltip.duration_ms), 3) + " ms"
+          : "Unavailable"],
+      ];
+      for (const [label, value] of values) {
+        const field = document.createElement("span");
+        const heading = document.createElement("strong");
+        heading.textContent = label + ": ";
+        field.append(heading, document.createTextNode(value));
+        container.appendChild(field);
+      }
     }
 
     function chartTooltipXLabel(value, xType) {
@@ -7249,6 +7556,21 @@ __HIGHLIGHT_JS__
       });
     }
 
+    function bindPlanViewerModalControls() {
+      const modal = document.getElementById("planViewerModal");
+      document.getElementById("closePlanViewer").addEventListener("click", () => closePlanViewer());
+      modal.addEventListener("click", (event) => {
+        if (event.target === modal) {
+          closePlanViewer();
+        }
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !modal.hidden) {
+          closePlanViewer();
+        }
+      });
+    }
+
     function bindChartExportMenuControls() {
       document.addEventListener("pointerdown", (event) => {
         const target = event.target instanceof Element ? event.target : null;
@@ -7334,6 +7656,7 @@ __HIGHLIGHT_JS__
     function setTheme(theme, persist) {
       const normalized = theme === "light" ? "light" : "dark";
       document.documentElement.dataset.theme = normalized;
+      document.documentElement.dataset.pvTheme = normalized;
       const toggle = document.getElementById("themeToggle");
       if (toggle) {
         toggle.checked = normalized === "light";

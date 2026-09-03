@@ -773,6 +773,14 @@ exact: 194,060,000 B/s
 A tooltip must not display `194060000 bytes/s`, `185.07 MB/s`, or bare
 `185.07 M` as its primary value.
 
+A chart MAY set `tooltip_kind: query_event` for per-block query evidence. Each
+nonzero point then supplies a `tooltip` mapping with `log_time`, `duration_ms`,
+and a bounded `query_sample`. It MAY also supply a `viewer` mapping containing
+a collector-sanitized, bounded `plan_text`, its `plan_format`, and
+`read_only: true`. The renderer escapes every tooltip field, uses item hover
+rather than the shared axis tooltip, and opens viewer data only in the bundled
+read-only plan viewer.
+
 ### 13.3 Legend and shared-tooltip ordering
 
 By default, the renderer orders chart series in the legend by descending
@@ -802,6 +810,9 @@ needed. Chart interaction provides selection zoom, explicit zoom in/out,
 reset, and drag-pan over a zoomed range. A single Export menu provides SVG,
 PNG, and CSV. SVG and PNG are rendered with a light export palette and white
 background so labels remain readable regardless of the current report theme.
+Set `show_legend: false` when series are positional implementation details
+rather than stable user-facing categories; this hides both the interactive
+legend panel and the exported-image legend.
 
 The chart title, Y-axis labels, Y-axis crosshair label, and tooltip values use
 one scale calculated from the complete chart. Binary byte units use IEC

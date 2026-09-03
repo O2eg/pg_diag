@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -308,6 +309,188 @@ def test_self_contained_echarts_report_in_browser(tmp_path: Path) -> None:
         browser.close()
 
 
+def test_query_event_chart_hides_legend_and_uses_point_tooltip(tmp_path: Path) -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    artifact = _artifact()
+    result = artifact["items"]["charts.line"]["result"]
+    result["chart"].update(
+        {
+            "kind": "stacked_column",
+            "show_legend": False,
+            "tooltip_kind": "query_event",
+        }
+    )
+    nested_plan = {
+        "Node Type": "Index Scan",
+        "Index Name": "pg_description_o_c_o_index",
+        "Relation Name": "pg_description",
+        "Alias": "pgd",
+        "Startup Cost": 0.01,
+        "Total Cost": 1.0,
+        "Plan Rows": 1,
+        "Plan Width": 4,
+        "Actual Startup Time": 0.001,
+        "Actual Total Time": 0.002,
+        "Actual Rows": 1,
+        "Actual Loops": 1,
+        "Shared Hit Blocks": 10,
+    }
+    for _ in range(18):
+        nested_plan = {
+            "Node Type": "Nested Loop Left Join",
+            "Startup Cost": 0.01,
+            "Total Cost": 1.0,
+            "Plan Rows": 1,
+            "Plan Width": 4,
+            "Actual Startup Time": 0.001,
+            "Actual Total Time": 0.002,
+            "Actual Rows": 1,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 10,
+            "Plans": [nested_plan],
+        }
+    viewer_plan = "duration: 12345.678 ms  plan:\n" + json.dumps(
+        [
+            {
+                "Plan": nested_plan,
+                "Query Text": "select 1",
+                "Planning Time": 0.1,
+                "Execution Time": 0.02,
+            }
+        ]
+    )
+    for index, point in enumerate(result["series"][0]["points"]):
+        point.update(
+            {
+                "value": 1,
+                "color": "#f87171",
+                "tooltip": {
+                    "log_time": f"2026-07-15T10:00:{index * 5:02d}Z",
+                    "duration_ms": 12_345.678,
+                    "query_sample": "select <unsafe> & escaped...",
+                },
+                "viewer": {
+                    "plan_text": viewer_plan,
+                    "plan_format": "json",
+                    "read_only": True,
+                },
+            }
+        )
+    report_path = tmp_path / "query-event-chart.html"
+    report_path.write_text(render_html(artifact, validate=False), encoding="utf-8")
+
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1280, "height": 900})
+        errors: list[str] = []
+        page.on(
+            "console",
+            lambda message: errors.append(message.text) if message.type == "error" else None,
+        )
+        page.on("pageerror", lambda error: errors.append(str(error)))
+
+        page.goto(report_path.as_uri(), wait_until="load")
+        page.wait_for_function("document.querySelectorAll('[data-chart-ready=true]').length === 3")
+        state = page.evaluate(
+            """() => ({
+              legendPanel: echartsCharts[0].legendPanel,
+              legendPanels: document.querySelectorAll(".chart-legend-panel").length,
+              trigger: echartsCharts[0].chart.getOption().tooltip[0].trigger,
+              pointColor: echartsCharts[0].chart.getOption().series[0].data[1].itemStyle.color,
+            })"""
+        )
+        page.evaluate(
+            'echartsCharts[0].chart.dispatchAction({type: "showTip", seriesIndex: 0, dataIndex: 1})'
+        )
+        tooltip = page.locator(".pg-diag-echarts-tooltip").first
+        tooltip_text = tooltip.inner_text()
+        click_hint = tooltip.locator(".pg-diag-chart-tooltip-action")
+
+        assert state == {
+            "legendPanel": None,
+            "legendPanels": 2,
+            "trigger": "item",
+            "pointColor": "#f87171",
+        }
+        assert "2026-07-15T10:00:05Z" in tooltip_text
+        assert "12,345.678 ms" in tooltip_text
+        assert "select <unsafe> & escaped..." in tooltip_text
+        assert click_hint.inner_text() == "Click to show explain"
+        assert click_hint.evaluate("node => getComputedStyle(node).textAlign") == "center"
+        assert click_hint.evaluate("node => Number(getComputedStyle(node).fontWeight)") >= 700
+        assert (
+            click_hint.evaluate("node => getComputedStyle(node).backgroundColor")
+            != "rgba(0, 0, 0, 0)"
+        )
+        assert page.locator(".pg-diag-echarts-tooltip script").count() == 0
+        page.evaluate(
+            """() => openQueryPlanViewerFromChart({
+              data: echartsCharts[0].chart.getOption().series[0].data[1],
+            })"""
+        )
+        modal = page.locator("#planViewerModal")
+        assert modal.is_visible()
+        assert "Query plan (read-only) · JSON" in modal.inner_text()
+        assert modal.locator("#planViewerRoot.pv").count() == 1
+        assert modal.locator("textarea, input").count() == 0
+        assert modal.get_by_text("Export", exact=True).count() == 0
+        node_layout = modal.evaluate(
+            """(modal) => {
+              const wrap = modal.querySelector(".pv-tablewrap");
+              const overlaps = [...modal.querySelectorAll("tr.pv-row")].map((row) => {
+                const node = row.querySelector("td.pv-nodecell");
+                const head = row.querySelector(".pv-nodehead");
+                const next = node && node.nextElementSibling;
+                if (!node || !head || !next) return null;
+                return head.getBoundingClientRect().right - next.getBoundingClientRect().left;
+              }).filter((value) => value !== null);
+              return {
+                measuredRows: overlaps.length,
+                maxOverlap: Math.max(...overlaps),
+                scrollsHorizontally: wrap.scrollWidth > wrap.clientWidth,
+              };
+            }"""
+        )
+        assert node_layout["measuredRows"] > 0
+        assert node_layout["maxOverlap"] <= 0
+        assert node_layout["scrollsHorizontally"] is True
+        dialog = modal.locator(".plan-viewer-dialog")
+        shell = modal.locator("#planViewerShell")
+        dialog_before_tab = dialog.bounding_box()
+        assert dialog_before_tab is not None
+        assert dialog_before_tab["y"] == pytest.approx(24, abs=1)
+        assert dialog_before_tab["y"] + dialog_before_tab["height"] <= 900 - 23
+        modal.get_by_role("tab", name="Plan text", exact=True).click()
+        dialog_after_tab = dialog.bounding_box()
+        assert dialog_after_tab is not None
+        assert dialog_after_tab["y"] == pytest.approx(dialog_before_tab["y"], abs=1)
+        background_scroll = page.evaluate("window.scrollY")
+        page.evaluate(
+            """() => {
+              const spacer = document.createElement("div");
+              spacer.id = "planViewerOverflowProbe";
+              spacer.style.height = "1400px";
+              document.getElementById("planViewerRoot").appendChild(spacer);
+            }"""
+        )
+        assert shell.evaluate("node => node.scrollHeight > node.clientHeight")
+        shell.evaluate("node => { node.scrollTop = 120; }")
+        assert shell.evaluate("node => node.scrollTop") == pytest.approx(120, abs=1)
+        assert page.evaluate("window.scrollY") == background_scroll
+        page.evaluate('setTheme("light", false)')
+        assert page.locator("html").get_attribute("data-pv-theme") == "light"
+        assert (
+            modal.locator("#planViewerRoot").evaluate(
+                "node => getComputedStyle(node).backgroundColor"
+            )
+            == "rgb(255, 255, 255)"
+        )
+        modal.get_by_role("button", name="Close").click()
+        assert modal.is_hidden()
+        assert errors == []
+        browser.close()
+
+
 def test_filter_resizes_chart_initialized_inside_collapsed_section(tmp_path: Path) -> None:
     sync_api = pytest.importorskip("playwright.sync_api")
     artifact = _artifact()
@@ -457,10 +640,7 @@ def test_fallback_raw_metadata_uses_effective_cross_kind_source(tmp_path: Path) 
                 "resolved",
             )
         },
-        **{
-            "/".join(["*"] * depth): "Nested test metadata."
-            for depth in range(2, 9)
-        },
+        **{"/".join(["*"] * depth): "Nested test metadata." for depth in range(2, 9)},
     }
     document["sections"]["charts"]["items"]["fallback"] = {
         "query": "primary.query",
@@ -499,9 +679,7 @@ def test_fallback_raw_metadata_uses_effective_cross_kind_source(tmp_path: Path) 
         {
             "fallback_items/fallback.charts.python": ["report.yaml"],
             "python_sources/fallback.python": ["python.yaml"],
-            "instructions/fallback.charts.python": [
-                "instructions/fallback_items/charts/python.md"
-            ],
+            "instructions/fallback.charts.python": ["instructions/fallback_items/charts/python.md"],
         }
     )
     artifact["items"]["charts.fallback"] = {

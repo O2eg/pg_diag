@@ -57,18 +57,23 @@ BEGIN {
   skipfirst = ENVIRON["SKIPFIRST"] + 0
   fname = ENVIRON["FNAME"]
   cum = 0; have_prev = 0; cnt = 0; spent = 0
+  rec_active = 0; rec_q = 0; rec_match = 0
   matched = 0; dropped = 0; budget_hit = 0
 }
 {
   cum += length($0) + 1
   if (NR == 1 && skipfirst) { dropped += 1; next }
-  if (have_prev) process(prev_line, prev_nr)
+  if (have_prev) processline(prev_line, prev_nr)
   prev_line = $0; prev_nr = NR; have_prev = 1
 }
 END {
   if (have_prev) {
-    if (cum == rangelen) process(prev_line, prev_nr)
+    if (cum == rangelen) processline(prev_line, prev_nr)
     else dropped += 1
+  }
+  if (rec_active) {
+    if (rec_match) dropped += 1
+    resetrecord()
   }
   flushrun()
   printf "META\t%s\t%d\t%d\t%d\t%d\n", fname, NR, matched, dropped, budget_hit
@@ -76,26 +81,80 @@ END {
   close("cat 1>&2")
   if (budget_hit) exit 3
 }
-function process(l, n,   c, ts, stamp, id, tl) {
-  if (!(__RECALL__)) return
-  if (l !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] /) { dropped += 1; return }
-  c = index(l, ",")
-  if (c <= 1) { dropped += 1; return }
-  ts = substr(l, 1, c - 1)
-  stamp = substr(ts, 1, 19)
-  if (stamp < wfrom || stamp > wto) return
-  matched += 1
-  if (splitkey(l)) { id = SK_ID; tl = SK_TAIL }
-  else { id = "\001unparsed"; tl = n "" }
-  if (cnt && id == cur_id && tl == cur_tl && n == last_n + 1) {
-    cnt += 1; last_n = n; last_ts = ts
+function processline(l, n,   c) {
+  if (!rec_active) {
+    if (l !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] /) {
+      if (__RECALL__) dropped += 1
+      return
+    }
+    c = index(l, ",")
+    if (c <= 1) {
+      if (__RECALL__) dropped += 1
+      return
+    }
+    rec_active = 1
+    rec_match = (__RECALL__) ? 1 : 0
+    rec_first_n = n; rec_last_n = n
+    rec_ts = substr(l, 1, c - 1)
+    rec_raw = ""; rec_len = 0; rec_q = 0
+    appendrecord(l, 0)
+  } else {
+    rec_last_n = n
+    appendrecord(l, 1)
+  }
+  if (!rec_q) finishrecord()
+}
+function appendrecord(l, separator,   left) {
+  if (separator) {
+    rec_len += 1
+    if (rec_match && length(rec_raw) < rawcap) rec_raw = rec_raw "\n"
+  }
+  rec_len += length(l)
+  if (rec_match && length(rec_raw) < rawcap) {
+    left = rawcap - length(rec_raw)
+    rec_raw = rec_raw substr(l, 1, left)
+  }
+  rec_q = quotestate(l, rec_q)
+}
+function quotestate(l, q,   i, ch, len) {
+  len = length(l)
+  for (i = 1; i <= len; i++) {
+    ch = substr(l, i, 1)
+    if (ch != "\"") continue
+    if (q && substr(l, i + 1, 1) == "\"") { i++; continue }
+    q = !q
+  }
+  return q
+}
+function finishrecord(   stamp, rtrunc) {
+  if (rec_match) {
+    stamp = substr(rec_ts, 1, 19)
+    if (stamp >= wfrom && stamp <= wto) {
+      matched += 1
+      rtrunc = (rec_len > rawcap) ? 1 : 0
+      processrecord(rec_raw, rec_first_n, rec_last_n, rec_ts, rtrunc)
+    }
+  }
+  resetrecord()
+}
+function resetrecord() {
+  rec_active = 0; rec_q = 0; rec_match = 0
+  rec_first_n = 0; rec_last_n = 0; rec_ts = ""
+  rec_raw = ""; rec_len = 0
+}
+function processrecord(l, firstn, lastn, ts, truncated,   id, tl, no_merge) {
+  no_merge = truncated || index(l, " ms  plan:") > 0
+  if (splitkey(l) && !no_merge) { id = SK_ID; tl = SK_TAIL }
+  else { id = "\001unparsed"; tl = firstn "" }
+  if (cnt && id == cur_id && tl == cur_tl && firstn == last_n + 1) {
+    cnt += 1; last_n = lastn; last_ts = ts
     return
   }
   flushrun()
   cur_id = id; cur_tl = tl; cnt = 1
-  first_n = n; last_n = n; first_ts = ts; last_ts = ts
-  raw = substr(l, 1, rawcap)
-  rtrunc = (length(l) > rawcap) ? 1 : 0
+  first_n = firstn; last_n = lastn; first_ts = ts; last_ts = ts
+  raw = l
+  rtrunc = truncated ? 1 : 0
 }
 function flushrun(   header, cost) {
   if (!cnt) return
@@ -333,8 +392,7 @@ def parse_output(stdout: bytes, *, stats: ScanStats) -> ScanResult:
                 before_dev, before_ino, before_size = file_before
                 after_dev, after_ino, after_size = after
                 if (before_dev, before_ino) != (0, 0) and (
-                    (before_dev, before_ino) != (after_dev, after_ino)
-                    or after_size < before_size
+                    (before_dev, before_ino) != (after_dev, after_ino) or after_size < before_size
                 ):
                     identity_ok = False
             if identity_ok:
@@ -431,9 +489,7 @@ def parse_output(stdout: bytes, *, stats: ScanStats) -> ScanResult:
                 ):
                     stats.truncation_reasons.add(reason)
         else:
-            raise HarvesterProtocolError(
-                f"unknown frame {kind.decode('ascii', 'replace')!r}"
-            )
+            raise HarvesterProtocolError(f"unknown frame {kind.decode('ascii', 'replace')!r}")
     if not saw_caps or not saw_done:
         raise HarvesterProtocolError("harvester output ended without CAPS/DONE")
     return ScanResult(
@@ -453,9 +509,7 @@ class BashHarvesterSource(LogScanSource):
     async def scan(self, request: ScanRequest) -> ScanResult:
         stats = ScanStats(files_seen=len(request.files))
         script = build_script(request, stats=stats)
-        result = await self._transport.run_script_bytes(
-            script, timeout=_HARVEST_TIMEOUT_SECONDS
-        )
+        result = await self._transport.run_script_bytes(script, timeout=_HARVEST_TIMEOUT_SECONDS)
         if result.returncode != 0:
             stderr = result.stderr
             if isinstance(stderr, bytes):

@@ -4,7 +4,7 @@ This instruction belongs to report item `server_log.autovacuum_runs`. The item i
 
 ## What this item shows
 - Automatic vacuum and analyze runs recorded in the server log: time, kind, relation, database, and `elapsed_s` when the first report line carries it.
-- csvlog stores the autovacuum report as one multiline record; only its first physical line is parsed, so per-run page and tuple detail stays in the raw log while the chronology stays cheap.
+- csvlog stores an autovacuum report as one multiline record. The bounded log transport now reconstructs the logical record before parsing; this item still renders only the concise first-line chronology rather than the full raw report.
 - Runs are visible only when `log_autovacuum_min_duration` is 0 or a positive threshold; `-1` disables the logging entirely.
 
 ## What to watch

@@ -1,0 +1,209 @@
+/*
+ * pgplan-theme.css — theme tokens for the pg-explain-viewer library.
+ *
+ * Every color and font used by the visualization is declared here as a
+ * CSS custom property on the .pv container. To restyle (or to blend the
+ * widget into a host application), override these variables —
+ * pgplan.css contains no literal colors or font names.
+ *
+ * The palette, fonts and sizing follow the pg_diag report theme
+ * (render/templates/report.html): the same purple/gold surfaces in both
+ * schemes, system-ui + ui-monospace stacks, 13–14px base sizes.
+ *
+ * Two built-in schemes:
+ *   light  — default for the bare .pv container
+ *   dark   — activated by data-pv-theme="dark" on .pv or any ancestor
+ *            (matches pg_diag's default scheme)
+ *
+ * Heat-map hues (--pv-hue-*) are read by the renderer at run time, so a
+ * theme can also retune the data-driven coloring.
+ */
+
+.pv {
+  /* fonts (same stacks as the pg_diag report) */
+  --pv-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --pv-font-ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* unified type scale — the only three text sizes used anywhere */
+  --pv-fs-lg: 15.5px;      /* headings: card titles, relation names   */
+  --pv-fs: 14px;           /* base: cells, node text, chips, tabs     */
+  --pv-fs-sm: 13px;        /* secondary: column heads, details, badges */
+  /* legacy aliases */
+  --pv-fs-detail: var(--pv-fs-sm);
+  --pv-fs-head: var(--pv-fs-sm);
+
+  /* surfaces & text (pg_diag light) */
+  --pv-bg: #ffffff;
+  --pv-fg: #2b1d38;
+  --pv-fg-muted: #746286;
+  --pv-fg-faint: #b0a3c0;
+  --pv-border: #dfd2ec;
+  --pv-border-strong: #c9b3df;
+  --pv-row-hover: #f6effc;
+  --pv-row-total-bg: #fffaf0;
+  --pv-detail-bg: #f4edfb;
+  --pv-thead-bg: #efe2f8;
+
+  /* accent (pg_diag gold) */
+  --pv-accent: #f4cf6a;
+  --pv-accent-soft: #fff0ba;
+  --pv-accent-fg: #62490f;
+  --pv-accent-contrast: #2a1738;
+
+  /* charts: fixed phases keep fixed hues between plans; the categorical ramp
+     is colour-blind safe (Okabe-Ito) and never the only identifier — every
+     mark carries a text label too */
+  --pv-cat-1: #0072b2;
+  --pv-cat-2: #d55e00;
+  --pv-cat-3: #009e73;
+  --pv-cat-4: #cc79a7;
+  --pv-cat-5: #56638a;
+  --pv-cat-6: #b8860b;
+  --pv-cat-other: #9a8fa8;
+
+  /* summary chips — a readout surface, deliberately a step away from the
+     transparent tab pills so the two rows never read as one control set */
+  --pv-chip-bg: #e9dcf6;
+  --pv-chip-border: #d3c2e6;
+  --pv-chip-label: #746286;
+  --pv-chip-value: #2b1d38;
+
+  /* code panels (SQL blocks) */
+  --pv-code-bg: #f6f8fa;
+  --pv-code-fg: #24292f;
+
+  /* node text accents (unified palette of the visualization) */
+  --pv-c-type: #c2410c;      /* operation type      */
+  --pv-c-index: #2e7d4f;     /* index name          */
+  --pv-c-rel: #3b5fa0;       /* relation name       */
+  --pv-c-alias: #a352a3;     /* alias               */
+  --pv-c-num: #4f7ca8;       /* numbers in details  */
+  --pv-c-num-cond: #cf4a44;  /* numbers in filters / conds */
+  --pv-c-str: #3e7e3e;       /* string literals     */
+  --pv-c-dvdr: #beb2cc;      /* digit-group divider */
+
+  /* tree guides (pg_diag indent-line colors) */
+  --pv-guide: #e7ddf1;
+  --pv-guide-hl: #c9a04e;    /* direct children on hover   */
+  --pv-guide-hl2: #e6d3a0;   /* deeper subtree on hover    */
+
+  /* advisor severity badges */
+  --pv-sev-crit: #c23a3a;    /* missing / inefficient index, redundant work */
+  --pv-sev-warn: #d97e2a;    /* overload, heavy CTE                          */
+  --pv-sev-io:   #4c6a8f;    /* bloat, write-on-read                         */
+  --pv-sev-mem:  #8a4fae;    /* work_mem spills, planning overhead           */
+  --pv-sev-idx:  #b03ab0;    /* bitmap / composite index advice              */
+  --pv-sev-info: #2e8bb8;    /* statistics, workers, duplicated subtrees     */
+  --pv-sev-hint: #3d9a52;    /* ordering / limit hints                       */
+  --pv-badge-fg: #ffffff;
+
+  /* diagram */
+  --pv-dg-edge: #d5c8e2;
+  --pv-dg-node-bg: #f4edfb;
+  --pv-dg-node-border: #c9b3df;
+
+  /* pulse highlight on navigation (accent gold) */
+  --pv-pulse: rgba(244, 207, 106, 0.45);
+
+  /* SQL syntax highlighting (highlight.js token classes) */
+  --pv-hl-keyword: #cf222e;
+  --pv-hl-func: #6639ba;
+  --pv-hl-string: #0a3069;
+  --pv-hl-number: #0550ae;
+  --pv-hl-operator: #953800;
+  --pv-hl-type: #953800;
+  --pv-hl-comment: #6e7781;
+
+  /* heat map: hues (degrees) + saturation/lightness (unitless numbers) */
+  --pv-hue-hot: 0;           /* highest metric value  (red)    */
+  --pv-hue-warm: 60;         /* low end of hot scale  (yellow) */
+  --pv-hue-incl: 120;        /* inclusive time        (green)  */
+  --pv-hue-loops: 240;       /* loop counter          (blue)   */
+  --pv-hue-over: 0;          /* rows overestimated    (red)    */
+  --pv-hue-under: 240;       /* rows underestimated   (blue)   */
+  --pv-hue-buf-hit: 120;
+  --pv-hue-buf-read: 0;
+  --pv-hue-buf-dirtied: 300;
+  --pv-hue-buf-written: 240;
+  --pv-hue-sat: 80;
+  --pv-hue-light: 42;
+
+  color: var(--pv-fg);
+  background: var(--pv-bg);
+  font-family: var(--pv-font-ui);
+}
+
+[data-pv-theme="dark"] .pv,
+.pv[data-pv-theme="dark"] {
+  /* surfaces & text (pg_diag dark defaults) */
+  --pv-bg: #241a2d;
+  --pv-fg: #f8f0ff;
+  --pv-fg-muted: #d8c8e8;
+  --pv-fg-faint: #8d7aa5;
+  --pv-border: #463456;
+  --pv-border-strong: #725a87;
+  --pv-row-hover: #2e2239;
+  --pv-row-total-bg: #1d1626;
+  --pv-detail-bg: #2e2239;
+  --pv-thead-bg: #342643;
+
+  --pv-accent: #f3d46b;
+  --pv-accent-soft: #483a1f;
+  --pv-accent-fg: #ffeaa3;
+  --pv-accent-contrast: #24152f;
+
+  --pv-cat-1: #56b4e9;
+  --pv-cat-2: #e69f5a;
+  --pv-cat-3: #5fc9a3;
+  --pv-cat-4: #e8a0c8;
+  --pv-cat-5: #9aa6d6;
+  --pv-cat-6: #e3c766;
+  --pv-cat-other: #7c6f90;
+
+  --pv-chip-bg: #3a2c49;
+  --pv-chip-border: #55416a;
+  --pv-chip-label: #d8c8e8;
+  --pv-chip-value: #f8f0ff;
+
+  --pv-code-bg: #0d1117;
+  --pv-code-fg: #c9d1d9;
+
+  --pv-c-type: #ff8a65;
+  --pv-c-index: #66bb8a;
+  --pv-c-rel: #7da7e0;
+  --pv-c-alias: #ce93d8;
+  --pv-c-num: #7ab8dd;
+  --pv-c-num-cond: #ef9a9a;
+  --pv-c-str: #a5d6a7;
+  --pv-c-dvdr: #5d4a75;
+
+  --pv-guide: #3c2d4b;
+  --pv-guide-hl: #d8b35f;
+  --pv-guide-hl2: #6c5181;
+
+  --pv-sev-crit: #d05656;
+  --pv-sev-warn: #dd9245;
+  --pv-sev-io:   #6d8db3;
+  --pv-sev-mem:  #a86fca;
+  --pv-sev-idx:  #c65fc6;
+  --pv-sev-info: #55a5cd;
+  --pv-sev-hint: #5cb573;
+  --pv-badge-fg: #14161a;
+
+  --pv-dg-edge: #463456;
+  --pv-dg-node-bg: #2e2239;
+  --pv-dg-node-border: #725a87;
+
+  --pv-pulse: rgba(243, 212, 107, 0.30);
+
+  /* github-dark-ish, as in the pg_diag report */
+  --pv-hl-keyword: #ff7b72;
+  --pv-hl-func: #d2a8ff;
+  --pv-hl-string: #a5d6ff;
+  --pv-hl-number: #79c0ff;
+  --pv-hl-operator: #ff7b72;
+  --pv-hl-type: #ffa657;
+  --pv-hl-comment: #8b949e;
+
+  --pv-hue-sat: 65;
+  --pv-hue-light: 55;
+}

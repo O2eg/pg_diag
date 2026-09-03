@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
-from pg_diag.logscan import csvparse, recall, rle, sanitize
+from pg_diag.logscan import auto_explain, csvparse, recall, rle, sanitize
 from pg_diag.logscan.item_recall import clauses_for_items
 from pg_diag.logscan.model import RawSeries
 
@@ -154,6 +156,149 @@ def test_parse_record_pg12_no_backend_type() -> None:
     assert not parsed.partial
 
 
+@pytest.mark.parametrize(
+    ("body", "plan_format", "root", "nodes", "query_sample"),
+    [
+        (
+            '{"Query Text":"select 1","Plan":{"Node Type":"Aggregate",'
+            '"Plans":[{"Node Type":"Result"}]}}',
+            "json",
+            "Aggregate",
+            2,
+            "select 1",
+        ),
+        (
+            '<explain xmlns="http://www.postgresql.org/2009/explain">'
+            "<Query-Text>select 2</Query-Text><Plan>"
+            "<Node-Type>Index Scan</Node-Type><Plans><Plan><Node-Type>Result</Node-Type>"
+            "</Plan></Plans></Plan></explain>",
+            "xml",
+            "Index Scan",
+            2,
+            "select 2",
+        ),
+        (
+            'Query Text: "select 1"\nPlan: \n  Node Type: "Hash Join"\n  Plans:\n'
+            '    - Node Type: "Seq Scan"',
+            "yaml",
+            "Hash Join",
+            2,
+            "select 1",
+        ),
+        (
+            "Query Text: select 1\nAggregate  (cost=1.00..2.00 rows=1 width=8)\n"
+            "  ->  Seq Scan on t  (cost=0.00..1.00 rows=1 width=4)",
+            "text",
+            "Aggregate",
+            2,
+            "select 1",
+        ),
+    ],
+)
+def test_parse_auto_explain_formats(body, plan_format, root, nodes, query_sample) -> None:
+    message = f"duration: 123.456 ms  plan:\n{body}"
+    parsed = auto_explain.parse_auto_explain(message, complete=True)
+    assert parsed is not None
+    assert parsed.duration_ms == 123.456
+    assert parsed.plan_format == plan_format
+    assert parsed.root_node_type == root
+    assert parsed.node_count == nodes
+    assert parsed.query_sample == query_sample
+    if plan_format in {"json", "xml"}:
+        assert parsed.viewer_plan is not None
+        prefix, viewer_json = parsed.viewer_plan.split("\n", 1)
+        assert prefix == "duration: 123.456 ms  plan:"
+        viewer_payload = json.loads(viewer_json)
+        if plan_format == "xml":
+            viewer_payload = viewer_payload[0]
+            assert viewer_payload["Query Text"] == "select 2"
+            assert viewer_payload["Plan"]["Node Type"] == "Index Scan"
+            assert viewer_payload["Plan"]["Plans"][0]["Node Type"] == "Result"
+        else:
+            assert viewer_payload["Query Text"] == "select 1"
+            assert viewer_payload["Plan"]["Node Type"] == "Aggregate"
+    else:
+        assert parsed.viewer_plan == message
+    assert parsed.parsed
+    assert parsed.complete
+
+
+def test_parse_auto_explain_rejects_ordinary_duration_and_marks_bad_plan() -> None:
+    assert (
+        auto_explain.parse_auto_explain("duration: 5 ms statement: select 1", complete=True) is None
+    )
+    parsed = auto_explain.parse_auto_explain("duration: 5 ms  plan:\n{bad", complete=False)
+    assert parsed is not None
+    assert parsed.plan_format == "json"
+    assert parsed.query_sample is None
+    assert parsed.viewer_plan is None
+    assert not parsed.parsed
+    assert not parsed.complete
+
+
+def test_parse_auto_explain_sanitizes_and_caps_query_sample() -> None:
+    query = "select * from accounts where password = 'secret' /* " + ("x" * 500) + " */"
+    parsed = auto_explain.parse_auto_explain(
+        "duration: 5 ms  plan:\n"
+        + '{"Query Text":'
+        + json.dumps(query)
+        + ',"Plan":{"Node Type":"Result"}}',
+        complete=True,
+    )
+    assert parsed is not None
+    assert parsed.query_sample is not None
+    assert "secret" not in parsed.query_sample
+    assert "[REDACTED]" in parsed.query_sample
+    assert len(parsed.query_sample) == 303
+    assert parsed.query_sample.endswith("...")
+    assert parsed.viewer_plan is not None
+    assert "secret" not in parsed.viewer_plan
+    assert "[REDACTED]" in parsed.viewer_plan
+
+
+def test_parse_auto_explain_json_viewer_stays_valid_after_sanitization() -> None:
+    body = json.dumps(
+        {
+            "Query Text": "SELECT * FROM movie_keyword mk JOIN keyword k "
+            "ON mk.keyword_id = k.id",
+            "Plan": {
+                "Node Type": "Hash Join",
+                "Hash Cond": "(mk.keyword_id = k.id)",
+            },
+        },
+        indent=2,
+    )
+    parsed = auto_explain.parse_auto_explain(f"duration: 199.989 ms  plan:\n{body}", complete=True)
+
+    assert parsed is not None
+    assert parsed.viewer_plan is not None
+    _, viewer_json = parsed.viewer_plan.split("\n", 1)
+    viewer_payload = json.loads(viewer_json)
+    assert viewer_payload["Plan"]["Node Type"] == "Hash Join"
+    assert "[REDACTED]" in viewer_payload["Plan"]["Hash Cond"]
+
+
+@pytest.mark.parametrize("plan_format", ["json", "xml"])
+def test_parse_auto_explain_deep_plan_does_not_abort_log_phase(plan_format: str) -> None:
+    if plan_format == "json":
+        plan = '{"Node Type":"Result"}'
+        for _ in range(500):
+            plan = '{"Node Type":"Subquery Scan","Plans":[' + plan + "]}"
+        body = '{"Query Text":"select 1","Plan":' + plan + "}"
+    else:
+        plan = "<Plan><Node-Type>Result</Node-Type></Plan>"
+        for _ in range(800):
+            plan = "<Plan><Node-Type>Subquery Scan</Node-Type><Plans>" + plan + "</Plans></Plan>"
+        body = "<explain><Query><Query-Text>select 1</Query-Text>" + plan + "</Query></explain>"
+
+    parsed = auto_explain.parse_auto_explain(f"duration: 1 ms  plan:\n{body}", complete=True)
+
+    assert parsed is not None
+    assert parsed.parsed
+    assert parsed.node_count > 500
+    assert parsed.viewer_plan is None
+
+
 # --- physical RLE ---
 
 
@@ -204,6 +349,18 @@ def test_physical_rle_raw_cap_flag() -> None:
     assert series is not None
     assert series.raw_truncated
     assert len(series.raw_record) == 32
+
+
+def test_physical_rle_never_merges_auto_explain_records() -> None:
+    collapsed = rle.PhysicalRle("f.csv", raw_record_cap=8192)
+    line = _line("9", 'LOG,00000,"duration: 10 ms  plan:\nResult  (cost=0..1)"')
+    assert collapsed.feed(1, line) is None
+    emitted = collapsed.feed(2, line)
+    assert emitted is not None
+    assert emitted.count == 1
+    tail = collapsed.flush()
+    assert tail is not None
+    assert tail.count == 1
 
 
 def test_physical_rle_does_not_merge_different_identities() -> None:
