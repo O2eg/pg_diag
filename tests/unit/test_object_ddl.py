@@ -294,12 +294,17 @@ def test_collect_report_object_ddl_collects_and_survives_errors() -> None:
     assert "1001" in run.artifact["object_ddl"]
     assert runtime_config.OBJECT_DDL_TIMEOUT_SECONDS == 180.0
     assert runtime_config.OBJECT_DDL_STATEMENT_TIMEOUT_MS == 5000
+    assert runtime_config.OBJECT_DDL_LOCK_TIMEOUT_MS == 4000
     assert conn.transaction_calls == [{"readonly": True}]
     assert conn.execute_calls == [
         (
             "select pg_catalog.set_config('statement_timeout', $1, true)",
             ("5000",),
-        )
+        ),
+        (
+            "select pg_catalog.set_config('lock_timeout', $1, true)",
+            ("4000",),
+        ),
     ]
 
     class BrokenConn(RoutedConn):

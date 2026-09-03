@@ -711,6 +711,10 @@ async def collect_report_object_ddl(run: CollectionRun, *, enabled: bool) -> Non
                 "select pg_catalog.set_config('statement_timeout', $1, true)",
                 str(runtime_config.OBJECT_DDL_STATEMENT_TIMEOUT_MS),
             )
+            await run.conn.execute(
+                "select pg_catalog.set_config('lock_timeout', $1, true)",
+                str(runtime_config.OBJECT_DDL_LOCK_TIMEOUT_MS),
+            )
             run.artifact["object_ddl"] = await asyncio.wait_for(
                 collect_object_ddl(run.conn, server_version_num, run.artifact),
                 timeout=runtime_config.OBJECT_DDL_TIMEOUT_SECONDS,
