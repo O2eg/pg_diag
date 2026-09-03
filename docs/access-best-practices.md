@@ -138,6 +138,11 @@ overrides are restored to the runtime guards before the next query in a shared
 snapshot transaction. Increasing the global timeouts is usually worse than
 using narrow overrides, disabling the item, or optimizing the query.
 
+The object-DDL post-processing phase uses its own bounded read-only transaction:
+each DDLX catalog query has a five-second `statement_timeout`, while the complete
+DDL extraction phase has a three-minute wall-clock limit. The transaction-local
+override is discarded before the connection is used again.
+
 These controls reduce the risk of an accidental write by `pg_diag`. They do
 not make a privileged credential safe: anyone who obtains the password can
 open another session without these guards.

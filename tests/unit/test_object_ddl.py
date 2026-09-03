@@ -4,6 +4,7 @@ import asyncio
 import json
 from typing import Any
 
+from pg_diag import runtime_config
 from pg_diag.cli import build_parser
 from pg_diag.collection import CollectionRun, collect_report_object_ddl
 from pg_diag.object_ddl import (
@@ -82,6 +83,22 @@ class RoutedConn:
     def __init__(self, routes: list[tuple[str, list[dict[str, Any]]]]) -> None:
         self.routes = routes
         self.calls: list[tuple[str, tuple[Any, ...]]] = []
+        self.execute_calls: list[tuple[str, tuple[Any, ...]]] = []
+        self.transaction_calls: list[dict[str, Any]] = []
+
+    class Transaction:
+        async def __aenter__(self) -> None:
+            return None
+
+        async def __aexit__(self, *_args: Any) -> None:
+            return None
+
+    def transaction(self, **kwargs: Any) -> Transaction:
+        self.transaction_calls.append(kwargs)
+        return self.Transaction()
+
+    async def execute(self, sql: str, *args: Any) -> None:
+        self.execute_calls.append((sql, args))
 
     async def fetch(self, sql: str, *args: Any) -> list[dict[str, Any]]:
         self.calls.append((sql, args))
@@ -270,12 +287,25 @@ def test_collect_report_object_ddl_disabled_and_unavailable() -> None:
 
 
 def test_collect_report_object_ddl_collects_and_survives_errors() -> None:
-    run = _run(RoutedConn(_routes()))
+    conn = RoutedConn(_routes())
+    run = _run(conn)
     asyncio.run(collect_report_object_ddl(run, enabled=True))
     assert run.artifact["runtime"]["ddl_extraction"] == "collected"
     assert "1001" in run.artifact["object_ddl"]
+    assert runtime_config.OBJECT_DDL_TIMEOUT_SECONDS == 180.0
+    assert runtime_config.OBJECT_DDL_STATEMENT_TIMEOUT_MS == 5000
+    assert conn.transaction_calls == [{"readonly": True}]
+    assert conn.execute_calls == [
+        (
+            "select pg_catalog.set_config('statement_timeout', $1, true)",
+            ("5000",),
+        )
+    ]
 
-    class BrokenConn:
+    class BrokenConn(RoutedConn):
+        def __init__(self) -> None:
+            super().__init__([])
+
         async def fetch(self, sql: str, *args: Any) -> list[dict[str, Any]]:
             raise RuntimeError("boom")
 

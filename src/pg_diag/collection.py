@@ -706,10 +706,15 @@ async def collect_report_object_ddl(run: CollectionRun, *, enabled: bool) -> Non
         server_version_num = int(runtime.get("server_version_num") or 0)
         if not server_version_num:
             server_version_num = int(await run.conn.fetchval("show server_version_num"))
-        run.artifact["object_ddl"] = await asyncio.wait_for(
-            collect_object_ddl(run.conn, server_version_num, run.artifact),
-            timeout=runtime_config.OBJECT_DDL_TIMEOUT_SECONDS,
-        )
+        async with run.conn.transaction(readonly=True):
+            await run.conn.execute(
+                "select pg_catalog.set_config('statement_timeout', $1, true)",
+                str(runtime_config.OBJECT_DDL_STATEMENT_TIMEOUT_MS),
+            )
+            run.artifact["object_ddl"] = await asyncio.wait_for(
+                collect_object_ddl(run.conn, server_version_num, run.artifact),
+                timeout=runtime_config.OBJECT_DDL_TIMEOUT_SECONDS,
+            )
         runtime["ddl_extraction"] = "collected"
     except Exception as exc:  # noqa: BLE001 - DDL extras must never fail the report
         run.artifact["object_ddl"] = {}
