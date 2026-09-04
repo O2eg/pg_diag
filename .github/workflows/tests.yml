@@ -4,7 +4,15 @@ on:
   push:
     branches:
       - "**"
+    paths-ignore:
+      - "diag_promt.md"
+      - "docs/**"
+      - "tests/README.md"
   pull_request:
+    paths-ignore:
+      - "diag_promt.md"
+      - "docs/**"
+      - "tests/README.md"
   workflow_dispatch:
 
 permissions:
