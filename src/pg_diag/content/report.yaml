@@ -1486,6 +1486,30 @@ sections:
         metric: io.read_write_rate
         tags: ["I/O"]
         state: expanded
+      checkpoint_trigger_events:
+        metric: checkpoints.trigger_events
+        tags: [Checkpoints, "I/O"]
+        state: collapsed
+      buffer_writes_by_process:
+        metric: checkpoints.buffer_writes_by_process
+        tags: [Checkpoints, "I/O"]
+        state: collapsed
+      checkpoint_write_sync_time_delta:
+        metric: checkpoints.write_sync_time_delta
+        tags: [Checkpoints, "I/O"]
+        state: collapsed
+      writer_pressure_events:
+        metric: checkpoints.writer_pressure_events
+        tags: [Checkpoints, "I/O"]
+        state: collapsed
+      buffer_allocation_rate:
+        metric: checkpoints.buffer_allocation_rate
+        tags: [Checkpoints, "I/O"]
+        state: collapsed
+      restartpoint_events:
+        metric: checkpoints.restartpoint_events
+        tags: [Checkpoints, Replication]
+        state: collapsed
       database_tuple_dml_rate:
         metric: database.tuple_dml_rate
         tags: [Databases, Tables]

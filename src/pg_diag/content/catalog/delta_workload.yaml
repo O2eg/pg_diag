@@ -360,6 +360,7 @@ queries:
             buffers_written: buffers_written
             slru_written: slru_written
         column_statuses:
+          checkpoints_done: {status: unsupported, reason: PostgreSQL 10-16 trigger counters include checkpoint attempts skipped because the system was idle and do not expose an exact completed-checkpoint counter.}
           restartpoints_timed: {status: unsupported, reason: Restartpoint counters moved into pg_stat_checkpointer in PostgreSQL 17.}
           restartpoints_requested: {status: unsupported, reason: Restartpoint counters moved into pg_stat_checkpointer in PostgreSQL 17.}
           restartpoints_done: {status: unsupported, reason: Restartpoint counters moved into pg_stat_checkpointer in PostgreSQL 17.}
@@ -370,6 +371,7 @@ queries:
         sql_file: metrics/checkpointer_delta_pg17.sql
         semantic_columns: *checkpointer_semantics
         column_statuses:
+          checkpoints_done: {status: unsupported, reason: PostgreSQL 17 trigger counters include checkpoint attempts skipped because the system was idle and do not expose an exact completed-checkpoint counter.}
           slru_written: {status: unsupported, reason: The slru_written checkpointer counter is available from PostgreSQL 18.}
       - id: metrics_checkpointer_delta_pg18_plus
         min_pg_version: 180000

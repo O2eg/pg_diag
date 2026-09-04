@@ -4,7 +4,7 @@ select
   stats_reset,
   checkpoints_timed::int8 as checkpoints_timed,
   checkpoints_req::int8 as checkpoints_requested,
-  (checkpoints_timed + checkpoints_req)::int8 as checkpoints_done,
+  null::int8 as checkpoints_done,
   null::int8 as restartpoints_timed,
   null::int8 as restartpoints_requested,
   null::int8 as restartpoints_done,

@@ -590,6 +590,11 @@ def test_remote_snapshots_runs_all_items_and_collection_scopes(
         "activity_locks.wait_event_sample_profile",
         "activity_locks.pg_wait_sampling_capabilities",
         "activity_locks.pg_wait_sampling_profile",
+        "snapshot_charts_db.buffer_allocation_rate",
+        "snapshot_charts_db.buffer_writes_by_process",
+        "snapshot_charts_db.checkpoint_trigger_events",
+        "snapshot_charts_db.checkpoint_write_sync_time_delta",
+        "snapshot_charts_db.writer_pressure_events",
         "snapshot_charts_os.os_disk_read_throughput",
         "snapshot_charts_os.os_disk_write_throughput",
         "snapshot_charts_os.os_disk_iops",
@@ -607,4 +612,6 @@ def test_remote_snapshots_runs_all_items_and_collection_scopes(
                 "snapshot_delta_workload.sql_planning_delta",
             }
         )
+    if prepared_postgres.major >= 17:
+        required_items.add("snapshot_charts_db.restartpoint_events")
     assert_items_ran(artifact, required_items)

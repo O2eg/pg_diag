@@ -394,6 +394,156 @@ metrics:
       kind: stacked_area
       unit: bytes/s
 
+  checkpoints.trigger_events:
+    title: Checkpoint Triggers And Completions
+    database_scope: all_databases
+    source_query: metrics.checkpoint_trigger_events
+    targets: [db]
+    requires_collection: every_snapshot
+    epoch_refs:
+      - dimensions.stats_reset
+    series:
+      - name: timed
+        value_ref: counters.checkpoints_timed
+        transform: delta
+        unit: count
+        quantity: events
+      - name: requested
+        value_ref: counters.checkpoints_requested
+        transform: delta
+        unit: count
+        quantity: events
+      - name: completed
+        value_ref: counters.checkpoints_completed
+        transform: delta
+        optional: true
+        unit: count
+        quantity: events
+    chart:
+      kind: column
+      unit: count
+
+  checkpoints.buffer_writes_by_process:
+    title: Buffer Writes By Process
+    database_scope: all_databases
+    source_query: metrics.buffer_writes_by_process
+    targets: [db]
+    requires_collection: every_snapshot
+    epoch_refs:
+      - dimensions.bgwriter_stats_reset
+      - dimensions.checkpointer_stats_reset
+      - dimensions.io_stats_reset
+    series:
+      - name: checkpointer
+        value_ref: counters.checkpointer_bytes
+        transform: rate
+        unit: bytes/s
+      - name: background writer
+        value_ref: counters.bgwriter_bytes
+        transform: rate
+        unit: bytes/s
+      - name: backends
+        value_ref: counters.backend_bytes
+        transform: rate
+        unit: bytes/s
+    chart:
+      kind: stacked_area
+      unit: bytes/s
+
+  checkpoints.write_sync_time_delta:
+    title: Reported Checkpoint And Restartpoint Phase Time
+    database_scope: all_databases
+    source_query: metrics.checkpoint_write_sync_time
+    targets: [db]
+    requires_collection: every_snapshot
+    epoch_refs:
+      - dimensions.stats_reset
+    series:
+      - name: write
+        value_ref: counters.write_time_ms
+        transform: delta
+        unit: ms
+      - name: sync
+        value_ref: counters.sync_time_ms
+        transform: delta
+        unit: ms
+    chart:
+      kind: stacked_column
+      unit: ms
+
+  checkpoints.writer_pressure_events:
+    title: Writer Pressure Events
+    database_scope: all_databases
+    source_query: metrics.writer_pressure_events
+    targets: [db]
+    requires_collection: every_snapshot
+    epoch_refs:
+      - dimensions.bgwriter_stats_reset
+      - dimensions.io_stats_reset
+    series:
+      - name: bgwriter stops
+        value_ref: counters.bgwriter_stops
+        transform: delta
+        unit: count
+        quantity: events
+      - name: backend fsyncs
+        value_ref: counters.backend_fsyncs
+        transform: delta
+        unit: count
+        quantity: events
+    chart:
+      kind: column
+      unit: count
+
+  checkpoints.buffer_allocation_rate:
+    title: Buffer Allocation And Cleaning Rate
+    database_scope: all_databases
+    source_query: metrics.buffer_allocation_rate
+    targets: [db]
+    requires_collection: every_snapshot
+    epoch_refs:
+      - dimensions.stats_reset
+    series:
+      - name: allocated
+        value_ref: counters.buffers_alloc
+        transform: rate
+        unit: blocks/s
+      - name: cleaned by bgwriter
+        value_ref: counters.buffers_clean
+        transform: rate
+        unit: blocks/s
+    chart:
+      kind: line
+      unit: blocks/s
+
+  checkpoints.restartpoint_events:
+    title: Restartpoints By Trigger
+    database_scope: all_databases
+    source_query: metrics.restartpoint_events
+    targets: [db]
+    requires_collection: every_snapshot
+    epoch_refs:
+      - dimensions.stats_reset
+    series:
+      - name: timed
+        value_ref: counters.restartpoints_timed
+        transform: delta
+        unit: count
+        quantity: restartpoints
+      - name: requested
+        value_ref: counters.restartpoints_requested
+        transform: delta
+        unit: count
+        quantity: restartpoints
+      - name: done
+        value_ref: counters.restartpoints_done
+        transform: delta
+        unit: count
+        quantity: restartpoints
+    chart:
+      kind: column
+      unit: count
+
   database.tuple_dml_rate:
     title: Database Tuple DML Rate
     database_scope: all_databases

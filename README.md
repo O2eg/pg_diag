@@ -1260,6 +1260,10 @@ The bundled content pack includes sections for:
   status, standby recovery state, replication capacity limits, subscription
   table synchronization, published tables without replica identity, and
   sender and standby lag charts in snapshots mode.
+- Checkpoint and background-writer charts in snapshots mode: checkpoints and
+  restartpoints by trigger, buffer writes by process, checkpoint write and
+  sync time, background-writer stops and backend fsyncs, and buffer
+  allocation against cleaning, each from its own narrow sampled source.
 - Storage, vacuum, wraparound, sequence, and XID horizon diagnostics.
 - Index health checks.
 - Cluster inventory, security, and configuration checks.

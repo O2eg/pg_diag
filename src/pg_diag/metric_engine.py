@@ -364,6 +364,7 @@ def build_chart_result(
                         "name": name,
                         "unit": series_def.get("unit") or (metric.get("chart") or {}).get("unit"),
                         "color": series_def.get("color"),
+                        "quantity": series_def.get("quantity"),
                         "transform": series_def.get("transform") or "gauge",
                         "optional": series_def.get("optional") is True,
                         "raw_points": {},
@@ -397,14 +398,17 @@ def build_chart_result(
             ]
         if raw.get("optional") and not any(point.get("value") is not None for point in points):
             continue
-        series.append(
-            {
-                "name": raw["name"],
-                "unit": raw.get("unit"),
-                "color": raw.get("color"),
-                "points": points,
-            }
-        )
+        entry = {
+            "name": raw["name"],
+            "unit": raw.get("unit"),
+            "color": raw.get("color"),
+            "points": points,
+        }
+        if raw.get("quantity"):
+            # A declared quantity such as "checkpoints" travels with the series
+            # so the presentation layer does not fall back to the unit's default.
+            entry["quantity"] = raw["quantity"]
+        series.append(entry)
 
     chart = metric.get("chart") or {"kind": "line"}
     ordered_series = series if chart.get("series_order") == "configured" else sorted(series, key=lambda item: item["name"])

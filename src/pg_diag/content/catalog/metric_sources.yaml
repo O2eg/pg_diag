@@ -154,6 +154,204 @@ queries:
         sql_file: metrics/io_read_write_rate_pg18_plus.sql
         semantic_columns: *metrics_io_read_write_rate_semantics
 
+  metrics.checkpoint_trigger_events:
+    title: Checkpoint Triggers And Completions Chart Source
+    database_scope: all_databases
+    group: Metric Sources
+    main_view: pg_stat_checkpointer
+    description: Narrow sampled cluster-wide checkpoint trigger counters and, on PostgreSQL 18 and newer, the completed counter used only by the Checkpoint Triggers And Completions chart.
+    source: pg_diag
+    display:
+      default_sort:
+        column: scope
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_checkpoint_trigger_events_pg10_pg16
+        min_pg_version: 100000
+        max_pg_version: 169999
+        sql_file: metrics/checkpoint_trigger_events_pg10_pg16.sql
+        semantic_columns: &checkpoint_trigger_events_semantics
+          dimensions:
+            scope: scope
+            stats_reset: stats_reset
+          counters:
+            checkpoints_timed: checkpoints_timed
+            checkpoints_requested: checkpoints_requested
+            checkpoints_completed: checkpoints_completed
+        column_statuses:
+          checkpoints_completed: {status: unsupported, reason: PostgreSQL 10-16 do not expose an exact completed-checkpoint counter because trigger counters include idle skips.}
+      - id: metrics_checkpoint_trigger_events_pg17
+        min_pg_version: 170000
+        max_pg_version: 179999
+        sql_file: metrics/checkpoint_trigger_events_pg17.sql
+        semantic_columns: *checkpoint_trigger_events_semantics
+        column_statuses:
+          checkpoints_completed: {status: unsupported, reason: PostgreSQL 17 does not expose an exact completed-checkpoint counter because trigger counters include idle skips.}
+      - id: metrics_checkpoint_trigger_events_pg18_plus
+        min_pg_version: 180000
+        sql_file: metrics/checkpoint_trigger_events_pg18_plus.sql
+        semantic_columns: *checkpoint_trigger_events_semantics
+
+  metrics.buffer_writes_by_process:
+    title: Buffer Writes By Process Chart Source
+    database_scope: all_databases
+    group: Metric Sources
+    main_view: pg_stat_bgwriter
+    description: Narrow sampled cluster-wide buffer-write activity normalized to bytes per writing process, including backend relation extensions, used only by the Buffer Writes By Process chart.
+    source: pg_diag
+    display:
+      default_sort:
+        column: scope
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_buffer_writes_by_process_pg10_pg16
+        min_pg_version: 100000
+        max_pg_version: 169999
+        sql_file: metrics/buffer_writes_by_process_pg10_pg16.sql
+        semantic_columns: &buffer_writes_by_process_semantics
+          dimensions:
+            scope: scope
+            bgwriter_stats_reset: bgwriter_stats_reset
+            checkpointer_stats_reset: checkpointer_stats_reset
+            io_stats_reset: io_stats_reset
+          counters:
+            checkpointer_bytes: checkpointer_bytes
+            bgwriter_bytes: bgwriter_bytes
+            backend_bytes: backend_bytes
+      - id: metrics_buffer_writes_by_process_pg17
+        min_pg_version: 170000
+        max_pg_version: 179999
+        sql_file: metrics/buffer_writes_by_process_pg17.sql
+        semantic_columns: *buffer_writes_by_process_semantics
+      - id: metrics_buffer_writes_by_process_pg18_plus
+        min_pg_version: 180000
+        sql_file: metrics/buffer_writes_by_process_pg18_plus.sql
+        semantic_columns: *buffer_writes_by_process_semantics
+
+  metrics.checkpoint_write_sync_time:
+    title: Reported Checkpoint And Restartpoint Phase Time Chart Source
+    database_scope: all_databases
+    group: Metric Sources
+    main_view: pg_stat_checkpointer
+    description: Narrow sampled cluster-wide checkpoint and restartpoint write and sync time counters used only to report phase-time deltas published in each interval.
+    source: pg_diag
+    display:
+      default_sort:
+        column: scope
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_checkpoint_write_sync_time_pg10_pg16
+        min_pg_version: 100000
+        max_pg_version: 169999
+        sql_file: metrics/checkpoint_write_sync_time_pg10_pg16.sql
+        semantic_columns: &checkpoint_write_sync_time_semantics
+          dimensions:
+            scope: scope
+            stats_reset: stats_reset
+          counters:
+            write_time_ms: write_time_ms
+            sync_time_ms: sync_time_ms
+      - id: metrics_checkpoint_write_sync_time_pg17_plus
+        min_pg_version: 170000
+        sql_file: metrics/checkpoint_write_sync_time_pg17_plus.sql
+        semantic_columns: *checkpoint_write_sync_time_semantics
+
+  metrics.writer_pressure_events:
+    title: Writer Pressure Events Chart Source
+    database_scope: all_databases
+    group: Metric Sources
+    main_view: pg_stat_bgwriter
+    description: Narrow sampled cluster-wide background-writer stop and backend fsync counters used only by the Writer Pressure Events chart.
+    source: pg_diag
+    display:
+      default_sort:
+        column: scope
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_writer_pressure_events_pg10_pg16
+        min_pg_version: 100000
+        max_pg_version: 169999
+        sql_file: metrics/writer_pressure_events_pg10_pg16.sql
+        semantic_columns: &writer_pressure_events_semantics
+          dimensions:
+            scope: scope
+            bgwriter_stats_reset: bgwriter_stats_reset
+            io_stats_reset: io_stats_reset
+          counters:
+            bgwriter_stops: bgwriter_stops
+            backend_fsyncs: backend_fsyncs
+      - id: metrics_writer_pressure_events_pg17_plus
+        min_pg_version: 170000
+        sql_file: metrics/writer_pressure_events_pg17_plus.sql
+        semantic_columns: *writer_pressure_events_semantics
+
+  metrics.buffer_allocation_rate:
+    title: Buffer Allocation And Cleaning Rate Chart Source
+    database_scope: all_databases
+    group: Metric Sources
+    main_view: pg_stat_bgwriter
+    description: Narrow sampled cluster-wide buffer allocation and background-writer cleaning counters used only by the Buffer Allocation And Cleaning Rate chart.
+    source: pg_diag
+    display:
+      default_sort:
+        column: scope
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    variants:
+      - id: metrics_buffer_allocation_rate_pg10_plus
+        min_pg_version: 100000
+        sql_file: metrics/buffer_allocation_rate.sql
+        semantic_columns:
+          dimensions:
+            scope: scope
+            stats_reset: stats_reset
+          counters:
+            buffers_alloc: buffers_alloc
+            buffers_clean: buffers_clean
+
+  metrics.restartpoint_events:
+    title: Restartpoints By Trigger Chart Source
+    database_scope: all_databases
+    group: Metric Sources
+    main_view: pg_stat_checkpointer
+    description: Narrow sampled cluster-wide restartpoint trigger counters used only by the Restartpoints By Trigger chart.
+    source: pg_diag
+    display:
+      default_sort:
+        column: scope
+        direction: asc
+    collection:
+      default: every_snapshot
+      supports: [once, every_snapshot]
+    requirements:
+      unsupported_versions_reason: Restartpoint counters live in pg_stat_checkpointer, which PostgreSQL 17 introduced.
+    variants:
+      - id: metrics_restartpoint_events_pg17_plus
+        min_pg_version: 170000
+        sql_file: metrics/restartpoint_events_pg17_plus.sql
+        semantic_columns:
+          dimensions:
+            scope: scope
+            stats_reset: stats_reset
+          counters:
+            restartpoints_timed: restartpoints_timed
+            restartpoints_requested: restartpoints_requested
+            restartpoints_done: restartpoints_done
+
   metrics.activity_sessions_by_state:
     title: Sessions By State Chart Source
     database_scope: all_databases

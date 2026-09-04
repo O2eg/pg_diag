@@ -502,12 +502,25 @@ def test_version_optional_metric_counters_are_null_not_zero(content_path: Path) 
     content = load_content(content_path)
     checkpointer = content.queries["metrics.checkpointer_delta"]["variants"]
     assert set(checkpointer[0]["column_statuses"]) == {
+        "checkpoints_done",
         "restartpoints_timed",
         "restartpoints_requested",
         "restartpoints_done",
         "slru_written",
     }
-    assert set(checkpointer[1]["column_statuses"]) == {"slru_written"}
+    assert set(checkpointer[1]["column_statuses"]) == {
+        "checkpoints_done",
+        "slru_written",
+    }
+    legacy_sql = (
+        content_path / "queries" / checkpointer[0]["sql_file"]
+    ).read_text(encoding="utf-8")
+    assert "null::int8 as checkpoints_done" in legacy_sql
+    assert "checkpoints_timed + checkpoints_req" not in legacy_sql
+    for variant in checkpointer[:2]:
+        reason = variant["column_statuses"]["checkpoints_done"]["reason"]
+        assert "idle" in reason
+        assert "exact completed-checkpoint counter" in reason
 
     maintenance = content.queries["metrics.objects_table_maintenance_delta"]["variants"]
     assert maintenance[0]["max_pg_version"] == 179999
@@ -2760,7 +2773,7 @@ def test_remaining_chart_sections_have_complete_and_consistent_contracts(
         for section_id, _item_key, item_id, _item in iter_report_items(content)
         if section_id in {"snapshot_charts_os", "snapshot_charts_db"}
     ]
-    assert len(chart_items) == 48
+    assert len(chart_items) == 54
     for item_id in chart_items:
         assert "## Automatic evaluation" in content.instructions[item_id]["text"], item_id
 

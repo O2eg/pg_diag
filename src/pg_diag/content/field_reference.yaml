@@ -203,6 +203,7 @@ field_reference:
     metrics/*/series[]/transform: Gauge, delta, rate, or other calculation applied to source values.
     metrics/*/series[]/optional: Whether null counter endpoints represent an inapplicable series value and are omitted without invalid-interval coverage.
     metrics/*/series[]/unit: Display and formatting unit for series values.
+    metrics/*/series[]/quantity: Optional measured quantity named by the series, such as checkpoints, when the unit alone does not state it.
     metrics/*/series[]/color: Optional fixed hexadecimal series color.
     metrics/*/chart: Chart presentation configuration.
     metrics/*/chart/kind: Chart type such as line, area, or stacked column.
