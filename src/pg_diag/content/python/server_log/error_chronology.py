@@ -8,7 +8,7 @@ from pg_diag.logscan.items_common import (
     coverage_note,
     fmt_time,
     empty_result_status,
-    resolve_window,
+    resolve_english_window,
     severity_rank,
 )
 
@@ -16,7 +16,7 @@ SERIES_LIMIT = 100
 
 
 def collect(context: PythonSourceContext) -> PythonSourceResult:
-    window, early = resolve_window(context)
+    window, early = resolve_english_window(context)
     if early is not None:
         return PythonSourceResult(**early)
     series = [record for record in window.records if record.severity in SEVERITY_ERRORS]

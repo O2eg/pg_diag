@@ -85,6 +85,57 @@ def test_phase_skipped_without_flag() -> None:
     assert run.artifact["runtime"]["log_collection"]["status"] == "skipped"
 
 
+def test_phase_preserves_numeric_events_and_query_identity(tmp_path) -> None:
+    now = datetime(2026, 8, 31, 10, 30)
+    messages = [
+        "duration: 20.161 ms  statement: SELECT pg_sleep(0.02)",
+        "duration: 201.236 ms  statement: SELECT pg_sleep(0.2)",
+        "duration: 601.729 ms  statement: SELECT pg_sleep(0.6)",
+        'temporary file: path "base/pgsql_tmp/pgsql_tmp42.1", size 2752512',
+        'temporary file: path "base/pgsql_tmp/pgsql_tmp42.0", size 280000',
+        'temporary file: path "base/pgsql_tmp/pgsql_tmp42.3", size 13672448',
+        'temporary file: path "base/pgsql_tmp/pgsql_tmp42.2", size 1400000',
+        "invalid record length at 0/5E15058: expected at least 24, got 0",
+        "invalid record length at 0/5E15058: expected at least 24, got 12",
+    ]
+    output = io.StringIO()
+    for i, message in enumerate(messages):
+        row = next(
+            csv.reader(io.StringIO(_record(now - timedelta(seconds=20 - i), "LOG", "placeholder")))
+        )
+        row[12] = "00000"
+        row[13] = message
+        row[22] = f"app{i % 2}"
+        row[25] = str(i + 1)
+        csv.writer(output, lineterminator="\n").writerow(row)
+    path = tmp_path / "a.csv"
+    path.write_text(output.getvalue())
+    conn = FakeConn(
+        _facts(tmp_path, now),
+        [
+            {
+                "name": path.name,
+                "size": path.stat().st_size,
+                "modification": now.replace(tzinfo=timezone.utc),
+            }
+        ],
+        [],
+    )
+    run = _run(conn)
+    run.plan.items = [
+        SimpleNamespace(item_id=item_id, status="planned")
+        for item_id in ("server_log.query_resource_events", "server_log.system_incidents")
+    ]
+    window = asyncio.run(collect_report_server_log(run, depth_minutes=10))
+    assert [record.message for record in window.records] == messages
+    assert [record.repeat_count for record in window.records] == [1] * len(messages)
+    assert [record.query_id for record in window.records] == list(range(1, len(messages) + 1))
+    assert [record.application_name for record in window.records] == [
+        f"app{i % 2}" for i in range(len(messages))
+    ]
+    assert all(record.count_complete for record in window.records)
+
+
 def test_phase_skipped_when_no_server_log_items_selected() -> None:
     run = _run(None)
     run.plan.items[0] = SimpleNamespace(item_id="overview.server_version", status="planned")

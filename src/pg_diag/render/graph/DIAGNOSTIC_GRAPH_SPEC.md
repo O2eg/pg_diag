@@ -1,0 +1,293 @@
+# Diagnostic Graph Specification
+
+Status: normative contract for the diagnostic graph module that ships inside the
+pg_diag HTML report (`src/pg_diag/render/graph/`). The module turns a rendered
+report artifact into a compact cause tree with five roots — `cpu`, `ram`,
+`disk`, `database_health`, `database_security` — evaluates every node from the
+raw item data, and renders the result as an interactive top-down graph above the
+report sections.
+
+The module is self-contained: it knows the graph, the traversal order, the
+evaluation rules, and the artifact item formats (table columns, chart series and
+points, plain text). It does not know how items are collected and it never
+reuses the severity that the content pack assigned to an item; every score is
+computed here from the item data.
+
+## 1. Files
+
+| File | Purpose |
+| --- | --- |
+| `graph.json` | Declarative graph: nodes, parent links, cause links, item bindings, requirements. Data only. Validated by `tests/unit/test_diagnostic_graph.py` against `content/report.yaml`. |
+| `pg-diag-graph.js` | Engine (UMD, global `PgDiagGraph`, also `require`-able in node): artifact accessors, fact extractors, node evaluators, traversal, coverage and hints. No DOM access. |
+| `pg-diag-graph-render.js` | Renderer (global `PgDiagGraphRender`): SVG edges and nodes, expandable inline detail cards with bound items and hints, animated tree layout. Uses the report theme through CSS variables only. |
+| `pg-diag-graph.css` | Structural styles plus the score gradient stops as `--dg-*` variables. |
+| `DIAGNOSTIC_GRAPH_SPEC.md` | This document. |
+
+The renderer inlines the three assets and the graph definition into
+`templates/report.html` through `render/html.py` placeholders
+(`__PG_DIAG_GRAPH_CSS__`, `__PG_DIAG_GRAPH_DEFINITION__`, `__PG_DIAG_GRAPH_JS__`,
+`__PG_DIAG_GRAPH_RENDER_JS__`). The page script exposes
+`window.pgDiagReport.navigateToItem(itemId)` so the graph can scroll the report
+to a bound item with the same behaviour as a related-item link in an instruction.
+
+## 2. Graph model
+
+`graph.json`:
+
+```json
+{
+  "schema_version": 1,
+  "roots": ["cpu", "ram", "disk", "database_health", "database_security"],
+  "nodes": [
+    {
+      "id": "disk.write.checkpoints",
+      "parent": "disk.write",
+      "label": "Checkpoints",
+      "summary": "Requested checkpoints, sync time and write bursts.",
+      "evaluator": "checkpoints",
+      "requires": ["snapshots"],
+      "bindings": [
+        {"id": "snapshot_charts_db.checkpoint_trigger_events", "role": "primary"},
+        {"id": "server_log.checkpoints", "role": "support"}
+      ]
+    }
+  ],
+  "links": [
+    {"from": "disk.read.queries", "to": "cpu.seq_scans", "label": "seq scans read blocks"}
+  ]
+}
+```
+
+Rules:
+
+- `id` is unique; dots separate the path but carry no semantics for the engine.
+- Every non-root node has exactly one `parent`; the parent graph MUST be a tree
+  with the five roots as its only sources. `links` are additional directed cause
+  edges between any two nodes and MUST NOT create a parent cycle (they are not
+  part of the tree and never propagate scores).
+- `bindings[]` lists the report items that carry the evidence for the node. One
+  item MAY be bound to several nodes (bloat is a disk cause and a health
+  problem). `role` is `primary` (the node is about this item), `support`
+  (adds evidence), or `fact` (inventory read by extractors, never scored on its
+  own). A binding MAY carry `weight` (0–1): the score assigned when the item has
+  finding rows and no per-row `risk_level` column.
+  Mixed log tables (`server_lifecycle`, `system_incidents`, and the compatibility
+  `crash_recovery_events`) use named, event-aware evaluators instead of a blanket
+  row weight; a binding may provide context without proving a fault in that branch.
+- Every item id declared in `content/report.yaml` MUST be bound to at least one
+  node, and every bound id MUST exist there. Items that exist in the catalog but
+  not in a given artifact (older artifact, filtered report, one-shot mode) are
+  reported as absent, never as an error.
+- `requires` names what the node needs to have data: `snapshots` (metric
+  items exist only in the snapshots run mode), `host` (local or remote
+  collection mode), `log` (`--log-depth-time-min`), or an extension name
+  (`pg_stat_statements`, `pg_stat_kcache`, `pg_wait_sampling`,
+  `pg_buffercache`). The engine turns unmet requirements into user hints.
+- `evaluator` names a function in the engine registry. Nodes without it use
+  the `generic` evaluator (section 4). Roots and pure grouping nodes use
+  `aggregate`.
+- `pressure`, when present, identifies the symptom against which a candidate
+  contributor is assessed: `cpu_user`, `cpu_system`, `cpu_iowait`, `ram`, or
+  `disk`. Damping is applied once, after the evaluator, not once per helper.
+  Repeated evidence under different resources uses that branch's pressure.
+
+Resource branches follow observed symptoms, then possible contributors:
+
+- CPU: User CPU (user + nice), System CPU (system + IRQ + softirq), I/O wait,
+  and Hypervisor steal. User work leads to backend/query, vacuum and other
+  process evidence; kernel work to contention, sessions, network and paging.
+  I/O wait has its own read/write subtrees and swap evidence, including query
+  scans, cache misses, checkpoints, WAL and temporary files. It is not part
+  of user CPU. The historical `cpu.utilization` id now denotes User CPU.
+- RAM: available memory/OOM, swap occupancy, and cache misses. Memory budgets,
+  backend population, huge pages, cache sizing and working-set causes sit
+  below the corresponding symptom.
+- Disk: device latency, read I/O, write I/O and free space. Reads lead to
+  readers, scans, indexes, cache misses, vacuum, backups and temporary files;
+  writes to data-file writers, WAL and spills. Bloat also belongs below
+  capacity. Bindings are intentionally repeated where evidence is relevant.
+
+## 3. Traversal
+
+1. `PgDiagGraph.evaluate(artifact, definition)` indexes `artifact.items` and
+   classifies every binding: `present` (collection status `ok` and the result
+   has at least one table row, one finite chart point, or non-empty text),
+   `empty` (status `ok`/`empty` without data), `skipped`, `unsupported`,
+   `error`, or `absent` (not in the artifact).
+2. Leaves are evaluated first, then parents, then roots (post-order over the
+   parent tree). A node's own evaluator runs when at least one `primary` or
+   `support` binding is collected (`present` or `empty`); empty finding lists
+   may establish that nothing was found. An evaluator with no usable metric
+   returns `null`, not a healthy score. Facts-only inventory nodes use their
+   fact bindings as the collection gate; otherwise the node is `no_data`.
+3. A node's final score is the maximum of its own score and its children's
+   scores, so a red leaf lights the path to its root. A node whose own
+   evaluator had no data but has scored children takes the children's score and
+   keeps the `no_data` mark for its own evidence.
+4. Roots aggregate their children. Cause links are reported on the node
+   (`causes`, `caused_by`) for rendering only.
+5. Coverage: for every node the engine reports `present`, `missing`, and
+   `hints` — one hint per unmet requirement, derived from the artifact runtime
+   (`runtime.mode`, `runtime.collection_mode`, `runtime.log_collection`) and the
+   bound items' statuses and `reason` texts.
+
+## 4. Evaluation
+
+Scores are numbers in `[0, 1]`; `status` is `ok` (< 0.34), `warn` (< 0.67),
+`crit` (≥ 0.67), or `no_data`. Helpers:
+
+- `scale(value, warn, crit)` maps a metric to `[0, 1]`: 0 below `warn`, 1 above
+  `crit`, linear in between (reversed when `warn > crit`).
+- Chart statistics use finite points only: `mean`, `max`, `p95`, `last`, `n`.
+  A series with fewer than 2 finite points is treated as absent.
+  Event charts (`tooltip_kind = log_event` or `query_event`) are an exception:
+  one finite point is a real event and counts as present, including when it
+  represents many occurrences in one minute.
+- Table cells are decoded by column `encoding`: `decimal_string` → number
+  (`Number()`; values above 2^53 lose precision, which is acceptable for
+  scoring), `json_number` as is, `json_boolean` as is, others as text.
+- `generic`: for each `primary`/`support` binding with rows, the severity is the
+  worst `risk_level` cell in the rows (`high` 1.0, `medium` 0.6, `low` 0.3) when
+  the table has that column, otherwise `binding.weight` (default 0.6) scaled by
+  the row count (`0.6 + 0.4 × min(1, rows / 10)`). The node score is the
+  maximum. Bindings with role `fact` are ignored.
+- Named evaluators implement the runbook rules (CPU busy share and load per
+  core, system share, disk latency by media type, cache hit ratio, checkpoint
+  requested/timed ratio, backend writes share, connection usage, lock wait
+  duration, xid age, replication lag, and so on). Each returns `score`,
+  `reasons[]` (short sentences with the measured values), `facts{}`
+  (named values for the panel), and `evidence[]` (item ids that produced the
+  reasons).
+- CPU busy is work time: `100 - idle - iowait - steal`, or the sum of available
+  work-time series when idle is absent. I/O wait is not CPU work (runbook 1.1);
+  hypervisor steal remains a separate pressure signal (1.2).
+- The CPU symptom nodes score their own counters separately; a high load
+  average alone does not prove CPU execution. Optional component counters are
+  paired by timestamp. I/O wait uses explicit graph triage thresholds (5/20),
+  not a claim that the runbook specifies a universal saturation threshold.
+  I/O contributors are weighted by I/O wait, not by user CPU utilization.
+- Swap occupancy is not swap-in/out activity. Missing swap counters stay
+  unknown; zero swap is valid evidence. Available memory and OOM are assessed
+  separately from swap. Throughput without device-pressure evidence likewise
+  does not establish a healthy disk.
+- Log errors use the worst severity across chronology and top-errors rows.
+  Chronology, top errors and query termination counts overlap and may each be
+  capped; their maximum is a lower bound, never an additive total. A missing
+  chronology must not hide PANIC/FATAL in top errors or termination events.
+- Mixed log signals are classified by `event_type`/`incident_type` and, for
+  legacy rows, explicit message signatures. OOM belongs to memory pressure,
+  disk-full to free-space pressure, crash/corruption to health. Readiness,
+  reload, redo and end-of-WAL observations alone are not crashes; SIGKILL alone
+  does not prove OOM. A generic missing-file error does not prove any of these.
+- Last replayed transaction age grows on an idle primary and is not, by itself,
+  replication lag (runbook 4.5). Age is scored only with positive unapplied WAL
+  in the same observation; chart samples are paired by timestamp, not index or
+  end-of-window state. Byte lag and paused replay remain independent signals.
+  An age-only chart without corroborating data is informational, not an OK verdict.
+- Deadlock charts and endpoint deltas observe the same counter. Use their
+  maximum as the window observation, never their sum; keep the separate log
+  window labelled and do not add it to snapshot counts.
+- Shared evaluator caches include explanations, facts and evidence alongside
+  the value and replay them into each consuming node. Repeated bloat and
+  resource-pressure evidence must not depend on root traversal order.
+- Fact extractors read inventory items: CPU count from `os.cpu_info`, RAM from
+  `os.memory_info`/`os.total_ram`, disk media from `os.lshw_disk` (NVMe / SSD /
+  rotational), build flags from `overview.pg_config` (`--enable-cassert`,
+  `--enable-debug`), process counts by role from `backend_os.postgres_process_tree`,
+  settings from `overview.pg_settings` (normalized values), THP and huge page
+  state from `os.postgresql_huge_pages`. Extractors return `null` when the item
+  is absent; evaluators degrade to what is available and say so in `reasons`.
+
+Thresholds are constants in the engine (`THRESHOLDS`), documented inline with
+the runbook section they come from, and covered by unit tests.
+
+## 5. Rendering
+
+- Layout: roots in the top row, children in depth rows below, siblings side by
+  side, and parents centred above their first/last child. Subtree spans reserve
+  space for wrapped labels. Parent→child edges are straight solid segments
+  clipped at the circles. There are no list-style elbows or column boxes.
+- Cause links are shown only for the selected node, as dashed arrows routed
+  through level gutters and clear vertical lanes with rounded corners. They
+  must not cross unrelated nodes or labels.
+- Node: a circle filled with the score gradient (green → yellow → red), grey
+  when `no_data`, dashed stroke when the node is missing data because of the
+  run or collection mode. Root circles are enlarged with wrapped names inside;
+  other names are below their circles. A +N badge denotes collapsed children.
+  No computed score percentages are displayed anywhere (circles, tooltips,
+  panel or child list). Measured values in reasons/facts retain their units.
+  Status labels are OK / Warning / Critical / No data; security and health
+  findings must never be labelled "Bottleneck".
+- Canvas: fixed-height viewport with drag-to-pan, wheel zoom anchored at the
+  pointer, and in-canvas minus/plus, Fit and 1:1 controls. Button zoom anchors
+  at the viewport centre; the scale readout is a multiplier. Start at a readable
+  scale, not a microscopic fit of all trees. Fit provides the full overview.
+  A drag must not select or collapse a node. Keyboard +/- zoom, Home/0 fits,
+  arrows pan and Enter/Space activates a focused node. User viewport state
+  survives node selection; resizing refits only in Fit mode. Re-rendering
+  disconnects the old resize observer.
+- Click: a details card unfolds immediately below the node, inside the SVG
+  scene via `foreignObject`, and scales/pans with the graph. It
+  shows the node summary, status, reasons, facts, the
+  hints for missing data, and the bound items as chips (title, collection
+  status, presence); clicking a chip calls `navigateToItem`. Hover shows the
+  reasons as a tooltip. All content is included, without a fixed-height internal
+  scroll area. The card has a fixed width in graph coordinates and its actual
+  HTML height is measured before layout. A second click (including on a leaf)
+  closes the card; selecting another node replaces it. There is no separate
+  details panel below the canvas.
+  If children raise the score above the node's own score, the panel states
+  that explicitly without a numeric score. Warning/critical branches initially
+  expand to reveal their possible contributors.
+- Opening/closing cards and branches animates node positions, connected edges
+  and card reveal over 300 ms. Subtree spans reserve the card width, and deeper
+  rows move below its full height so cards cannot cover other nodes or edges.
+  The clicked circle stays anchored in screen space and the zoom is unchanged.
+  Interruptions start from the current interpolated positions, not the previous
+  destination. Closing cards cannot receive clicks. `prefers-reduced-motion`
+  disables animation; re-render/destroy cancels frames and disconnects card
+  measurement observers. Item buttons remain clickable after pan/zoom; SVG
+  viewport gestures do not consume button presses or keyboard activation.
+- The panel above the sections carries a legend, the overall status line
+  ("3 of 5 roots have data; snapshots mode adds 19 nodes"), and a
+  collapse control; the rendered state is kept in `localStorage` only for the
+  collapse flag.
+- No external libraries. The renderer uses only CSS variables defined by the
+  report theme (`--bg`, `--text`, `--accent`, `--ok-fg`, `--warn-fg`, ...) plus
+  its own `--dg-*` tokens; it works in both report themes.
+
+## 6. Tests
+
+- `tests/unit/test_diagnostic_graph.py`: `graph.json` structure, parent tree
+  acyclicity, five roots, every catalog item bound, every bound id in the
+  catalog, evaluator names exist in the engine, HTML placeholders replaced, and
+  a subprocess run of the node test suite when `node` is available.
+- `tests/js/diagnostic_graph.test.js` (`node --test tests/js`): decoding,
+  chart statistics, fact extractors on real item shapes, evaluators on fixture
+  artifacts (snapshots with data, one-shot without metric items, remote-db-only
+  without host items), post-order/max propagation, hint generation, log-source
+  fallback and overlap, typed log signals, idle versus lagging standby, CPU
+  component separation, I/O-wait-specific contributors, missing pressure,
+  separate swap/available-memory signals, and cached explanations in repeated
+  branches. `diagnostic_graph_render.test.js` tests sibling alignment, subtree
+  bounds, wrapped label separation, full-height inline cards and obstacle-free
+  cause routes with cards open.
+- `tests/browser/test_diagnostic_graph_browser.py` (Playwright, opt-in like the
+  ECharts test): the graph renders, node click opens the panel, item chip
+  click scrolls to the item. Both themes must have a separate graph stylesheet,
+  visible parent/cause strokes, a no-data color, and an opaque panel background;
+  assertions inspect computed styles, not only HTML placeholder strings.
+  Normal and wide viewports must also pass zoom/pan, drag-versus-click, fit,
+  contained root labels, selected-only cause links, non-percentage statuses
+  and inline card placement/scale checks. Animation tests inspect intermediate
+  positions, open/close symmetry, anchor preservation, rapid interruptions,
+  reduced motion, complete card content and cleanup during re-render.
+
+## 7. Change policy
+
+- Adding an item to the catalog requires binding it here; the unit test fails
+  otherwise.
+- Renaming an item id requires updating `graph.json`; the engine tolerates ids
+  that are missing in an artifact but the test does not tolerate ids missing
+  in the catalog.
+- New thresholds go into `THRESHOLDS` with a comment naming the runbook rule.

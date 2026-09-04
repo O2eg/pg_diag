@@ -52,6 +52,12 @@ The main unit-test groups are:
   set small.
 - `test_metric_engine.py` - rate, delta, top-N, ratio, chart, and table metric
   calculations from snapshots.
+- `test_diagnostic_graph.py` - diagnostic graph contract: `graph.json` tree and
+  bindings against the catalog, evaluator names, HTML embedding, and the node
+  test suite in `tests/js/` (`node --test tests/js`; skipped without `node`).
+  The JS regressions cover critical-child propagation, overlapping log/deadlock
+  counts, mixed log event types, idle standby replay age, I/O wait versus CPU
+  work, one-point event charts, and explanations reused across graph branches.
 - `test_os_metrics.py` - Linux provider parsing, derived values, and backend
   process window-endpoint rates.
 - `test_sampler_runtime.py` - declarative provider dispatch, output/error
@@ -83,7 +89,17 @@ Run the optional self-contained HTML renderer test in Chromium:
 python -m pip install -e '.[browser]'
 python -m playwright install chromium
 PG_DIAG_BROWSER_TESTS=1 python -m pytest -q tests/browser/test_echarts_report.py
+PG_DIAG_BROWSER_TESTS=1 python -m pytest -q tests/browser/test_diagnostic_graph_browser.py
 ```
+
+The diagnostic graph test checks computed edge/cause colors, the no-data color
+and panel background in both themes, inline detail-card placement and scaling
+at normal and wide viewport sizes, zoom/pan and drag-versus-click behavior,
+wrapped labels inside enlarged roots, selected-only cause links, non-percentage
+statuses, as well as node and item navigation. Animation tests sample intermediate
+positions and check open/close, interruptions, reduced motion and re-render
+cleanup. The Node renderer tests also check tree geometry, measured card space
+and that cause routes avoid unrelated nodes, labels and open cards.
 
 The browser test opens the generated report through `file://`, rejects external
 HTTP requests and console errors, and checks SVG rendering, line/stacked chart

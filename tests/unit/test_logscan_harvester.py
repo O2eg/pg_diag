@@ -134,6 +134,38 @@ def test_harvester_equals_local_for_multiline_auto_explain(tmp_path) -> None:
     assert all(series.count == 1 for series in remote.series)
 
 
+@pytest.mark.parametrize(
+    "state,message",
+    [
+        ("57014", "canceling statement due to statement timeout"),
+        ("55P03", "canceling statement due to lock timeout"),
+        ("57P01", "terminating connection due to administrator command"),
+        ("40001", "canceling statement due to conflict with recovery"),
+        ("40001", "terminating connection due to conflict with recovery"),
+    ],
+)
+def test_harvester_keeps_each_termination_timestamp(tmp_path, state, message) -> None:
+    # Adjacent native-shaped CSV errors straddling a minute boundary. Neither
+    # transport may collapse them before the item can assign minute buckets.
+    body = "".join(
+        _record(BASE + timedelta(seconds=offset), "ERROR", message).replace(",00000,", f",{state},")
+        for offset in (59, 61)
+    )
+    (tmp_path / "a.csv").write_text(body)
+    request = _request(
+        tmp_path,
+        [_info(tmp_path, "a.csv")],
+        BASE,
+        recall_clauses=compile_clauses([[f",{state},"]]),
+    )
+    remote = _scan(request)
+    local = asyncio.run(LocalLogSource(str(tmp_path)).scan(request))
+    assert remote.series == local.series
+    assert [series.count for series in remote.series] == [1, 1]
+    assert remote.series[0].first_ts.startswith("2026-08-31 10:00:59")
+    assert remote.series[1].first_ts.startswith("2026-08-31 10:01:01")
+
+
 def test_harvester_matches_local_multiline_raw_cap(tmp_path) -> None:
     message = "duration: 1 ms  plan:\n" + ("x" * 500)
     (tmp_path / "a.csv").write_text(_multiline_record(BASE + timedelta(seconds=1), message))

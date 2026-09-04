@@ -1051,8 +1051,9 @@ visible in stdout and `report.log`.
 server `csvlog` files for a bounded time window, collapses floods of identical
 errors into series, sanitizes messages, and renders items such as the error
 chronology, top errors and warnings by frequency, crash and recovery markers,
-deadlocks, authentication failures, and a stacked time chart of slow-query
-plans written by `auto_explain`.
+deadlocks, authentication failures, system/lifecycle/replication incidents,
+query termination and resource events, heavy maintenance, and a stacked time
+chart of slow-query plans written by `auto_explain`.
 
 Flag semantics:
 
@@ -1083,20 +1084,30 @@ Collection mode support:
 | `remote-db-only` | Not supported by design; items report `unsupported` |
 
 Requirements on the server: `logging_collector = on`, `csvlog` in
-`log_destination`, English or C `lc_messages`, and read access to the log
-directory for the OS user running `pg-diag`. The complete privilege setup,
-including the ACL commands and the `log_file_mode` interaction, is documented
+`log_destination`, and read access to the log directory for the OS user running
+`pg-diag`. English, C, or POSIX `lc_messages` enables every content item. With
+another locale, SQLSTATE-driven authentication failures and deadlocks remain
+fully available. Query termination and system incidents remain available with
+explicit `structured_sqlstate_only` partial coverage; items that require
+localized message text report `unsupported`, and the log-file overview is
+locale-independent. The complete
+privilege setup, including the ACL commands and the `log_file_mode` interaction,
+is documented
 in [docs/access-best-practices.md](docs/access-best-practices.md#server-log-access-optional).
 No additional PostgreSQL grants are needed: the reference `pgdiag` role already
 covers `pg_ls_logdir()`, `pg_current_logfile()`, and the log-related settings
 through `pg_monitor`.
 
-The current release ships thirteen log items: the error chronology, top errors
+The current release ships nineteen log items: the error chronology, top errors
 and top warnings by frequency, crash and recovery markers, deadlocks,
 authentication failures, autovacuum runs, checkpoints, WAL archiver failures,
 transaction ID wraparound pressure, lock waits, `auto_explain` plans by
-duration, and the log files overview (the last one needs only `pg_monitor`, no
-log-content access). The `auto_explain` chart uses clock-aligned one-minute
+duration, the log files overview, plus system incidents, server lifecycle,
+replication/WAL transport events, query terminations by minute, query time/temp
+file groups, and heavy/failed maintenance (the log overview needs only
+`pg_monitor`, no log-content access). Chart event text and plans use bounded,
+deduplicated references so repeated events do not duplicate large payloads.
+The `auto_explain` chart uses clock-aligned one-minute
 columns and keeps the ten longest logged queries in each minute. Every stacked
 block represents one query; its tooltip shows the exact log timestamp,
 duration, and a sanitized query sample capped at 300 characters. Clicking a
@@ -1281,6 +1292,40 @@ The bundled content pack includes sections for:
 
 Availability depends on PostgreSQL version, installed extensions, database
 permissions, collection mode, and host permissions.
+
+### Diagnostic Graph
+
+The HTML report opens with a diagnostic graph: five roots (`cpu`, `ram`,
+`disk`, `database_health`, `database_security`), each with a cause tree
+underneath, drawn as a top-down tree with siblings side by side on a zoomable,
+pannable canvas. Root names sit inside enlarged circles. Drag to pan, scroll
+to zoom, or use the in-canvas minus/plus, Fit and 1:1 controls. Every node is bound to the report
+items that carry its evidence (every catalog item is bound to at least one
+node), and its color is computed in the browser from the raw item data: green
+to red by score, grey when the report has no data for it. Resource causes such
+as sequential scans or checkpoint bursts are weighted by the pressure of their
+resource. CPU separates user work, system work, I/O wait and hypervisor steal;
+I/O-wait contributors use I/O-wait pressure, not user CPU. RAM separates
+available memory/OOM, swap usage and cache misses. Disk separates device
+latency, reads, writes and free space, with the relevant causes underneath.
+The final branch score is the maximum of its own evidence and its children;
+a critical child always lights the path to its root. I/O wait is not counted
+as CPU work, and replay age alone does not make an idle, caught-up standby
+unhealthy. Log evidence is classified by event type; overlapping error and
+deadlock sources are not added together. Scores are internal color heuristics,
+not displayed percentages. Labels use OK / Warning / Critical / No data,
+including for security risks. Cause arrows appear only for the selected node
+and run through clear lanes between levels.
+Clicking a node unfolds a details card directly underneath it inside the canvas, showing why it has its
+color, the facts behind it, hints about missing data (for example "run snapshots mode" or "use local or remote
+collection mode"), related causes across the graph, and the bound items; clicking
+an item scrolls the report to it. Cards scale and pan with the graph. The layout
+animates to make room for their full content, with the clicked node anchored
+and zoom unchanged; click the node again to close. Reduced-motion preferences
+are respected. The module lives in
+`src/pg_diag/render/graph/` (`graph.json` is the declarative graph,
+`pg-diag-graph.js` the evaluation engine, `pg-diag-graph-render.js` the
+renderer) and is specified in `DIAGNOSTIC_GRAPH_SPEC.md` next to it.
 
 Repeated table samples store their column schema once in `snapshot_schemas` and
 keep only status, rows, and an optional failure reason in each snapshot point.

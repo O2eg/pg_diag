@@ -431,6 +431,68 @@ python_sources:
       default_sort:
         column: modification
         direction: desc
+  server_log.system_incidents:
+    targets: [db]
+    title: System Incidents From Server Log
+    description: Disk-full, memory, connection/configuration limit, read/write/fsync, checksum, and data/index/WAL corruption evidence, bounded to the 100 highest-priority series.
+    python_file: server_log/system_incidents.py
+    function: collect
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: last_time
+        direction: desc
+  server_log.server_lifecycle:
+    targets: [db]
+    title: Server Lifecycle From Server Log
+    description: PostgreSQL startup, shutdown, backend crash, crash recovery, promotion, readiness, configuration reload, and startup-failure markers, bounded to 100 rows.
+    python_file: server_log/server_lifecycle.py
+    function: collect
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: first_time
+        direction: desc
+  server_log.replication_events:
+    targets: [db]
+    title: Replication And WAL Transport Events
+    description: Archive/restore failures, WAL sender/receiver disconnects, missing WAL, timeline mismatch, slot invalidation, logical replication errors, and recovery conflicts, bounded to 100 rows.
+    python_file: server_log/replication_events.py
+    function: collect
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: occurrences
+        direction: desc
+  server_log.query_termination_events:
+    targets: [db]
+    title: Query Termination Events By Minute
+    description: Minute chart for statement/lock timeouts, user cancellation, recovery conflict, administrative shutdown, and NOWAIT failures with deduplicated message and SQL references.
+    python_file: server_log/query_termination_events.py
+    function: collect
+    timeout_ms: 3000
+  server_log.query_resource_events:
+    targets: [db]
+    title: Query Time And Temporary File Events
+    description: Slow statements and temporary-file records grouped by query, database, and application and ranked by duration and temporary bytes, bounded to 100 groups.
+    python_file: server_log/query_resource_events.py
+    function: collect
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: total_temp_bytes
+        direction: desc
+  server_log.maintenance_events:
+    targets: [db]
+    title: Heavy And Failed Maintenance Events
+    description: Heavy autovacuum/autoanalyze and failed, cancelled, blocked, or wraparound-related VACUUM, ANALYZE, and REINDEX events using documented impact thresholds and a 100-row limit.
+    python_file: server_log/maintenance_events.py
+    function: collect
+    timeout_ms: 3000
+    display:
+      default_sort:
+        column: impact_score
+        direction: desc
   server_log.lock_waits:
     targets: [db]
     title: Lock Waits From Server Log

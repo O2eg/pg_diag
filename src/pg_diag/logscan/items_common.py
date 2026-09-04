@@ -1,13 +1,15 @@
 """Shared helpers for server_log item sources (content/python/server_log/*).
 
 Sources stay thin: each owns only its aggregation. Status mapping follows the
-plan (§7): flag absent -> skipped; no reader / csvlog off / non-English
-lc_messages -> unsupported; phase failure -> error; full empty window -> empty.
+plan (§7): flag absent -> skipped; no reader / csvlog off -> unsupported;
+phase failure -> error; full empty window -> empty. Items that parse localized
+severity or message text opt into the English-locale requirement explicitly.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
+import re
 from typing import Any
 
 from .model import LogRecord, LogWindow
@@ -19,7 +21,9 @@ __all__ = [
     "coverage_note",
     "empty_result_status",
     "fmt_time",
+    "is_recovery_end_of_wal",
     "message_contains_any",
+    "resolve_english_window",
     "resolve_inventory",
     "resolve_window",
     "severity_rank",
@@ -27,13 +31,32 @@ __all__ = [
 
 SEVERITY_ERRORS = ("ERROR", "FATAL", "PANIC")
 _SEVERITY_RANK = {"WARNING": 1, "ERROR": 2, "FATAL": 3, "PANIC": 4}
+_END_OF_WAL_RE = re.compile(
+    r"invalid record length at [0-9A-F]+/[0-9A-F]+: expected at least \d+, got 0",
+    re.IGNORECASE,
+)
+
+
+def is_recovery_end_of_wal(record: LogRecord) -> bool:
+    """A startup LOG at zero-length WAL is not, by itself, corruption evidence.
+
+    PostgreSQL 10-12 have no backend_type CSV column. Explicit error SQLSTATEs
+    and severities must retain their incident classification in every version.
+    """
+    return (
+        record.severity == "LOG"
+        and record.sql_state == "00000"
+        and record.backend_type in (None, "startup")
+        and _END_OF_WAL_RE.fullmatch(record.message.strip()) is not None
+    )
 
 
 def resolve_window(context: Any) -> tuple[LogWindow | None, dict[str, Any] | None]:
     """Return (window, early_status) for a server_log item source.
 
     ``early_status`` is a dict {collection_status, reason} when the item must
-    not evaluate rows (phase skipped/unavailable/failed, unsupported locale).
+    not evaluate rows (phase skipped/unavailable/failed). Locale-independent
+    items can consume the returned window for every ``lc_messages`` value.
     """
     server_log = getattr(context, "server_log", None)
     if server_log is None or not isinstance(getattr(server_log, "marker", None), dict):
@@ -56,12 +79,25 @@ def resolve_window(context: Any) -> tuple[LogWindow | None, dict[str, Any] | Non
             "collection_status": "error",
             "reason": "log collection reported success but produced no window",
         }
+    return window, None
+
+
+def resolve_english_window(context: Any) -> tuple[LogWindow | None, dict[str, Any] | None]:
+    """Resolve a window for an item that parses English severity/message text.
+
+    PostgreSQL localizes csvlog severity and message fields. Keeping this check
+    item-specific lets SQLSTATE-driven items work in every locale without
+    allowing English-pattern items to claim a false empty result.
+    """
+    window, early = resolve_window(context)
+    if early is not None or window is None:
+        return window, early
     if not window.coverage.locale_supported:
         return None, {
             "collection_status": "unsupported",
             "reason": (
-                "lc_messages is not C/POSIX/en_*; csvlog severities and messages are "
-                "localized, so pattern matching would silently miss events"
+                "this item parses localized csvlog severity or message text, but "
+                "lc_messages is not C/POSIX/en_*"
             ),
         }
     return window, None

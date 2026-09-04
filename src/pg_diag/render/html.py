@@ -52,6 +52,14 @@ def render_html(artifact: dict[str, Any], *, validate: bool = True) -> str:
         "__PG_EXPLAIN_VIEWER_RENDER_JS__": _inline_script(
             _read_render_resource("vendor", "pg-explain-viewer-0.7.2-render.js")
         ),
+        "__PG_DIAG_GRAPH_CSS__": _inline_style(_read_render_resource("graph", "pg-diag-graph.css")),
+        "__PG_DIAG_GRAPH_DEFINITION__": _inline_script(
+            _read_render_resource("graph", "graph.json").strip()
+        ),
+        "__PG_DIAG_GRAPH_JS__": _inline_script(_read_render_resource("graph", "pg-diag-graph.js")),
+        "__PG_DIAG_GRAPH_RENDER_JS__": _inline_script(
+            _read_render_resource("graph", "pg-diag-graph-render.js")
+        ),
         "__THIRD_PARTY_LICENSES__": _inline_script(_third_party_licenses()),
     }
     placeholder_pattern = re.compile("|".join(re.escape(key) for key in replacements))

@@ -126,6 +126,17 @@ class LogRecord:
     # RAW_RECORD_CAP, not a display value bounded by LINE_CAP.
     detail: str | None = None
     auto_explain_plan: "AutoExplainPlan | None" = None
+    session_id: str | None = None
+    session_line_num: int | None = None
+    command_tag: str | None = None
+    session_start_time: datetime | None = None
+    transaction_id: int | None = None
+    application_name: str | None = None
+    query: str | None = None
+    context: str | None = None
+    # Full sanitized csvlog message, bounded by ScanRequest.raw_record_cap.
+    # Item parsers use it for metrics that may appear after LINE_CAP.
+    message_full: str | None = None
 
 
 @dataclass(frozen=True)

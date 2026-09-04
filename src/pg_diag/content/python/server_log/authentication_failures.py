@@ -23,9 +23,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
         return PythonSourceResult(**early)
     groups: dict[tuple, dict[str, Any]] = {}
     for record in window.records:
-        if record.sql_state not in _AUTH_SQLSTATES and not message_contains_any(
-            record, _FRAGMENTS
-        ):
+        if record.sql_state not in _AUTH_SQLSTATES and not message_contains_any(record, _FRAGMENTS):
             continue
         client = client_host(record.connection_from)
         key = (record.user_name, record.database_name, client, record.sql_state)

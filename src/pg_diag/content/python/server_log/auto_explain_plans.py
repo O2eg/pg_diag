@@ -7,7 +7,12 @@ from typing import Any
 
 from pg_diag.executors.python import PythonSourceContext, PythonSourceResult
 from pg_diag.logscan.csvparse import parse_timestamp
-from pg_diag.logscan.items_common import coverage_note, empty_result_status, resolve_window
+from pg_diag.logscan.event_refs import CHART_POINT_LIMIT, ChartReferencePool
+from pg_diag.logscan.items_common import (
+    coverage_note,
+    empty_result_status,
+    resolve_english_window,
+)
 
 BUCKET_SECONDS = 60.0
 TOP_QUERIES_PER_BUCKET = 10
@@ -25,7 +30,7 @@ _STACK_BOTTOM_COLOR = (250, 204, 21)  # yellow-400
 
 
 def collect(context: PythonSourceContext) -> PythonSourceResult:
-    window, early = resolve_window(context)
+    window, early = resolve_english_window(context)
     if early is not None:
         return PythonSourceResult(**early)
 
@@ -67,7 +72,17 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
         for bucket, bucket_records in records_by_bucket.items()
     }
     utc_offset_seconds = _utc_offset_seconds(context)
-    displayed_plan_count = sum(len(bucket_records) for bucket_records in top_by_bucket.values())
+    candidate_point_count = sum(len(bucket_records) for bucket_records in top_by_bucket.values())
+    axis_points = _axis_boundary_points(buckets, utc_offset_seconds)
+    event_point_limit = max(0, CHART_POINT_LIMIT - len(axis_points))
+    selected: dict[datetime, dict[int, Any]] = defaultdict(dict)
+    displayed_plan_count = 0
+    for rank in range(TOP_QUERIES_PER_BUCKET):
+        for bucket in sorted(top_by_bucket):
+            if rank < len(top_by_bucket[bucket]) and displayed_plan_count < event_point_limit:
+                selected[bucket][rank] = top_by_bucket[bucket][rank]
+                displayed_plan_count += 1
+    refs = ChartReferencePool()
 
     result = {
         "kind": "chart",
@@ -91,23 +106,28 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
                 "nullable": False,
                 "quantity": "milliseconds",
                 "unit": "milliseconds",
-                "points": [
-                    _chart_point(
-                        bucket,
-                        (top_by_bucket.get(bucket) or [])[rank]
-                        if rank < len(top_by_bucket.get(bucket) or [])
-                        else None,
-                        utc_offset_seconds,
-                        rank,
-                        len(top_by_bucket.get(bucket) or []),
-                    )
-                    for bucket in buckets
-                ],
+                "points": sorted(
+                    (axis_points if rank == 0 else [])
+                    + [
+                        _chart_point(
+                            bucket,
+                            selected[bucket][rank],
+                            utc_offset_seconds,
+                            rank,
+                            len(top_by_bucket.get(bucket) or []),
+                            refs,
+                        )
+                        for bucket in sorted(selected)
+                        if rank in selected[bucket]
+                    ],
+                    key=lambda point: point["t"],
+                ),
             }
             # ECharts draws the first stacked series at the bottom. Declare
             # Rank 10 first and Rank 1 last so durations descend top-to-bottom.
             for rank in range(TOP_QUERIES_PER_BUCKET - 1, -1, -1)
         ],
+        "references": refs.as_dict(),
         "bucket_seconds": BUCKET_SECONDS,
         "top_queries_per_bucket": TOP_QUERIES_PER_BUCKET,
         "plan_count": sum(record.repeat_count for record in records),
@@ -116,6 +136,10 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
             0,
             sum(record.repeat_count for record in records) - displayed_plan_count,
         ),
+        "candidate_point_count": candidate_point_count,
+        "point_limit": CHART_POINT_LIMIT,
+        "display_point_count": displayed_plan_count + len(axis_points),
+        "reference_omitted_count": refs.omitted_total,
         "parsed_plan_count": parsed_plan_count,
         "complete_plan_count": complete_plan_count,
         "plan_node_count": node_count,
@@ -139,7 +163,8 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
     incomplete = result["plan_count"] - complete_plan_count
     issues: dict[str, Any] = {}
     severity = "ok"
-    if note or unparsed or incomplete:
+    point_omitted = max(0, candidate_point_count - displayed_plan_count)
+    if note or unparsed or incomplete or point_omitted or refs.omitted_total:
         severity = "unknown"
         details = []
         if unparsed:
@@ -148,6 +173,15 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
             details.append(f"{incomplete} plan record(s) exceeded the capture boundary")
         if note:
             details.append(note)
+        if point_omitted:
+            details.append(
+                f"{point_omitted} chart point(s) exceeded the fixed "
+                f"{CHART_POINT_LIMIT}-point display limit"
+            )
+        if refs.omitted_total:
+            details.append(
+                f"{refs.omitted_total} query or plan reference(s) exceeded payload budgets"
+            )
         issues = {
             "summary": {
                 "severity": "unknown",
@@ -226,33 +260,39 @@ def _chart_point(
     utc_offset_seconds: int,
     rank: int,
     bucket_size: int,
+    refs: ChartReferencePool,
 ) -> dict[str, Any]:
-    point = {
-        "t": _iso_timestamp(bucket, utc_offset_seconds),
-        "value": 0,
-    }
-    if record is None:
-        return point
     plan = record.auto_explain_plan
     assert plan is not None
-    point.update(
-        {
-            "value": plan.duration_ms,
-            "color": _stack_color(rank, bucket_size),
-            "tooltip": {
-                "log_time": _iso_timestamp(record.log_time, utc_offset_seconds),
-                "duration_ms": plan.duration_ms,
-                "query_sample": plan.query_sample,
-            },
-        }
-    )
+    point = {
+        "t": _iso_timestamp(bucket, utc_offset_seconds),
+        "value": plan.duration_ms,
+        "color": _stack_color(rank, bucket_size),
+        "tooltip": {
+            "log_time": _iso_timestamp(record.log_time, utc_offset_seconds),
+            "duration_ms": plan.duration_ms,
+            "query_ref": refs.add_query(plan.query_sample),
+        },
+    }
     if plan.viewer_plan:
+        plan_ref = refs.add_plan(plan.plan_format, plan.viewer_plan)
+    else:
+        plan_ref = None
+    if plan_ref:
         point["viewer"] = {
-            "plan_text": plan.viewer_plan,
-            "plan_format": plan.plan_format,
+            "plan_ref": plan_ref,
             "read_only": True,
         }
     return point
+
+
+def _axis_boundary_points(buckets: list[datetime], utc_offset_seconds: int) -> list[dict[str, Any]]:
+    if not buckets:
+        return []
+    result = [{"t": _iso_timestamp(buckets[0], utc_offset_seconds), "value": 0}]
+    if buckets[-1] != buckets[0]:
+        result.append({"t": _iso_timestamp(buckets[-1], utc_offset_seconds), "value": 0})
+    return result
 
 
 def _utc_offset_seconds(context) -> int:

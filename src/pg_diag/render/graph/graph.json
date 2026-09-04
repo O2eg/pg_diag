@@ -1,0 +1,3606 @@
+{
+  "schema_version": 1,
+  "roots": [
+    "cpu",
+    "ram",
+    "disk",
+    "database_health",
+    "database_security"
+  ],
+  "nodes": [
+    {
+      "id": "cpu",
+      "label": "CPU",
+      "summary": "Separate user work, kernel work, I/O waiting and CPU time taken by the hypervisor.",
+      "evaluator": "aggregate",
+      "bindings": []
+    },
+    {
+      "id": "cpu.utilization",
+      "parent": "cpu",
+      "label": "User CPU",
+      "summary": "User and nice CPU time. Load average is context, not proof of CPU work.",
+      "evaluator": "cpu_user",
+      "requires": [
+        "snapshots",
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "snapshot_charts_os.os_cpu_utilization",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_os.os_cpu_load",
+          "role": "primary"
+        },
+        {
+          "id": "os.cpu_info",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_processor",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "cpu.backends",
+      "parent": "cpu.utilization",
+      "label": "Backends on CPU",
+      "summary": "Client backends among the top CPU consumers.",
+      "evaluator": "cpu_backends",
+      "requires": [
+        "snapshots",
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "backend_os.backend_proc_cpu",
+          "role": "primary"
+        },
+        {
+          "id": "backend_os.backend_activity",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_cpu_efficiency_delta",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_user"
+    },
+    {
+      "id": "cpu.heavy_queries",
+      "parent": "cpu.backends",
+      "label": "Heavy statements",
+      "summary": "A few statements dominate execution time.",
+      "evaluator": "heavy_queries",
+      "requires": [
+        "pg_stat_statements"
+      ],
+      "bindings": [
+        {
+          "id": "sql_workload.top_sql_by_total_time",
+          "role": "primary"
+        },
+        {
+          "id": "sql_workload.top_sql_by_mean_time",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_time_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_planning_delta",
+          "role": "support"
+        },
+        {
+          "id": "server_log.auto_explain_plans",
+          "role": "support"
+        },
+        {
+          "id": "object_workload.function_workload",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.function_time_delta",
+          "role": "support"
+        },
+        {
+          "id": "server_log.query_resource_events",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_user"
+    },
+    {
+      "id": "cpu.seq_scans",
+      "parent": "cpu.backends",
+      "label": "Sequential scans",
+      "summary": "Large tables read by sequential scans instead of indexes.",
+      "evaluator": "seq_scans",
+      "bindings": [
+        {
+          "id": "object_workload.table_workload",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_seq_read_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_tuple_access_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.table_scan_delta",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_user"
+    },
+    {
+      "id": "cpu.index_efficiency",
+      "parent": "cpu.backends",
+      "label": "Index efficiency",
+      "summary": "Indexes that read many entries per fetched row, unused and duplicate indexes.",
+      "evaluator": "index_efficiency",
+      "bindings": [
+        {
+          "id": "object_workload.index_workload",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.indexes_top_reads_per_fetch",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.indexes_top_reads_per_scan",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.indexes_top_fetches_per_scan",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.indexes_top_scan_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.indexes_top_tuple_read_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.indexes_top_tuple_fetch_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_index_fetch_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.index_usage_delta",
+          "role": "support"
+        },
+        {
+          "id": "indexes.unused_indexes",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "indexes.redundant_indexes",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "indexes.duplicate_indexes",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "indexes.large_indexes",
+          "role": "support",
+          "weight": 0.3
+        }
+      ],
+      "pressure": "cpu_user"
+    },
+    {
+      "id": "cpu.light_queries",
+      "parent": "cpu.backends",
+      "label": "Many light statements",
+      "summary": "Very high call rates of sub-millisecond statements.",
+      "evaluator": "light_queries",
+      "requires": [
+        "pg_stat_statements"
+      ],
+      "bindings": [
+        {
+          "id": "sql_workload.top_sql_by_calls",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.database_transaction_rate",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_context_switches_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.database_tuple_access_rate",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_user"
+    },
+    {
+      "id": "cpu.jit_parallel",
+      "parent": "cpu.backends",
+      "label": "JIT and parallelism",
+      "summary": "JIT compilation and parallel workers on short statements.",
+      "evaluator": "jit_parallel",
+      "bindings": [
+        {
+          "id": "overview.pg_settings",
+          "role": "primary"
+        },
+        {
+          "id": "sql_workload.top_sql_by_total_time",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_user"
+    },
+    {
+      "id": "cpu.autovacuum",
+      "parent": "cpu.utilization",
+      "label": "Autovacuum workers",
+      "summary": "Autovacuum workers among the top CPU consumers.",
+      "evaluator": "cpu_autovacuum",
+      "requires": [
+        "snapshots",
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "backend_os.backend_proc_cpu",
+          "role": "primary"
+        },
+        {
+          "id": "maintenance_progress.vacuum_progress",
+          "role": "support"
+        },
+        {
+          "id": "server_log.autovacuum_runs",
+          "role": "support"
+        },
+        {
+          "id": "server_log.maintenance_events",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_user"
+    },
+    {
+      "id": "cpu.walsender",
+      "parent": "cpu.utilization",
+      "label": "WAL senders",
+      "summary": "WAL senders and logical decoding on CPU.",
+      "evaluator": "cpu_walsender",
+      "requires": [
+        "snapshots",
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "backend_os.backend_proc_cpu",
+          "role": "primary"
+        },
+        {
+          "id": "replication.replication_slots",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.logical_decoding_slot_delta",
+          "role": "support"
+        },
+        {
+          "id": "replication.replication_capacity",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_user"
+    },
+    {
+      "id": "cpu.other_processes",
+      "parent": "cpu.utilization",
+      "label": "Non-PostgreSQL load",
+      "summary": "Host CPU busy far above the PostgreSQL processes' share.",
+      "evaluator": "other_processes",
+      "requires": [
+        "snapshots",
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "snapshot_charts_os.os_cpu_utilization",
+          "role": "primary"
+        },
+        {
+          "id": "backend_os.backend_proc_cpu",
+          "role": "primary"
+        },
+        {
+          "id": "backend_os.postgres_process_tree",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_user"
+    },
+    {
+      "id": "cpu.build",
+      "parent": "cpu.utilization",
+      "label": "Build and hardware",
+      "summary": "Debug or assert-enabled builds, core count, processor model.",
+      "evaluator": "build_facts",
+      "bindings": [
+        {
+          "id": "overview.pg_config",
+          "role": "primary"
+        },
+        {
+          "id": "os.cpu_info",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_processor",
+          "role": "fact"
+        },
+        {
+          "id": "os.kernel_version",
+          "role": "fact"
+        },
+        {
+          "id": "os.os_release",
+          "role": "fact"
+        },
+        {
+          "id": "backend_os.postgres_main_process_linked_libraries",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "cpu.system_time",
+      "parent": "cpu",
+      "label": "System CPU",
+      "summary": "Kernel, IRQ and softirq CPU time; inspect connection churn, contention, networking and paging overhead.",
+      "evaluator": "cpu_system",
+      "requires": [
+        "snapshots",
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "snapshot_charts_os.os_cpu_utilization",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.database_kernel_cpu_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_kernel_cpu_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_planning_kernel_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_context_switches_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_page_faults_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.database_page_fault_rate",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "cpu.contention",
+      "parent": "cpu.system_time",
+      "label": "LWLock contention",
+      "summary": "Sessions waiting on lightweight locks and SLRU caches.",
+      "evaluator": "contention",
+      "bindings": [
+        {
+          "id": "activity_locks.wait_events",
+          "role": "primary"
+        },
+        {
+          "id": "activity_locks.wait_event_sample_profile",
+          "role": "primary"
+        },
+        {
+          "id": "activity_locks.pg_wait_sampling_profile",
+          "role": "support"
+        },
+        {
+          "id": "activity_locks.pg_wait_sampling_capabilities",
+          "role": "fact"
+        },
+        {
+          "id": "wal_io_checkpoints.slru_statistics",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.slru_activity_delta",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_system"
+    },
+    {
+      "id": "cpu.session_churn",
+      "parent": "cpu.system_time",
+      "label": "Sessions and reconnects",
+      "summary": "Thousands of backends or a reconnect storm.",
+      "evaluator": "session_churn",
+      "bindings": [
+        {
+          "id": "activity_locks.connection_pressure",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.database_backends",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_delta_workload.database_session_outcomes_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.activity_sessions_by_state",
+          "role": "support"
+        },
+        {
+          "id": "activity_locks.session_states",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_system"
+    },
+    {
+      "id": "cpu.network",
+      "parent": "cpu.system_time",
+      "label": "Network traffic",
+      "summary": "Packet and byte rates on host interfaces; high packet rates cost kernel time.",
+      "evaluator": "network_traffic",
+      "requires": [
+        "snapshots",
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "snapshot_charts_os.os_network_packets",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_os.os_network_receive",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_os.os_network_transmit",
+          "role": "support"
+        },
+        {
+          "id": "os.sysctl_tcp",
+          "role": "fact"
+        }
+      ],
+      "pressure": "cpu_system"
+    },
+    {
+      "id": "cpu.system_time.paging",
+      "parent": "cpu.system_time",
+      "label": "Paging and THP",
+      "summary": "Huge pages for shared memory, transparent huge pages, page-table cost.",
+      "evaluator": "huge_pages",
+      "requires": [
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "os.postgresql_huge_pages",
+          "role": "primary"
+        },
+        {
+          "id": "os.huge_page_pools",
+          "role": "support"
+        },
+        {
+          "id": "os.sysctl_vm",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.database_page_fault_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_page_faults_delta",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_system"
+    },
+    {
+      "id": "cpu.iowait",
+      "parent": "cpu",
+      "label": "I/O wait",
+      "summary": "CPU idle time with outstanding I/O. Follow reads, writes and swap evidence; high wait is not CPU execution.",
+      "evaluator": "cpu_iowait",
+      "requires": [
+        "snapshots",
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "snapshot_charts_os.os_cpu_utilization",
+          "role": "primary"
+        }
+      ]
+    },
+    {
+      "id": "cpu.iowait.read",
+      "parent": "cpu.iowait",
+      "label": "Read I/O",
+      "summary": "Read throughput and which backend types read.",
+      "evaluator": "disk_read",
+      "bindings": [
+        {
+          "id": "snapshot_charts_os.os_disk_read_throughput",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.io_read_write_rate",
+          "role": "primary"
+        },
+        {
+          "id": "wal_io_checkpoints.pg_stat_io",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_delta_workload.postgresql_io_delta",
+          "role": "support"
+        },
+        {
+          "id": "backend_os.backend_proc_io",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.database_filesystem_io_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_filesystem_io_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_os.os_disk_latency",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_os.os_disk_utilization",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_os.os_disk_iops",
+          "role": "support"
+        },
+        {
+          "id": "activity_locks.wait_events",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.database_io_time_rate",
+          "role": "support"
+        },
+        {
+          "id": "os.lshw_disk",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_storage",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_volume",
+          "role": "fact"
+        },
+        {
+          "id": "os.mounts",
+          "role": "fact"
+        },
+        {
+          "id": "os.fstab",
+          "role": "fact"
+        }
+      ],
+      "pressure": "cpu_iowait"
+    },
+    {
+      "id": "cpu.iowait.read.queries",
+      "parent": "cpu.iowait.read",
+      "label": "Statements reading blocks",
+      "summary": "Statements and tables with the most shared block reads.",
+      "evaluator": "read_queries",
+      "requires": [
+        "pg_stat_statements"
+      ],
+      "bindings": [
+        {
+          "id": "sql_workload.top_sql_by_shared_io",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_io_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_io_attribution_delta",
+          "role": "support"
+        },
+        {
+          "id": "object_workload.table_io",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_heap_read_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_index_block_read_rate",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_iowait"
+    },
+    {
+      "id": "cpu.iowait.read.queries.scans",
+      "parent": "cpu.iowait.read.queries",
+      "label": "Sequential scans",
+      "summary": "Large tables read by sequential scans instead of indexes.",
+      "evaluator": "seq_scans",
+      "bindings": [
+        {
+          "id": "object_workload.table_workload",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_seq_read_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_tuple_access_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.table_scan_delta",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_iowait"
+    },
+    {
+      "id": "cpu.iowait.read.queries.indexes",
+      "parent": "cpu.iowait.read.queries",
+      "label": "Wide index reads",
+      "summary": "Indexes that read many entries per fetched row, unused and duplicate indexes.",
+      "evaluator": "index_efficiency",
+      "bindings": [
+        {
+          "id": "object_workload.index_workload",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.indexes_top_reads_per_fetch",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.indexes_top_reads_per_scan",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.indexes_top_fetches_per_scan",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.indexes_top_scan_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.indexes_top_tuple_read_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.indexes_top_tuple_fetch_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_index_fetch_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.index_usage_delta",
+          "role": "support"
+        },
+        {
+          "id": "indexes.unused_indexes",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "indexes.redundant_indexes",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "indexes.duplicate_indexes",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "indexes.large_indexes",
+          "role": "support",
+          "weight": 0.3
+        }
+      ],
+      "pressure": "cpu_iowait"
+    },
+    {
+      "id": "cpu.iowait.read.queries.bloat",
+      "parent": "cpu.iowait.read.queries",
+      "label": "Bloat",
+      "summary": "Bloated tables and indexes amplify every read and write.",
+      "evaluator": "bloat",
+      "bindings": [
+        {
+          "id": "storage_vacuum.table_bloat_candidates",
+          "role": "primary"
+        },
+        {
+          "id": "storage_vacuum.index_bloat_candidates",
+          "role": "primary"
+        },
+        {
+          "id": "storage_vacuum.autovacuum_queue",
+          "role": "support"
+        },
+        {
+          "id": "indexes.large_indexes",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_iowait"
+    },
+    {
+      "id": "cpu.iowait.read.queries.cache",
+      "parent": "cpu.iowait.read.queries",
+      "label": "Cache misses",
+      "summary": "Reads missing PostgreSQL caches. A shared block read may still hit the OS page cache; it does not prove a physical disk read.",
+      "evaluator": "cache_efficiency",
+      "bindings": [
+        {
+          "id": "overview.database_stats",
+          "role": "primary"
+        },
+        {
+          "id": "object_workload.table_io",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.database_block_access_rate",
+          "role": "support"
+        },
+        {
+          "id": "buffer_cache.top_relations",
+          "role": "support"
+        },
+        {
+          "id": "buffer_cache.top_dirty_relations",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.table_io_delta",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_iowait"
+    },
+    {
+      "id": "cpu.iowait.read.autovacuum",
+      "parent": "cpu.iowait.read",
+      "label": "Autovacuum reads",
+      "summary": "Autovacuum workers' share of reads.",
+      "evaluator": "io_autovacuum_reads",
+      "bindings": [
+        {
+          "id": "wal_io_checkpoints.pg_stat_io",
+          "role": "primary"
+        },
+        {
+          "id": "maintenance_progress.vacuum_progress",
+          "role": "support"
+        },
+        {
+          "id": "server_log.autovacuum_runs",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_iowait"
+    },
+    {
+      "id": "cpu.iowait.read.backup",
+      "parent": "cpu.iowait.read",
+      "label": "Backups and dumps",
+      "summary": "Base backups, dumps and other bulk readers.",
+      "evaluator": "backup_readers",
+      "requires": [
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "backend_os.postgres_process_tree",
+          "role": "primary"
+        },
+        {
+          "id": "backend_os.backend_proc_io",
+          "role": "support"
+        },
+        {
+          "id": "replication.physical_replication",
+          "role": "support"
+        },
+        {
+          "id": "backend_os.backend_activity",
+          "role": "primary"
+        }
+      ],
+      "pressure": "cpu_iowait"
+    },
+    {
+      "id": "cpu.iowait.read.temp_files",
+      "parent": "cpu.iowait.read",
+      "label": "Temporary file I/O",
+      "summary": "Sorts and hashes spilling to disk.",
+      "evaluator": "temp_files",
+      "bindings": [
+        {
+          "id": "sql_workload.top_sql_by_temp_io",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.database_temp_bytes_rate",
+          "role": "primary"
+        },
+        {
+          "id": "overview.database_stats",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_temp_io_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.database_temp_files_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.database_workload_delta",
+          "role": "support"
+        },
+        {
+          "id": "server_log.query_resource_events",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_iowait"
+    },
+    {
+      "id": "cpu.iowait.write",
+      "parent": "cpu.iowait",
+      "label": "Write I/O",
+      "summary": "Write throughput and which process writes.",
+      "evaluator": "disk_write",
+      "bindings": [
+        {
+          "id": "snapshot_charts_os.os_disk_write_throughput",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.io_read_write_rate",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.buffer_writes_by_process",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_os.os_disk_latency",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_os.os_disk_utilization",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_os.os_disk_iops",
+          "role": "support"
+        },
+        {
+          "id": "activity_locks.wait_events",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.database_io_time_rate",
+          "role": "support"
+        },
+        {
+          "id": "os.lshw_disk",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_storage",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_volume",
+          "role": "fact"
+        },
+        {
+          "id": "os.mounts",
+          "role": "fact"
+        },
+        {
+          "id": "os.fstab",
+          "role": "fact"
+        }
+      ],
+      "pressure": "cpu_iowait"
+    },
+    {
+      "id": "cpu.iowait.write.wal",
+      "parent": "cpu.iowait.write",
+      "label": "WAL volume",
+      "summary": "WAL bytes per second, full-page images and the statements behind them.",
+      "evaluator": "wal_volume",
+      "bindings": [
+        {
+          "id": "snapshot_charts_db.wal_growth_rate",
+          "role": "primary"
+        },
+        {
+          "id": "wal_io_checkpoints.wal_statistics",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_delta_workload.wal_activity_delta",
+          "role": "support"
+        },
+        {
+          "id": "sql_workload.top_sql_by_wal",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_wal_delta",
+          "role": "support"
+        },
+        {
+          "id": "wal_io_checkpoints.wal_position",
+          "role": "fact"
+        },
+        {
+          "id": "overview.durability_safety_settings",
+          "role": "fact"
+        }
+      ],
+      "pressure": "cpu_iowait"
+    },
+    {
+      "id": "cpu.iowait.write.temp_files",
+      "parent": "cpu.iowait.write",
+      "label": "Temporary files",
+      "summary": "Sorts and hashes spilling to disk.",
+      "evaluator": "temp_files",
+      "bindings": [
+        {
+          "id": "sql_workload.top_sql_by_temp_io",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.database_temp_bytes_rate",
+          "role": "primary"
+        },
+        {
+          "id": "overview.database_stats",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_temp_io_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.database_temp_files_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.database_workload_delta",
+          "role": "support"
+        },
+        {
+          "id": "server_log.query_resource_events",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_iowait"
+    },
+    {
+      "id": "cpu.iowait.write.data",
+      "parent": "cpu.iowait.write",
+      "label": "Data-file writes",
+      "summary": "Checkpointer, backend and autovacuum writes of relation data.",
+      "evaluator": "aggregate",
+      "bindings": []
+    },
+    {
+      "id": "cpu.iowait.write.data.checkpoints",
+      "parent": "cpu.iowait.write.data",
+      "label": "Checkpoints",
+      "summary": "Requested against timed checkpoints, sync time and write bursts.",
+      "evaluator": "checkpoints",
+      "bindings": [
+        {
+          "id": "snapshot_charts_db.checkpoint_trigger_events",
+          "role": "primary"
+        },
+        {
+          "id": "wal_io_checkpoints.checkpointer",
+          "role": "primary"
+        },
+        {
+          "id": "wal_io_checkpoints.bgwriter",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.checkpoint_write_sync_time_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.checkpointer_delta",
+          "role": "support"
+        },
+        {
+          "id": "server_log.checkpoints",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.restartpoint_events",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_iowait"
+    },
+    {
+      "id": "cpu.iowait.write.data.backend_writes",
+      "parent": "cpu.iowait.write.data",
+      "label": "Backend writes",
+      "summary": "Client backends writing dirty buffers themselves instead of checkpointer and bgwriter.",
+      "evaluator": "backend_writes",
+      "bindings": [
+        {
+          "id": "snapshot_charts_db.buffer_writes_by_process",
+          "role": "primary"
+        },
+        {
+          "id": "wal_io_checkpoints.bgwriter",
+          "role": "primary"
+        },
+        {
+          "id": "wal_io_checkpoints.pg_stat_io",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.writer_pressure_events",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.buffer_allocation_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.background_writer_delta",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_iowait"
+    },
+    {
+      "id": "cpu.iowait.write.data.dml",
+      "parent": "cpu.iowait.write.data",
+      "label": "DML volume",
+      "summary": "Tables and statements with the most inserts, updates and deletes; HOT share.",
+      "evaluator": "dml_volume",
+      "bindings": [
+        {
+          "id": "object_workload.table_workload",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_dml_rate",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_update_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_insert_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_delete_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_hot_update_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.table_dml_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.database_tuple_dml_rate",
+          "role": "support"
+        },
+        {
+          "id": "sql_workload.top_sql_by_shared_io",
+          "role": "support"
+        },
+        {
+          "id": "storage_vacuum.unlogged_tables",
+          "role": "fact"
+        }
+      ],
+      "pressure": "cpu_iowait"
+    },
+    {
+      "id": "cpu.iowait.write.data.autovacuum",
+      "parent": "cpu.iowait.write.data",
+      "label": "Autovacuum writes",
+      "summary": "Autovacuum workers' share of writes.",
+      "evaluator": "io_autovacuum_writes",
+      "bindings": [
+        {
+          "id": "wal_io_checkpoints.pg_stat_io",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_delta_workload.table_maintenance_delta",
+          "role": "support"
+        },
+        {
+          "id": "server_log.autovacuum_runs",
+          "role": "support"
+        }
+      ],
+      "pressure": "cpu_iowait"
+    },
+    {
+      "id": "cpu.iowait.swap",
+      "parent": "cpu.iowait",
+      "label": "Swap / paging evidence",
+      "summary": "Swap occupancy, not active swap-in/out. Inspect memory budgets and sessions before attributing current stalls.",
+      "evaluator": "swap_usage",
+      "bindings": [
+        {
+          "id": "os.memory_info",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_os.os_memory_pressure",
+          "role": "primary"
+        }
+      ],
+      "pressure": "cpu_iowait"
+    },
+    {
+      "id": "cpu.steal",
+      "parent": "cpu",
+      "label": "Hypervisor steal",
+      "summary": "CPU time unavailable because the hypervisor schedules other work.",
+      "evaluator": "cpu_steal",
+      "requires": [
+        "snapshots",
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "snapshot_charts_os.os_cpu_utilization",
+          "role": "primary"
+        }
+      ]
+    },
+    {
+      "id": "ram",
+      "label": "RAM",
+      "summary": "Memory pressure, cache sizing and page cache efficiency.",
+      "evaluator": "aggregate",
+      "bindings": []
+    },
+    {
+      "id": "ram.pressure",
+      "parent": "ram",
+      "label": "Available memory / OOM",
+      "summary": "Low MemAvailable and explicit out-of-memory events, separate from swap occupancy.",
+      "evaluator": "memory_available",
+      "requires": [
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "snapshot_charts_os.os_memory_pressure",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_os.os_memory_usage",
+          "role": "primary"
+        },
+        {
+          "id": "os.memory_info",
+          "role": "primary"
+        },
+        {
+          "id": "server_log.crash_recovery_events",
+          "role": "support"
+        },
+        {
+          "id": "os.total_ram",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_memory",
+          "role": "fact"
+        },
+        {
+          "id": "server_log.system_incidents",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "ram.work_mem",
+      "parent": "ram.pressure",
+      "label": "work_mem budget",
+      "summary": "work_mem multiplied by sessions against RAM; statements that spill.",
+      "evaluator": "work_mem_budget",
+      "bindings": [
+        {
+          "id": "overview.pg_settings",
+          "role": "primary"
+        },
+        {
+          "id": "activity_locks.connection_pressure",
+          "role": "support"
+        },
+        {
+          "id": "sql_workload.top_sql_by_temp_io",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_temp_io_delta",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "ram.shared_buffers",
+      "parent": "ram.pressure",
+      "label": "shared_buffers sizing",
+      "summary": "shared_buffers share of RAM and how much of it is really used.",
+      "evaluator": "shared_buffers",
+      "bindings": [
+        {
+          "id": "overview.pg_settings",
+          "role": "primary"
+        },
+        {
+          "id": "buffer_cache.utilization",
+          "role": "primary"
+        },
+        {
+          "id": "buffer_cache.usage_count_distribution",
+          "role": "support"
+        },
+        {
+          "id": "buffer_cache.by_database",
+          "role": "support"
+        },
+        {
+          "id": "buffer_cache.dirty_and_pinned",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "ram.huge_pages",
+      "parent": "ram.pressure",
+      "label": "Huge pages and THP",
+      "summary": "Huge pages for shared memory, transparent huge pages, page-table cost.",
+      "evaluator": "huge_pages",
+      "requires": [
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "os.postgresql_huge_pages",
+          "role": "primary"
+        },
+        {
+          "id": "os.huge_page_pools",
+          "role": "support"
+        },
+        {
+          "id": "os.sysctl_vm",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.database_page_fault_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_page_faults_delta",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "ram.sessions",
+      "parent": "ram.pressure",
+      "label": "Backend population",
+      "summary": "Thousands of backends or a reconnect storm.",
+      "evaluator": "session_churn",
+      "bindings": [
+        {
+          "id": "activity_locks.connection_pressure",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.database_backends",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_delta_workload.database_session_outcomes_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.activity_sessions_by_state",
+          "role": "support"
+        },
+        {
+          "id": "activity_locks.session_states",
+          "role": "support"
+        }
+      ],
+      "pressure": "ram"
+    },
+    {
+      "id": "ram.swap",
+      "parent": "ram",
+      "label": "Swap usage",
+      "summary": "Swap occupancy, not active swap-in/out. Inspect memory budgets and sessions before attributing current stalls.",
+      "evaluator": "swap_usage",
+      "bindings": [
+        {
+          "id": "os.memory_info",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_os.os_memory_pressure",
+          "role": "primary"
+        }
+      ]
+    },
+    {
+      "id": "ram.swap.work_mem",
+      "parent": "ram.swap",
+      "label": "work_mem budget",
+      "summary": "work_mem multiplied by sessions against RAM; statements that spill.",
+      "evaluator": "work_mem_budget",
+      "bindings": [
+        {
+          "id": "overview.pg_settings",
+          "role": "primary"
+        },
+        {
+          "id": "activity_locks.connection_pressure",
+          "role": "support"
+        },
+        {
+          "id": "sql_workload.top_sql_by_temp_io",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_temp_io_delta",
+          "role": "support"
+        }
+      ],
+      "pressure": "ram"
+    },
+    {
+      "id": "ram.swap.shared_buffers",
+      "parent": "ram.swap",
+      "label": "shared_buffers sizing",
+      "summary": "shared_buffers share of RAM and how much of it is really used.",
+      "evaluator": "shared_buffers",
+      "bindings": [
+        {
+          "id": "overview.pg_settings",
+          "role": "primary"
+        },
+        {
+          "id": "buffer_cache.utilization",
+          "role": "primary"
+        },
+        {
+          "id": "buffer_cache.usage_count_distribution",
+          "role": "support"
+        },
+        {
+          "id": "buffer_cache.by_database",
+          "role": "support"
+        },
+        {
+          "id": "buffer_cache.dirty_and_pinned",
+          "role": "support"
+        }
+      ],
+      "pressure": "ram"
+    },
+    {
+      "id": "ram.swap.sessions",
+      "parent": "ram.swap",
+      "label": "Backend population",
+      "summary": "Thousands of backends or a reconnect storm.",
+      "evaluator": "session_churn",
+      "bindings": [
+        {
+          "id": "activity_locks.connection_pressure",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.database_backends",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_delta_workload.database_session_outcomes_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.activity_sessions_by_state",
+          "role": "support"
+        },
+        {
+          "id": "activity_locks.session_states",
+          "role": "support"
+        }
+      ],
+      "pressure": "ram"
+    },
+    {
+      "id": "ram.cache_efficiency",
+      "parent": "ram",
+      "label": "Cache misses",
+      "summary": "Reads missing PostgreSQL caches. A shared block read may still hit the OS page cache; it does not prove a physical disk read.",
+      "evaluator": "cache_efficiency",
+      "bindings": [
+        {
+          "id": "overview.database_stats",
+          "role": "primary"
+        },
+        {
+          "id": "object_workload.table_io",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.database_block_access_rate",
+          "role": "support"
+        },
+        {
+          "id": "buffer_cache.top_relations",
+          "role": "support"
+        },
+        {
+          "id": "buffer_cache.top_dirty_relations",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.table_io_delta",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "ram.cache_efficiency.buffers",
+      "parent": "ram.cache_efficiency",
+      "label": "Cache sizing",
+      "summary": "shared_buffers share of RAM and how much of it is really used.",
+      "evaluator": "shared_buffers",
+      "bindings": [
+        {
+          "id": "overview.pg_settings",
+          "role": "primary"
+        },
+        {
+          "id": "buffer_cache.utilization",
+          "role": "primary"
+        },
+        {
+          "id": "buffer_cache.usage_count_distribution",
+          "role": "support"
+        },
+        {
+          "id": "buffer_cache.by_database",
+          "role": "support"
+        },
+        {
+          "id": "buffer_cache.dirty_and_pinned",
+          "role": "support"
+        }
+      ],
+      "pressure": "ram"
+    },
+    {
+      "id": "ram.cache_efficiency.scans",
+      "parent": "ram.cache_efficiency",
+      "label": "Sequential scans",
+      "summary": "Large tables read by sequential scans instead of indexes.",
+      "evaluator": "seq_scans",
+      "bindings": [
+        {
+          "id": "object_workload.table_workload",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_seq_read_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_tuple_access_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.table_scan_delta",
+          "role": "support"
+        }
+      ],
+      "pressure": "ram"
+    },
+    {
+      "id": "ram.cache_efficiency.bloat",
+      "parent": "ram.cache_efficiency",
+      "label": "Bloated working set",
+      "summary": "Bloated tables and indexes amplify every read and write.",
+      "evaluator": "bloat",
+      "bindings": [
+        {
+          "id": "storage_vacuum.table_bloat_candidates",
+          "role": "primary"
+        },
+        {
+          "id": "storage_vacuum.index_bloat_candidates",
+          "role": "primary"
+        },
+        {
+          "id": "storage_vacuum.autovacuum_queue",
+          "role": "support"
+        },
+        {
+          "id": "indexes.large_indexes",
+          "role": "support"
+        }
+      ],
+      "pressure": "ram"
+    },
+    {
+      "id": "disk",
+      "label": "Disk",
+      "summary": "Device latency, read pressure, write pressure and capacity, with evidence-linked contributors below each symptom.",
+      "evaluator": "aggregate",
+      "bindings": []
+    },
+    {
+      "id": "disk.saturation",
+      "parent": "disk",
+      "label": "Device latency",
+      "summary": "Device await and utilization, with storage media and PostgreSQL wait evidence. Read/write throughput alone does not establish saturation.",
+      "evaluator": "disk_saturation",
+      "requires": [
+        "snapshots",
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "snapshot_charts_os.os_disk_latency",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_os.os_disk_utilization",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_os.os_disk_iops",
+          "role": "support"
+        },
+        {
+          "id": "activity_locks.wait_events",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.database_io_time_rate",
+          "role": "support"
+        },
+        {
+          "id": "os.lshw_disk",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_storage",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_volume",
+          "role": "fact"
+        },
+        {
+          "id": "os.mounts",
+          "role": "fact"
+        },
+        {
+          "id": "os.fstab",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "disk.read",
+      "parent": "disk",
+      "label": "Read I/O",
+      "summary": "Read throughput and which backend types read.",
+      "evaluator": "disk_read",
+      "bindings": [
+        {
+          "id": "snapshot_charts_os.os_disk_read_throughput",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.io_read_write_rate",
+          "role": "primary"
+        },
+        {
+          "id": "wal_io_checkpoints.pg_stat_io",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_delta_workload.postgresql_io_delta",
+          "role": "support"
+        },
+        {
+          "id": "backend_os.backend_proc_io",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.database_filesystem_io_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_filesystem_io_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_os.os_disk_latency",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_os.os_disk_utilization",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_os.os_disk_iops",
+          "role": "support"
+        },
+        {
+          "id": "activity_locks.wait_events",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.database_io_time_rate",
+          "role": "support"
+        },
+        {
+          "id": "os.lshw_disk",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_storage",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_volume",
+          "role": "fact"
+        },
+        {
+          "id": "os.mounts",
+          "role": "fact"
+        },
+        {
+          "id": "os.fstab",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "disk.read.queries",
+      "parent": "disk.read",
+      "label": "Statements reading blocks",
+      "summary": "Statements and tables with the most shared block reads.",
+      "evaluator": "read_queries",
+      "requires": [
+        "pg_stat_statements"
+      ],
+      "bindings": [
+        {
+          "id": "sql_workload.top_sql_by_shared_io",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_io_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_io_attribution_delta",
+          "role": "support"
+        },
+        {
+          "id": "object_workload.table_io",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_heap_read_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_index_block_read_rate",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "disk.read.queries.scans",
+      "parent": "disk.read.queries",
+      "label": "Sequential scans",
+      "summary": "Large tables read by sequential scans instead of indexes.",
+      "evaluator": "seq_scans",
+      "bindings": [
+        {
+          "id": "object_workload.table_workload",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_seq_read_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_tuple_access_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.table_scan_delta",
+          "role": "support"
+        }
+      ],
+      "pressure": "disk"
+    },
+    {
+      "id": "disk.read.queries.indexes",
+      "parent": "disk.read.queries",
+      "label": "Wide index reads",
+      "summary": "Indexes that read many entries per fetched row, unused and duplicate indexes.",
+      "evaluator": "index_efficiency",
+      "bindings": [
+        {
+          "id": "object_workload.index_workload",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.indexes_top_reads_per_fetch",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.indexes_top_reads_per_scan",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.indexes_top_fetches_per_scan",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.indexes_top_scan_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.indexes_top_tuple_read_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.indexes_top_tuple_fetch_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_index_fetch_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.index_usage_delta",
+          "role": "support"
+        },
+        {
+          "id": "indexes.unused_indexes",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "indexes.redundant_indexes",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "indexes.duplicate_indexes",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "indexes.large_indexes",
+          "role": "support",
+          "weight": 0.3
+        }
+      ],
+      "pressure": "disk"
+    },
+    {
+      "id": "disk.read.queries.bloat",
+      "parent": "disk.read.queries",
+      "label": "Bloat",
+      "summary": "Bloated tables and indexes amplify every read and write.",
+      "evaluator": "bloat",
+      "bindings": [
+        {
+          "id": "storage_vacuum.table_bloat_candidates",
+          "role": "primary"
+        },
+        {
+          "id": "storage_vacuum.index_bloat_candidates",
+          "role": "primary"
+        },
+        {
+          "id": "storage_vacuum.autovacuum_queue",
+          "role": "support"
+        },
+        {
+          "id": "indexes.large_indexes",
+          "role": "support"
+        }
+      ],
+      "pressure": "disk"
+    },
+    {
+      "id": "disk.read.queries.cache",
+      "parent": "disk.read.queries",
+      "label": "Cache misses",
+      "summary": "Reads missing PostgreSQL caches. A shared block read may still hit the OS page cache; it does not prove a physical disk read.",
+      "evaluator": "cache_efficiency",
+      "bindings": [
+        {
+          "id": "overview.database_stats",
+          "role": "primary"
+        },
+        {
+          "id": "object_workload.table_io",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.database_block_access_rate",
+          "role": "support"
+        },
+        {
+          "id": "buffer_cache.top_relations",
+          "role": "support"
+        },
+        {
+          "id": "buffer_cache.top_dirty_relations",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.table_io_delta",
+          "role": "support"
+        }
+      ],
+      "pressure": "disk"
+    },
+    {
+      "id": "disk.read.autovacuum",
+      "parent": "disk.read",
+      "label": "Autovacuum reads",
+      "summary": "Autovacuum workers' share of reads.",
+      "evaluator": "io_autovacuum_reads",
+      "bindings": [
+        {
+          "id": "wal_io_checkpoints.pg_stat_io",
+          "role": "primary"
+        },
+        {
+          "id": "maintenance_progress.vacuum_progress",
+          "role": "support"
+        },
+        {
+          "id": "server_log.autovacuum_runs",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "disk.read.backup",
+      "parent": "disk.read",
+      "label": "Backups and dumps",
+      "summary": "Base backups, dumps and other bulk readers.",
+      "evaluator": "backup_readers",
+      "requires": [
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "backend_os.postgres_process_tree",
+          "role": "primary"
+        },
+        {
+          "id": "backend_os.backend_proc_io",
+          "role": "support"
+        },
+        {
+          "id": "replication.physical_replication",
+          "role": "support"
+        },
+        {
+          "id": "backend_os.backend_activity",
+          "role": "primary"
+        }
+      ]
+    },
+    {
+      "id": "disk.read.temp_files",
+      "parent": "disk.read",
+      "label": "Temporary file I/O",
+      "summary": "Sorts and hashes spilling to disk.",
+      "evaluator": "temp_files",
+      "bindings": [
+        {
+          "id": "sql_workload.top_sql_by_temp_io",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.database_temp_bytes_rate",
+          "role": "primary"
+        },
+        {
+          "id": "overview.database_stats",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_temp_io_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.database_temp_files_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.database_workload_delta",
+          "role": "support"
+        },
+        {
+          "id": "server_log.query_resource_events",
+          "role": "support"
+        }
+      ],
+      "pressure": "disk"
+    },
+    {
+      "id": "disk.write",
+      "parent": "disk",
+      "label": "Write I/O",
+      "summary": "Write throughput and which process writes.",
+      "evaluator": "disk_write",
+      "bindings": [
+        {
+          "id": "snapshot_charts_os.os_disk_write_throughput",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.io_read_write_rate",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.buffer_writes_by_process",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_os.os_disk_latency",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_os.os_disk_utilization",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_os.os_disk_iops",
+          "role": "support"
+        },
+        {
+          "id": "activity_locks.wait_events",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.database_io_time_rate",
+          "role": "support"
+        },
+        {
+          "id": "os.lshw_disk",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_storage",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_volume",
+          "role": "fact"
+        },
+        {
+          "id": "os.mounts",
+          "role": "fact"
+        },
+        {
+          "id": "os.fstab",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "disk.write.wal",
+      "parent": "disk.write",
+      "label": "WAL volume",
+      "summary": "WAL bytes per second, full-page images and the statements behind them.",
+      "evaluator": "wal_volume",
+      "bindings": [
+        {
+          "id": "snapshot_charts_db.wal_growth_rate",
+          "role": "primary"
+        },
+        {
+          "id": "wal_io_checkpoints.wal_statistics",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_delta_workload.wal_activity_delta",
+          "role": "support"
+        },
+        {
+          "id": "sql_workload.top_sql_by_wal",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_wal_delta",
+          "role": "support"
+        },
+        {
+          "id": "wal_io_checkpoints.wal_position",
+          "role": "fact"
+        },
+        {
+          "id": "overview.durability_safety_settings",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "disk.write.temp_files",
+      "parent": "disk.write",
+      "label": "Temporary files",
+      "summary": "Sorts and hashes spilling to disk.",
+      "evaluator": "temp_files",
+      "bindings": [
+        {
+          "id": "sql_workload.top_sql_by_temp_io",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.database_temp_bytes_rate",
+          "role": "primary"
+        },
+        {
+          "id": "overview.database_stats",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.sql_temp_io_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.database_temp_files_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.database_workload_delta",
+          "role": "support"
+        },
+        {
+          "id": "server_log.query_resource_events",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "disk.write.data",
+      "parent": "disk.write",
+      "label": "Data-file writes",
+      "summary": "Checkpointer, backend and autovacuum writes of relation data.",
+      "evaluator": "aggregate",
+      "bindings": []
+    },
+    {
+      "id": "disk.write.checkpoints",
+      "parent": "disk.write.data",
+      "label": "Checkpoints",
+      "summary": "Requested against timed checkpoints, sync time and write bursts.",
+      "evaluator": "checkpoints",
+      "bindings": [
+        {
+          "id": "snapshot_charts_db.checkpoint_trigger_events",
+          "role": "primary"
+        },
+        {
+          "id": "wal_io_checkpoints.checkpointer",
+          "role": "primary"
+        },
+        {
+          "id": "wal_io_checkpoints.bgwriter",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.checkpoint_write_sync_time_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.checkpointer_delta",
+          "role": "support"
+        },
+        {
+          "id": "server_log.checkpoints",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.restartpoint_events",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "disk.write.backend_writes",
+      "parent": "disk.write.data",
+      "label": "Backend writes",
+      "summary": "Client backends writing dirty buffers themselves instead of checkpointer and bgwriter.",
+      "evaluator": "backend_writes",
+      "bindings": [
+        {
+          "id": "snapshot_charts_db.buffer_writes_by_process",
+          "role": "primary"
+        },
+        {
+          "id": "wal_io_checkpoints.bgwriter",
+          "role": "primary"
+        },
+        {
+          "id": "wal_io_checkpoints.pg_stat_io",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.writer_pressure_events",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.buffer_allocation_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.background_writer_delta",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "disk.write.dml",
+      "parent": "disk.write.data",
+      "label": "DML volume",
+      "summary": "Tables and statements with the most inserts, updates and deletes; HOT share.",
+      "evaluator": "dml_volume",
+      "bindings": [
+        {
+          "id": "object_workload.table_workload",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_dml_rate",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_update_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_insert_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_delete_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.tables_top_hot_update_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.table_dml_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.database_tuple_dml_rate",
+          "role": "support"
+        },
+        {
+          "id": "sql_workload.top_sql_by_shared_io",
+          "role": "support"
+        },
+        {
+          "id": "storage_vacuum.unlogged_tables",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "disk.write.autovacuum",
+      "parent": "disk.write.data",
+      "label": "Autovacuum writes",
+      "summary": "Autovacuum workers' share of writes.",
+      "evaluator": "io_autovacuum_writes",
+      "bindings": [
+        {
+          "id": "wal_io_checkpoints.pg_stat_io",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_delta_workload.table_maintenance_delta",
+          "role": "support"
+        },
+        {
+          "id": "server_log.autovacuum_runs",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "disk.space",
+      "parent": "disk",
+      "label": "Free space",
+      "summary": "Filesystem usage, retained WAL and log growth.",
+      "evaluator": "disk_space",
+      "bindings": [
+        {
+          "id": "os.disk_usage",
+          "role": "primary"
+        },
+        {
+          "id": "overview.database_volume",
+          "role": "support"
+        },
+        {
+          "id": "storage_vacuum.table_size_detailed",
+          "role": "support"
+        },
+        {
+          "id": "cluster_inventory.tablespaces",
+          "role": "support"
+        },
+        {
+          "id": "server_log.log_files_overview",
+          "role": "support"
+        },
+        {
+          "id": "replication.replication_slots",
+          "role": "support"
+        },
+        {
+          "id": "wal_io_checkpoints.wal_archiver",
+          "role": "support"
+        },
+        {
+          "id": "server_log.system_incidents",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "disk.bloat",
+      "parent": "disk.space",
+      "label": "Bloat",
+      "summary": "Bloated tables and indexes amplify every read and write.",
+      "evaluator": "bloat",
+      "bindings": [
+        {
+          "id": "storage_vacuum.table_bloat_candidates",
+          "role": "primary"
+        },
+        {
+          "id": "storage_vacuum.index_bloat_candidates",
+          "role": "primary"
+        },
+        {
+          "id": "storage_vacuum.autovacuum_queue",
+          "role": "support"
+        },
+        {
+          "id": "indexes.large_indexes",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "database_health",
+      "label": "Database health",
+      "summary": "Breakages and imminent failures: errors, corruption, wraparound, locks, connections, replication.",
+      "evaluator": "aggregate",
+      "bindings": []
+    },
+    {
+      "id": "health.errors",
+      "parent": "database_health",
+      "label": "Errors in the log",
+      "summary": "ERROR, FATAL and PANIC records in the collected log window.",
+      "evaluator": "log_errors",
+      "requires": [
+        "log"
+      ],
+      "bindings": [
+        {
+          "id": "server_log.error_chronology",
+          "role": "primary"
+        },
+        {
+          "id": "server_log.top_errors",
+          "role": "primary"
+        },
+        {
+          "id": "server_log.top_warnings",
+          "role": "support"
+        },
+        {
+          "id": "server_log.query_termination_events",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "health.crashes",
+      "parent": "database_health",
+      "label": "Crashes and corruption",
+      "summary": "Crash recovery, checksum failures, corruption-hiding settings, collation drift.",
+      "evaluator": "crashes",
+      "bindings": [
+        {
+          "id": "server_log.crash_recovery_events",
+          "role": "primary"
+        },
+        {
+          "id": "storage_vacuum.data_checksums",
+          "role": "primary",
+          "weight": 0.6
+        },
+        {
+          "id": "overview.corruption_suppression_settings",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "indexes.collation_version_mismatches",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "overview.durability_safety_settings",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "overview.pg_controldata",
+          "role": "fact"
+        },
+        {
+          "id": "server_log.server_lifecycle",
+          "role": "support"
+        },
+        {
+          "id": "server_log.system_incidents",
+          "role": "primary"
+        }
+      ]
+    },
+    {
+      "id": "health.invalid_objects",
+      "parent": "database_health",
+      "label": "Invalid objects",
+      "summary": "Invalid indexes, unvalidated constraints, disabled triggers, tables without a key.",
+      "evaluator": "generic",
+      "bindings": [
+        {
+          "id": "indexes.invalid_indexes",
+          "role": "primary",
+          "weight": 1
+        },
+        {
+          "id": "indexes.unvalidated_constraints",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "object_workload.disabled_triggers",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "indexes.tables_without_pk_or_unique",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "replication.publication_tables_replica_identity",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "indexes.foreign_keys_without_index",
+          "role": "support",
+          "weight": 0.3
+        }
+      ]
+    },
+    {
+      "id": "health.wraparound",
+      "parent": "database_health",
+      "label": "Wraparound and sequences",
+      "summary": "Transaction id age against freeze limits; sequence exhaustion.",
+      "evaluator": "wraparound",
+      "bindings": [
+        {
+          "id": "storage_vacuum.database_wraparound",
+          "role": "primary"
+        },
+        {
+          "id": "storage_vacuum.autovacuum_queue",
+          "role": "support"
+        },
+        {
+          "id": "server_log.wraparound_pressure",
+          "role": "support",
+          "weight": 1
+        },
+        {
+          "id": "storage_vacuum.sequence_status",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "health.vacuum",
+      "parent": "database_health",
+      "label": "Autovacuum lag and bloat",
+      "summary": "Tables overdue for vacuum, dead tuple share, bloat estimates.",
+      "evaluator": "vacuum_lag",
+      "bindings": [
+        {
+          "id": "storage_vacuum.autovacuum_queue",
+          "role": "primary"
+        },
+        {
+          "id": "storage_vacuum.table_bloat_candidates",
+          "role": "primary"
+        },
+        {
+          "id": "storage_vacuum.index_bloat_candidates",
+          "role": "primary"
+        },
+        {
+          "id": "maintenance_progress.vacuum_progress",
+          "role": "support"
+        },
+        {
+          "id": "server_log.autovacuum_runs",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.table_maintenance_delta",
+          "role": "support"
+        },
+        {
+          "id": "object_workload.table_workload",
+          "role": "support"
+        },
+        {
+          "id": "server_log.maintenance_events",
+          "role": "support",
+          "weight": 0.6
+        }
+      ]
+    },
+    {
+      "id": "health.vacuum.xmin",
+      "parent": "health.vacuum",
+      "label": "Xmin horizon",
+      "summary": "Long transactions, prepared transactions, slots and standby feedback that block cleanup.",
+      "evaluator": "xmin_horizon",
+      "bindings": [
+        {
+          "id": "storage_vacuum.xmin_horizon",
+          "role": "primary"
+        },
+        {
+          "id": "storage_vacuum.xmin_horizon_blockers",
+          "role": "primary"
+        },
+        {
+          "id": "storage_vacuum.prepared_xacts",
+          "role": "support"
+        },
+        {
+          "id": "activity_locks.long_transactions",
+          "role": "support"
+        },
+        {
+          "id": "activity_locks.idle_in_transaction",
+          "role": "support"
+        },
+        {
+          "id": "replication.replication_slots",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "health.locks",
+      "parent": "database_health",
+      "label": "Locks and deadlocks",
+      "summary": "Blocked sessions, blocker chains, lock waits and deadlocks in the log.",
+      "evaluator": "locks",
+      "bindings": [
+        {
+          "id": "activity_locks.lock_waits",
+          "role": "primary"
+        },
+        {
+          "id": "activity_locks.blocking_lock_tree",
+          "role": "primary"
+        },
+        {
+          "id": "activity_locks.lock_modes",
+          "role": "support"
+        },
+        {
+          "id": "server_log.lock_waits",
+          "role": "support"
+        },
+        {
+          "id": "server_log.deadlock_events",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.database_deadlocks",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.database_workload_delta",
+          "role": "support"
+        },
+        {
+          "id": "activity_locks.idle_in_transaction",
+          "role": "support"
+        },
+        {
+          "id": "activity_locks.long_transactions",
+          "role": "support"
+        },
+        {
+          "id": "server_log.query_termination_events",
+          "role": "support",
+          "weight": 0.6
+        }
+      ]
+    },
+    {
+      "id": "health.connections",
+      "parent": "database_health",
+      "label": "Connection exhaustion",
+      "summary": "Used connections against max_connections, idle in transaction, session failures.",
+      "evaluator": "connections",
+      "bindings": [
+        {
+          "id": "activity_locks.connection_pressure",
+          "role": "primary"
+        },
+        {
+          "id": "activity_locks.session_states",
+          "role": "support"
+        },
+        {
+          "id": "users_roles.session_usage",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.database_session_outcomes_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.database_backends",
+          "role": "support"
+        },
+        {
+          "id": "cluster_inventory.login_roles_without_connection_limit",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "health.replication",
+      "parent": "database_health",
+      "label": "Replication",
+      "summary": "Sender and replay lag, inactive slots, standby conflicts, synchronous replication.",
+      "evaluator": "replication",
+      "bindings": [
+        {
+          "id": "replication.physical_replication",
+          "role": "primary"
+        },
+        {
+          "id": "replication.wal_receiver",
+          "role": "primary"
+        },
+        {
+          "id": "replication.replication_slots",
+          "role": "primary"
+        },
+        {
+          "id": "replication.standby_recovery_state",
+          "role": "support"
+        },
+        {
+          "id": "replication.standby_conflicts",
+          "role": "support"
+        },
+        {
+          "id": "replication.synchronous_replication_status",
+          "role": "support"
+        },
+        {
+          "id": "replication.replication_capacity",
+          "role": "support"
+        },
+        {
+          "id": "replication.subscription_workers",
+          "role": "support"
+        },
+        {
+          "id": "replication.subscription_table_sync",
+          "role": "support"
+        },
+        {
+          "id": "replication.recovery_prefetch",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.replication_sender_lag_bytes",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.replication_sender_lag_seconds",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.standby_wal_rate",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.standby_replay_lag_bytes",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.standby_replay_delay",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.physical_replication_progress_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.standby_recovery_conflicts_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.logical_decoding_slot_delta",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.subscription_errors_conflicts_delta",
+          "role": "support"
+        },
+        {
+          "id": "server_log.replication_events",
+          "role": "support",
+          "weight": 0.6
+        }
+      ]
+    },
+    {
+      "id": "health.archiving",
+      "parent": "database_health",
+      "label": "WAL archiving",
+      "summary": "Failed archive_command runs and WAL waiting to be archived.",
+      "evaluator": "archiving",
+      "bindings": [
+        {
+          "id": "wal_io_checkpoints.wal_archiver",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_delta_workload.wal_archiver_delta",
+          "role": "support"
+        },
+        {
+          "id": "server_log.archiver_failures",
+          "role": "support",
+          "weight": 1
+        },
+        {
+          "id": "server_log.replication_events",
+          "role": "support",
+          "weight": 0.6
+        }
+      ]
+    },
+    {
+      "id": "health.configuration",
+      "parent": "database_health",
+      "label": "Configuration and version",
+      "summary": "Configuration file errors, pending restarts, end-of-life version, durability settings.",
+      "evaluator": "configuration",
+      "bindings": [
+        {
+          "id": "cluster_inventory.configuration_file_errors",
+          "role": "primary",
+          "weight": 0.6
+        },
+        {
+          "id": "overview.version_eol_status",
+          "role": "primary"
+        },
+        {
+          "id": "overview.durability_safety_settings",
+          "role": "primary"
+        },
+        {
+          "id": "cluster_inventory.pending_restart_settings",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "overview.server_version",
+          "role": "fact"
+        },
+        {
+          "id": "overview.pg_settings",
+          "role": "fact"
+        },
+        {
+          "id": "overview.stat_reset_times",
+          "role": "fact"
+        },
+        {
+          "id": "cluster_inventory.extensions",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "health.observability",
+      "parent": "database_health",
+      "label": "Observability gaps",
+      "summary": "Missing pg_stat_statements, pg_stat_kcache, pg_wait_sampling, function tracking.",
+      "evaluator": "observability",
+      "bindings": [
+        {
+          "id": "sql_workload.pg_stat_statements_capabilities",
+          "role": "primary"
+        },
+        {
+          "id": "sql_workload.pg_stat_kcache_capabilities",
+          "role": "support"
+        },
+        {
+          "id": "activity_locks.pg_wait_sampling_capabilities",
+          "role": "support"
+        },
+        {
+          "id": "server_log.log_files_overview",
+          "role": "support"
+        },
+        {
+          "id": "object_workload.function_workload",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "health.maintenance",
+      "parent": "database_health",
+      "label": "Running maintenance",
+      "summary": "VACUUM, CREATE INDEX, CLUSTER and COPY operations in progress.",
+      "evaluator": "maintenance_running",
+      "bindings": [
+        {
+          "id": "maintenance_progress.vacuum_progress",
+          "role": "primary"
+        },
+        {
+          "id": "maintenance_progress.create_index_progress",
+          "role": "primary"
+        },
+        {
+          "id": "maintenance_progress.cluster_progress",
+          "role": "primary"
+        },
+        {
+          "id": "maintenance_progress.copy_progress",
+          "role": "primary"
+        }
+      ]
+    },
+    {
+      "id": "health.platform",
+      "parent": "database_health",
+      "label": "Platform inventory",
+      "summary": "Kernel, distribution, hardware and process inventory.",
+      "evaluator": "platform_facts",
+      "bindings": [
+        {
+          "id": "os.kernel_version",
+          "role": "fact"
+        },
+        {
+          "id": "os.os_release",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_system",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_bus",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_bridge",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_display",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_network",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_input",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_communication",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_multimedia",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_power",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_generic",
+          "role": "fact"
+        },
+        {
+          "id": "os.network_addresses",
+          "role": "fact"
+        },
+        {
+          "id": "backend_os.postgres_process_tree",
+          "role": "fact"
+        },
+        {
+          "id": "overview.database_volume",
+          "role": "fact"
+        },
+        {
+          "id": "overview.server_version",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "database_security",
+      "label": "Database security",
+      "summary": "Risk exposure: authentication, network, privileges, host hardening, audit.",
+      "evaluator": "aggregate",
+      "bindings": []
+    },
+    {
+      "id": "security.authentication",
+      "parent": "database_security",
+      "label": "Authentication",
+      "summary": "Insecure pg_hba methods, remote superuser login, weak password hashing.",
+      "evaluator": "generic",
+      "bindings": [
+        {
+          "id": "cluster_inventory.pg_hba_insecure_auth_methods",
+          "role": "primary",
+          "weight": 1
+        },
+        {
+          "id": "cluster_inventory.remote_superuser_access",
+          "role": "primary",
+          "weight": 1
+        },
+        {
+          "id": "overview.password_encryption",
+          "role": "primary",
+          "weight": 0.6
+        },
+        {
+          "id": "cluster_inventory.pg_hba_broad_network_ranges",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "cluster_inventory.pg_hba_generic_database_or_user",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "cluster_inventory.pg_hba_file_permissions",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "cluster_inventory.role_password_hashes",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "overview.password_complexity",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "overview.auth_timeout_delay",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "users_roles.password_validity",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "users_roles.hba_rules",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.ident_mappings",
+          "role": "fact"
+        },
+        {
+          "id": "server_log.authentication_failures",
+          "role": "support",
+          "weight": 0.6
+        }
+      ]
+    },
+    {
+      "id": "security.network",
+      "parent": "database_security",
+      "label": "Network exposure",
+      "summary": "Listen addresses, TLS enforcement and ciphers, firewall, unencrypted sessions.",
+      "evaluator": "generic",
+      "bindings": [
+        {
+          "id": "overview.listen_addresses_exposure",
+          "role": "primary",
+          "weight": 0.6
+        },
+        {
+          "id": "cluster_inventory.pg_hba_tls_enforcement",
+          "role": "primary",
+          "weight": 0.6
+        },
+        {
+          "id": "overview.tls_server_configuration",
+          "role": "primary",
+          "weight": 0.6
+        },
+        {
+          "id": "overview.weak_tls_ciphers",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "os.firewall_postgres_exposure",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "users_roles.connection_security",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "os.network_addresses",
+          "role": "fact"
+        },
+        {
+          "id": "os.sysctl_tcp",
+          "role": "fact"
+        },
+        {
+          "id": "os.sysctl_udp",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "security.roles",
+      "parent": "database_security",
+      "label": "Roles and cluster privileges",
+      "summary": "Superuser and administrative login roles, membership reach, connection limits.",
+      "evaluator": "generic",
+      "bindings": [
+        {
+          "id": "cluster_inventory.privileged_login_roles",
+          "role": "primary",
+          "weight": 0.6
+        },
+        {
+          "id": "cluster_inventory.privileged_roles",
+          "role": "primary",
+          "weight": 0.3
+        },
+        {
+          "id": "cluster_inventory.predefined_admin_role_membership",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "cluster_inventory.login_roles_without_connection_limit",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "users_roles.admin_option_holders",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "users_roles.effective_role_membership",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "users_roles.group_roles_without_members",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "users_roles.parameter_privileges",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "replication.replication_roles",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "users_roles.roles_inventory",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.role_members",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.role_membership",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.role_database_settings",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.database_privileges",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.tablespace_privileges",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.language_privileges",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.session_usage",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "security.object_privileges",
+      "parent": "database_security",
+      "label": "Object privileges and ownership",
+      "summary": "PUBLIC and grantable privileges, SECURITY DEFINER functions, RLS gaps, owner drift.",
+      "evaluator": "generic",
+      "bindings": [
+        {
+          "id": "object_workload.excessive_dml_privileges",
+          "role": "primary",
+          "weight": 0.6
+        },
+        {
+          "id": "cluster_inventory.public_schema_privileges",
+          "role": "primary",
+          "weight": 0.6
+        },
+        {
+          "id": "cluster_inventory.non_public_schema_privileges",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "cluster_inventory.schema_privilege_matrix",
+          "role": "fact"
+        },
+        {
+          "id": "cluster_inventory.privilege_surface_by_role",
+          "role": "fact"
+        },
+        {
+          "id": "object_workload.security_definer_functions",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "object_workload.function_execute_privileges",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "object_workload.rls_configuration",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "object_workload.default_privileges_public_grants",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "object_workload.sequence_privileges",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "object_workload.superuser_owned_user_objects",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "object_workload.object_owner_drift",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "object_workload.database_owner_mismatch",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "object_workload.schema_owner_drift",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "object_workload.object_acl_drift",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "object_workload.direct_user_grants",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "object_workload.grant_option_holders",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "object_workload.orphaned_object_owners",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "object_workload.sequence_table_owner_mismatch",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "object_workload.security_definer_owner_drift",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "object_workload.extension_objects_acl_drift",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "object_workload.rls_table_privilege_mismatch",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "object_workload.unused_privileged_grants",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "users_roles.object_ownership_by_role",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.foreign_server_access",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.object_privileges_by_grantee",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.relation_privileges_detail",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.column_privileges",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.default_privileges",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.rls_policies_by_role",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.large_object_privileges",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.publication_ownership",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.subscription_ownership",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "security.host",
+      "parent": "database_security",
+      "label": "Host hardening",
+      "summary": "File and directory permissions, sudoers, secrets in environments, core dumps, encryption.",
+      "evaluator": "generic",
+      "requires": [
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "os.sudoers_postgres_escalation",
+          "role": "primary",
+          "weight": 1
+        },
+        {
+          "id": "os.postgres_env_secret_leaks",
+          "role": "primary",
+          "weight": 1
+        },
+        {
+          "id": "os.world_writable_paths_in_pg_tree",
+          "role": "primary",
+          "weight": 0.6
+        },
+        {
+          "id": "os.postgres_config_file_permissions",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "os.tls_key_file_permissions",
+          "role": "support",
+          "weight": 1
+        },
+        {
+          "id": "os.log_file_permissions",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "os.postgres_binary_integrity",
+          "role": "support",
+          "weight": 1
+        },
+        {
+          "id": "os.extension_directory_permissions",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "os.tablespace_directory_permissions",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "os.wal_archive_directory_permissions",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "os.backup_repository_permissions",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "os.postgres_os_group_members",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "os.postgres_service_hardening",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "os.postgres_history_files",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "os.symlinks_in_sensitive_paths",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "os.procfs_hardening",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "os.core_dump_policy",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "os.disk_encryption_status",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "os.postgres_cron_timer_scripts",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "cluster_inventory.unix_socket_permissions",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "cluster_inventory.pgdata_permissions",
+          "role": "support",
+          "weight": 1
+        },
+        {
+          "id": "cluster_inventory.postgres_client_secret_files",
+          "role": "support",
+          "weight": 0.6
+        }
+      ]
+    },
+    {
+      "id": "security.audit",
+      "parent": "database_security",
+      "label": "Audit and logging",
+      "summary": "Security logging posture, pgAudit, risky and missing extensions.",
+      "evaluator": "generic",
+      "bindings": [
+        {
+          "id": "overview.security_logging_settings",
+          "role": "primary",
+          "weight": 0.3
+        },
+        {
+          "id": "cluster_inventory.pgaudit_configuration",
+          "role": "primary",
+          "weight": 0.3
+        },
+        {
+          "id": "replication.log_replication_commands",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "cluster_inventory.installed_risky_extensions",
+          "role": "support",
+          "weight": 0.6
+        },
+        {
+          "id": "cluster_inventory.cryptographic_extensions",
+          "role": "support",
+          "weight": 0.3
+        },
+        {
+          "id": "cluster_inventory.anonymization_extensions",
+          "role": "support",
+          "weight": 0.3
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "from": "disk.read.queries",
+      "to": "cpu.seq_scans",
+      "label": "seq scans read blocks"
+    },
+    {
+      "from": "disk.read.queries",
+      "to": "cpu.index_efficiency",
+      "label": "inefficient indexes read blocks"
+    },
+    {
+      "from": "disk.read",
+      "to": "ram.cache_efficiency",
+      "label": "cache misses become reads"
+    },
+    {
+      "from": "disk.read",
+      "to": "disk.bloat",
+      "label": "bloat amplifies reads"
+    },
+    {
+      "from": "disk.write",
+      "to": "disk.bloat",
+      "label": "bloat amplifies writes"
+    },
+    {
+      "from": "disk.bloat",
+      "to": "health.vacuum",
+      "label": "autovacuum lag creates bloat"
+    },
+    {
+      "from": "disk.write.checkpoints",
+      "to": "disk.write.wal",
+      "label": "checkpoint frequency sets FPI volume"
+    },
+    {
+      "from": "disk.write.backend_writes",
+      "to": "ram.shared_buffers",
+      "label": "small shared_buffers force backend writes"
+    },
+    {
+      "from": "disk.write.temp_files",
+      "to": "ram.work_mem",
+      "label": "work_mem too small for the sort or hash"
+    },
+    {
+      "from": "cpu.system_time",
+      "to": "ram.huge_pages",
+      "label": "page faults without huge pages"
+    },
+    {
+      "from": "cpu.session_churn",
+      "to": "health.connections",
+      "label": "connection pressure"
+    },
+    {
+      "from": "cpu.contention",
+      "to": "health.locks",
+      "label": "waits behind heavyweight locks"
+    },
+    {
+      "from": "cpu.autovacuum",
+      "to": "health.vacuum",
+      "label": "vacuum workload"
+    },
+    {
+      "from": "cpu.walsender",
+      "to": "health.replication",
+      "label": "replication workload"
+    },
+    {
+      "from": "health.vacuum",
+      "to": "health.vacuum.xmin",
+      "label": "horizon blocks cleanup"
+    },
+    {
+      "from": "ram.pressure",
+      "to": "health.crashes",
+      "label": "OOM kills trigger crash recovery"
+    },
+    {
+      "from": "disk.space",
+      "to": "health.archiving",
+      "label": "archive failures retain WAL"
+    },
+    {
+      "from": "disk.space",
+      "to": "health.replication",
+      "label": "inactive slots retain WAL"
+    }
+  ]
+}

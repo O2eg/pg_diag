@@ -7,7 +7,7 @@ from pg_diag.executors.python import PythonSourceContext, PythonSourceResult, ta
 from pg_diag.logscan.items_common import (
     empty_result_status,
     fmt_time,
-    resolve_window,
+    resolve_english_window,
 )
 
 EVENT_LIMIT = 200
@@ -18,7 +18,7 @@ _TIMING_RE = re.compile(r"write=(\d+(?:\.\d+)?) s, sync=(\d+(?:\.\d+)?) s, total
 
 
 def collect(context: PythonSourceContext) -> PythonSourceResult:
-    window, early = resolve_window(context)
+    window, early = resolve_english_window(context)
     if early is not None:
         return PythonSourceResult(**early)
     events = []

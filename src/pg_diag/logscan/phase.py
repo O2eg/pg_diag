@@ -75,6 +75,7 @@ select
   current_setting('log_truncate_on_rotation') as log_truncate_on_rotation,
   current_setting('log_filename') as log_filename,
   current_setting('log_timezone') as log_timezone,
+  current_setting('block_size')::int as block_size,
   extract(epoch from (
     (current_timestamp at time zone current_setting('log_timezone'))
       - (current_timestamp at time zone 'UTC')
@@ -248,6 +249,7 @@ def _build_inventory(
             "log_filename": str(facts["log_filename"]),
             "log_timezone": str(facts.get("log_timezone") or "UTC"),
             "log_utc_offset_seconds": int(facts.get("log_utc_offset_seconds") or 0),
+            "block_size": int(facts.get("block_size") or 8192),
             "log_rotation_age": str(facts["log_rotation_age"]),
             "log_rotation_size": str(facts["log_rotation_size"]),
             "log_truncate_on_rotation": str(facts["log_truncate_on_rotation"]),
@@ -498,6 +500,11 @@ def _record_from_series(
     # Keep it intact so item parsers can reach structured suffixes beyond the
     # display-oriented LINE_CAP used for messages.
     detail = sanitize_text(parsed.detail) if parsed.detail else None
+    query = sanitize_text(parsed.query)[:LINE_CAP] if parsed.query else None
+    context = sanitize_text(parsed.context)[:LINE_CAP] if parsed.context else None
+    application_name = (
+        sanitize_text(parsed.application_name)[:256] if parsed.application_name else None
+    )
     last_time = parse_timestamp(series.last_ts) or parsed.log_time
     return LogRecord(
         log_time=parsed.log_time,
@@ -518,6 +525,15 @@ def _record_from_series(
         fingerprint=fingerprint(message),
         detail=detail,
         auto_explain_plan=auto_explain_plan,
+        session_id=parsed.session_id[:128] if parsed.session_id else None,
+        session_line_num=parsed.session_line_num,
+        command_tag=parsed.command_tag[:128] if parsed.command_tag else None,
+        session_start_time=parsed.session_start_time,
+        transaction_id=parsed.transaction_id,
+        application_name=application_name,
+        query=query,
+        context=context,
+        message_full=message,
     )
 
 
@@ -533,15 +549,27 @@ def _merge_records(head: LogRecord, nxt: LogRecord) -> LogRecord:
 
 
 def _can_merge_client_records(head: LogRecord, nxt: LogRecord) -> bool:
-    """Keep lock-wait events distinct: their numeric fields are semantics.
+    """Keep numeric resource metrics and event timestamps intact.
 
     Generic fingerprints deliberately normalize numbers for flood grouping.
-    For log_lock_waits, however, those numbers carry the waiter, target and
-    duration, so merging would retain only the first event's values.
+    For resource and lock-wait events those numbers carry sizes, durations,
+    waiters and targets; merging would retain only the first event's values.
+    WAL record lengths also determine whether a message indicates corruption.
     """
+    preserve_event_time = (
+        "57014",
+        "55P03",
+        "57P01",
+    )
     return not (
-        head.auto_explain_plan is not None
+        head.message.startswith(("duration:", "temporary file:", "invalid record length"))
+        or nxt.message.startswith(("duration:", "temporary file:", "invalid record length"))
+        or head.auto_explain_plan is not None
         or nxt.auto_explain_plan is not None
+        or head.sql_state in preserve_event_time
+        or nxt.sql_state in preserve_event_time
+        or "conflict with recovery" in head.message.lower()
+        or "conflict with recovery" in nxt.message.lower()
         or _LOCK_WAIT_EVENT_RE.match(head.message)
         or _LOCK_WAIT_EVENT_RE.match(nxt.message)
     )

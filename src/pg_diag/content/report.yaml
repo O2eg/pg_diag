@@ -1407,6 +1407,42 @@ sections:
         state: collapsed
         render:
           empty_message: pg_ls_logdir lists no csvlog files.
+      system_incidents:
+        python: server_log.system_incidents
+        tags: [Logs, Storage, Memory, Filesystem]
+        state: collapsed
+        render:
+          empty_message: No system-capacity, I/O, checksum, or corruption incidents were identified in the collected log window.
+      server_lifecycle:
+        python: server_log.server_lifecycle
+        tags: [Logs, Processes, Configuration]
+        state: collapsed
+        render:
+          empty_message: No server lifecycle markers were identified in the collected log window.
+      replication_events:
+        python: server_log.replication_events
+        tags: [Logs, Replication, WAL]
+        state: collapsed
+        render:
+          empty_message: No replication or WAL transport incidents were identified in the collected log window.
+      query_termination_events:
+        python: server_log.query_termination_events
+        tags: [Logs, SQL, Locks, Sessions]
+        state: collapsed
+        render:
+          empty_message: No query timeout, cancellation, recovery-conflict, shutdown, or NOWAIT events were identified in the collected log window.
+      query_resource_events:
+        python: server_log.query_resource_events
+        tags: [Logs, SQL, Storage]
+        state: collapsed
+        render:
+          empty_message: No slow-statement or temporary-file events were identified in the collected log window; check log_min_duration_statement and log_temp_files if evidence was expected.
+      maintenance_events:
+        python: server_log.maintenance_events
+        tags: [Logs, Vacuum, Maintenance]
+        state: collapsed
+        render:
+          empty_message: No maintenance event exceeded the documented impact thresholds and no failures, cancellations, lock waits, or wraparound emergencies were identified.
 
   snapshot_charts_os:
     title: Snapshot charts OS

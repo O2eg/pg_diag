@@ -62,6 +62,14 @@ class ParsedRecord:
     query_id: int | None
     partial: bool
     encoding_degraded: bool
+    session_id: str | None = None
+    session_line_num: int | None = None
+    command_tag: str | None = None
+    session_start_time: datetime | None = None
+    transaction_id: int | None = None
+    application_name: str | None = None
+    query: str | None = None
+    context: str | None = None
 
 
 def parse_timestamp(value: str) -> datetime | None:
@@ -131,4 +139,12 @@ def parse_record(
         query_id=query_id,
         partial=partial,
         encoding_degraded=degraded,
+        session_id=_get(5),
+        session_line_num=_int(_get(6)),
+        command_tag=_get(7),
+        session_start_time=parse_timestamp(_get(8) or ""),
+        transaction_id=_int(_get(10)),
+        application_name=_get(22),
+        query=_get(19),
+        context=_get(18),
     )

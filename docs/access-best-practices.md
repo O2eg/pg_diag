@@ -286,9 +286,10 @@ log_directory    = '/var/log/postgresql'   # recommended outside the data direct
 log_file_mode    = 0640             # sighup; REQUIRED for the ACL below to work
 log_rotation_age  = 1d
 log_rotation_size = 100MB
-lc_messages = 'C'                   # or en_*; localized logs make pattern
-                                    # matching unreliable and the items report
-                                    # unsupported instead of a false "no errors"
+lc_messages = 'C'                   # C/POSIX or en_* enables every content item;
+                                    # with other locales, SQLSTATE-driven
+                                    # auth/deadlock items still work, while
+                                    # localized-text items report unsupported
 ```
 
 ### Filesystem permissions

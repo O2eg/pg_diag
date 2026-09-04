@@ -467,7 +467,12 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "enableChartTooltipScrolling(pending.shell)" in html
     assert 'className: "pg-diag-echarts-tooltip"' in html
     assert "enterable: true" in html
-    assert 'trigger: queryEventTooltip ? "item" : "axis"' in html
+    assert 'trigger: itemEventTooltip ? "item" : "axis"' in html
+    assert 'tooltipKind === "log_event"' in html
+    assert "buildLogEventEChartsTooltip(params)" in html
+    assert 'chartReference(result, "queries", resolved.query_ref)' in html
+    assert 'chartReference(result, "messages", resolved.message_ref)' in html
+    assert 'chartReference(result, "plans", viewer.plan_ref)' in html
     assert 'target.closest(".pg-diag-chart-tooltip-rows")' in html
     assert "rows.scrollTop = next" in html
     assert "event.stopImmediatePropagation()" in html
@@ -669,7 +674,13 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert 'diagnosticParts.push(key + ":\\n" + stringifyValue(value));' in html
     assert 'parts.push("diagnostic[" + index + "]:\\n" + diagnosticParts.join("\\n\\n"));' in html
     assert 'parts.push("output:\\n" + stringifyValue(result.data));' in html
-    assert "offsetHeight" not in app_html
+    # The report's section/item animation must remain measurement-free. The
+    # independent graph renderer measures an inline card once before layout;
+    # its frame loop is covered separately by the graph renderer tests.
+    graph_start = app_html.index('<script id="pg-diag-graph-render-library"')
+    graph_end = app_html.index("</script>", graph_start) + len("</script>")
+    report_shell_html = app_html[:graph_start] + app_html[graph_end:]
+    assert "offsetHeight" not in report_shell_html
     assert "details.animate([" not in app_html
     assert 'window.dispatchEvent(new Event("resize"))' not in app_html
     assert "body.animate" not in app_html

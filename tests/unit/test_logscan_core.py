@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from pg_diag.logscan import auto_explain, csvparse, recall, rle, sanitize
+from pg_diag.logscan import auto_explain, csvparse, event_refs, recall, rle, sanitize
 from pg_diag.logscan.item_recall import clauses_for_items
 from pg_diag.logscan.model import RawSeries
 
@@ -100,8 +100,8 @@ def _record26(message: str = "boom", quoted_user: bool = False) -> bytes:
         "",
         "",
         "",
-        "",
-        "",
+        "context line",
+        "select 1",
         "",
         "loc",
         "app",
@@ -120,6 +120,14 @@ def test_parse_record_pg14_full() -> None:
     assert parsed.query_id == 12345
     assert parsed.backend_type == "client backend"
     assert parsed.connection_from == "127.0.0.1:5000"
+    assert parsed.session_id == "sess"
+    assert parsed.session_line_num == 7
+    assert parsed.command_tag == "SELECT"
+    assert parsed.transaction_id == 778
+    assert parsed.application_name == "app"
+    assert parsed.session_start_time is not None
+    assert parsed.context == "context line"
+    assert parsed.query == "select 1"
     assert not parsed.partial
 
 
@@ -444,5 +452,46 @@ def test_auth_recall_catches_sqlstate_variants() -> None:
     from pg_diag.logscan.item_recall import ITEM_RECALL
 
     clauses = ITEM_RECALL["server_log.authentication_failures"]
-    pam_line = b"ts,u,db,1,c,s,7,,st,v,x,FATAL,28P01,PAM authentication failed for user"
-    assert recall.matches(pam_line, clauses)
+    localized_line = ("ts,u,db,1,c,s,7,,st,v,x,ОШИБКА,28P01,ошибка проверки пароля").encode()
+    assert recall.matches(localized_line, clauses)
+
+
+def test_deadlock_recall_uses_sqlstate_not_localized_message() -> None:
+    from pg_diag.logscan.item_recall import ITEM_RECALL
+
+    clauses = ITEM_RECALL["server_log.deadlock_events"]
+    localized_line = ("ts,u,db,1,c,s,7,,st,v,x,ОШИБКА,40P01,обнаружена взаимоблокировка").encode()
+    assert recall.matches(localized_line, clauses)
+    assert not recall.matches(b"ts,u,db,1,c,s,7,,st,v,x,ERROR,42601,deadlock detected", clauses)
+
+
+def test_every_item_recall_compiles_to_remote_safe_awk() -> None:
+    from pg_diag.logscan.item_recall import ITEM_RECALL
+
+    for item_id, clauses in ITEM_RECALL.items():
+        condition = recall.to_awk_condition(clauses)
+        assert "'" not in condition, item_id
+
+
+def test_chart_reference_pool_deduplicates_and_enforces_text_count_limit() -> None:
+    pool = event_refs.ChartReferencePool()
+    assert pool.add_message("same message") == "m1"
+    assert pool.add_message("same message") == "m1"
+    assert pool.add_query("same query") == "q1"
+
+    remaining = event_refs.TEXT_REFERENCE_LIMIT - 2
+    for index in range(remaining):
+        assert pool.add_message(f"message {index}") is not None
+    assert pool.add_query("over the limit") is None
+    assert len(pool.messages) + len(pool.queries) == event_refs.TEXT_REFERENCE_LIMIT
+    assert pool.omitted_queries == 1
+
+
+def test_chart_reference_pool_deduplicates_and_enforces_plan_count_limit() -> None:
+    pool = event_refs.ChartReferencePool()
+    for index in range(event_refs.PLAN_REFERENCE_LIMIT):
+        reference = pool.add_plan("json", f'{{"Plan": {index}}}')
+        assert reference == f"p{index + 1}"
+    assert pool.add_plan("json", '{"Plan": 0}') == "p1"
+    assert pool.add_plan("json", '{"Plan": "over"}') is None
+    assert pool.omitted_plans == 1

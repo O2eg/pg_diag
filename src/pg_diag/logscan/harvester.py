@@ -28,6 +28,7 @@ from .model import (
     ScanStats,
 )
 from .recall import to_awk_condition
+from .rle import PRESERVE_EVENT_MARKERS
 from .sources import LogScanSource
 
 PROTOCOL_VERSION = "v1"
@@ -143,7 +144,7 @@ function resetrecord() {
   rec_raw = ""; rec_len = 0
 }
 function processrecord(l, firstn, lastn, ts, truncated,   id, tl, no_merge) {
-  no_merge = truncated || index(l, " ms  plan:") > 0
+  no_merge = truncated || (__PRESERVE_EVENT__)
   if (splitkey(l) && !no_merge) { id = SK_ID; tl = SK_TAIL }
   else { id = "\001unparsed"; tl = firstn "" }
   if (cnt && id == cur_id && tl == cur_tl && firstn == last_n + 1) {
@@ -336,6 +337,9 @@ def build_script(request: ScanRequest, *, stats: ScanStats) -> bytes:
         calls.append(f"scan_file {shlex.quote(info.name)} {int(info.size)} {boundary}")
     awk_program = _AWK_PROGRAM.replace(
         "__RECALL__", to_awk_condition(request.recall_clauses, variable="l")
+    ).replace(
+        "__PRESERVE_EVENT__",
+        to_awk_condition(tuple((marker,) for marker in PRESERVE_EVENT_MARKERS), variable="l"),
     )
     if "'" in awk_program:
         raise ValueError("awk program must not contain single quotes")

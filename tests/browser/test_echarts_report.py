@@ -359,6 +359,11 @@ def test_query_event_chart_hides_legend_and_uses_point_tooltip(tmp_path: Path) -
             }
         ]
     )
+    result["references"] = {
+        "messages": {"m1": "canceling statement due to statement timeout"},
+        "queries": {"q1": "select <unsafe> & escaped..."},
+        "plans": {"p1": {"format": "json", "text": viewer_plan}},
+    }
     for index, point in enumerate(result["series"][0]["points"]):
         point.update(
             {
@@ -367,11 +372,11 @@ def test_query_event_chart_hides_legend_and_uses_point_tooltip(tmp_path: Path) -
                 "tooltip": {
                     "log_time": f"2026-07-15T10:00:{index * 5:02d}Z",
                     "duration_ms": 12_345.678,
-                    "query_sample": "select <unsafe> & escaped...",
+                    "message_ref": "m1",
+                    "query_ref": "q1",
                 },
                 "viewer": {
-                    "plan_text": viewer_plan,
-                    "plan_format": "json",
+                    "plan_ref": "p1",
                     "read_only": True,
                 },
             }
@@ -487,6 +492,62 @@ def test_query_event_chart_hides_legend_and_uses_point_tooltip(tmp_path: Path) -
         )
         modal.get_by_role("button", name="Close").click()
         assert modal.is_hidden()
+        assert errors == []
+        browser.close()
+
+
+def test_log_event_chart_resolves_deduplicated_message_and_query_refs(tmp_path: Path) -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    artifact = _artifact()
+    result = artifact["items"]["charts.line"]["result"]
+    result["chart"].update(
+        {
+            "kind": "stacked_column",
+            "show_legend": False,
+            "tooltip_kind": "log_event",
+        }
+    )
+    result["references"] = {
+        "messages": {"m1": "canceling statement due to statement timeout"},
+        "queries": {"q1": "select * from orders where id = 42"},
+    }
+    result["series"][0]["points"][1].update(
+        {
+            "value": 3,
+            "tooltip": {
+                "log_time": "2026-07-15T10:00:05Z",
+                "event_type": "statement_timeout",
+                "occurrences": 3,
+                "sql_state": "57014",
+                "message_ref": "m1",
+                "query_ref": "q1",
+            },
+        }
+    )
+    report_path = tmp_path / "log-event-chart.html"
+    report_path.write_text(render_html(artifact, validate=False), encoding="utf-8")
+
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1280, "height": 900})
+        errors: list[str] = []
+        page.on(
+            "console",
+            lambda message: errors.append(message.text) if message.type == "error" else None,
+        )
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.goto(report_path.as_uri(), wait_until="load")
+        page.wait_for_function("document.querySelectorAll('[data-chart-ready=true]').length === 3")
+        page.evaluate(
+            'echartsCharts[0].chart.dispatchAction({type: "showTip", seriesIndex: 0, dataIndex: 1})'
+        )
+
+        tooltip_text = page.locator(".pg-diag-echarts-tooltip").first.inner_text()
+        assert "statement_timeout" in tooltip_text
+        assert "57014" in tooltip_text
+        assert "3" in tooltip_text
+        assert "select * from orders where id = 42" in tooltip_text
+        assert "canceling statement due to statement timeout" in tooltip_text
         assert errors == []
         browser.close()
 

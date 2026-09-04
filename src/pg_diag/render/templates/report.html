@@ -14,6 +14,9 @@ __PG_EXPLAIN_VIEWER_THEME_CSS__
   <style id="pg-explain-viewer-styles">
 __PG_EXPLAIN_VIEWER_CSS__
   </style>
+  <style id="pg-diag-graph-css">
+__PG_DIAG_GRAPH_CSS__
+  </style>
   <script id="echarts-library">
 __ECHARTS_JS__
   </script>
@@ -2409,6 +2412,7 @@ __ECHARTS_JS__
       <span id="visibleSummary"></span>
       <span class="filter-summary-spacer" aria-hidden="true"></span>
     </div>
+    <section id="diagnosticGraph" class="diagnostic-graph" aria-label="Diagnostic graph"></section>
     <div id="app" class="sections"></div>
   </main>
   <div id="sourceModal" class="source-modal" role="dialog" aria-modal="true" aria-labelledby="sourceModalTitle" hidden>
@@ -2491,6 +2495,13 @@ __PG_EXPLAIN_VIEWER_JS__
   </script>
   <script id="pg-explain-viewer-render-library">
 __PG_EXPLAIN_VIEWER_RENDER_JS__
+  </script>
+  <script id="pg-diag-graph-definition" type="application/json">__PG_DIAG_GRAPH_DEFINITION__</script>
+  <script id="pg-diag-graph-library">
+__PG_DIAG_GRAPH_JS__
+  </script>
+  <script id="pg-diag-graph-render-library">
+__PG_DIAG_GRAPH_RENDER_JS__
   </script>
   <script>
     "use strict";
@@ -2608,6 +2619,8 @@ __PG_EXPLAIN_VIEWER_RENDER_JS__
     bindChartExportMenuControls();
     bindTableExportMenuControls();
     bindPageScrollControls();
+    exposeReportApi();
+    renderDiagnosticGraph();
     applyReportFilters();
 
     function hydrateHeader() {
@@ -2883,6 +2896,33 @@ __PG_EXPLAIN_VIEWER_RENDER_JS__
       const label = collapsed ? "Expand contents" : "Collapse contents";
       toggle.setAttribute("aria-label", label);
       toggle.title = label;
+    }
+
+    function exposeReportApi() {
+      window.pgDiagReport = Object.assign(window.pgDiagReport || {}, {
+        navigateToItem: (itemId) => navigateToReportNode("item", itemId),
+        navigateToSection: (sectionId) => navigateToReportNode("section", sectionId),
+        artifact,
+      });
+    }
+
+    function renderDiagnosticGraph() {
+      const container = document.getElementById("diagnosticGraph");
+      if (!container || typeof window.PgDiagGraph === "undefined" || typeof window.PgDiagGraphRender === "undefined") {
+        return;
+      }
+      try {
+        const definitionNode = document.getElementById("pg-diag-graph-definition");
+        const definition = JSON.parse(definitionNode.textContent);
+        const evaluation = window.PgDiagGraph.evaluate(artifact, definition);
+        window.pgDiagReport.diagnosticGraph = evaluation;
+        window.PgDiagGraphRender.render(container, evaluation, {
+          onItemClick: (itemId) => navigateToReportNode("item", itemId),
+        });
+      } catch (error) {
+        container.textContent = "Diagnostic graph is unavailable: " + (error && error.message ? error.message : error);
+        container.classList.add("diagnostic-graph-error");
+      }
     }
 
     function navigateToReportNode(targetKind, targetId) {
@@ -4821,10 +4861,10 @@ __PG_EXPLAIN_VIEWER_RENDER_JS__
               y: Number.isFinite(numeric) ? numeric : null,
               color: typeof point.color === "string" ? point.color : "",
               tooltip: point.tooltip && typeof point.tooltip === "object"
-                ? point.tooltip
+                ? resolveChartTooltip(result, point.tooltip)
                 : null,
               viewer: point.viewer && typeof point.viewer === "object"
-                ? point.viewer
+                ? resolveChartViewer(result, point.viewer)
                 : null,
             });
           }
@@ -4852,6 +4892,45 @@ __PG_EXPLAIN_VIEWER_RENDER_JS__
         return series.sort((left, right) => left._average - right._average || left._sourceIndex - right._sourceIndex);
       }
       return series.sort((left, right) => right._average - left._average || left._sourceIndex - right._sourceIndex);
+    }
+
+    function chartReference(result, namespace, reference) {
+      const references = result && result.references && typeof result.references === "object"
+        ? result.references
+        : {};
+      const values = references[namespace];
+      if (!values || typeof values !== "object" || typeof reference !== "string") {
+        return null;
+      }
+      return Object.prototype.hasOwnProperty.call(values, reference) ? values[reference] : null;
+    }
+
+    function resolveChartTooltip(result, metadata) {
+      const resolved = {...metadata};
+      if (!resolved.query_sample && resolved.query_ref) {
+        const query = chartReference(result, "queries", resolved.query_ref);
+        if (typeof query === "string") {
+          resolved.query_sample = query;
+        }
+      }
+      if (!resolved.message_sample && resolved.message_ref) {
+        const message = chartReference(result, "messages", resolved.message_ref);
+        if (typeof message === "string") {
+          resolved.message_sample = message;
+        }
+      }
+      return resolved;
+    }
+
+    function resolveChartViewer(result, viewer) {
+      if (!viewer.plan_ref || viewer.plan_text) {
+        return viewer;
+      }
+      const plan = chartReference(result, "plans", viewer.plan_ref);
+      if (!plan || typeof plan !== "object" || typeof plan.text !== "string") {
+        return {...viewer, read_only: false};
+      }
+      return {...viewer, plan_text: plan.text, plan_format: plan.format || "unknown"};
     }
 
     function chartXGrid(series, xType) {
@@ -4926,6 +5005,8 @@ __PG_EXPLAIN_VIEWER_RENDER_JS__
         ? eChartsLegendLayout(entry, legendData)
         : {chartHeight: CHART_MIN_HEIGHT_PX, height: 0, width: 0};
       const queryEventTooltip = (result.chart || {}).tooltip_kind === "query_event";
+      const tooltipKind = (result.chart || {}).tooltip_kind || "";
+      const itemEventTooltip = queryEventTooltip || tooltipKind === "log_event";
 
       const renderedSeries = series.map((source, seriesIndex) => {
         const color = colors[seriesIndex];
@@ -5052,7 +5133,7 @@ __PG_EXPLAIN_VIEWER_RENDER_JS__
         },
         tooltip: {
           show: !exporting,
-          trigger: queryEventTooltip ? "item" : "axis",
+          trigger: itemEventTooltip ? "item" : "axis",
           renderMode: "html",
           className: "pg-diag-echarts-tooltip",
           confine: true,
@@ -5071,7 +5152,9 @@ __PG_EXPLAIN_VIEWER_RENDER_JS__
           },
           formatter: (params) => queryEventTooltip
             ? buildQueryEventEChartsTooltip(params)
-            : buildSortedEChartsTooltip(params, unit, xType, axisScale),
+            : tooltipKind === "log_event"
+              ? buildLogEventEChartsTooltip(params)
+              : buildSortedEChartsTooltip(params, unit, xType, axisScale),
         },
         dataZoom: [{
           type: "inside",
@@ -5600,6 +5683,40 @@ __PG_EXPLAIN_VIEWER_RENDER_JS__
       return '<div class="pg-diag-chart-tooltip">'
         + clickHint
         + '<div class="pg-diag-chart-tooltip-title">auto_explain query</div>'
+        + '<div class="pg-diag-chart-tooltip-rows">' + rows + '</div>'
+        + '</div>';
+    }
+
+    function buildLogEventEChartsTooltip(params) {
+      const point = Array.isArray(params) ? params[0] : params;
+      const metadata = point && point.data && typeof point.data === "object"
+        ? point.data.pgDiagTooltip
+        : null;
+      if (!metadata || typeof metadata !== "object") {
+        return "";
+      }
+      const values = [
+        ["Date/time", metadata.log_time],
+        ["Event", metadata.event_type],
+        ["Occurrences", metadata.occurrences],
+        ["SQLSTATE", metadata.sql_state],
+        ["Database", metadata.database_name],
+        ["User", metadata.user_name],
+        ["Application", metadata.application_name],
+        ["Query", metadata.query_sample],
+        ["Message", metadata.message_sample],
+      ].filter((entry) => entry[1] !== null && entry[1] !== undefined && entry[1] !== "");
+      const rows = values.map((entry) => {
+        const className = entry[0] === "Query" || entry[0] === "Message"
+          ? "pg-diag-chart-tooltip-query"
+          : "";
+        return '<div class="pg-diag-chart-tooltip-detail-row">'
+          + '<span class="pg-diag-chart-tooltip-detail-label">' + escapeChartLabel(entry[0]) + '</span>'
+          + '<span class="pg-diag-chart-tooltip-detail-value ' + className + '">' + escapeChartLabel(String(entry[1])) + '</span>'
+          + '</div>';
+      }).join("");
+      return '<div class="pg-diag-chart-tooltip">'
+        + '<div class="pg-diag-chart-tooltip-title">Query termination</div>'
         + '<div class="pg-diag-chart-tooltip-rows">' + rows + '</div>'
         + '</div>';
     }

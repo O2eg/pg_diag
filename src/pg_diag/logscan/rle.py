@@ -27,6 +27,15 @@ _IDENTITY_FIELDS = frozenset({1, 2, 3, 4})  # user, database, pid, connection_fr
 _QUOTE = 0x22
 _COMMA = 0x2C
 
+# Shared with the shell harvester: chart events need every original timestamp.
+PRESERVE_EVENT_MARKERS = (
+    b" ms  plan:",
+    b",57014,",
+    b",55P03,",
+    b",57P01,",
+    b"conflict with recovery",
+)
+
 
 def split_key(line: bytes, fields: int = _PREFIX_FIELDS) -> tuple[bytes, bytes] | None:
     """Return ``(identity, tail)`` for one csvlog line, or None.
@@ -114,9 +123,9 @@ class PhysicalRle:
         parts = split_key(line)
         key: tuple[bytes, bytes]
         raw_truncated = raw_truncated or len(line) > self._cap
-        # A collapsed auto_explain run cannot be attributed to exact time
-        # buckets.  Truncated records also lack a provably complete identity.
-        no_merge = raw_truncated or b" ms  plan:" in line
+        # Collapsed chart events cannot be attributed to exact time buckets.
+        # Truncated records also lack a provably complete identity.
+        no_merge = raw_truncated or any(marker in line for marker in PRESERVE_EVENT_MARKERS)
         if parts is not None and not no_merge:
             key = parts
         else:

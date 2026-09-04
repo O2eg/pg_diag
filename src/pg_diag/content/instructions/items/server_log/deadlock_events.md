@@ -5,6 +5,7 @@ This instruction belongs to report item `server_log.deadlock_events`. The item i
 ## What this item shows
 - Records with SQLSTATE `40P01` (`deadlock detected`), newest first, up to 100.
 - The sanitized message text names the processes and lock waits involved; query text and literals are redacted or replaced with placeholders.
+- Detection is based on SQLSTATE and remains available when `lc_messages` is not English; the displayed message stays in the server's language.
 
 ## What to watch
 - Repeated deadlocks between the same relations: a stable application ordering bug, not bad luck.

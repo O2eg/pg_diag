@@ -8,7 +8,7 @@ from pg_diag.logscan.items_common import (
     coverage_note,
     empty_result_status,
     fmt_time,
-    resolve_window,
+    resolve_english_window,
 )
 
 EVENT_LIMIT = 200
@@ -30,7 +30,7 @@ def _target_kind(target: str) -> str:
 
 
 def collect(context: PythonSourceContext) -> PythonSourceResult:
-    window, early = resolve_window(context)
+    window, early = resolve_english_window(context)
     if early is not None:
         return PythonSourceResult(**early)
     events = []

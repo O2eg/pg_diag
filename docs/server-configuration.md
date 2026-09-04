@@ -122,14 +122,15 @@ is documented in
 | `log_directory` | outside PGDATA | Cleaner permissions story for the collector account |
 | `log_file_mode` | `0640` | Required for the documented ACL recipe to survive rotation |
 | `log_rotation_age` / `log_rotation_size` | `1d` / `100MB` | Bounded files; `log_files_overview` flags disabled rotation as a finding |
-| `lc_messages` | `'C'` or `en_*` | Localized logs make pattern matching unreliable; the items then report `unsupported` instead of a false "no errors" |
+| `lc_messages` | `C`, `POSIX`, or `en_*` recommended | Enables all content items. With another locale, SQLSTATE-driven authentication failures/deadlocks remain complete; query termination and system incidents report structured-only partial coverage; the file overview remains complete; localized-message items report `unsupported`. |
 | `log_checkpoints` | `on` (default since PG15) | `checkpoints`: trigger reason, buffers, write/sync timings |
-| `log_autovacuum_min_duration` | `0` (or a ms threshold) | `autovacuum_runs`: per-run chronology with relations |
+| `log_autovacuum_min_duration` | workload-specific ms threshold | `autovacuum_runs` chronology and `maintenance_events`; the latter emits only failures/emergencies/lock waits or successful runs crossing its documented 5 s / 128 MiB / 64 MiB thresholds |
 | `log_lock_waits` | `on` | Lock-wait history from the log (waits longer than `deadlock_timeout`); also enriches the error chronology |
 | `auto_explain.log_min_duration` | workload-specific threshold | `auto_explain_plans`: ten longest logged queries per minute |
 | `auto_explain.log_format` | `json` recommended | Machine-readable plan validation; text, XML, and YAML are also recognized |
 | `auto_explain.log_parameter_max_length` | `0` | Avoid logging bind-parameter values alongside plans |
-| `log_temp_files` | `0` (or a KB threshold) | Temp-file spill evidence in the log (planned item; already useful raw) |
+| `log_min_duration_statement` | workload-specific ms threshold | Duration groups in `query_resource_events`; avoid `0` on high-QPS production systems |
+| `log_temp_files` | workload-specific KiB threshold | Temporary-file groups and total/max spill bytes in `query_resource_events` |
 | `log_connections` / `log_disconnections` | optional | Connection-churn evidence; high volume — enable deliberately |
 
 Errors, FATAL/PANIC events, deadlocks (`deadlock detected`), authentication

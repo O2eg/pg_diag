@@ -26,9 +26,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
     ]
     findings: list[str] = []
     severity = "ok"
-    rotation_disabled = (
-        settings["log_rotation_age"] == "0" and settings["log_rotation_size"] == "0"
-    )
+    rotation_disabled = settings["log_rotation_age"] == "0" and settings["log_rotation_size"] == "0"
     if rotation_disabled:
         severity = "high"
         findings.append(
@@ -45,8 +43,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
     if inventory["total_bytes"] > TOTAL_BYTES_MEDIUM and severity == "ok":
         severity = "medium"
         findings.append(
-            f"csvlog files hold {inventory['total_bytes']} bytes in total; review "
-            "retention."
+            f"csvlog files hold {inventory['total_bytes']} bytes in total; review " "retention."
         )
     issues: dict[str, Any] = {}
     if findings:

@@ -29,7 +29,17 @@ COLUMN_DESCRIPTOR_FIELDS = {
     "encoding",
 }
 VALUE_KINDS = {"integer", "decimal", "text", "boolean", "timestamp", "date", "time", "lsn", "json"}
-SEMANTIC_ROLES = {"identifier", "counter", "counter_delta", "gauge", "rate", "duration", "estimate", "state", "label"}
+SEMANTIC_ROLES = {
+    "identifier",
+    "counter",
+    "counter_delta",
+    "gauge",
+    "rate",
+    "duration",
+    "estimate",
+    "state",
+    "label",
+}
 QUALITIES = {"exact", "estimated", "sampled", "derived"}
 ENCODINGS = {"json_number", "decimal_string", "json_string", "json_boolean", "json_value"}
 VALUE_ENCODINGS = {
@@ -67,10 +77,7 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
             raise ValidationError(f"Artifact missing required field {key!r}")
     schema_version = artifact["artifact_schema_version"]
     if schema_version != runtime_config.ARTIFACT_SCHEMA_VERSION:
-        raise ValidationError(
-            "Unsupported artifact schema version: "
-            f"{schema_version}"
-        )
+        raise ValidationError("Unsupported artifact schema version: " f"{schema_version}")
     for key in ("generator", "content", "report", "runtime"):
         if not isinstance(artifact[key], dict):
             raise ValidationError(f"Artifact field {key!r} must be a mapping")
@@ -94,7 +101,9 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
         raise ValidationError("Artifact field 'content.document' must be a non-empty mapping")
     field_reference = content_document.get("field_reference")
     if not isinstance(field_reference, dict) or not field_reference:
-        raise ValidationError("Artifact field 'content.document.field_reference' must be a non-empty mapping")
+        raise ValidationError(
+            "Artifact field 'content.document.field_reference' must be a non-empty mapping"
+        )
     required_document_roots = {
         "report",
         "runtime_policy",
@@ -113,10 +122,8 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
         raise ValidationError("Artifact field 'content.document' has an invalid root set")
     fallback_items = content_document.get("fallback_items", {})
     if not isinstance(fallback_items, dict):
-        raise ValidationError(
-            "Artifact field 'content.document.fallback_items' must be a mapping"
-        )
-    presentation = ((content_document.get("catalogs") or {}).get("presentation") or {})
+        raise ValidationError("Artifact field 'content.document.fallback_items' must be a mapping")
+    presentation = (content_document.get("catalogs") or {}).get("presentation") or {}
     units = presentation.get("units") if isinstance(presentation, dict) else None
     if not isinstance(units, dict) or not units:
         raise ValidationError("Artifact presentation catalog must define a non-empty unit registry")
@@ -159,11 +166,15 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
         if item.get("item_id") not in (None, item_id):
             raise ValidationError(f"Artifact item key {item_id!r} does not match item_id")
         if not _valid_item_state(item.get("state")):
-            raise ValidationError(f"Artifact item {item_id!r} has unsupported state {item.get('state')!r}")
+            raise ValidationError(
+                f"Artifact item {item_id!r} has unsupported state {item.get('state')!r}"
+            )
 
     missing_items = referenced_item_ids.difference(artifact["items"])
     if missing_items:
-        raise ValidationError(f"Artifact sections reference missing items: {sorted(missing_items)!r}")
+        raise ValidationError(
+            f"Artifact sections reference missing items: {sorted(missing_items)!r}"
+        )
 
     snapshot_schemas = artifact["snapshot_schemas"]
     _validate_snapshot_schemas(snapshot_schemas, set(units))
@@ -184,8 +195,7 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
             )
     query_texts = artifact["query_texts"]
     if not isinstance(query_texts, dict) or any(
-        not isinstance(key, str) or not isinstance(value, str)
-        for key, value in query_texts.items()
+        not isinstance(key, str) or not isinstance(value, str) for key, value in query_texts.items()
     ):
         raise ValidationError("Artifact field 'query_texts' must map strings to strings")
 
@@ -217,7 +227,9 @@ def _validate_sections(sections: list[Any]) -> set[str]:
             raise ValidationError(f"Artifact section {section_id!r} contains duplicate item ids")
         duplicate_refs = referenced_item_ids.intersection(item_ids)
         if duplicate_refs:
-            raise ValidationError(f"Artifact items belong to multiple sections: {sorted(duplicate_refs)!r}")
+            raise ValidationError(
+                f"Artifact items belong to multiple sections: {sorted(duplicate_refs)!r}"
+            )
         referenced_item_ids.update(item_ids)
     return referenced_item_ids
 
@@ -225,7 +237,9 @@ def _validate_sections(sections: list[Any]) -> set[str]:
 def _validate_item_payload(item_id: str, item: dict[str, Any], units: set[str]) -> None:
     for key in ("section_id", "item_key", "title", "source_kind"):
         if not isinstance(item.get(key), str) or not item[key]:
-            raise ValidationError(f"Artifact item {item_id!r} field {key!r} must be a non-empty string")
+            raise ValidationError(
+                f"Artifact item {item_id!r} field {key!r} must be a non-empty string"
+            )
     _validate_targets(item.get("targets"), f"Artifact item {item_id!r} targets")
     if not _value_in(item.get("collection_status"), COLLECTION_STATUSES):
         raise ValidationError(
@@ -249,9 +263,7 @@ def _validate_item_payload(item_id: str, item: dict[str, Any], units: set[str]) 
     if reason is not None and not isinstance(reason, str):
         raise ValidationError(f"Artifact item {item_id!r} reason must be a string or null")
     collected_at = item.get("collected_at")
-    if collected_at is not None and (
-        not isinstance(collected_at, str) or not collected_at.strip()
-    ):
+    if collected_at is not None and (not isinstance(collected_at, str) or not collected_at.strip()):
         raise ValidationError(
             f"Artifact item {item_id!r} collected_at must be a non-empty string or null"
         )
@@ -283,10 +295,16 @@ def _validate_result(item_id: str, result: dict[str, Any], units: set[str]) -> N
         columns = result.get("columns")
         rows = result.get("rows")
         if not isinstance(columns, list) or not isinstance(rows, list):
-            raise ValidationError(f"Artifact table item {item_id!r} must define list columns and rows")
+            raise ValidationError(
+                f"Artifact table item {item_id!r} must define list columns and rows"
+            )
         column_names = []
         for column in columns:
-            if not isinstance(column, dict) or not isinstance(column.get("name"), str) or not column["name"]:
+            if (
+                not isinstance(column, dict)
+                or not isinstance(column.get("name"), str)
+                or not column["name"]
+            ):
                 raise ValidationError(f"Artifact table item {item_id!r} has an invalid column")
             _validate_column_descriptor(item_id, column, units)
             column_names.append(column["name"])
@@ -324,7 +342,11 @@ def _validate_result(item_id: str, result: dict[str, Any], units: set[str]) -> N
                     allow_status_null=(row_index, column["name"]) in status_cells,
                 )
                 unit_ref = column.get("unit_ref")
-                if unit_ref and row[column_names.index(unit_ref)] is not None and row[column_names.index(unit_ref)] not in units:
+                if (
+                    unit_ref
+                    and row[column_names.index(unit_ref)] is not None
+                    and row[column_names.index(unit_ref)] not in units
+                ):
                     raise ValidationError(
                         f"Artifact table item {item_id!r} row {row_index} has an unknown dynamic unit"
                     )
@@ -335,9 +357,13 @@ def _validate_result(item_id: str, result: dict[str, Any], units: set[str]) -> N
     if kind == "chart":
         series = result.get("series")
         if not isinstance(series, list) or any(not isinstance(entry, dict) for entry in series):
-            raise ValidationError(f"Artifact chart item {item_id!r} must define a mapping series list")
+            raise ValidationError(
+                f"Artifact chart item {item_id!r} must define a mapping series list"
+            )
         for index, entry in enumerate(series):
-            _validate_column_descriptor(f"{item_id}.series[{index}]", entry, units, require_name=False)
+            _validate_column_descriptor(
+                f"{item_id}.series[{index}]", entry, units, require_name=False
+            )
             points = entry.get("points")
             if not isinstance(points, list):
                 raise ValidationError(f"Artifact chart item {item_id!r} series must define points")
@@ -349,14 +375,67 @@ def _validate_result(item_id: str, result: dict[str, Any], units: set[str]) -> N
                     entry,
                     f"Artifact chart item {item_id!r} point {point_index}",
                 )
+        _validate_chart_references(item_id, result, series)
         chart = result.get("chart") or {}
-        if isinstance(chart, dict) and str(chart.get("kind") or "").startswith("stacked") and series:
+        if (
+            isinstance(chart, dict)
+            and str(chart.get("kind") or "").startswith("stacked")
+            and series
+        ):
             stacked_contracts = {(entry.get("quantity"), entry.get("unit")) for entry in series}
             if len(stacked_contracts) != 1:
                 raise ValidationError(
                     f"Artifact chart item {item_id!r} stacks incompatible quantities or units"
                 )
     _validate_interval_coverage(item_id, result.get("interval_coverage"))
+
+
+def _validate_chart_references(
+    item_id: str, result: dict[str, Any], series: list[dict[str, Any]]
+) -> None:
+    references = result.get("references")
+    if references is None:
+        return
+    if not isinstance(references, dict):
+        raise ValidationError(f"Artifact chart item {item_id!r} references must be a mapping")
+    namespaces = {"messages": str, "queries": str, "plans": dict}
+    for namespace, value_type in namespaces.items():
+        values = references.get(namespace, {})
+        if not isinstance(values, dict) or any(
+            not isinstance(key, str) or not key or not isinstance(value, value_type)
+            for key, value in values.items()
+        ):
+            raise ValidationError(
+                f"Artifact chart item {item_id!r} has invalid {namespace} references"
+            )
+        if namespace == "plans":
+            for plan in values.values():
+                if not isinstance(plan.get("format"), str) or not isinstance(plan.get("text"), str):
+                    raise ValidationError(
+                        f"Artifact chart item {item_id!r} has an invalid plan reference"
+                    )
+    for entry in series:
+        for point in entry.get("points") or []:
+            tooltip = point.get("tooltip") if isinstance(point, dict) else None
+            viewer = point.get("viewer") if isinstance(point, dict) else None
+            for field, namespace in (("message_ref", "messages"), ("query_ref", "queries")):
+                if isinstance(tooltip, dict) and field in tooltip:
+                    reference = tooltip[field]
+                    if reference is not None and (
+                        not isinstance(reference, str)
+                        or reference not in references.get(namespace, {})
+                    ):
+                        raise ValidationError(
+                            f"Artifact chart item {item_id!r} {field} references missing data"
+                        )
+            if isinstance(viewer, dict) and "plan_ref" in viewer:
+                reference = viewer["plan_ref"]
+                if reference is not None and (
+                    not isinstance(reference, str) or reference not in references.get("plans", {})
+                ):
+                    raise ValidationError(
+                        f"Artifact chart item {item_id!r} plan_ref references missing data"
+                    )
 
 
 def _validate_column_descriptor(
@@ -400,7 +479,9 @@ def _validate_column_descriptor(
     if "unit" in column and "unit_ref" in column:
         raise ValidationError(f"Artifact column in {item_id!r} defines both unit and unit_ref")
     if "quantity" in column and "quantity_ref" in column:
-        raise ValidationError(f"Artifact column in {item_id!r} defines both quantity and quantity_ref")
+        raise ValidationError(
+            f"Artifact column in {item_id!r} defines both quantity and quantity_ref"
+        )
     for ref in ("unit_ref", "quantity_ref"):
         if ref in column and (not isinstance(column[ref], str) or not column[ref]):
             raise ValidationError(f"Artifact column in {item_id!r} has invalid {ref}")
@@ -450,12 +531,24 @@ def _validate_table_statuses(
             raise ValidationError(f"Artifact table item {item_id!r} has an invalid cell status")
         row_index = entry.get("row_index")
         column = entry.get("column")
-        if not isinstance(row_index, int) or isinstance(row_index, bool) or not 0 <= row_index < len(rows):
+        if (
+            not isinstance(row_index, int)
+            or isinstance(row_index, bool)
+            or not 0 <= row_index < len(rows)
+        ):
             raise ValidationError(f"Artifact table item {item_id!r} has an invalid cell row_index")
         if column not in column_names:
-            raise ValidationError(f"Artifact table item {item_id!r} cell status references a missing column")
-        if entry.get("status") not in CELL_STATUSES or not isinstance(entry.get("reason"), str) or not entry["reason"]:
-            raise ValidationError(f"Artifact table item {item_id!r} has an invalid cell status payload")
+            raise ValidationError(
+                f"Artifact table item {item_id!r} cell status references a missing column"
+            )
+        if (
+            entry.get("status") not in CELL_STATUSES
+            or not isinstance(entry.get("reason"), str)
+            or not entry["reason"]
+        ):
+            raise ValidationError(
+                f"Artifact table item {item_id!r} has an invalid cell status payload"
+            )
         key = (row_index, str(column))
         if key in seen_cells:
             raise ValidationError(f"Artifact table item {item_id!r} has duplicate cell statuses")
@@ -470,11 +563,19 @@ def _validate_table_statuses(
     for column, entry in column_statuses.items():
         if column not in column_names or not isinstance(entry, dict):
             raise ValidationError(f"Artifact table item {item_id!r} has an invalid column status")
-        if entry.get("status") not in CELL_STATUSES or not isinstance(entry.get("reason"), str) or not entry["reason"]:
-            raise ValidationError(f"Artifact table item {item_id!r} has an invalid column status payload")
+        if (
+            entry.get("status") not in CELL_STATUSES
+            or not isinstance(entry.get("reason"), str)
+            or not entry["reason"]
+        ):
+            raise ValidationError(
+                f"Artifact table item {item_id!r} has an invalid column status payload"
+            )
         column_index = next(index for index, value in enumerate(columns) if value["name"] == column)
         if any(row[column_index] is not None for row in rows):
-            raise ValidationError(f"Artifact table item {item_id!r} status column must contain only null")
+            raise ValidationError(
+                f"Artifact table item {item_id!r} status column must contain only null"
+            )
         seen_cells.update((row_index, str(column)) for row_index in range(len(rows)))
     return seen_cells
 
@@ -491,11 +592,7 @@ def _validate_delta_window(item_id: str, window: Any) -> None:
                 f"Artifact item {item_id!r} delta_window.{key} must be a non-empty string"
             )
     duration = window.get("duration_seconds")
-    if (
-        not isinstance(duration, (int, float))
-        or isinstance(duration, bool)
-        or duration < 0
-    ):
+    if not isinstance(duration, (int, float)) or isinstance(duration, bool) or duration < 0:
         raise ValidationError(
             f"Artifact item {item_id!r} delta_window.duration_seconds must be non-negative"
         )
@@ -516,7 +613,9 @@ def _validate_interval_coverage(item_id: str, coverage: Any) -> None:
         values[key] = value
     counts = coverage.get("counts")
     if not isinstance(counts, dict):
-        raise ValidationError(f"Artifact item {item_id!r} interval_coverage.counts must be a mapping")
+        raise ValidationError(
+            f"Artifact item {item_id!r} interval_coverage.counts must be a mapping"
+        )
     for status, count in counts.items():
         if status not in INTERVAL_COVERAGE_STATUSES:
             raise ValidationError(
@@ -527,14 +626,22 @@ def _validate_interval_coverage(item_id: str, coverage: Any) -> None:
                 f"Artifact item {item_id!r} interval_coverage count {status!r} must be positive"
             )
     if sum(counts.values()) != values["total"]:
-        raise ValidationError(f"Artifact item {item_id!r} interval_coverage counts do not match total")
+        raise ValidationError(
+            f"Artifact item {item_id!r} interval_coverage counts do not match total"
+        )
     expected = interval_coverage_totals(counts)
     if values["comparable"] != expected["comparable"]:
-        raise ValidationError(f"Artifact item {item_id!r} interval_coverage comparable count is inconsistent")
+        raise ValidationError(
+            f"Artifact item {item_id!r} interval_coverage comparable count is inconsistent"
+        )
     if values["unmatched"] != expected["unmatched"]:
-        raise ValidationError(f"Artifact item {item_id!r} interval_coverage unmatched count is inconsistent")
+        raise ValidationError(
+            f"Artifact item {item_id!r} interval_coverage unmatched count is inconsistent"
+        )
     if values["invalid"] != expected["invalid"]:
-        raise ValidationError(f"Artifact item {item_id!r} interval_coverage invalid count is inconsistent")
+        raise ValidationError(
+            f"Artifact item {item_id!r} interval_coverage invalid count is inconsistent"
+        )
 
 
 def _validate_snapshot_schemas(snapshot_schemas: Any, units: set[str]) -> None:
@@ -548,7 +655,11 @@ def _validate_snapshot_schemas(snapshot_schemas: Any, units: set[str]) -> None:
             raise ValidationError(f"Artifact snapshot schema {item_id!r} must define columns")
         names = []
         for column in columns:
-            if not isinstance(column, dict) or not isinstance(column.get("name"), str) or not column["name"]:
+            if (
+                not isinstance(column, dict)
+                or not isinstance(column.get("name"), str)
+                or not column["name"]
+            ):
                 raise ValidationError(f"Artifact snapshot schema {item_id!r} has an invalid column")
             _validate_column_descriptor(item_id, column, units)
             names.append(column["name"])
@@ -574,14 +685,18 @@ def _validate_snapshots(
             raise ValidationError(f"Artifact snapshot at index {index} items must be a mapping")
         for item_id, item in items.items():
             if not isinstance(item_id, str) or not isinstance(item, dict):
-                raise ValidationError(f"Artifact snapshot at index {index} contains an invalid item")
+                raise ValidationError(
+                    f"Artifact snapshot at index {index} contains an invalid item"
+                )
             if not _value_in(item.get("collection_status"), COLLECTION_STATUSES):
                 raise ValidationError(
                     f"Artifact snapshot item {item_id!r} has an invalid collection_status"
                 )
             result = item.get("result")
             if not isinstance(result, dict):
-                raise ValidationError(f"Artifact snapshot item {item_id!r} result must be a mapping")
+                raise ValidationError(
+                    f"Artifact snapshot item {item_id!r} result must be a mapping"
+                )
             if result.get("kind") == "table" and "columns" not in result:
                 rows = result.get("rows", [])
                 if not isinstance(rows, list) or any(not isinstance(row, list) for row in rows):

@@ -8,7 +8,7 @@ from pg_diag.logscan.items_common import (
     empty_result_status,
     fmt_time,
     message_contains_any,
-    resolve_window,
+    resolve_english_window,
 )
 
 EVENT_LIMIT = 100
@@ -18,12 +18,10 @@ _REMAINING_RE = re.compile(r"within (\d+) transactions")
 
 
 def collect(context: PythonSourceContext) -> PythonSourceResult:
-    window, early = resolve_window(context)
+    window, early = resolve_english_window(context)
     if early is not None:
         return PythonSourceResult(**early)
-    events = [
-        record for record in window.records if message_contains_any(record, _FRAGMENTS)
-    ]
+    events = [record for record in window.records if message_contains_any(record, _FRAGMENTS)]
     events = events[-EVENT_LIMIT:]
     stop_stage = any("is not accepting commands" in record.message for record in events)
     rows: list[dict[str, Any]] = []
