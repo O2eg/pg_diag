@@ -299,6 +299,33 @@ def test_parse_auto_explain_deep_plan_does_not_abort_log_phase(plan_format: str)
     assert parsed.viewer_plan is None
 
 
+def test_parse_auto_explain_json_recursion_fallback_preserves_metadata(monkeypatch) -> None:
+    body = json.dumps(
+        {
+            "Query Text": "select * from accounts where password = 'secret'",
+            "Plan": {
+                "Node Type": "Subquery Scan",
+                "Plans": [{"Node Type": "Result"}],
+            },
+        }
+    )
+
+    def raise_recursion_error(_value: str):
+        raise RecursionError
+
+    monkeypatch.setattr(auto_explain.json, "loads", raise_recursion_error)
+    parsed = auto_explain.parse_auto_explain(f"duration: 1 ms  plan:\n{body}", complete=True)
+
+    assert parsed is not None
+    assert parsed.parsed
+    assert parsed.root_node_type == "Subquery Scan"
+    assert parsed.node_count == 2
+    assert parsed.query_sample is not None
+    assert "secret" not in parsed.query_sample
+    assert "[REDACTED]" in parsed.query_sample
+    assert parsed.viewer_plan is None
+
+
 # --- physical RLE ---
 
 

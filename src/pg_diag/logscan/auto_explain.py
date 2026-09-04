@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import math
 import re
+from dataclasses import dataclass
+from json.decoder import scanstring
 from typing import Any
 from xml.etree import ElementTree
 
@@ -23,6 +25,17 @@ _YAML_QUERY_RE = re.compile(r"^Query Text:\s*(?P<query>.+?)\s*$", re.MULTILINE)
 _XML_LIST_CHILDREN = frozenset({"Item", "Plan", "Setting", "Trigger", "Worker"})
 _XML_INTEGER_RE = re.compile(r"^-?\d+$")
 _XML_DECIMAL_RE = re.compile(r"^-?(?:\d+\.\d*|\d*\.\d+)(?:[eE][+-]?\d+)?$")
+_JSON_NUMBER_RE = re.compile(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?")
+_JSON_PLAN_ROLES = frozenset({"root_plan", "plan_node"})
+
+
+@dataclass
+class _JsonFrame:
+    kind: str
+    role: str
+    state: str
+    key: str | None = None
+    index: int = 0
 
 
 def parse_auto_explain(message: str, *, complete: bool) -> AutoExplainPlan | None:
@@ -61,7 +74,13 @@ def _parse_plan(plan_text: str) -> tuple[str, str | None, int, bool, str | None]
 def _parse_json(plan_text: str) -> tuple[str, str | None, int, bool, str | None]:
     try:
         payload: Any = json.loads(plan_text)
-    except (TypeError, ValueError, RecursionError):
+    except RecursionError:
+        metadata = _parse_deep_json_metadata(plan_text)
+        if metadata is None:
+            return "json", None, 0, False, None
+        root, node_count, query_text = metadata
+        return "json", root, node_count, bool(root and node_count), query_text
+    except (TypeError, ValueError):
         return "json", None, 0, False, None
     if isinstance(payload, list) and payload:
         payload = payload[0]
@@ -78,6 +97,148 @@ def _parse_json(plan_text: str) -> tuple[str, str | None, int, bool, str | None]
         bool(root and node_count),
         str(query_text) if isinstance(query_text, str) else None,
     )
+
+
+def _parse_deep_json_metadata(plan_text: str) -> tuple[str | None, int, str | None] | None:
+    """Extract bounded plan metadata without recursive JSON object construction."""
+    frames: list[_JsonFrame] = []
+    root_started = False
+    root_complete = False
+    root_node_type: str | None = None
+    node_count = 0
+    query_text: str | None = None
+
+    def start_value(kind: str, value: str | None, role: str) -> None:
+        nonlocal node_count, query_text, root_node_type
+        if kind == "{":
+            if role in _JSON_PLAN_ROLES:
+                node_count += 1
+            frames.append(_JsonFrame("object", role, "key_or_end"))
+            return
+        if kind == "[":
+            frames.append(_JsonFrame("array", role, "value_or_end"))
+            return
+        if kind not in {"string", "scalar"}:
+            raise ValueError("expected JSON value")
+        if kind == "string" and role == "query_text":
+            query_text = value
+        elif kind == "string" and role == "root_node_type":
+            root_node_type = value
+
+    def object_value_role(frame: _JsonFrame) -> str:
+        if frame.role == "payload":
+            if frame.key == "Plan":
+                return "root_plan"
+            if frame.key == "Query Text":
+                return "query_text"
+        if frame.role in _JSON_PLAN_ROLES:
+            if frame.key == "Plans":
+                return "plans_array"
+            if frame.role == "root_plan" and frame.key == "Node Type":
+                return "root_node_type"
+        return "other"
+
+    def array_value_role(frame: _JsonFrame) -> str:
+        if frame.role == "root_array" and frame.index == 0:
+            return "payload"
+        if frame.role == "plans_array":
+            return "plan_node"
+        return "other"
+
+    try:
+        for kind, value in _iter_json_tokens(plan_text):
+            if not frames:
+                if root_started:
+                    raise ValueError("trailing JSON content")
+                root_started = True
+                role = "payload" if kind == "{" else "root_array" if kind == "[" else "other"
+                start_value(kind, value, role)
+                if not frames:
+                    root_complete = True
+                continue
+
+            frame = frames[-1]
+            if frame.kind == "object":
+                if frame.state in {"key_or_end", "key"}:
+                    if kind == "}" and frame.state == "key_or_end":
+                        frames.pop()
+                        root_complete = not frames
+                    elif kind == "string":
+                        frame.key = value
+                        frame.state = "colon"
+                    else:
+                        raise ValueError("expected JSON object key")
+                elif frame.state == "colon":
+                    if kind != ":":
+                        raise ValueError("expected colon after JSON object key")
+                    frame.state = "value"
+                elif frame.state == "value":
+                    role = object_value_role(frame)
+                    frame.key = None
+                    frame.state = "comma_or_end"
+                    start_value(kind, value, role)
+                elif frame.state == "comma_or_end":
+                    if kind == "}":
+                        frames.pop()
+                        root_complete = not frames
+                    elif kind == ",":
+                        frame.state = "key"
+                    else:
+                        raise ValueError("expected comma or JSON object end")
+                continue
+
+            if frame.state in {"value_or_end", "value"}:
+                if kind == "]" and frame.state == "value_or_end":
+                    frames.pop()
+                    root_complete = not frames
+                    continue
+                role = array_value_role(frame)
+                frame.index += 1
+                frame.state = "comma_or_end"
+                start_value(kind, value, role)
+            elif frame.state == "comma_or_end":
+                if kind == "]":
+                    frames.pop()
+                    root_complete = not frames
+                elif kind == ",":
+                    frame.state = "value"
+                else:
+                    raise ValueError("expected comma or JSON array end")
+        if frames or not root_started or not root_complete:
+            raise ValueError("incomplete JSON value")
+    except (TypeError, ValueError):
+        return None
+    return root_node_type, node_count, query_text
+
+
+def _iter_json_tokens(plan_text: str):
+    index = 0
+    while index < len(plan_text):
+        character = plan_text[index]
+        if character.isspace():
+            index += 1
+            continue
+        if character in "{}[]:,":
+            yield character, None
+            index += 1
+            continue
+        if character == '"':
+            value, index = scanstring(plan_text, index + 1, True)
+            yield "string", value
+            continue
+        number_match = _JSON_NUMBER_RE.match(plan_text, index)
+        if number_match is not None:
+            yield "scalar", None
+            index = number_match.end()
+            continue
+        literal = next(
+            (candidate for candidate in ("true", "false", "null") if plan_text.startswith(candidate, index)),
+            None,
+        )
+        if literal is None:
+            raise ValueError("invalid JSON token")
+        yield "scalar", None
+        index += len(literal)
 
 
 def _count_json_nodes(plan: dict[str, Any]) -> int:
