@@ -281,3 +281,5 @@ counts and changing top-N wait groups must retain their diagnostic evidence.
 The pytest wrapper passes explicit test file paths for compatibility with Node
 18 and 22. Architecture tests also cover event metadata, writer-pressure counts,
 and wait-profile shares with unequal sample counts.
+`test_metric_engine.py` verifies that UTC timestamps emitted by `json_safe`
+produce valid delta and rate intervals on Python 3.10 as well as newer versions.

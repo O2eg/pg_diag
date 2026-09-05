@@ -1488,6 +1488,10 @@ def _chart_epoch_status(previous: dict[str, Any], current: dict[str, Any]) -> st
 
 
 def _seconds_between(start: str, end: str) -> float:
+    # json_safe serializes UTC datetimes with Z; Python 3.10 requires an
+    # explicit offset when parsing those source timestamps with fromisoformat.
+    start = start[:-1] + "+00:00" if start.endswith("Z") else start
+    end = end[:-1] + "+00:00" if end.endswith("Z") else end
     try:
         return max((datetime.fromisoformat(end) - datetime.fromisoformat(start)).total_seconds(), 0.0)
     except ValueError:

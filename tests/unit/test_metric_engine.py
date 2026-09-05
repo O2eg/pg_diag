@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,7 @@ from pg_diag.metric_engine import (
     evaluate_metric_table_findings,
 )
 from pg_diag.planner import PlannedItem
+from pg_diag.security import json_safe
 from pg_diag.versioning import select_query_variant
 
 
@@ -41,6 +43,23 @@ NEW_DELTA_METRICS = {
     "replication.logical_slot_delta",
     "replication.subscription_errors_delta",
 }
+
+
+@pytest.mark.parametrize(("transform", "expected"), [("delta", 120), ("rate", 4.0)])
+def test_chart_intervals_accept_serialized_utc_timestamps(transform: str, expected: float) -> None:
+    start = datetime(2026, 9, 5, tzinfo=timezone.utc)
+    samples = json_safe([
+        {"timestamp": start, "rows": [{"value": 10}]},
+        {"timestamp": start + timedelta(seconds=30), "rows": [{"value": 130}]},
+    ])
+    assert all(sample["timestamp"].endswith("Z") for sample in samples)
+    result = build_chart_result(
+        {"series": [{"name": "count", "value_ref": "value", "transform": transform}]},
+        samples,
+        {},
+    )
+    assert result["series"][0]["points"][-1]["value"] == expected
+    assert result["interval_coverage"]["comparable"] == 1
 
 
 @pytest.mark.parametrize("entry", [
