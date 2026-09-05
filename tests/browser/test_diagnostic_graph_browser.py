@@ -98,14 +98,13 @@ def test_diagnostic_graph_renders_and_navigates(
                 sheetPresent: !!document.querySelector('head > style#pg-diag-graph-css'),
                 edgeVariable: style.getPropertyValue('--dg-edge').trim(),
                 nodataVariable: style.getPropertyValue('--dg-nodata').trim(),
-                edgeStroke: getComputedStyle(graph.querySelector('.dg-edge')).stroke,
                 nodataFill: getComputedStyle(graph.querySelector('.dg-legend .dg-dot-no_data')).backgroundColor,
               };
             }"""
         )
         assert styles["sheetPresent"]
         assert styles["edgeVariable"] and styles["nodataVariable"]
-        for field in ("edgeStroke", "nodataFill"):
+        for field in ("nodataFill",):
             assert styles[field] not in {"none", "transparent", "rgba(0, 0, 0, 0)"}, field
 
         state = page.evaluate(
@@ -121,7 +120,14 @@ def test_diagnostic_graph_renders_and_navigates(
             }"""
         )
         assert state["roots"] == ["cpu", "ram", "disk", "network", "database_health", "database_security"]
-        assert state["nodes"] >= 6
+        assert state["nodes"] == 6
+        assert page.locator("#diagnosticGraph .dg-edge").count() == 0
+        assert page.locator("#diagnosticGraph .dg-node-root .dg-label").evaluate_all(
+            "labels => labels.length === 6 && labels.every(label => getComputedStyle(label).fontSize === '42px')"
+        )
+        assert page.locator("#diagnosticGraph .dg-header").get_by_role(
+            "button", name="Expand all", exact=True
+        ).count() == 0
         assert state["errors"] == 0
         assert "no_data" not in state["rootStatuses"]
         assert state["width"] <= viewport_width, "the canvas must not widen the report"
@@ -131,14 +137,30 @@ def test_diagnostic_graph_renders_and_navigates(
         assert page.locator("#diagnosticGraph svg text").evaluate_all(
             "labels => labels.every(label => !label.textContent.includes('%'))"
         )
-        assert page.locator("#diagnosticGraph .dg-node-root").evaluate_all(
-            """nodes => nodes.every(node => {
-              const box = node.querySelector('.dg-label').getBBox();
-              const radius = +node.querySelector('circle').getAttribute('r');
-              return [box.x, box.x + box.width].every(x =>
-                [box.y, box.y + box.height].every(y => Math.hypot(x, y) < radius));
-            })"""
-        )
+        def assert_labels_inside_circles() -> None:
+            assert page.locator("#diagnosticGraph .dg-node").evaluate_all(
+                """nodes => nodes.every(node => {
+                  const box = node.querySelector('.dg-label').getBoundingClientRect();
+                  const circle = node.querySelector('.dg-circle').getBoundingClientRect();
+                  const cx = circle.x + circle.width / 2, cy = circle.y + circle.height / 2;
+                  const inside = b => circle.width > 0 && [b.left, b.right].every(x =>
+                    [b.top, b.bottom].every(y => Math.hypot(x - cx, y - cy) < circle.width / 2));
+                  const badge = node.querySelector('.dg-badge');
+                  const lines = [...node.querySelectorAll('.dg-label tspan')].map(line => +line.getAttribute('y'));
+                  const fontSize = parseFloat(getComputedStyle(node.querySelector('.dg-label')).fontSize);
+                  if (lines.some((y, i) => i > 0 && y - lines[i - 1] < fontSize)) return false;
+                  if (!badge) return inside(box);
+                  const pill = badge.getBoundingClientRect();
+                  const style = getComputedStyle(badge), labelStyle = getComputedStyle(node.querySelector('.dg-label'));
+                  const reference = getComputedStyle(document.querySelector('.badge.neutral:not(.dg-badge)'));
+                  return inside(box) && inside(pill) && pill.top > box.bottom &&
+                    style.fontSize === labelStyle.fontSize &&
+                    ['backgroundColor', 'color', 'borderRadius'].every(key => style[key] === reference[key]);
+                })"""
+            )
+
+        assert_labels_inside_circles()
+        assert page.locator("#diagnosticGraph .dg-node-badge").count() > 0
 
         scene = page.locator("#diagnosticGraph .dg-scene")
 
@@ -147,14 +169,46 @@ def test_diagnostic_graph_renders_and_navigates(
                 "s => { const m = s.transform.baseVal.consolidate().matrix; return {scale: m.a, x: m.e, y: m.f}; }"
             )
 
-        assert transform()["scale"] >= 0.7, "initial labels must stay readable"
+        initial_view = transform()
         page.get_by_role("button", name="Fit graph", exact=True).click()
         fit = transform()
+        assert initial_view == pytest.approx(fit), "initial view must match the Fit button"
         page.get_by_role("button", name="Zoom in", exact=True).click()
         zoomed = transform()
         assert zoomed["scale"] > fit["scale"]
         page.get_by_role("button", name="Zoom out", exact=True).click()
         assert transform()["scale"] == pytest.approx(fit["scale"], rel=1e-5)
+
+        # Full screen fills the page and reuses Fit; both exit paths restore it.
+        graph = page.locator("#diagnosticGraph")
+        graph.get_by_role("button", name="Fit graph", exact=True).click()
+        graph.get_by_role("button", name="Full screen", exact=True).click()
+        fullscreen = graph.locator(".dg-fullscreen")
+        assert fullscreen.evaluate("d => d.open && d.matches(':modal')")
+        for name in ("Expand all", "Collapse all"):
+            assert fullscreen.locator(".dg-zoom").get_by_role("button", name=name, exact=True).is_visible()
+        assert graph.locator(".dg-svg").bounding_box() == pytest.approx(
+            {"x": 0, "y": 0, "width": viewport_width, "height": 1000}
+        )
+        page.wait_for_function(
+            "scale => document.querySelector('#diagnosticGraph .dg-scene').transform.baseVal.consolidate().matrix.a > scale",
+            arg=fit["scale"],
+        )
+        fullscreen_fit = transform()
+        graph.get_by_role("button", name="Fit graph", exact=True).click()
+        assert transform() == pytest.approx(fullscreen_fit)
+        page.keyboard.press("Escape")
+        assert not fullscreen.evaluate("d => d.open")
+        assert transform() == pytest.approx(fit)
+
+        graph.get_by_role("button", name="Zoom in", exact=True).click()
+        manual_view = transform()
+        graph.get_by_role("button", name="Full screen", exact=True).click()
+        assert transform()["scale"] == pytest.approx(manual_view["scale"])
+        graph.get_by_role("button", name="Exit full screen", exact=True).click()
+        assert transform() == pytest.approx(manual_view)
+        assert page.evaluate("document.documentElement.style.overflow") == ""
+        graph.get_by_role("button", name="Fit graph", exact=True).click()
 
         svg = page.locator("#diagnosticGraph .dg-svg")
         svg.scroll_into_view_if_needed()
@@ -181,6 +235,25 @@ def test_diagnostic_graph_renders_and_navigates(
         page.locator("#diagnosticGraph").get_by_role(
             "button", name="Expand all", exact=True
         ).click()
+        settle()
+        assert_labels_inside_circles()
+        assert page.locator("#diagnosticGraph .dg-node-badge").count() == 0
+        assert page.locator("#diagnosticGraph .dg-edge").first.evaluate(
+            "edge => !['none', 'transparent', 'rgba(0, 0, 0, 0)'].includes(getComputedStyle(edge).stroke)"
+        )
+        expanded_count = page.locator("#diagnosticGraph .dg-node").count()
+        assert expanded_count == page.evaluate("pgDiagReport.diagnosticGraph.order.length")
+        graph.locator(".dg-zoom").get_by_role("button", name="Expand all", exact=True).click()
+        settle()
+        assert page.locator("#diagnosticGraph .dg-node").count() == expanded_count
+        page.click('#diagnosticGraph .dg-node[data-node-id="ram.work_mem"]')
+        settle()
+        graph.locator(".dg-zoom").get_by_role("button", name="Collapse all", exact=True).click()
+        settle()
+        assert page.locator("#diagnosticGraph .dg-node").count() == 6
+        assert page.locator("#diagnosticGraph .dg-detail, #diagnosticGraph .dg-node-selected").count() == 0
+        assert transform() == pytest.approx(initial_view)
+        graph.locator(".dg-zoom").get_by_role("button", name="Expand all", exact=True).click()
         settle()
         page.click('#diagnosticGraph .dg-node[data-node-id="ram.work_mem"]')
         settle()
@@ -230,13 +303,24 @@ def test_diagnostic_graph_renders_and_navigates(
         page.click('#diagnosticGraph .dg-node[data-node-id="database_security"]')
         settle()
         assert "%" not in page.inner_text("#diagnosticGraph .dg-panel-head")
-        assert "%" not in page.inner_text("#diagnosticGraph .dg-children")
+        assert page.locator("#diagnosticGraph .dg-children").count() == 0
         page.click('#diagnosticGraph .dg-node[data-node-id="security.authentication"]')
+        settle()
+        assert page.locator("#diagnosticGraph .dg-item").count() == 0
+        page.click(
+            '#diagnosticGraph .dg-node[data-node-id="security.authentication.sources.hba"]'
+        )
         settle()
         panel_text = page.inner_text("#diagnosticGraph .dg-panel")
         assert "security.authentication" in panel_text
         assert "report items" in panel_text.lower()
         assert "Bottleneck" not in panel_text
+        assert "Data available" not in panel_text
+        assert page.locator("#diagnosticGraph .dg-children").count() == 0
+        assert page.locator("#diagnosticGraph .dg-node-selected .dg-circle").evaluate(
+            """circle => getComputedStyle(circle).fill ===
+              getComputedStyle(document.querySelector('#diagnosticGraph .dg-status')).backgroundColor"""
+        )
 
         layout = page.evaluate(
             """() => {
@@ -253,7 +337,7 @@ def test_diagnostic_graph_renders_and_navigates(
                 inline: !!detail.closest('.dg-scene'),
                 scale: graph.querySelector('.dg-scene').transform.baseVal.consolidate().matrix.a,
                 panelBackground: getComputedStyle(graph.querySelector('.dg-panel')).backgroundColor,
-                bindings: window.pgDiagReport.diagnosticGraph.nodes['security.authentication'].bindings.length,
+                bindings: window.pgDiagReport.diagnosticGraph.nodes['security.authentication.sources.hba'].bindings.length,
                 chips: graph.querySelectorAll('.dg-panel .dg-item').length,
               };
             }"""
@@ -267,15 +351,50 @@ def test_diagnostic_graph_renders_and_navigates(
         assert page.locator("#diagnosticGraph .dg-body > .dg-panel").count() == 0
 
         page.get_by_role("button", name="Fit graph", exact=True).click()
+        graph.get_by_role("button", name="Full screen", exact=True).click()
         chip = page.locator("#diagnosticGraph .dg-item:not([disabled])").first
         item_id = chip.get_attribute("data-item-id")
         chip.click()
+        assert not fullscreen.evaluate("d => d.open")
         page.wait_for_function(
             '([itemId]) => document.querySelector(`details.item[data-item-id="${itemId}"]`).open',
             arg=[item_id],
         )
         scrolled = page.evaluate("window.scrollY")
         assert scrolled > 0, "clicking an item chip scrolls the report to the item"
+
+        # Long captions also fit when rendering starts with a hidden canvas.
+        captions = {"cpu": "W" * 50, "cpu.utilization": "Ж" * 51, "cpu.system_time": "😀" * 50}
+        page.evaluate(
+            """captions => {
+              const evaluation = window.pgDiagReport.diagnosticGraph;
+              for (const [id, label] of Object.entries(captions)) evaluation.nodes[id].label = label;
+              PgDiagGraphRender.render(document.querySelector('#diagnosticGraph'), evaluation, {collapsed: true});
+            }""",
+            captions,
+        )
+        graph.get_by_role("button", name="Show", exact=True).click()
+        assert_labels_inside_circles()
+        root = graph.locator('.dg-node[data-node-id="cpu"]')
+        root.click()
+        settle()
+        assert_labels_inside_circles()
+        for node_id, caption in captions.items():
+            node = graph.locator(f'.dg-node[data-node-id="{node_id}"]')
+            expected = caption if len(caption) <= 50 else caption[:49] + "…"
+            assert node.locator(".dg-label").text_content() == expected
+            assert caption in node.locator("title").text_content()
+        root.click()
+        settle()
+        assert_labels_inside_circles()
+        counter = root.locator(".dg-badge")
+        assert counter.text_content() == "+4"
+        box = counter.bounding_box()
+        assert box is not None
+        page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        settle()
+        assert root.get_attribute("data-children-expanded") == "true"
+        assert root.locator(".dg-badge").count() == 0
         assert errors == []
         browser.close()
 
@@ -336,12 +455,14 @@ def test_inline_details_animate_and_handle_interruption(
             """async () => {
               const graph = document.querySelector('#diagnosticGraph');
               const sample = () => {
-                const peer = graph.querySelector('.dg-node[data-node-id="ram.pressure"]');
+                const peer = graph.querySelector('.dg-node[data-node-id="ram"]');
                 const selected = graph.querySelector('.dg-node[data-node-id="cpu"]');
                 const box = selected.querySelector('circle').getBoundingClientRect();
                 const card = graph.querySelector('.dg-detail');
                 return {
                   peerY: peer.transform.baseVal.consolidate().matrix.f,
+                  healthY: graph.querySelector('.dg-node[data-node-id="database_health"]').transform.baseVal.consolidate().matrix.f,
+                  securityY: graph.querySelector('.dg-node[data-node-id="database_security"]').transform.baseVal.consolidate().matrix.f,
                   selectedX: box.x + box.width / 2,
                   selectedY: box.y + box.height / 2,
                   height: card ? +card.getAttribute('height') : 0,
@@ -369,10 +490,12 @@ def test_inline_details_animate_and_handle_interruption(
             }"""
         )
         assert samples["open"]["height"] > 100
-        assert samples["open"]["peerY"] > samples["before"]["peerY"]
         assert samples["closed"]["height"] == 0
-        assert samples["closed"]["peerY"] == pytest.approx(samples["before"]["peerY"])
+        for field in ["healthY", "securityY"]:
+            assert samples["open"][field] > samples["before"][field]
+            assert samples["closed"][field] <= samples["before"][field]
         for phase in ["middle", "open", "closing", "closed"]:
+            assert samples[phase]["peerY"] == pytest.approx(samples["before"]["peerY"])
             assert samples[phase]["scale"] == samples["before"]["scale"]
             assert samples[phase]["selectedX"] == pytest.approx(
                 samples["before"]["selectedX"], abs=1
@@ -384,9 +507,8 @@ def test_inline_details_animate_and_handle_interruption(
             assert samples["opening"] == "true"
             assert 0 < samples["middle"]["height"] < samples["open"]["height"]
             assert 0 < samples["closing"]["height"] < samples["open"]["height"]
-            assert (
-                samples["before"]["peerY"] < samples["middle"]["peerY"] < samples["open"]["peerY"]
-            )
+            for field in ["healthY", "securityY"]:
+                assert samples["before"][field] < samples["middle"][field] < samples["open"][field]
         else:
             assert samples["opening"] == "false"
 

@@ -20,7 +20,8 @@ computed here from the item data.
 | `graph.json` | Declarative graph: nodes, parent links, cause links, item bindings, requirements. Data only. Validated by `tests/unit/test_diagnostic_graph.py` against `content/report.yaml`. |
 | `pg-diag-graph-data.js` | Status-aware artifact access, decoding, facts, timestamp alignment, windows and unit conversion. UMD global `PgDiagGraphData`; no DOM access. |
 | `pg-diag-graph-rules.js` | Thresholds, shared calculations and one registry of raw evaluators. UMD global `PgDiagGraphRules`; depends only on data. |
-| `pg-diag-graph.js` | Public `PgDiagGraph.evaluate` API, traversal, pressure/caps, propagation, coverage and hints. UMD/CommonJS; depends on data and rules, with no DOM access. |
+| `pg-diag-graph-groups.js` | Independent assessments for item directions, with scoped inputs, measured facts, criteria and explicit assessment limits. UMD global `PgDiagGraphGroups`; uses data and existing rules. |
+| `pg-diag-graph.js` | Public `PgDiagGraph.evaluate` API, traversal, pressure/caps, propagation, coverage and hints. UMD/CommonJS; depends on data, rules and group assessments, with no DOM access. |
 | `pg-diag-graph-render.js` | Renderer (global `PgDiagGraphRender`): SVG edges and nodes, expandable inline detail cards with bound items and hints, animated tree layout. Uses the report theme through CSS variables only. |
 | `pg-diag-graph.css` | Structural styles plus the score gradient stops as `--dg-*` variables. |
 | `DIAGNOSTIC_GRAPH_SPEC.md` | This document. |
@@ -32,7 +33,7 @@ The renderer inlines the assets and the graph definition into
 `window.pgDiagReport.navigateToItem(itemId)` so the graph can scroll the report
 to a bound item with the same behaviour as a related-item link in an instruction.
 
-`__PG_DIAG_GRAPH_JS__` contains data, rules and engine in that order. Python
+`__PG_DIAG_GRAPH_JS__` contains data, rules, group assessments and engine in that order. Python
 concatenates these resources; no bundler, external script fetch or new build step
 is needed. CommonJS resolves the same dependencies with `require`. The public
 `PgDiagGraph` entry point and evaluation result retain their shape.
@@ -81,6 +82,34 @@ Rules:
   Mixed log tables (`server_lifecycle`, `system_incidents`, and the compatibility
   `crash_recovery_events`) use named, event-aware evaluators instead of a blanket
   row weight; a binding may provide context without proving a fault in that branch.
+- Nodes with more than six input bindings declare `binding_groups`: named
+  directions with stable local IDs and lists of 1–6 bound item IDs. The groups
+  must partition the complete input pool without duplicates or omissions.
+  Evaluation adds child nodes `<node>.sources.<group>` to the returned tree;
+  the parent retains its full evaluator input pool in `inputBindings`, while
+  `bindings` contains only the items displayed directly in its card. Parent
+  evaluator gates, own scores, facts, reasons and cause links remain intact.
+  Each direction declares an `evaluator` and assesses only its own bound inputs;
+  sibling findings and parent scores are never copied into its assessment.
+  `kind: sources` identifies these generated directions structurally, not a
+  special color. They use the same green/yellow/red/grey palette and are counted
+  in diagnostic coverage. Their findings propagate to ancestors; a healthy
+  sub-check alone cannot fill a missing parent assessment.
+  Green requires actual assessed measurements or a completed findings check,
+  not merely a populated item. Unknown risk levels and missing required metrics
+  remain grey, with the reason in `hints` (Assessment limits in the card).
+  Reference-only directions explicitly explain which criterion or baseline is
+  unavailable; they never assign OK for a device inventory or activity count.
+  New numeric direction checks display their actual warning/critical boundaries
+  with values and units. WAL generation, for example, uses p95 rate (or a valid
+  delta mean), full-page-image ratio and window WAL-buffer exhaustion events;
+  cumulative WAL bytes and an LSN cannot stand in for a rate. These resource
+  thresholds are triage heuristics, not proof of a saturated device.
+  Checkpoint trigger counts and log reasons stay in one direction so manual
+  checkpoints are not mislabeled as WAL pressure. Timing deltas carry their
+  completed-checkpoint denominator. Storage latency carries device type.
+  All branches start collapsed: only the six roots are visible, regardless of
+  severity. Users reveal individual directions or expand the entire graph.
 - Every read by a rule or its helpers MUST be declared in the node's bindings
   or an ancestor's bindings. Shared resource inputs belong to grouping nodes as
   facts; specific diagnostic sources belong to the consuming node. Ancestor
@@ -91,6 +120,8 @@ Rules:
   node, and every bound id MUST exist there. Items that exist in the catalog but
   not in a given artifact (older artifact, filtered report, one-shot mode) are
   reported as absent, never as an error.
+  Coverage also reports `unboundItems` from the actual artifact; navigation
+  checks must use its item IDs, including empty, failed and unsupported items.
 - `requires` names what the node needs to have data: `snapshots` (metric
   items exist only in the snapshots run mode), `host` (local or remote
   collection mode), `log` (`--log-depth-time-min`), or an extension name
@@ -372,45 +403,72 @@ and runbook sections 3.6, 4.5 and 6.
 
 ## 5. Rendering
 
-- Layout: roots in the top row, children in depth rows below, siblings side by
-  side, and parents centred above their first/last child. Subtree spans reserve
-  space for wrapped labels. Parent→child edges are straight solid segments
+- Layout: CPU, RAM, Disk and Network form the upper row of roots; Database
+  health and Database security form a second row below all visible resource
+  descendants and detail cards. Each branch has independent vertical spacing;
+  expanding the upper trees moves the lower row through the existing animation.
+  Children of one parent share a row, siblings sit side by side, and parents are centred
+  above their first/last child. Subtree spans reserve
+  space for the circles and their cards. Parent→child edges are straight solid segments
   clipped at the circles. There are no list-style elbows or column boxes.
 - Cause links are shown only for the selected node, as dashed arrows routed
   through level gutters and clear vertical lanes with rounded corners. They
   must not cross unrelated nodes or labels.
 - Node: a circle filled with the score gradient (green → yellow → red), grey
   when `no_data`, dashed stroke when the node is missing data because of the
-  run or collection mode. Root circles are enlarged with wrapped names inside;
-  other names are below their circles. A +N badge denotes collapsed children.
+  run or collection mode. All names wrap inside their circles, up to 50
+  characters including the ellipsis for longer names. Full names remain in
+  tooltips and details. Circle sizes are equal at each depth and decrease at
+  every child level; expanding a branch or changing its label never resizes
+  circles. The smallest circles still accommodate 50 characters. Text is fitted
+  within the circle with padding, including long words and wide glyphs.
+  A +N badge below the name, inside the circle, denotes collapsed children.
+  It reuses the report's neutral `.badge` pill and the node label's font size.
+  Name and badge are centered and fitted together, retaining the same text
+  scale even for long names and small circles.
+  Root captions use 42px type (twice the former 21px); child captions remain
+  15px. Long root captions still fit within their circles with their badges.
+  Non-root radii are reduced by a factor of 1.5 from the original level sizes;
+  adding source groups does not enlarge the diagnostic circles.
   No computed score percentages are displayed anywhere (circles, tooltips,
-  panel or child list). Measured values in reasons/facts retain their units.
+  panel). Measured values in reasons/facts retain their units.
   Status labels are OK / Warning / Critical / No data; security and health
   findings must never be labelled "Bottleneck".
 - Canvas: fixed-height viewport with drag-to-pan, wheel zoom anchored at the
-  pointer, and in-canvas minus/plus, Fit and 1:1 controls. Button zoom anchors
-  at the viewport centre; the scale readout is a multiplier. Start at a readable
-  scale, not a microscopic fit of all trees. Fit provides the full overview.
+  pointer, and in-canvas Expand all, Collapse all, minus/plus, Fit and 1:1 controls.
+  Expand all reveals every branch; Collapse all closes cards and returns to
+  the six roots. Both actions use the existing animation and refit the graph.
+  These controls share the zoom/full-screen toolbar, including in full screen.
+  Button zoom anchors
+  at the viewport centre; the scale readout is a multiplier. The initial view
+  uses the same Fit operation as the button, including when first shown after
+  loading with the graph hidden.
   A drag must not select or collapse a node. Keyboard +/- zoom, Home/0 fits,
   arrows pan and Enter/Space activates a focused node. User viewport state
   survives node selection; resizing refits only in Fit mode. Re-rendering
   disconnects the old resize observer.
+- Full screen: an in-canvas button expands the canvas to the entire page
+  viewport, with Exit full screen and Escape returning to the report. The
+  graph keeps its expanded nodes, details and manual zoom; Fit adapts to the
+  available space. Opening a report item exits this mode before navigating.
 - Click: a details card unfolds immediately below the node, inside the SVG
   scene via `foreignObject`, and scales/pans with the graph. It
   shows the node summary, status, reasons, facts, the
   hints for missing data, and the bound items as chips (title, collection
   status, presence); clicking a chip calls `navigateToItem`. Hover shows the
   reasons as a tooltip. All content is included, without a fixed-height internal
-  scroll area. The card has a fixed width in graph coordinates and its actual
+  scroll area. Children appear as connected nodes on the canvas and are not
+  repeated as a list in the card. The card has a fixed width in graph coordinates and its actual
   HTML height is measured before layout. A second click (including on a leaf)
   closes the card; selecting another node replaces it. There is no separate
   details panel below the canvas.
   If children raise the score above the node's own score, the panel states
-  that explicitly without a numeric score. Warning/critical branches initially
-  expand to reveal their possible contributors.
+  that explicitly without a numeric score. Hidden warnings still contribute
+  to ancestor colors while the graph starts collapsed.
 - Opening/closing cards and branches animates node positions, connected edges
-  and card reveal over 300 ms. Subtree spans reserve the card width, and deeper
-  rows move below its full height so cards cannot cover other nodes or edges.
+  and card reveal over 300 ms. Subtree spans reserve the card width; only the
+  node's descendants move below its full height. Other branches keep their
+  vertical spacing, so a card never stretches the children of a nearby node.
   The clicked circle stays anchored in screen space and the zoom is unchanged.
   Interruptions start from the current interpolated positions, not the previous
   destination. Closing cards cannot receive clicks. `prefers-reduced-motion`
@@ -447,16 +505,21 @@ and runbook sections 3.6, 4.5 and 6.
   visible parent/cause strokes, a no-data color, and an opaque panel background;
   assertions inspect computed styles, not only HTML placeholder strings.
   Normal and wide viewports must also pass zoom/pan, drag-versus-click, fit,
-  contained root labels, selected-only cause links, non-percentage statuses
+  contained node labels, selected-only cause links, non-percentage statuses
   and inline card placement/scale checks. Animation tests inspect intermediate
   positions, open/close symmetry, anchor preservation, rapid interruptions,
   reduced motion, complete card content and cleanup during re-render.
 
-`tests/js/diagnostic_graph_architecture.test.js` checks the single registry and
+`tests/js/diagnostic_graph_architecture.test.js` checks the evaluator registries and
 explicit parameters, real dependency reads, failed-payload isolation across all
 rules, sample eligibility, timestamp/missing-value policies, source windows,
 pressure/cap/child ordering, renamed/reordered graph equivalence and browser UMD
 versus CommonJS parity. Existing metric regression and renderer tests remain.
+
+`tests/js/diagnostic_graph_groups.test.js` checks direction input isolation,
+parent own-assessment preservation, finding propagation, item reachability,
+actual WAL thresholds, hidden zero series, invalid intervals, connection refusals,
+unknown security baselines and missing durability/replication measurements.
 
 ## 7. Change policy
 

@@ -29,6 +29,7 @@ function checkBindings(artifact, graph = definition) {
   const allowed = {};
   for (const node of graph.nodes) {
     const ids = allowed[node.id] = new Set();
+    for (const group of node.binding_groups || []) allowed[node.id + ".sources." + group.id] = new Set(group.bindings);
     for (let current = node; current; current = nodes[current.parent]) {
       for (const binding of current.bindings) ids.add(binding.id);
     }
@@ -250,12 +251,15 @@ test("renaming nodes and reversing traversal preserve scores and explanations", 
   for (const node of definition.nodes.filter(node => node.params)) for (const binding of node.bindings) artifact.items[binding.id] ||= table([], "empty");
   const a = G.evaluate(artifact, definition), b = G.evaluate(artifact, graph);
   assertNoErrors(a); assertNoErrors(b);
-  for (const [id, node] of Object.entries(a.nodes)) assert.deepEqual(ownEvidence(node), ownEvidence(b.nodes[names[id]]), id);
+  for (const [id, node] of Object.entries(a.nodes)) {
+    const renamed = node.kind === "sources" ? names[node.parent] + id.slice(node.parent.length) : names[id];
+    assert.deepEqual(ownEvidence(node), ownEvidence(b.nodes[renamed]), id);
+  }
 });
 
 test("browser UMD assets and CommonJS expose the same public evaluation", () => {
   const context = vm.createContext({});
-  for (const file of ["pg-diag-graph-data.js", "pg-diag-graph-rules.js", "pg-diag-graph.js"]) {
+  for (const file of ["pg-diag-graph-data.js", "pg-diag-graph-rules.js", "pg-diag-graph-groups.js", "pg-diag-graph.js"]) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, "../../src/pg_diag/render/graph", file), "utf8"), context);
   }
   assert.deepEqual(copy(context.PgDiagGraph.evaluate(fixture, definition)), G.evaluate(fixture, definition));

@@ -487,14 +487,15 @@ test("generic findings use the worst risk_level row and the binding weight other
 
 test("lab snapshots fixture evaluates every node without errors and with data", () => {
   const ev = G.evaluate(fixture("lab_snapshots.json"), definition);
-  assert.equal(ev.order.length, definition.nodes.length);
+  assert.equal(ev.order.filter(id => ev.nodes[id].kind !== "sources").length, definition.nodes.length);
   for (const nodeId of ev.order) assert.equal(ev.nodes[nodeId].error, null, nodeId);
   assert.equal(ev.coverage.rootsWithData, 6);
-  assert.deepEqual(ev.order.filter(id => !id.startsWith("network") && ev.nodes[id].status === "no_data"), ["cpu.steal"], "legacy fixture has no measured zero metadata for steal");
+  assert.deepEqual(ev.order.filter(id => ev.nodes[id].kind !== "sources" && !id.startsWith("network") && ev.nodes[id].status === "no_data"), ["cpu.steal"], "legacy fixture has no measured zero metadata for steal");
   assert.equal(ev.nodes["cpu.steal"].status, "no_data");
   assert.equal(ev.nodes["network.interfaces.errors"].status, "no_data", "old fixture has no interface error chart");
   assert.equal(ev.nodes["network.traffic.receive"].status, "no_data", "throughput without matching link speed is a fact, not a verdict");
-  assert.equal(ev.nodes["cpu"].status, "ok");
+  assert.equal(ev.nodes["cpu"].ownStatus, "no_data", "CPU root aggregates its diagnostic branches");
+  assert.equal(ev.nodes["cpu"].status, "warn", "independently assessed directions propagate their findings");
   assert.equal(ev.nodes["database_security"].status, "crit");
   assert.ok(ev.nodes["disk.saturation"].reasons[0].includes("nvme0n1 (nvme)"));
   assert.ok(ev.links.length > 0);

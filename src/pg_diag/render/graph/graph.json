@@ -118,7 +118,39 @@
           "role": "support"
         }
       ],
-      "pressure": "cpu_user"
+      "pressure": "cpu_user",
+      "binding_groups": [
+        {
+          "id": "statements",
+          "label": "Statement execution and planning",
+          "bindings": [
+            "sql_workload.top_sql_by_total_time",
+            "sql_workload.top_sql_by_mean_time",
+            "snapshot_delta_workload.sql_time_delta",
+            "snapshot_delta_workload.sql_cpu_efficiency_delta",
+            "snapshot_delta_workload.sql_planning_delta"
+          ],
+          "evaluator": "statements"
+        },
+        {
+          "id": "functions",
+          "label": "Stored functions",
+          "bindings": [
+            "object_workload.function_workload",
+            "snapshot_delta_workload.function_time_delta"
+          ],
+          "evaluator": "functions"
+        },
+        {
+          "id": "plans",
+          "label": "Plans and resource events",
+          "bindings": [
+            "server_log.auto_explain_plans",
+            "server_log.query_resource_events"
+          ],
+          "evaluator": "plans"
+        }
+      ]
     },
     {
       "id": "cpu.seq_scans",
@@ -215,7 +247,44 @@
           "weight": 0.3
         }
       ],
-      "pressure": "cpu_user"
+      "pressure": "cpu_user",
+      "binding_groups": [
+        {
+          "id": "activity",
+          "label": "Index activity",
+          "bindings": [
+            "snapshot_delta_workload.index_usage_delta",
+            "snapshot_charts_db.indexes_top_scan_rate",
+            "snapshot_charts_db.indexes_top_tuple_fetch_rate"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "Scan and fetch rates measure index activity. Frequency alone does not establish inefficiency; examine read amplification and the query plan."
+        },
+        {
+          "id": "efficiency",
+          "label": "Index read efficiency",
+          "bindings": [
+            "snapshot_charts_db.indexes_top_reads_per_fetch",
+            "snapshot_charts_db.indexes_top_reads_per_scan",
+            "snapshot_charts_db.indexes_top_fetches_per_scan",
+            "snapshot_charts_db.indexes_top_tuple_read_rate",
+            "object_workload.index_workload"
+          ],
+          "evaluator": "index_activity"
+        },
+        {
+          "id": "design",
+          "label": "Index design and use",
+          "bindings": [
+            "snapshot_charts_db.tables_top_index_fetch_rate",
+            "indexes.unused_indexes",
+            "indexes.redundant_indexes",
+            "indexes.duplicate_indexes",
+            "indexes.large_indexes"
+          ],
+          "evaluator": "findings"
+        }
+      ]
     },
     {
       "id": "cpu.light_queries",
@@ -425,6 +494,37 @@
         {
           "id": "snapshot_charts_db.database_page_fault_rate",
           "role": "support"
+        }
+      ],
+      "binding_groups": [
+        {
+          "id": "system",
+          "label": "System CPU load",
+          "bindings": [
+            "snapshot_charts_os.os_cpu_utilization",
+            "snapshot_charts_db.database_kernel_cpu_rate"
+          ],
+          "evaluator": "system_cpu"
+        },
+        {
+          "id": "statements",
+          "label": "Statements and context switches",
+          "bindings": [
+            "snapshot_delta_workload.sql_kernel_cpu_delta",
+            "snapshot_delta_workload.sql_planning_kernel_delta",
+            "snapshot_delta_workload.sql_context_switches_delta"
+          ],
+          "evaluator": "statement_kernel"
+        },
+        {
+          "id": "paging",
+          "label": "Page faults",
+          "bindings": [
+            "snapshot_delta_workload.sql_page_faults_delta",
+            "snapshot_charts_db.database_page_fault_rate"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "Page-fault counts alone do not establish memory pressure. Minor faults need no disk read; major faults require correlation with memory availability and I/O latency."
         }
       ]
     },
@@ -664,7 +764,57 @@
           "role": "fact"
         }
       ],
-      "pressure": "cpu_iowait"
+      "pressure": "cpu_iowait",
+      "binding_groups": [
+        {
+          "id": "throughput",
+          "label": "Read throughput",
+          "bindings": [
+            "snapshot_charts_os.os_disk_read_throughput",
+            "snapshot_charts_db.io_read_write_rate"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "These measurements describe read throughput. Activity volume alone has no universal healthy limit; capacity, latency or workload expectations are required for a health assessment."
+        },
+        {
+          "id": "postgres",
+          "label": "PostgreSQL and process reads",
+          "bindings": [
+            "wal_io_checkpoints.pg_stat_io",
+            "snapshot_delta_workload.postgresql_io_delta",
+            "backend_os.backend_proc_io",
+            "snapshot_charts_db.database_filesystem_io_rate",
+            "snapshot_delta_workload.sql_filesystem_io_delta"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "These measurements describe postgresql and process reads. Activity volume alone has no universal healthy limit; capacity, latency or workload expectations are required for a health assessment."
+        },
+        {
+          "id": "device",
+          "label": "Device latency and waits",
+          "bindings": [
+            "snapshot_charts_os.os_disk_latency",
+            "snapshot_charts_os.os_disk_utilization",
+            "snapshot_charts_os.os_disk_iops",
+            "activity_locks.wait_events",
+            "snapshot_charts_db.database_io_time_rate",
+            "os.lshw_disk"
+          ],
+          "evaluator": "device"
+        },
+        {
+          "id": "storage",
+          "label": "Storage devices and mounts",
+          "bindings": [
+            "os.lshw_storage",
+            "os.lshw_volume",
+            "os.mounts",
+            "os.fstab"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "Device and mount inventories describe the storage topology. They contain no measured latency, free-space or failure criterion; use Device latency and waits or Free space."
+        }
+      ]
     },
     {
       "id": "cpu.iowait.read.queries",
@@ -709,7 +859,33 @@
           "role": "support"
         }
       ],
-      "pressure": "cpu_iowait"
+      "pressure": "cpu_iowait",
+      "binding_groups": [
+        {
+          "id": "statements",
+          "label": "Statement block reads",
+          "bindings": [
+            "overview.pg_settings",
+            "sql_workload.top_sql_by_shared_io",
+            "snapshot_delta_workload.sql_io_delta",
+            "snapshot_delta_workload.sql_io_attribution_delta"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "These measurements describe statement block reads. Activity volume alone has no universal healthy limit; capacity, latency or workload expectations are required for a health assessment."
+        },
+        {
+          "id": "tables",
+          "label": "Table and index block reads",
+          "bindings": [
+            "object_workload.table_io",
+            "snapshot_delta_workload.table_io_delta",
+            "snapshot_charts_db.tables_top_heap_read_rate",
+            "snapshot_charts_db.tables_top_index_block_read_rate"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "These measurements describe table and index block reads. Activity volume alone has no universal healthy limit; capacity, latency or workload expectations are required for a health assessment."
+        }
+      ]
     },
     {
       "id": "cpu.iowait.read.queries.scans",
@@ -806,7 +982,44 @@
           "weight": 0.3
         }
       ],
-      "pressure": "cpu_iowait"
+      "pressure": "cpu_iowait",
+      "binding_groups": [
+        {
+          "id": "activity",
+          "label": "Index activity",
+          "bindings": [
+            "snapshot_delta_workload.index_usage_delta",
+            "snapshot_charts_db.indexes_top_scan_rate",
+            "snapshot_charts_db.indexes_top_tuple_fetch_rate"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "Scan and fetch rates measure index activity. Frequency alone does not establish inefficiency; examine read amplification and the query plan."
+        },
+        {
+          "id": "efficiency",
+          "label": "Index read efficiency",
+          "bindings": [
+            "snapshot_charts_db.indexes_top_reads_per_fetch",
+            "snapshot_charts_db.indexes_top_reads_per_scan",
+            "snapshot_charts_db.indexes_top_fetches_per_scan",
+            "snapshot_charts_db.indexes_top_tuple_read_rate",
+            "object_workload.index_workload"
+          ],
+          "evaluator": "index_activity"
+        },
+        {
+          "id": "design",
+          "label": "Index design and use",
+          "bindings": [
+            "snapshot_charts_db.tables_top_index_fetch_rate",
+            "indexes.unused_indexes",
+            "indexes.redundant_indexes",
+            "indexes.duplicate_indexes",
+            "indexes.large_indexes"
+          ],
+          "evaluator": "findings"
+        }
+      ]
     },
     {
       "id": "cpu.iowait.read.queries.bloat",
@@ -959,7 +1172,30 @@
           "role": "support"
         }
       ],
-      "pressure": "cpu_iowait"
+      "pressure": "cpu_iowait",
+      "binding_groups": [
+        {
+          "id": "statements",
+          "label": "Statement spills and events",
+          "bindings": [
+            "sql_workload.top_sql_by_temp_io",
+            "snapshot_delta_workload.sql_temp_io_delta",
+            "server_log.query_resource_events"
+          ],
+          "evaluator": "temp_statements"
+        },
+        {
+          "id": "database",
+          "label": "Database temporary files",
+          "bindings": [
+            "snapshot_charts_db.database_temp_bytes_rate",
+            "snapshot_charts_db.database_temp_files_delta",
+            "overview.database_stats",
+            "snapshot_delta_workload.database_workload_delta"
+          ],
+          "evaluator": "temp_database"
+        }
+      ]
     },
     {
       "id": "cpu.iowait.write",
@@ -1021,7 +1257,45 @@
           "role": "fact"
         }
       ],
-      "pressure": "cpu_iowait"
+      "pressure": "cpu_iowait",
+      "binding_groups": [
+        {
+          "id": "throughput",
+          "label": "Write throughput and buffers",
+          "bindings": [
+            "snapshot_charts_os.os_disk_write_throughput",
+            "snapshot_charts_db.io_read_write_rate",
+            "snapshot_charts_db.buffer_writes_by_process"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "These measurements describe write throughput and buffers. Activity volume alone has no universal healthy limit; capacity, latency or workload expectations are required for a health assessment."
+        },
+        {
+          "id": "device",
+          "label": "Device latency and waits",
+          "bindings": [
+            "snapshot_charts_os.os_disk_latency",
+            "snapshot_charts_os.os_disk_utilization",
+            "snapshot_charts_os.os_disk_iops",
+            "activity_locks.wait_events",
+            "snapshot_charts_db.database_io_time_rate",
+            "os.lshw_disk"
+          ],
+          "evaluator": "device"
+        },
+        {
+          "id": "storage",
+          "label": "Storage devices and mounts",
+          "bindings": [
+            "os.lshw_storage",
+            "os.lshw_volume",
+            "os.mounts",
+            "os.fstab"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "Device and mount inventories describe the storage topology. They contain no measured latency, free-space or failure criterion; use Device latency and waits or Free space."
+        }
+      ]
     },
     {
       "id": "cpu.iowait.write.wal",
@@ -1059,7 +1333,37 @@
           "role": "fact"
         }
       ],
-      "pressure": "cpu_iowait"
+      "pressure": "cpu_iowait",
+      "binding_groups": [
+        {
+          "id": "activity",
+          "label": "WAL generation",
+          "bindings": [
+            "snapshot_charts_db.wal_growth_rate",
+            "wal_io_checkpoints.wal_statistics",
+            "snapshot_delta_workload.wal_activity_delta",
+            "wal_io_checkpoints.wal_position"
+          ],
+          "evaluator": "wal_generation"
+        },
+        {
+          "id": "statements",
+          "label": "Statements generating WAL",
+          "bindings": [
+            "sql_workload.top_sql_by_wal",
+            "snapshot_delta_workload.sql_wal_delta"
+          ],
+          "evaluator": "wal_statements"
+        },
+        {
+          "id": "durability",
+          "label": "Durability settings",
+          "bindings": [
+            "overview.durability_safety_settings"
+          ],
+          "evaluator": "durability"
+        }
+      ]
     },
     {
       "id": "cpu.iowait.write.temp_files",
@@ -1097,7 +1401,30 @@
           "role": "support"
         }
       ],
-      "pressure": "cpu_iowait"
+      "pressure": "cpu_iowait",
+      "binding_groups": [
+        {
+          "id": "statements",
+          "label": "Statement spills and events",
+          "bindings": [
+            "sql_workload.top_sql_by_temp_io",
+            "snapshot_delta_workload.sql_temp_io_delta",
+            "server_log.query_resource_events"
+          ],
+          "evaluator": "temp_statements"
+        },
+        {
+          "id": "database",
+          "label": "Database temporary files",
+          "bindings": [
+            "snapshot_charts_db.database_temp_bytes_rate",
+            "snapshot_charts_db.database_temp_files_delta",
+            "overview.database_stats",
+            "snapshot_delta_workload.database_workload_delta"
+          ],
+          "evaluator": "temp_database"
+        }
+      ]
     },
     {
       "id": "cpu.iowait.write.data",
@@ -1143,7 +1470,38 @@
           "role": "support"
         }
       ],
-      "pressure": "cpu_iowait"
+      "pressure": "cpu_iowait",
+      "binding_groups": [
+        {
+          "id": "activity",
+          "label": "Checkpoint triggers and logs",
+          "bindings": [
+            "snapshot_charts_db.checkpoint_trigger_events",
+            "wal_io_checkpoints.checkpointer",
+            "wal_io_checkpoints.bgwriter",
+            "server_log.checkpoints"
+          ],
+          "evaluator": "checkpoint_activity"
+        },
+        {
+          "id": "timing",
+          "label": "Checkpoint timings",
+          "bindings": [
+            "snapshot_charts_db.checkpoint_write_sync_time_delta",
+            "snapshot_delta_workload.checkpointer_delta"
+          ],
+          "evaluator": "checkpoint_timing"
+        },
+        {
+          "id": "restartpoints",
+          "label": "Recovery restartpoints",
+          "bindings": [
+            "snapshot_charts_db.restartpoint_events"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "Restartpoints are normal during recovery. Event counts alone have no failure threshold without WAL/recovery progress and timing context."
+        }
+      ]
     },
     {
       "id": "cpu.iowait.write.data.backend_writes",
@@ -1231,7 +1589,50 @@
           "role": "fact"
         }
       ],
-      "pressure": "cpu_iowait"
+      "pressure": "cpu_iowait",
+      "binding_groups": [
+        {
+          "id": "changes",
+          "label": "Insert, update and delete rates",
+          "bindings": [
+            "snapshot_charts_db.tables_top_dml_rate",
+            "snapshot_charts_db.tables_top_update_rate",
+            "snapshot_charts_db.tables_top_insert_rate",
+            "snapshot_charts_db.tables_top_delete_rate",
+            "snapshot_delta_workload.table_dml_delta"
+          ],
+          "evaluator": "dml"
+        },
+        {
+          "id": "tables",
+          "label": "Table churn and HOT updates",
+          "bindings": [
+            "object_workload.table_workload",
+            "snapshot_charts_db.tables_top_hot_update_rate",
+            "snapshot_charts_db.database_tuple_dml_rate"
+          ],
+          "evaluator": "table_churn"
+        },
+        {
+          "id": "statements",
+          "label": "Statements writing blocks",
+          "bindings": [
+            "sql_workload.top_sql_by_shared_io"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "These measurements describe statements writing blocks. Activity volume alone has no universal healthy limit; capacity, latency or workload expectations are required for a health assessment."
+        },
+        {
+          "id": "persistence",
+          "label": "Table persistence and settings",
+          "bindings": [
+            "storage_vacuum.unlogged_tables",
+            "overview.pg_settings"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "Table persistence and settings describe intended durability choices; whether those choices are acceptable requires application requirements."
+        }
+      ]
     },
     {
       "id": "cpu.iowait.write.data.autovacuum",
@@ -1355,6 +1756,29 @@
         {
           "id": "server_log.system_incidents",
           "role": "support"
+        }
+      ],
+      "binding_groups": [
+        {
+          "id": "capacity",
+          "label": "Memory capacity and usage",
+          "bindings": [
+            "snapshot_charts_os.os_memory_usage",
+            "os.memory_info",
+            "os.total_ram",
+            "os.lshw_memory"
+          ],
+          "evaluator": "memory"
+        },
+        {
+          "id": "pressure",
+          "label": "Memory pressure and incidents",
+          "bindings": [
+            "snapshot_charts_os.os_memory_pressure",
+            "server_log.crash_recovery_events",
+            "server_log.system_incidents"
+          ],
+          "evaluator": "memory"
         }
       ]
     },
@@ -1773,6 +2197,33 @@
           "id": "os.fstab",
           "role": "fact"
         }
+      ],
+      "binding_groups": [
+        {
+          "id": "device",
+          "label": "Device latency and waits",
+          "bindings": [
+            "snapshot_charts_os.os_disk_latency",
+            "snapshot_charts_os.os_disk_utilization",
+            "snapshot_charts_os.os_disk_iops",
+            "activity_locks.wait_events",
+            "snapshot_charts_db.database_io_time_rate",
+            "os.lshw_disk"
+          ],
+          "evaluator": "device"
+        },
+        {
+          "id": "storage",
+          "label": "Storage devices and mounts",
+          "bindings": [
+            "os.lshw_storage",
+            "os.lshw_volume",
+            "os.mounts",
+            "os.fstab"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "Device and mount inventories describe the storage topology. They contain no measured latency, free-space or failure criterion; use Device latency and waits or Free space."
+        }
       ]
     },
     {
@@ -1850,6 +2301,56 @@
           "id": "os.fstab",
           "role": "fact"
         }
+      ],
+      "binding_groups": [
+        {
+          "id": "throughput",
+          "label": "Read throughput",
+          "bindings": [
+            "snapshot_charts_os.os_disk_read_throughput",
+            "snapshot_charts_db.io_read_write_rate"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "These measurements describe read throughput. Activity volume alone has no universal healthy limit; capacity, latency or workload expectations are required for a health assessment."
+        },
+        {
+          "id": "postgres",
+          "label": "PostgreSQL and process reads",
+          "bindings": [
+            "wal_io_checkpoints.pg_stat_io",
+            "snapshot_delta_workload.postgresql_io_delta",
+            "backend_os.backend_proc_io",
+            "snapshot_charts_db.database_filesystem_io_rate",
+            "snapshot_delta_workload.sql_filesystem_io_delta"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "These measurements describe postgresql and process reads. Activity volume alone has no universal healthy limit; capacity, latency or workload expectations are required for a health assessment."
+        },
+        {
+          "id": "device",
+          "label": "Device latency and waits",
+          "bindings": [
+            "snapshot_charts_os.os_disk_latency",
+            "snapshot_charts_os.os_disk_utilization",
+            "snapshot_charts_os.os_disk_iops",
+            "activity_locks.wait_events",
+            "snapshot_charts_db.database_io_time_rate",
+            "os.lshw_disk"
+          ],
+          "evaluator": "device"
+        },
+        {
+          "id": "storage",
+          "label": "Storage devices and mounts",
+          "bindings": [
+            "os.lshw_storage",
+            "os.lshw_volume",
+            "os.mounts",
+            "os.fstab"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "Device and mount inventories describe the storage topology. They contain no measured latency, free-space or failure criterion; use Device latency and waits or Free space."
+        }
       ]
     },
     {
@@ -1895,7 +2396,33 @@
           "role": "support"
         }
       ],
-      "pressure": "disk"
+      "pressure": "disk",
+      "binding_groups": [
+        {
+          "id": "statements",
+          "label": "Statement block reads",
+          "bindings": [
+            "overview.pg_settings",
+            "sql_workload.top_sql_by_shared_io",
+            "snapshot_delta_workload.sql_io_delta",
+            "snapshot_delta_workload.sql_io_attribution_delta"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "These measurements describe statement block reads. Activity volume alone has no universal healthy limit; capacity, latency or workload expectations are required for a health assessment."
+        },
+        {
+          "id": "tables",
+          "label": "Table and index block reads",
+          "bindings": [
+            "object_workload.table_io",
+            "snapshot_delta_workload.table_io_delta",
+            "snapshot_charts_db.tables_top_heap_read_rate",
+            "snapshot_charts_db.tables_top_index_block_read_rate"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "These measurements describe table and index block reads. Activity volume alone has no universal healthy limit; capacity, latency or workload expectations are required for a health assessment."
+        }
+      ]
     },
     {
       "id": "disk.read.queries.scans",
@@ -1992,7 +2519,44 @@
           "weight": 0.3
         }
       ],
-      "pressure": "disk"
+      "pressure": "disk",
+      "binding_groups": [
+        {
+          "id": "activity",
+          "label": "Index activity",
+          "bindings": [
+            "snapshot_delta_workload.index_usage_delta",
+            "snapshot_charts_db.indexes_top_scan_rate",
+            "snapshot_charts_db.indexes_top_tuple_fetch_rate"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "Scan and fetch rates measure index activity. Frequency alone does not establish inefficiency; examine read amplification and the query plan."
+        },
+        {
+          "id": "efficiency",
+          "label": "Index read efficiency",
+          "bindings": [
+            "snapshot_charts_db.indexes_top_reads_per_fetch",
+            "snapshot_charts_db.indexes_top_reads_per_scan",
+            "snapshot_charts_db.indexes_top_fetches_per_scan",
+            "snapshot_charts_db.indexes_top_tuple_read_rate",
+            "object_workload.index_workload"
+          ],
+          "evaluator": "index_activity"
+        },
+        {
+          "id": "design",
+          "label": "Index design and use",
+          "bindings": [
+            "snapshot_charts_db.tables_top_index_fetch_rate",
+            "indexes.unused_indexes",
+            "indexes.redundant_indexes",
+            "indexes.duplicate_indexes",
+            "indexes.large_indexes"
+          ],
+          "evaluator": "findings"
+        }
+      ]
     },
     {
       "id": "disk.read.queries.bloat",
@@ -2144,7 +2708,30 @@
           "role": "support"
         }
       ],
-      "pressure": "disk"
+      "pressure": "disk",
+      "binding_groups": [
+        {
+          "id": "statements",
+          "label": "Statement spills and events",
+          "bindings": [
+            "sql_workload.top_sql_by_temp_io",
+            "snapshot_delta_workload.sql_temp_io_delta",
+            "server_log.query_resource_events"
+          ],
+          "evaluator": "temp_statements"
+        },
+        {
+          "id": "database",
+          "label": "Database temporary files",
+          "bindings": [
+            "snapshot_charts_db.database_temp_bytes_rate",
+            "snapshot_charts_db.database_temp_files_delta",
+            "overview.database_stats",
+            "snapshot_delta_workload.database_workload_delta"
+          ],
+          "evaluator": "temp_database"
+        }
+      ]
     },
     {
       "id": "disk.write",
@@ -2205,6 +2792,44 @@
           "id": "os.fstab",
           "role": "fact"
         }
+      ],
+      "binding_groups": [
+        {
+          "id": "throughput",
+          "label": "Write throughput and buffers",
+          "bindings": [
+            "snapshot_charts_os.os_disk_write_throughput",
+            "snapshot_charts_db.io_read_write_rate",
+            "snapshot_charts_db.buffer_writes_by_process"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "These measurements describe write throughput and buffers. Activity volume alone has no universal healthy limit; capacity, latency or workload expectations are required for a health assessment."
+        },
+        {
+          "id": "device",
+          "label": "Device latency and waits",
+          "bindings": [
+            "snapshot_charts_os.os_disk_latency",
+            "snapshot_charts_os.os_disk_utilization",
+            "snapshot_charts_os.os_disk_iops",
+            "activity_locks.wait_events",
+            "snapshot_charts_db.database_io_time_rate",
+            "os.lshw_disk"
+          ],
+          "evaluator": "device"
+        },
+        {
+          "id": "storage",
+          "label": "Storage devices and mounts",
+          "bindings": [
+            "os.lshw_storage",
+            "os.lshw_volume",
+            "os.mounts",
+            "os.fstab"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "Device and mount inventories describe the storage topology. They contain no measured latency, free-space or failure criterion; use Device latency and waits or Free space."
+        }
       ]
     },
     {
@@ -2243,7 +2868,37 @@
           "role": "fact"
         }
       ],
-      "pressure": "disk"
+      "pressure": "disk",
+      "binding_groups": [
+        {
+          "id": "activity",
+          "label": "WAL generation",
+          "bindings": [
+            "snapshot_charts_db.wal_growth_rate",
+            "wal_io_checkpoints.wal_statistics",
+            "snapshot_delta_workload.wal_activity_delta",
+            "wal_io_checkpoints.wal_position"
+          ],
+          "evaluator": "wal_generation"
+        },
+        {
+          "id": "statements",
+          "label": "Statements generating WAL",
+          "bindings": [
+            "sql_workload.top_sql_by_wal",
+            "snapshot_delta_workload.sql_wal_delta"
+          ],
+          "evaluator": "wal_statements"
+        },
+        {
+          "id": "durability",
+          "label": "Durability settings",
+          "bindings": [
+            "overview.durability_safety_settings"
+          ],
+          "evaluator": "durability"
+        }
+      ]
     },
     {
       "id": "disk.write.temp_files",
@@ -2281,7 +2936,30 @@
           "role": "support"
         }
       ],
-      "pressure": "disk"
+      "pressure": "disk",
+      "binding_groups": [
+        {
+          "id": "statements",
+          "label": "Statement spills and events",
+          "bindings": [
+            "sql_workload.top_sql_by_temp_io",
+            "snapshot_delta_workload.sql_temp_io_delta",
+            "server_log.query_resource_events"
+          ],
+          "evaluator": "temp_statements"
+        },
+        {
+          "id": "database",
+          "label": "Database temporary files",
+          "bindings": [
+            "snapshot_charts_db.database_temp_bytes_rate",
+            "snapshot_charts_db.database_temp_files_delta",
+            "overview.database_stats",
+            "snapshot_delta_workload.database_workload_delta"
+          ],
+          "evaluator": "temp_database"
+        }
+      ]
     },
     {
       "id": "disk.write.data",
@@ -2327,7 +3005,38 @@
           "role": "support"
         }
       ],
-      "pressure": "disk"
+      "pressure": "disk",
+      "binding_groups": [
+        {
+          "id": "activity",
+          "label": "Checkpoint triggers and logs",
+          "bindings": [
+            "snapshot_charts_db.checkpoint_trigger_events",
+            "wal_io_checkpoints.checkpointer",
+            "wal_io_checkpoints.bgwriter",
+            "server_log.checkpoints"
+          ],
+          "evaluator": "checkpoint_activity"
+        },
+        {
+          "id": "timing",
+          "label": "Checkpoint timings",
+          "bindings": [
+            "snapshot_charts_db.checkpoint_write_sync_time_delta",
+            "snapshot_delta_workload.checkpointer_delta"
+          ],
+          "evaluator": "checkpoint_timing"
+        },
+        {
+          "id": "restartpoints",
+          "label": "Recovery restartpoints",
+          "bindings": [
+            "snapshot_charts_db.restartpoint_events"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "Restartpoints are normal during recovery. Event counts alone have no failure threshold without WAL/recovery progress and timing context."
+        }
+      ]
     },
     {
       "id": "disk.write.backend_writes",
@@ -2415,7 +3124,50 @@
           "role": "fact"
         }
       ],
-      "pressure": "disk"
+      "pressure": "disk",
+      "binding_groups": [
+        {
+          "id": "changes",
+          "label": "Insert, update and delete rates",
+          "bindings": [
+            "snapshot_charts_db.tables_top_dml_rate",
+            "snapshot_charts_db.tables_top_update_rate",
+            "snapshot_charts_db.tables_top_insert_rate",
+            "snapshot_charts_db.tables_top_delete_rate",
+            "snapshot_delta_workload.table_dml_delta"
+          ],
+          "evaluator": "dml"
+        },
+        {
+          "id": "tables",
+          "label": "Table churn and HOT updates",
+          "bindings": [
+            "object_workload.table_workload",
+            "snapshot_charts_db.tables_top_hot_update_rate",
+            "snapshot_charts_db.database_tuple_dml_rate"
+          ],
+          "evaluator": "table_churn"
+        },
+        {
+          "id": "statements",
+          "label": "Statements writing blocks",
+          "bindings": [
+            "sql_workload.top_sql_by_shared_io"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "These measurements describe statements writing blocks. Activity volume alone has no universal healthy limit; capacity, latency or workload expectations are required for a health assessment."
+        },
+        {
+          "id": "persistence",
+          "label": "Table persistence and settings",
+          "bindings": [
+            "storage_vacuum.unlogged_tables",
+            "overview.pg_settings"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "Table persistence and settings describe intended durability choices; whether those choices are acceptable requires application requirements."
+        }
+      ]
     },
     {
       "id": "disk.write.autovacuum",
@@ -2481,6 +3233,37 @@
         {
           "id": "server_log.system_incidents",
           "role": "support"
+        }
+      ],
+      "binding_groups": [
+        {
+          "id": "sizes",
+          "label": "Filesystem and relation sizes",
+          "bindings": [
+            "os.disk_usage",
+            "overview.database_volume",
+            "storage_vacuum.table_size_detailed",
+            "cluster_inventory.tablespaces"
+          ],
+          "evaluator": "disk_space"
+        },
+        {
+          "id": "retention",
+          "label": "WAL and log retention",
+          "bindings": [
+            "server_log.log_files_overview",
+            "replication.replication_slots",
+            "wal_io_checkpoints.wal_archiver"
+          ],
+          "evaluator": "disk_retention"
+        },
+        {
+          "id": "incidents",
+          "label": "Storage incidents",
+          "bindings": [
+            "server_log.system_incidents"
+          ],
+          "evaluator": "storage_incidents"
         }
       ]
     },
@@ -2804,6 +3587,36 @@
           "id": "snapshot_delta_workload.database_session_outcomes_delta",
           "role": "support"
         }
+      ],
+      "binding_groups": [
+        {
+          "id": "limits",
+          "label": "Connection capacity and limits",
+          "bindings": [
+            "activity_locks.connection_pressure",
+            "overview.pg_settings"
+          ],
+          "evaluator": "connection_limits"
+        },
+        {
+          "id": "sessions",
+          "label": "Sessions and roles",
+          "bindings": [
+            "users_roles.session_usage",
+            "activity_locks.session_states",
+            "snapshot_charts_db.activity_sessions_by_state"
+          ],
+          "evaluator": "sessions"
+        },
+        {
+          "id": "outcomes",
+          "label": "Connection outcomes and incidents",
+          "bindings": [
+            "server_log.system_incidents",
+            "snapshot_delta_workload.database_session_outcomes_delta"
+          ],
+          "evaluator": "connection_outcomes"
+        }
       ]
     },
     {
@@ -2927,6 +3740,30 @@
           "id": "backend_os.postgres_process_tree",
           "role": "fact"
         }
+      ],
+      "binding_groups": [
+        {
+          "id": "senders",
+          "label": "WAL senders and lag",
+          "bindings": [
+            "replication.physical_replication",
+            "snapshot_charts_db.replication_sender_lag_bytes",
+            "snapshot_charts_db.replication_sender_lag_seconds",
+            "snapshot_delta_workload.physical_replication_progress_delta"
+          ],
+          "evaluator": "network_senders"
+        },
+        {
+          "id": "resources",
+          "label": "Sender CPU and network traffic",
+          "bindings": [
+            "backend_os.backend_proc_cpu",
+            "snapshot_charts_os.os_network_transmit",
+            "backend_os.postgres_process_tree"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "Sender CPU and transmit rates describe activity; without CPU capacity or link capacity they cannot establish saturation."
+        }
       ]
     },
     {
@@ -3013,6 +3850,37 @@
         {
           "id": "os.lshw_network",
           "role": "fact"
+        }
+      ],
+      "binding_groups": [
+        {
+          "id": "streams",
+          "label": "Logical streams and slots",
+          "bindings": [
+            "replication.subscription_workers",
+            "replication.subscription_table_sync",
+            "replication.replication_slots"
+          ],
+          "evaluator": "replication_logical"
+        },
+        {
+          "id": "ownership",
+          "label": "Replication roles and ownership",
+          "bindings": [
+            "users_roles.subscription_ownership",
+            "users_roles.publication_ownership",
+            "replication.replication_roles"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "capacity",
+          "label": "Replication and network capacity",
+          "bindings": [
+            "replication.replication_capacity",
+            "os.lshw_network"
+          ],
+          "evaluator": "replication_capacity"
         }
       ]
     },
@@ -3294,6 +4162,37 @@
           "id": "server_log.system_incidents",
           "role": "primary"
         }
+      ],
+      "binding_groups": [
+        {
+          "id": "events",
+          "label": "Crashes and server lifecycle",
+          "bindings": [
+            "server_log.crash_recovery_events",
+            "server_log.server_lifecycle",
+            "server_log.system_incidents"
+          ],
+          "evaluator": "crashes"
+        },
+        {
+          "id": "integrity",
+          "label": "Checksums and corruption safeguards",
+          "bindings": [
+            "storage_vacuum.data_checksums",
+            "overview.corruption_suppression_settings",
+            "indexes.collation_version_mismatches"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "durability",
+          "label": "Durability and control data",
+          "bindings": [
+            "overview.durability_safety_settings",
+            "overview.pg_controldata"
+          ],
+          "evaluator": "durability"
+        }
       ]
     },
     {
@@ -3400,6 +4299,38 @@
           "id": "indexes.large_indexes",
           "role": "fact"
         }
+      ],
+      "binding_groups": [
+        {
+          "id": "activity",
+          "label": "Vacuum activity and logs",
+          "bindings": [
+            "storage_vacuum.autovacuum_queue",
+            "maintenance_progress.vacuum_progress",
+            "server_log.autovacuum_runs",
+            "server_log.maintenance_events"
+          ],
+          "evaluator": "vacuum"
+        },
+        {
+          "id": "churn",
+          "label": "Table churn and maintenance",
+          "bindings": [
+            "object_workload.table_workload",
+            "snapshot_delta_workload.table_maintenance_delta"
+          ],
+          "evaluator": "table_churn"
+        },
+        {
+          "id": "bloat",
+          "label": "Table and index bloat",
+          "bindings": [
+            "storage_vacuum.table_bloat_candidates",
+            "storage_vacuum.index_bloat_candidates",
+            "indexes.large_indexes"
+          ],
+          "evaluator": "bloat"
+        }
       ]
     },
     {
@@ -3483,6 +4414,46 @@
           "role": "support",
           "weight": 0.6
         }
+      ],
+      "binding_groups": [
+        {
+          "id": "blocking",
+          "label": "Blocking chains and lock modes",
+          "bindings": [
+            "activity_locks.lock_waits",
+            "activity_locks.blocking_lock_tree",
+            "activity_locks.lock_modes"
+          ],
+          "evaluator": "blocking"
+        },
+        {
+          "id": "deadlocks",
+          "label": "Deadlocks",
+          "bindings": [
+            "server_log.deadlock_events",
+            "snapshot_charts_db.database_deadlocks",
+            "snapshot_delta_workload.database_workload_delta"
+          ],
+          "evaluator": "deadlocks"
+        },
+        {
+          "id": "transactions",
+          "label": "Long and idle transactions",
+          "bindings": [
+            "activity_locks.idle_in_transaction",
+            "activity_locks.long_transactions"
+          ],
+          "evaluator": "transactions"
+        },
+        {
+          "id": "events",
+          "label": "Lock waits and terminations in logs",
+          "bindings": [
+            "server_log.lock_waits",
+            "server_log.query_termination_events"
+          ],
+          "evaluator": "lock_events"
+        }
       ]
     },
     {
@@ -3519,6 +4490,36 @@
         {
           "id": "cluster_inventory.login_roles_without_connection_limit",
           "role": "fact"
+        }
+      ],
+      "binding_groups": [
+        {
+          "id": "limits",
+          "label": "Connection capacity and limits",
+          "bindings": [
+            "activity_locks.connection_pressure",
+            "cluster_inventory.login_roles_without_connection_limit"
+          ],
+          "evaluator": "connection_limits"
+        },
+        {
+          "id": "sessions",
+          "label": "Sessions and roles",
+          "bindings": [
+            "activity_locks.session_states",
+            "users_roles.session_usage",
+            "snapshot_charts_db.database_backends"
+          ],
+          "evaluator": "sessions"
+        },
+        {
+          "id": "outcomes",
+          "label": "Connection outcomes and incidents",
+          "bindings": [
+            "snapshot_delta_workload.database_session_outcomes_delta",
+            "server_log.system_incidents"
+          ],
+          "evaluator": "connection_outcomes"
         }
       ]
     },
@@ -3610,6 +4611,77 @@
           "role": "support",
           "weight": 0.6
         }
+      ],
+      "binding_groups": [
+        {
+          "id": "senders",
+          "label": "WAL senders and lag",
+          "bindings": [
+            "replication.physical_replication",
+            "snapshot_charts_db.replication_sender_lag_bytes",
+            "snapshot_charts_db.replication_sender_lag_seconds",
+            "snapshot_delta_workload.physical_replication_progress_delta"
+          ],
+          "evaluator": "replication_senders"
+        },
+        {
+          "id": "replay",
+          "label": "WAL receive and replay",
+          "bindings": [
+            "replication.wal_receiver",
+            "replication.standby_recovery_state",
+            "snapshot_charts_db.standby_wal_rate",
+            "snapshot_charts_db.standby_replay_lag_bytes",
+            "snapshot_charts_db.standby_replay_delay"
+          ],
+          "evaluator": "replication_replay"
+        },
+        {
+          "id": "slots",
+          "label": "Slots and replication capacity",
+          "bindings": [
+            "replication.replication_slots",
+            "replication.replication_capacity",
+            "snapshot_delta_workload.logical_decoding_slot_delta"
+          ],
+          "evaluator": "replication_slots"
+        },
+        {
+          "id": "synchronous",
+          "label": "Synchronous replication",
+          "bindings": [
+            "replication.synchronous_replication_status"
+          ],
+          "evaluator": "replication_sync"
+        },
+        {
+          "id": "logical",
+          "label": "Logical replication workers",
+          "bindings": [
+            "replication.subscription_workers",
+            "replication.subscription_table_sync",
+            "snapshot_delta_workload.subscription_errors_conflicts_delta"
+          ],
+          "evaluator": "replication_logical"
+        },
+        {
+          "id": "recovery",
+          "label": "Recovery conflicts and prefetch",
+          "bindings": [
+            "replication.standby_conflicts",
+            "snapshot_delta_workload.standby_recovery_conflicts_delta",
+            "replication.recovery_prefetch"
+          ],
+          "evaluator": "recovery_conflicts"
+        },
+        {
+          "id": "events",
+          "label": "Replication events in logs",
+          "bindings": [
+            "server_log.replication_events"
+          ],
+          "evaluator": "replication_events"
+        }
       ]
     },
     {
@@ -3679,6 +4751,38 @@
         {
           "id": "cluster_inventory.extensions",
           "role": "fact"
+        }
+      ],
+      "binding_groups": [
+        {
+          "id": "safety",
+          "label": "Configuration safety and restart",
+          "bindings": [
+            "cluster_inventory.configuration_file_errors",
+            "overview.durability_safety_settings",
+            "cluster_inventory.pending_restart_settings"
+          ],
+          "evaluator": "configuration"
+        },
+        {
+          "id": "version",
+          "label": "Version and extensions",
+          "bindings": [
+            "overview.version_eol_status",
+            "overview.server_version",
+            "cluster_inventory.extensions"
+          ],
+          "evaluator": "configuration"
+        },
+        {
+          "id": "settings",
+          "label": "Settings and statistics resets",
+          "bindings": [
+            "overview.pg_settings",
+            "overview.stat_reset_times"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "Settings and reset timestamps provide context for other rules. A settings inventory alone is not a configuration validation."
         }
       ]
     },
@@ -3808,6 +4912,56 @@
           "id": "overview.server_version",
           "role": "fact"
         }
+      ],
+      "binding_groups": [
+        {
+          "id": "system",
+          "label": "Operating system and hardware platform",
+          "bindings": [
+            "os.kernel_version",
+            "os.os_release",
+            "os.lshw_system",
+            "os.lshw_bus",
+            "os.lshw_bridge"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "These measurements describe operating system and hardware platform. Activity volume alone has no universal healthy limit; capacity, latency or workload expectations are required for a health assessment."
+        },
+        {
+          "id": "devices",
+          "label": "Peripheral devices and power",
+          "bindings": [
+            "os.lshw_display",
+            "os.lshw_input",
+            "os.lshw_communication",
+            "os.lshw_multimedia",
+            "os.lshw_power",
+            "os.lshw_generic"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "These measurements describe peripheral devices and power. Activity volume alone has no universal healthy limit; capacity, latency or workload expectations are required for a health assessment."
+        },
+        {
+          "id": "network",
+          "label": "Network devices and addresses",
+          "bindings": [
+            "os.lshw_network",
+            "os.network_addresses"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "These measurements describe network devices and addresses. Activity volume alone has no universal healthy limit; capacity, latency or workload expectations are required for a health assessment."
+        },
+        {
+          "id": "postgres",
+          "label": "PostgreSQL processes and databases",
+          "bindings": [
+            "backend_os.postgres_process_tree",
+            "overview.database_volume",
+            "overview.server_version"
+          ],
+          "evaluator": "reference",
+          "unassessed_reason": "These measurements describe postgresql processes and databases. Activity volume alone has no universal healthy limit; capacity, latency or workload expectations are required for a health assessment."
+        }
       ]
     },
     {
@@ -3887,6 +5041,49 @@
           "role": "support",
           "weight": 0.6
         }
+      ],
+      "binding_groups": [
+        {
+          "id": "hba",
+          "label": "HBA and identity rules",
+          "bindings": [
+            "cluster_inventory.pg_hba_insecure_auth_methods",
+            "cluster_inventory.pg_hba_broad_network_ranges",
+            "cluster_inventory.pg_hba_generic_database_or_user",
+            "cluster_inventory.pg_hba_file_permissions",
+            "users_roles.hba_rules",
+            "users_roles.ident_mappings"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "policy",
+          "label": "Login and password policy",
+          "bindings": [
+            "cluster_inventory.remote_superuser_access",
+            "overview.password_encryption",
+            "overview.password_complexity",
+            "overview.auth_timeout_delay",
+            "users_roles.password_validity"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "credentials",
+          "label": "Stored password hashes",
+          "bindings": [
+            "cluster_inventory.role_password_hashes"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "events",
+          "label": "Authentication failures in logs",
+          "bindings": [
+            "server_log.authentication_failures"
+          ],
+          "evaluator": "findings"
+        }
       ]
     },
     {
@@ -3937,6 +5134,38 @@
         {
           "id": "os.sysctl_udp",
           "role": "fact"
+        }
+      ],
+      "binding_groups": [
+        {
+          "id": "exposure",
+          "label": "Listeners, addresses and firewall",
+          "bindings": [
+            "overview.listen_addresses_exposure",
+            "os.firewall_postgres_exposure",
+            "os.network_addresses"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "tls",
+          "label": "TLS and connection encryption",
+          "bindings": [
+            "cluster_inventory.pg_hba_tls_enforcement",
+            "overview.tls_server_configuration",
+            "overview.weak_tls_ciphers",
+            "users_roles.connection_security"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "kernel",
+          "label": "TCP and UDP settings",
+          "bindings": [
+            "os.sysctl_tcp",
+            "os.sysctl_udp"
+          ],
+          "evaluator": "findings"
         }
       ]
     },
@@ -4023,6 +5252,60 @@
         {
           "id": "users_roles.session_usage",
           "role": "fact"
+        }
+      ],
+      "binding_groups": [
+        {
+          "id": "admin",
+          "label": "Administrative roles and privileges",
+          "bindings": [
+            "cluster_inventory.privileged_login_roles",
+            "cluster_inventory.privileged_roles",
+            "cluster_inventory.predefined_admin_role_membership",
+            "users_roles.admin_option_holders"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "membership",
+          "label": "Role membership",
+          "bindings": [
+            "users_roles.effective_role_membership",
+            "users_roles.group_roles_without_members",
+            "users_roles.role_members",
+            "users_roles.role_membership"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "sessions",
+          "label": "Role limits, settings and sessions",
+          "bindings": [
+            "cluster_inventory.login_roles_without_connection_limit",
+            "users_roles.role_database_settings",
+            "users_roles.session_usage"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "cluster",
+          "label": "Cluster object privileges",
+          "bindings": [
+            "users_roles.parameter_privileges",
+            "replication.replication_roles",
+            "users_roles.database_privileges",
+            "users_roles.tablespace_privileges",
+            "users_roles.language_privileges"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "inventory",
+          "label": "Role inventory",
+          "bindings": [
+            "users_roles.roles_inventory"
+          ],
+          "evaluator": "findings"
         }
       ]
     },
@@ -4186,6 +5469,111 @@
           "id": "users_roles.subscription_ownership",
           "role": "fact"
         }
+      ],
+      "binding_groups": [
+        {
+          "id": "schemas",
+          "label": "Schema privileges",
+          "bindings": [
+            "cluster_inventory.public_schema_privileges",
+            "cluster_inventory.non_public_schema_privileges",
+            "cluster_inventory.schema_privilege_matrix"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "relations",
+          "label": "Table and column privileges",
+          "bindings": [
+            "object_workload.excessive_dml_privileges",
+            "users_roles.relation_privileges_detail",
+            "users_roles.column_privileges"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "functions",
+          "label": "Function execution and security definers",
+          "bindings": [
+            "object_workload.security_definer_functions",
+            "object_workload.function_execute_privileges",
+            "object_workload.security_definer_owner_drift"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "rls",
+          "label": "Row-level security",
+          "bindings": [
+            "object_workload.rls_configuration",
+            "object_workload.rls_table_privilege_mismatch",
+            "users_roles.rls_policies_by_role"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "defaults",
+          "label": "Default privileges",
+          "bindings": [
+            "object_workload.default_privileges_public_grants",
+            "users_roles.default_privileges"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "ownership",
+          "label": "Object ownership",
+          "bindings": [
+            "object_workload.superuser_owned_user_objects",
+            "object_workload.object_owner_drift",
+            "object_workload.database_owner_mismatch",
+            "object_workload.schema_owner_drift",
+            "object_workload.orphaned_object_owners",
+            "users_roles.object_ownership_by_role"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "grants",
+          "label": "Grants and ACL drift",
+          "bindings": [
+            "object_workload.object_acl_drift",
+            "object_workload.direct_user_grants",
+            "object_workload.grant_option_holders",
+            "object_workload.extension_objects_acl_drift",
+            "object_workload.unused_privileged_grants"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "sequences",
+          "label": "Sequence privileges and owners",
+          "bindings": [
+            "object_workload.sequence_privileges",
+            "object_workload.sequence_table_owner_mismatch"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "external",
+          "label": "External, replication and large objects",
+          "bindings": [
+            "users_roles.foreign_server_access",
+            "users_roles.large_object_privileges",
+            "users_roles.publication_ownership",
+            "users_roles.subscription_ownership"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "roles",
+          "label": "Privilege surface by role",
+          "bindings": [
+            "cluster_inventory.privilege_surface_by_role",
+            "users_roles.object_privileges_by_grantee"
+          ],
+          "evaluator": "findings"
+        }
       ]
     },
     {
@@ -4307,6 +5695,72 @@
           "id": "cluster_inventory.postgres_client_secret_files",
           "role": "support",
           "weight": 0.6
+        }
+      ],
+      "binding_groups": [
+        {
+          "id": "service",
+          "label": "OS privileges and service hardening",
+          "bindings": [
+            "os.sudoers_postgres_escalation",
+            "os.postgres_os_group_members",
+            "os.postgres_service_hardening",
+            "os.postgres_cron_timer_scripts"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "secrets",
+          "label": "Secrets and shell history",
+          "bindings": [
+            "os.postgres_env_secret_leaks",
+            "os.postgres_history_files",
+            "cluster_inventory.postgres_client_secret_files"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "paths",
+          "label": "Cluster and extension paths",
+          "bindings": [
+            "os.world_writable_paths_in_pg_tree",
+            "os.postgres_config_file_permissions",
+            "os.extension_directory_permissions",
+            "os.symlinks_in_sensitive_paths",
+            "cluster_inventory.pgdata_permissions"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "storage",
+          "label": "Storage, archives and backups",
+          "bindings": [
+            "os.tablespace_directory_permissions",
+            "os.wal_archive_directory_permissions",
+            "os.backup_repository_permissions",
+            "os.disk_encryption_status"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "files",
+          "label": "TLS keys, logs and sockets",
+          "bindings": [
+            "os.tls_key_file_permissions",
+            "os.log_file_permissions",
+            "cluster_inventory.unix_socket_permissions"
+          ],
+          "evaluator": "findings"
+        },
+        {
+          "id": "runtime",
+          "label": "Binaries, procfs and core dumps",
+          "bindings": [
+            "os.postgres_binary_integrity",
+            "os.procfs_hardening",
+            "os.core_dump_policy"
+          ],
+          "evaluator": "findings"
         }
       ]
     },

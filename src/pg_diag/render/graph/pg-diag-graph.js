@@ -1,11 +1,11 @@
 /* pg_diag diagnostic graph traversal and public API. No external dependencies. */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) {
-    module.exports = factory(require("./pg-diag-graph-data.js"), require("./pg-diag-graph-rules.js"));
+    module.exports = factory(require("./pg-diag-graph-data.js"), require("./pg-diag-graph-rules.js"), require("./pg-diag-graph-groups.js"));
   } else {
-    root.PgDiagGraph = factory(root.PgDiagGraphData, root.PgDiagGraphRules);
+    root.PgDiagGraph = factory(root.PgDiagGraphData, root.PgDiagGraphRules, root.PgDiagGraphGroups);
   }
-})(typeof self !== "undefined" ? self : this, function (Data, Rules) {
+})(typeof self !== "undefined" ? self : this, function (Data, Rules, Groups) {
   "use strict";
 
   const VERSION = "1.0.0";
@@ -224,6 +224,39 @@
     for (const rootId of definition.roots) {
       if (byId[rootId]) evaluateNode(rootId);
     }
+
+    // Directions assess only their own sources. Keep the parent's full input pool
+    // for its original contextual assessment, then propagate independent findings.
+    for (const node of definitionNodes) {
+      const parent = results[node.id];
+      if (!parent || !node.binding_groups) continue;
+      const grouped = new Set();
+      parent.inputBindings = parent.bindings;
+      for (const group of node.binding_groups) {
+        const ids = new Set(group.bindings);
+        const bindings = parent.inputBindings.filter(binding => ids.has(binding.id));
+        if (!bindings.length) continue;
+        const id = node.id + ".sources." + group.id;
+        if (results[id] || byId[id]) throw new Error("Duplicate source group " + id);
+        for (const binding of bindings) {
+          if (grouped.has(binding.id)) throw new Error("Duplicate grouped binding " + binding.id);
+          grouped.add(binding.id);
+        }
+        const present = bindings.filter(binding => binding.presence === "present").length;
+        const assessment = Groups.evaluate(items, runtime, group, node.bindings.filter(b => ids.has(b.id)),
+          opts.onRead ? (itemId, method) => opts.onRead(id, itemId, method) : null);
+        const status = statusOf(assessment.score);
+        results[id] = {
+          id, label: group.label, summary: group.summary || group.label + " — independent assessment within " + parent.label + ".",
+          parent: parent.id, children: [], kind: "sources", evaluator: group.evaluator,
+          ownScore: assessment.score, childScore: null, ...assessment, ownStatus: status, status,
+          bindings, present, scoredBindings: bindings.length, causes: [], causedBy: []
+        };
+        parent.children.push(id);
+      }
+      parent.bindings = parent.inputBindings.filter(binding => !grouped.has(binding.id));
+      parent.present = parent.bindings.filter(binding => binding.presence === "present").length;
+    }
     for (const link of definition.links || []) {
       if (results[link.from] && results[link.to]) {
         results[link.from].causes.push({to: link.to, label: link.label || ""});
@@ -237,6 +270,18 @@
       for (const childId of results[nodeId].children) walk(childId);
     };
     for (const rootId of definition.roots) if (results[rootId]) walk(rootId);
+
+    for (const id of [...order].reverse()) {
+      const node = results[id];
+      node.childScore = maxScore(...node.children.map(child => {
+        const result = results[child];
+        // A healthy sub-check cannot fill a missing parent assessment. Real
+        // findings still propagate even when another required source is absent.
+        return result.kind === "sources" && node.ownScore === null && result.status === STATUS.ok ? null : result.score;
+      }));
+      node.score = maxScore(node.ownScore, node.childScore);
+      node.status = statusOf(node.score);
+    }
 
     const statusCounts = {ok: 0, warn: 0, crit: 0, no_data: 0};
     for (const nodeId of order) statusCounts[results[nodeId].status] += 1;
@@ -260,7 +305,9 @@
         artifactItems: Object.keys(items).length,
         rootsWithData,
         statusCounts,
-        nodesWithoutData: order.filter((nodeId) => results[nodeId].status === STATUS.noData).length
+        nodesWithoutData: order.filter((nodeId) => results[nodeId].status === STATUS.noData).length,
+        sourceGroups: order.filter((nodeId) => results[nodeId].kind === "sources").length,
+        unboundItems: Object.keys(items).filter(itemId => !boundIds.has(itemId))
       }
     };
   }

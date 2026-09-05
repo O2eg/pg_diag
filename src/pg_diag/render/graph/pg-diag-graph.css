@@ -95,16 +95,6 @@ html[data-theme="light"] .dg {
   border-top: 2px dashed var(--dg-link);
 }
 
-.dg-legend-badge {
-  display: inline-block;
-  padding: 0 5px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--accent-contrast);
-  font-size: 11px;
-  font-weight: 600;
-}
-
 .dg-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -130,6 +120,27 @@ html[data-theme="light"] .dg {
   user-select: none;
 }
 
+.dg-fullscreen {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg) 97%, var(--text));
+  color: inherit;
+}
+
+.dg-fullscreen .dg-canvas,
+.dg-fullscreen .dg-svg {
+  height: 100%;
+  border: 0;
+}
+
 .dg-grabbing .dg-svg,
 .dg-grabbing .dg-node {
   cursor: grabbing;
@@ -140,6 +151,9 @@ html[data-theme="light"] .dg {
   top: 12px;
   right: 12px;
   display: flex;
+  flex-wrap: wrap;
+  max-width: calc(100% - 24px);
+  box-sizing: border-box;
   align-items: center;
   gap: 4px;
   padding: 4px;
@@ -254,38 +268,45 @@ html[data-theme="light"] .dg {
   stroke-width: 4;
 }
 
-.dg-label {
-  fill: var(--text);
+.dg-caption {
   font-size: 15px;
   pointer-events: none;
+}
+
+.dg-node-root .dg-caption {
+  font-size: 42px;
+}
+
+.dg-label {
+  fill: #fff;
+  font-size: inherit;
+  text-rendering: geometricPrecision;
+  pointer-events: none;
   paint-order: stroke;
-  stroke: var(--bg);
-  stroke-width: 4px;
+  stroke: rgba(0, 0, 0, 0.3);
+  stroke-width: 2px;
   stroke-linejoin: round;
 }
 
 .dg-label-root {
   fill: #fff;
-  font-size: 21px;
   font-weight: 600;
   stroke: rgba(0, 0, 0, 0.3);
   stroke-width: 2px;
 }
 
-.dg-node-no_data .dg-label-root {
+.dg-node-no_data .dg-label {
   fill: var(--text);
   stroke: none;
 }
 
-.dg-badge {
-  fill: var(--accent-contrast);
-  font-size: 10px;
-  font-weight: 700;
-  paint-order: stroke;
-  stroke: var(--accent);
-  stroke-width: 6px;
-  stroke-linejoin: round;
+.dg-node-badge {
+  overflow: visible;
   pointer-events: none;
+}
+
+.dg-caption .dg-badge {
+  font-size: inherit;
 }
 
 .dg-panel {
@@ -388,16 +409,14 @@ html[data-theme="light"] .dg {
 
 .dg-reasons,
 .dg-hints,
-.dg-causes,
-.dg-children {
+.dg-causes {
   margin: 0;
   padding-left: 18px;
 }
 
 .dg-reasons li,
 .dg-hints li,
-.dg-causes li,
-.dg-children li {
+.dg-causes li {
   margin: 0 0 4px;
 }
 

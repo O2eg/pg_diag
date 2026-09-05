@@ -98,6 +98,28 @@ def test_every_catalog_item_is_bound_and_every_binding_exists() -> None:
     ), f"graph bindings missing in the catalog: {sorted(bound - catalog)}"
 
 
+def test_large_binding_lists_have_complete_semantic_groups() -> None:
+    source = (GRAPH_DIR / "pg-diag-graph-groups.js").read_text(encoding="utf-8")
+    evaluators = set(re.findall(r"^    ([a-z_]+)\(ctx\) \{", source, re.M)) | {"findings"}
+    for node in _graph()["nodes"]:
+        bindings = {binding["id"] for binding in node["bindings"]}
+        groups = node.get("binding_groups", [])
+        if len(bindings) > 6:
+            assert groups, f"{node['id']}: split the report items into directions"
+        if not groups:
+            continue
+        grouped = []
+        assert len({group["id"] for group in groups}) == len(groups)
+        for group in groups:
+            assert re.fullmatch(r"[a-z][a-z_]*", group["id"])
+            assert group["label"].strip()
+            assert group["evaluator"] in evaluators
+            assert 1 <= len(group["bindings"]) <= 6, (node["id"], group["id"])
+            grouped.extend(group["bindings"])
+        assert len(grouped) == len(set(grouped)), f"{node['id']}: repeated grouped item"
+        assert set(grouped) == bindings, f"{node['id']}: groups must cover exactly the rule's inputs"
+
+
 def test_every_node_evaluator_exists_in_the_engine() -> None:
     graph = _graph()
     names = _engine_evaluator_names()

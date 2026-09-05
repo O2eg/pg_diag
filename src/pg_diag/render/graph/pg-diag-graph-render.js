@@ -19,13 +19,16 @@
   const LAYOUT = {
     siblingGap: 24,
     treeGap: 64,
+    rootRowGap: 96,
     levelHeight: 156,
-    rootRadius: 76,
-    radius: 18,
+    rootRadius: 120,
+    radius: 72,
+    radiusStep: 12,
     marginX: 24,
     marginTop: 24,
     marginBottom: 72,
-    labelMaxChars: 19,
+    labelMaxChars: 50,
+    labelWrapChars: 14,
     labelLineHeight: 18
   };
   const STORAGE_KEY = "pg-diag-graph-collapsed";
@@ -65,25 +68,56 @@
     return {ok: "OK", warn: "Warning", crit: "Critical", no_data: "No data"}[status] || status;
   }
 
+  function nodeStatusLabel(node) {
+    return node.kind === "sources" && node.status === "no_data" && node.present ? "Not assessed" : statusLabel(node.status);
+  }
+
   function truncateLabel(text, maxChars) {
-    const value = String(text || "");
-    return value.length > maxChars ? value.slice(0, maxChars - 1) + "…" : value;
+    const chars = Array.from(String(text || ""));
+    return chars.length > maxChars ? chars.slice(0, maxChars - 1).join("") + "…" : chars.join("");
   }
 
   function labelLines(text, maxChars) {
     const words = String(text || "").trim().split(/\s+/);
     const lines = [];
     let line = "";
-    for (const word of words) {
-      if (line && (line + " " + word).length > maxChars) {
+    for (let word of words) {
+      if (line && Array.from(line + " " + word).length > maxChars) {
         lines.push(line);
-        line = word;
-      } else {
-        line = line ? line + " " + word : word;
+        line = "";
       }
+      let chars = Array.from(word);
+      while (chars.length > maxChars) {
+        lines.push(chars.slice(0, maxChars).join(""));
+        chars = chars.slice(maxChars);
+      }
+      word = chars.join("");
+      line = line ? line + " " + word : word;
     }
     if (line) lines.push(line);
     return lines;
+  }
+
+  function fitNodeLabels(state) {
+    for (const node of state.svg.querySelectorAll(".dg-node")) {
+      const caption = node.querySelector(".dg-caption");
+      const label = caption.querySelector(".dg-label");
+      const badgeBox = caption.querySelector(".dg-node-badge");
+      const radius = +node.querySelector(".dg-circle").getAttribute("r");
+      if (badgeBox) {
+        const badge = badgeBox.firstElementChild;
+        const labelBox = label.getBBox();
+        const width = badge.offsetWidth, height = badge.offsetHeight;
+        badgeBox.setAttribute("x", -width / 2);
+        badgeBox.setAttribute("y", labelBox.y + labelBox.height + 8);
+        badgeBox.setAttribute("width", width);
+        badgeBox.setAttribute("height", height);
+      }
+      const box = caption.getBBox();
+      const extent = Math.hypot(box.width / 2, box.height / 2);
+      const scale = Math.min(1, (radius - 12) / (extent || 1));
+      caption.setAttribute("transform", "scale(" + scale + ") translate(" + -(box.x + box.width / 2) + "," + -(box.y + box.height / 2) + ")");
+    }
   }
 
   function readCollapsed() {
@@ -104,45 +138,34 @@
 
   // ------------------------------------------------------------ layout
 
-  // Visible set: roots, their children, and every ancestor chain of warn/crit
-  // nodes; other subtrees stay collapsed until the user expands them.
-  function initialExpanded(evaluation) {
-    const expanded = new Set();
-    for (const rootId of evaluation.roots) expanded.add(rootId);
-    for (const nodeId of evaluation.order) {
-      const node = evaluation.nodes[nodeId];
-      if (node.status === "crit" || node.status === "warn") {
-        if (node.children.length) expanded.add(nodeId);
-        let cursor = node.parent;
-        while (cursor) {
-          expanded.add(cursor);
-          cursor = evaluation.nodes[cursor].parent;
-        }
-      }
-    }
-    return expanded;
+  // Start with the six roots only; their colors still include hidden findings.
+  function initialExpanded() {
+    return new Set();
   }
 
-  // Each subtree owns a horizontal span. Siblings share a depth row, and their
+  // Each subtree owns a horizontal span. Children share a row, and their
   // parent is centred over the first and last child (not a depth-first list).
+  // Health and security form a second row below the resource trees, including
+  // their visible descendants and open detail cards.
   function layout(evaluation, expanded, detail) {
     const nodes = evaluation.nodes;
     const positions = {};
     const spans = {};
-    const rowBottoms = [];
-    const rowY = [LAYOUT.marginTop + LAYOUT.rootRadius];
+    const depths = {};
+    const depthOf = id => depths[id] ?? (depths[id] = nodes[id].parent ? depthOf(nodes[id].parent) + 1 : 0);
+    const rootRadius = Math.max(LAYOUT.rootRadius, ...evaluation.order.filter(id => nodes[id].kind !== "sources").map(id => LAYOUT.radius + depthOf(id) * LAYOUT.radiusStep));
     let maxBottom = 0;
     const childrenOf = (id) => expanded.has(id) ? nodes[id].children : [];
     const measure = (id, depth) => {
-      const lines = labelLines(nodes[id].label, depth === 0 ? 12 : LAYOUT.labelMaxChars);
-      const radius = depth === 0 ? LAYOUT.rootRadius : LAYOUT.radius;
-      const labelWidth = depth === 0 ? radius * 2 : Math.max(72, ...lines.map((line) => line.length * 8));
-      const labelBottom = radius + (depth === 0 ? 4 : 14 + lines.length * LAYOUT.labelLineHeight);
+      const caption = truncateLabel(String(nodes[id].label || "").trim().replace(/\s+/g, " "), LAYOUT.labelMaxChars);
+      const lines = labelLines(caption, LAYOUT.labelWrapChars);
+      const radius = depth === 0 ? rootRadius : (rootRadius - depth * LAYOUT.radiusStep) / 1.5;
+      const labelWidth = radius * 2;
+      const labelBottom = radius + 4;
       const cardHeight = detail && detail.id === id ? detail.height : 0;
       const cardWidth = cardHeight ? detail.width : 0;
       const cardOffset = labelBottom + 18;
       const ownWidth = Math.max(labelWidth, cardWidth);
-      rowBottoms[depth] = Math.max(rowBottoms[depth] || 0, cardHeight ? cardOffset + cardHeight : labelBottom);
       const children = childrenOf(id);
       let cursor = 0;
       const offsets = [];
@@ -156,27 +179,39 @@
       // Reserve both sides of the parent/card even with asymmetric children.
       const left = Math.min(0, anchor - ownWidth / 2);
       const right = Math.max(childrenWidth, anchor + ownWidth / 2);
-      spans[id] = {width: right - left, anchor: anchor - left, offsets: offsets.map(x => x - left), lines, radius, labelWidth, cardHeight, cardWidth, cardOffset};
+      spans[id] = {width: right - left, anchor: anchor - left, offsets: offsets.map(x => x - left), lines, radius, labelWidth, labelBottom, cardHeight, cardWidth, cardOffset};
       return spans[id].width;
     };
-    const place = (id, depth, left) => {
+    const place = (id, depth, left, y) => {
       const span = spans[id];
       const children = childrenOf(id);
-      children.forEach((child, index) => place(child, depth + 1, left + span.offsets[index]));
+      const bottom = span.cardHeight ? span.cardOffset + span.cardHeight : span.labelBottom;
+      const childRadius = children.length ? spans[children[0]].radius : 0;
+      const childY = y + Math.max(LAYOUT.levelHeight, bottom + childRadius + 56);
+      children.forEach((child, index) => place(child, depth + 1, left + span.offsets[index], childY));
       const {radius, labelWidth, cardHeight, cardWidth, cardOffset, lines} = span;
-      positions[id] = {x: left + span.anchor, y: rowY[depth], depth, radius, lines, labelWidth, cardHeight, cardWidth, cardOffset};
+      positions[id] = {x: left + span.anchor, y, depth, radius, lines, labelWidth, cardHeight, cardWidth, cardOffset};
       maxBottom = Math.max(maxBottom, nodeBounds(positions[id]).bottom);
     };
-    for (const id of evaluation.roots) measure(id, 0);
-    for (let depth = 1; depth < rowBottoms.length; depth++) {
-      rowY[depth] = rowY[depth - 1] + Math.max(LAYOUT.levelHeight, rowBottoms[depth - 1] + LAYOUT.radius + 56);
+    const lowerRoots = new Set(["database_health", "database_security"]);
+    const rootRows = [
+      evaluation.roots.filter(id => !lowerRoots.has(id)),
+      evaluation.roots.filter(id => lowerRoots.has(id))
+    ];
+    let top = LAYOUT.marginTop;
+    let width = LAYOUT.marginX * 2;
+    for (const roots of rootRows) {
+      if (!roots.length) continue;
+      for (const id of roots) measure(id, 0);
+      let left = LAYOUT.marginX;
+      for (const id of roots) {
+        place(id, 0, left, top + rootRadius);
+        left += spans[id].width + LAYOUT.treeGap;
+      }
+      width = Math.max(width, left - LAYOUT.treeGap + LAYOUT.marginX);
+      top = maxBottom + LAYOUT.rootRowGap;
     }
-    let left = LAYOUT.marginX;
-    for (const id of evaluation.roots) {
-      place(id, 0, left);
-      left += spans[id].width + LAYOUT.treeGap;
-    }
-    return {positions, width: left - LAYOUT.treeGap + LAYOUT.marginX, height: maxBottom + LAYOUT.marginBottom};
+    return {positions, width, height: maxBottom + LAYOUT.marginBottom};
   }
 
   // ------------------------------------------------------------ canvas
@@ -214,24 +249,63 @@
     applyView(state);
   }
 
+  function attachFullScreen(state, button) {
+    const dialog = el("dialog", "dg-fullscreen", state.body);
+    dialog.setAttribute("aria-label", "Diagnostic graph");
+    let savedHeight, savedOverflow;
+    const setFullScreen = (active) => {
+      if (active === dialog.open) return;
+      if (active) {
+        // Keep the report's place while the canvas occupies the top layer.
+        savedHeight = state.body.style.height;
+        savedOverflow = document.documentElement.style.overflow;
+        state.body.style.height = state.body.getBoundingClientRect().height + "px";
+        document.documentElement.style.overflow = "hidden";
+        dialog.appendChild(state.canvas);
+        dialog.showModal();
+      } else {
+        state.body.insertBefore(state.canvas, dialog);
+        dialog.close();
+        state.body.style.height = savedHeight;
+        document.documentElement.style.overflow = savedOverflow;
+      }
+      const label = active ? "Exit full screen" : "Full screen";
+      button.textContent = label;
+      button.title = label;
+      button.setAttribute("aria-label", label);
+      button.setAttribute("aria-pressed", String(active));
+      button.focus({preventScroll: true});
+    };
+    button.setAttribute("aria-pressed", "false");
+    button.addEventListener("click", () => setFullScreen(!dialog.open));
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      setFullScreen(false);
+    });
+    state.exitFullScreen = () => setFullScreen(false);
+  }
+
   function attachViewport(state) {
     const controls = el("div", "dg-zoom", state.canvas);
     controls.setAttribute("role", "group");
-    controls.setAttribute("aria-label", "Graph zoom controls");
+    controls.setAttribute("aria-label", "Graph controls");
     const button = (label, name, handler) => {
       const control = el("button", "dg-zoom-button", controls, label);
       control.type = "button";
       control.title = name;
       control.setAttribute("aria-label", name);
-      control.addEventListener("click", handler);
+      if (handler) control.addEventListener("click", handler);
       return control;
     };
+    button("Expand all", "Expand all", () => setAllExpanded(state, true));
+    button("Collapse all", "Collapse all", () => setAllExpanded(state, false));
     state.zoomOut = button("−", "Zoom out", () => zoomAt(state, state.view.scale / 1.4));
     state.zoomValue = el("output", "dg-zoom-value", controls);
     state.zoomValue.setAttribute("aria-label", "Zoom level");
     state.zoomIn = button("+", "Zoom in", () => zoomAt(state, state.view.scale * 1.4));
     button("Fit", "Fit graph", () => fitView(state));
     button("1:1", "Actual size", () => zoomAt(state, 1));
+    attachFullScreen(state, button("Full screen", "Full screen"));
     el("span", "dg-canvas-hint", state.canvas, "Drag to pan · Scroll to zoom");
 
     // Like pg_explain_viewer: don't capture a press until it becomes a drag,
@@ -307,6 +381,7 @@
       state.resizeObserver = new ResizeObserver(() => {
         const size = viewportSize(state);
         if (!size.width || !size.height) return;
+        fitNodeLabels(state);
         if (state.autoFit) fitView(state);
         else if (previous.width && previous.height) {
           state.view.x += (size.width - previous.width) / 2;
@@ -332,7 +407,7 @@
     const width = Math.max(position.labelWidth, position.cardHeight ? position.cardWidth : 0);
     return {left: position.x - width / 2 - 4, right: position.x + width / 2 + 4,
       top: position.y - position.radius - 4,
-      bottom: position.y + (position.cardHeight ? position.cardOffset + position.cardHeight : position.radius + (position.depth === 0 ? 4 : 14 + position.lines.length * LAYOUT.labelLineHeight))};
+      bottom: position.y + (position.cardHeight ? position.cardOffset + position.cardHeight : position.radius + 4)};
   }
 
   // Route causes through level gutters and a free vertical lane. Only links
@@ -473,7 +548,7 @@
       if (position.depth === 0) classes.push("dg-node-root");
       if (state.selected === nodeId) classes.push("dg-node-selected");
       if (node.ownStatus === "no_data" && node.evaluator !== "aggregate") classes.push("dg-node-missing");
-      const group = svgEl("g", {class: classes.join(" "), transform: "translate(" + position.x + "," + position.y + ")", tabindex: 0, role: "button", "data-node-id": nodeId, "aria-label": node.label + ", " + statusLabel(node.status)}, nodesGroup);
+      const group = svgEl("g", {class: classes.join(" "), transform: "translate(" + position.x + "," + position.y + ")", tabindex: 0, role: "button", "data-node-id": nodeId, "aria-label": node.label + ", " + nodeStatusLabel(node)}, nodesGroup);
       nodeElements[nodeId] = group;
       if (!positions[nodeId]) {
         group.style.pointerEvents = "none";
@@ -483,23 +558,24 @@
       const isRoot = position.depth === 0;
       group.setAttribute("aria-expanded", String(state.detailsId === nodeId));
       if (node.children.length) group.setAttribute("data-children-expanded", String(expanded.has(nodeId)));
-      // A compact hit area includes the wrapped label, never a sibling's space.
-      const labelWidth = isRoot ? position.radius * 2 : Math.max(72, ...position.lines.map((line) => line.length * 8));
-      svgEl("rect", {class: "dg-hit", x: -labelWidth / 2 - 4, y: -position.radius - 4, width: labelWidth + 8, height: position.radius * 2 + 8 + (isRoot ? 0 : 10 + position.lines.length * LAYOUT.labelLineHeight), rx: 8}, group);
+      svgEl("circle", {class: "dg-hit", r: position.radius + 4}, group);
       const circle = svgEl("circle", {r: position.radius, class: "dg-circle"}, group);
       if (fill) circle.style.fill = fill;
       const hiddenChildren = node.children.length && !expanded.has(nodeId) ? node.children.length : 0;
-      const lineHeight = isRoot ? 24 : LAYOUT.labelLineHeight;
-      const label = svgEl("text", {class: "dg-label" + (isRoot ? " dg-label-root" : ""), "text-anchor": "middle"}, group);
-      const labelY = isRoot ? -(position.lines.length - 1) * lineHeight / 2 + 7 : position.radius + 22;
+      const lineHeight = isRoot ? 48 : LAYOUT.labelLineHeight;
+      const caption = svgEl("g", {class: "dg-caption"}, group);
+      const label = svgEl("text", {class: "dg-label" + (isRoot ? " dg-label-root" : ""), "text-anchor": "middle"}, caption);
+      const labelY = -(position.lines.length - 1) * lineHeight / 2;
+      label.setAttribute("dominant-baseline", "central");
       position.lines.forEach((line, index) => {
         svgEl("tspan", {x: 0, y: labelY + index * lineHeight}, label).textContent = line;
       });
       if (hiddenChildren) {
-        const badge = svgEl("text", {class: "dg-badge", x: position.radius, y: -position.radius, dy: "0.35em", "text-anchor": "middle"}, group);
-        badge.textContent = "+" + hiddenChildren;
+        const badgeBox = svgEl("foreignObject", {class: "dg-node-badge", width: position.radius * 2, height: 48, "aria-hidden": "true"}, caption);
+        el("span", "badge neutral dg-badge", badgeBox, "+" + hiddenChildren);
+        group.setAttribute("aria-label", node.label + ", " + nodeStatusLabel(node) + ", " + hiddenChildren + " collapsed children");
       }
-      const tooltip = [node.label + " — " + statusLabel(node.status)]
+      const tooltip = [node.label + " — " + nodeStatusLabel(node)]
         .concat(node.reasons.slice(0, 3))
         .concat(node.hints.slice(0, 2).map((hint) => "Hint: " + hint));
       svgEl("title", {}, group).textContent = tooltip.join("\n");
@@ -512,6 +588,8 @@
       });
     }
 
+    // Measure outside animation frames; resize also handles initially hidden SVGs.
+    fitNodeLabels(state);
     for (const [id, card] of state.cards) {
       card.panel.inert = state.detailsId !== id;
       card.element.dataset.closing = String(state.detailsId !== id);
@@ -623,12 +701,22 @@
     }
   }
 
+  function setAllExpanded(state, expanded) {
+    state.expanded = expanded ? new Set(state.evaluation.order) : initialExpanded();
+    if (!expanded) {
+      state.selected = null;
+      state.detailsId = null;
+    }
+    drawGraph(state);
+    fitView(state);
+  }
+
   function drawPanel(state, nodeId, panel) {
     const {evaluation} = state;
     panel.innerHTML = "";
     const node = evaluation.nodes[nodeId];
     const head = el("div", "dg-panel-head", panel);
-    const badge = el("span", "dg-status dg-status-" + node.status, head, statusLabel(node.status));
+    const badge = el("span", "dg-status dg-status-" + node.status, head, nodeStatusLabel(node));
     const fill = scoreColor(node.score);
     if (fill) badge.style.background = fill;
     el("h3", "dg-panel-title", head, node.label);
@@ -664,7 +752,7 @@
       }
     }
     if (node.hints.length) {
-      el("h4", "dg-panel-h", panel, "Missing data");
+      el("h4", "dg-panel-h", panel, node.kind === "sources" ? "Assessment limits" : "Missing data");
       const list = el("ul", "dg-hints", panel);
       for (const hint of node.hints) el("li", null, list, hint);
     }
@@ -684,21 +772,7 @@
         if (cause.label) item.appendChild(document.createTextNode(" — " + cause.label));
       }
     }
-    if (node.children.length) {
-      el("h4", "dg-panel-h", panel, "Children");
-      const list = el("ul", "dg-children", panel);
-      for (const childId of node.children) {
-        const child = evaluation.nodes[childId];
-        const item = el("li", null, list);
-        const dot = el("span", "dg-dot dg-dot-" + child.status, item);
-        const color = scoreColor(child.score);
-        if (color) dot.style.background = color;
-        nodeButton(state, item, childId);
-        item.appendChild(document.createTextNode(" " + statusLabel(child.status)));
-      }
-    }
-
-    el("h4", "dg-panel-h", panel, "Report items (" + node.present + " of " + node.bindings.length + " with data)");
+    if (node.bindings.length) el("h4", "dg-panel-h", panel, "Report items (" + node.present + " of " + node.bindings.length + " with data)");
     const groups = [["present", "with data"], ["empty", "empty"], ["skipped", "skipped"], ["unsupported", "unsupported"], ["error", "error"], ["absent", "not in this report"]];
     for (const [presence, title] of groups) {
       const bindings = node.bindings.filter((binding) => binding.presence === presence);
@@ -722,6 +796,7 @@
         } else {
           chip.title = "Scroll the report to " + binding.id;
           chip.addEventListener("click", () => {
+            state.exitFullScreen();
             if (typeof state.onItemClick === "function") state.onItemClick(binding.id, binding);
           });
         }
@@ -758,21 +833,6 @@
     const coverage = evaluation.coverage;
     const titleRow = el("div", "dg-title-row", header);
     el("h2", "dg-title", titleRow, "Diagnostic graph");
-    const expandAll = el("button", "dg-toggle", titleRow, "Expand all");
-    expandAll.type = "button";
-    expandAll.addEventListener("click", () => {
-      const allExpanded = evaluation.order.every((nodeId) => !evaluation.nodes[nodeId].children.length || state.expanded.has(nodeId));
-      if (allExpanded) {
-        state.expanded = initialExpanded(evaluation);
-        state.detailsId = null;
-        expandAll.textContent = "Expand all";
-      } else {
-        for (const nodeId of evaluation.order) state.expanded.add(nodeId);
-        expandAll.textContent = "Collapse";
-      }
-      drawGraph(state);
-      fitView(state);
-    });
     const toggle = el("button", "dg-toggle", titleRow, state.collapsed ? "Show" : "Hide");
     toggle.type = "button";
     toggle.addEventListener("click", () => {
@@ -785,7 +845,7 @@
     const summary = el("p", "dg-summary", header);
     const parts = [];
     parts.push(coverage.rootsWithData + " of " + evaluation.roots.length + " roots have data");
-    parts.push(coverage.statusCounts.crit + " critical node(s), " + coverage.statusCounts.warn + " warning node(s), " + coverage.statusCounts.no_data + " node(s) without data");
+    parts.push(coverage.statusCounts.crit + " critical node(s), " + coverage.statusCounts.warn + " warning node(s), " + coverage.statusCounts.no_data + " node(s) without assessment");
     parts.push(coverage.presentItems + " of " + coverage.boundItems + " bound items carry data (" + (coverage.runMode || "unknown") + " run, " + (coverage.collectionMode || "unknown") + " collection)");
     summary.textContent = parts.join(" · ");
     const missingModes = [];
@@ -793,7 +853,7 @@
     if (coverage.collectionMode === "remote-db-only") missingModes.push("local or remote mode adds host CPU, memory, disk and security evidence");
     if (missingModes.length) el("p", "dg-summary dg-summary-hint", header, "To light up grey nodes: " + missingModes.join("; ") + ".");
     const legend = el("div", "dg-legend", header);
-    for (const [status, label] of [["ok", "OK"], ["warn", "Warning"], ["crit", "Critical"], ["no_data", "No data"]]) {
+    for (const [status, label] of [["ok", "OK"], ["warn", "Warning"], ["crit", "Critical"], ["no_data", "Not assessed / no data"]]) {
       const entry = el("span", "dg-legend-entry", legend);
       const dot = el("span", "dg-dot dg-dot-" + status, entry);
       const color = scoreColor({ok: 0.05, warn: 0.5, crit: 0.95}[status]);
@@ -804,7 +864,7 @@
     el("span", "dg-legend-link", entry);
     entry.appendChild(document.createTextNode("cause links — shown for the selected node"));
     const badgeEntry = el("span", "dg-legend-entry", legend);
-    el("span", "dg-legend-badge", badgeEntry, "+3");
+    el("span", "badge neutral dg-legend-badge", badgeEntry, "+3");
     badgeEntry.appendChild(document.createTextNode("collapsed children — click a node for details; click again to close"));
   }
 
@@ -820,10 +880,8 @@
       selected: null,
       detailsId: null,
       cards: new Map(),
-      // Start at a readable size. Fitting a wide forest on load makes every
-      // label microscopic; the explicit Fit control provides that overview.
-      view: {x: 24, y: 48, scale: 0.8},
-      autoFit: false,
+      view: {x: 0, y: 0, scale: 1},
+      autoFit: true,
       onItemClick: opts.onItemClick,
       collapsed: typeof opts.collapsed === "boolean" ? opts.collapsed : readCollapsed()
     };
@@ -839,15 +897,14 @@
     attachViewport(state);
     drawHeader(state);
     drawGraph(state, false);
+    fitView(state);
     const controller = {
       select: (nodeId) => selectNode(state, nodeId, false),
-      expandAll: () => {
-        for (const nodeId of evaluation.order) state.expanded.add(nodeId);
-        drawGraph(state);
-        fitView(state);
-      },
+      expandAll: () => setAllExpanded(state, true),
+      collapseAll: () => setAllExpanded(state, false),
       fit: () => fitView(state),
       destroy: () => {
+        state.exitFullScreen();
         if (state.frame) cancelAnimationFrame(state.frame);
         state.frame = null;
         if (state.resizeObserver) state.resizeObserver.disconnect();
