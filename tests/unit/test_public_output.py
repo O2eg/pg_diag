@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from pg_diag.artifact import extract_item_query_texts, item_error_from_exception, item_from_plan
 from pg_diag.executors.shell import table_json_result
 from pg_diag.executors.sql import publicize_table_result
@@ -105,6 +107,28 @@ def test_item_query_texts_are_moved_to_artifact_catalog() -> None:
         "11": "select 1 from pg_catalog.pg_class",
         "22": "select blocked",
     }
+
+
+@pytest.mark.parametrize("query", [
+    "CREATE SUBSCRIPTION s CONNECTION 'host=db password=trace-secret dbname=app' PUBLICATION p",
+    "ALTER SUBSCRIPTION s CONNECTION $conn$postgresql://user:trace-secret@db/app$conn$",
+    "ALTER ROLE app PASSWORD 'trace-secret'",
+    "ALTER ROLE app PASSWORD /* test */ E'trace-secret'",
+    "ALTER ROLE app PASSWORD 'trace-secret\\'",
+    "CREATE SUBSCRIPTION s CONNECTION 'host=db password=''trace-secret''' PUBLICATION p",
+])
+def test_retained_utility_queries_hide_credentials(query: str) -> None:
+    item = {"result": {"kind": "table", "columns": [
+        {"name": "query_id"}, {"name": "query"},
+    ], "rows": [["42", query], ["43", "SELECT 'full workload detail', 123"]]}}
+    texts: dict[str, str] = {}
+    extract_item_query_texts(
+        item, texts, {"id_column_suffix": "query_id", "value_column_remove_suffix": "_id"}
+    )
+    assert "trace-secret" not in texts["42"]
+    assert "[REDACTED]" in texts["42"]
+    assert texts["43"] == "SELECT 'full workload detail', 123"
+    assert item["result"]["rows"] == [["42"], ["43"]]
 
 
 def test_item_error_from_exception_embeds_traceback_diagnostic() -> None:

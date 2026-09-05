@@ -21,6 +21,7 @@ from .planner import ExecutionPlan, PlannedEntry
 from .security import (
     json_safe,
     redact_error,
+    redact_query_credentials,
     redact_text,
     sanitize_public_structure,
     sanitize_result,
@@ -461,7 +462,7 @@ def _remember_query_text(query_texts: dict[str, str], query_id: Any, query_text:
     if query_id is None or query_text is None:
         return
     query_id_text = str(query_id).strip()
-    sql_text = str(query_text).strip()
+    sql_text = redact_query_credentials(str(query_text).strip())
     if not query_id_text or not sql_text:
         return
     existing = query_texts.get(query_id_text)

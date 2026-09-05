@@ -10,6 +10,10 @@ select
   stream_bytes::int8 as stream_bytes,
   total_txns::int8 as total_txns,
   total_bytes::int8 as total_bytes
-from pg_catalog.pg_stat_replication_slots
+from pg_catalog.pg_stat_replication_slots s
+join pg_catalog.pg_replication_slots r using (slot_name)
+-- A lost slot cannot resume decoding. Reusing its name after recreation does
+-- not reliably change stats_reset, so its counters are not a valid endpoint.
+where r.wal_status is distinct from 'lost'
 order by spill_bytes desc nulls last, slot_name
 limit 50

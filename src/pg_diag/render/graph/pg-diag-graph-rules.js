@@ -1252,7 +1252,7 @@
         if (write) score = count > 0 ? Math.max(0.2, scalePair(count, THRESHOLDS.clientWriteSessions)) : 0;
       }
       const sampledId = "activity_locks.wait_event_sample_profile";
-      const sampled = ctx.series(sampledId).filter(s => new RegExp("(?:^|[: /])" + event + "(?:$|[ (])").test(s.name) && s.finite >= 2);
+      const sampled = ctx.series(sampledId).filter(s => new RegExp("^(?:Client[.: /])?" + event + "(?:$|[. (])").test(s.name) && s.finite >= 2);
       for (const series of sampled) {
         const stats = seriesStats(series.values);
         ctx.fact(event + " sampled p95", fmtNum(stats.p95, 1) + " sessions");

@@ -29,7 +29,9 @@ RECALL = compile_clauses([[",ERROR,"], [",WARNING,"]])
 class LocalShellTransport:
     """Executes the harvester through the local /bin/sh (test double)."""
 
-    async def run_script_bytes(self, script: bytes, *, arguments=(), timeout: float):
+    async def run_script_bytes(
+        self, script: bytes, *, arguments=(), timeout: float, output_limit_bytes=None,
+    ):
         proc = subprocess.run(
             ["/bin/sh", "-s", "--", *arguments],
             input=script,
@@ -84,6 +86,29 @@ def _request(
 
 def _scan(request: ScanRequest):
     return asyncio.run(BashHarvesterSource(LocalShellTransport()).scan(request))
+
+
+@pytest.mark.parametrize("fractional_bounds", [False, True])
+def test_scan_filters_fractional_boundaries_before_merging(tmp_path, fractional_bounds) -> None:
+    from dataclasses import replace
+
+    stamps = ["59.999", "00.000", "00.250", "00.500", "00.501"]
+    body = "".join(
+        _record(BASE, "ERROR", "repeated error").replace(
+            "10:00:00.000", "09:59:59.999" if stamp == "59.999" else f"10:00:{stamp}"
+        )
+        for stamp in stamps
+    )
+    (tmp_path / "a.csv").write_text(body)
+    request = _request(tmp_path, [_info(tmp_path, "a.csv")], BASE, BASE)
+    if fractional_bounds:
+        request = replace(request, window_from_ts="2026-08-31 10:00:00.250",
+                          window_to_ts="2026-08-31 10:00:00.500")
+    remote = _scan(request)
+    local = asyncio.run(LocalLogSource(str(tmp_path)).scan(request))
+    assert remote.series == local.series
+    assert sum(series.count for series in remote.series) == (2 if fractional_bounds else 1)
+    assert remote.stats.matched_lines == local.stats.matched_lines == (2 if fractional_bounds else 1)
 
 
 def test_harvester_equals_local_source(tmp_path) -> None:

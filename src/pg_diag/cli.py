@@ -751,7 +751,9 @@ def _machine_artifacts(args: argparse.Namespace) -> list[dict[str, Any]]:
             args.output_format,
         )
         if json_path is not None:
-            paths.append(("DiagnosticReport", "pg_diag/artifact-v4", json_path))
+            paths.append(
+                ("DiagnosticReport", f"pg_diag/artifact-v{runtime_config.ARTIFACT_SCHEMA_VERSION}", json_path)
+            )
         if html_path is not None:
             paths.append(("DiagnosticReportHtml", None, html_path))
     artifacts = []

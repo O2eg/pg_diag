@@ -1296,3 +1296,43 @@ def _process_is_running(pid: int) -> bool:
     except (FileNotFoundError, ProcessLookupError):
         return False
     return len(fields) > 2 and fields[2] != "Z"
+
+
+@pytest.mark.parametrize("large_budget", [False, True])
+def test_binary_script_can_use_log_budget_without_changing_generic_limit(tmp_path, large_budget):
+    class Stream:
+        def __init__(self, remaining):
+            self.remaining = remaining
+
+        async def read(self, size):
+            amount = min(size, self.remaining)
+            self.remaining -= amount
+            return b"x" * amount
+
+    class Process:
+        returncode = 0
+
+        def __init__(self):
+            self.stdout = Stream(33 * 1024 * 1024)
+            self.stderr = Stream(0)
+
+        async def wait_closed(self):
+            pass
+
+        def terminate(self):
+            pass
+
+    class Connection:
+        async def create_process(self, *args, **kwargs):
+            return Process()
+
+    async def scenario():
+        transport = SshTransport(_ssh_config(tmp_path), Connection())
+        options = {"output_limit_bytes": 34 * 1024 * 1024} if large_budget else {}
+        return await transport.run_script_bytes(b"ignored", timeout=5, **options)
+
+    if large_budget:
+        assert len(asyncio.run(scenario()).stdout) == 33 * 1024 * 1024
+    else:
+        with pytest.raises(SshTransportError, match="32 MiB limit"):
+            asyncio.run(scenario())

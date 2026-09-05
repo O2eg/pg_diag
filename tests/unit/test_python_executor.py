@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import runpy
+import subprocess
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+
+import pytest
 
 from pg_diag.content_loader import load_content
 from pg_diag.executors.python import execute_python_item
@@ -473,6 +478,34 @@ def test_postgres_main_ldd_does_not_fall_back_to_another_postgres_instance(
     assert "PID 23117" in item["reason"]
     assert item["diagnostics"][0]["code"] == "postgres_main_process_unavailable"
     assert host.arguments == ("23117",)
+
+
+@pytest.mark.parametrize("parent_name,expected_code", [("postgres", 0), ("systemd", 44)])
+def test_postgres_main_ldd_checks_container_pid_one(
+    content_path: Path, tmp_path: Path, parent_name: str, expected_code: int,
+) -> None:
+    module = runpy.run_path(
+        str(content_path / "python/backend/postgres_main_process_linked_libraries.py")
+    )
+    proc = tmp_path / "proc"
+    (proc / "42").mkdir(parents=True)
+    (proc / "1").mkdir()
+    (proc / "42/status").write_text("Name:\tpostgres\nPPid:\t1\n")
+    (proc / "1/status").write_text(f"Name:\t{parent_name}\nPPid:\t0\n")
+    (proc / "1/exe").symlink_to("/usr/bin/true")
+    binary = tmp_path / "ldd"
+    binary.write_text("#!/bin/sh\necho 'libc.so.6 => /lib/libc.so.6 (0x123)'\n")
+    binary.chmod(0o755)
+    result = subprocess.run(
+        ["sh", "-s", "--", "42"],
+        input=module["HOST_SCRIPT"].replace("/proc/", f"{proc}/"),
+        text=True, capture_output=True,
+        env={**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"},
+    )
+    assert result.returncode == expected_code, result.stderr
+    if expected_code == 0:
+        assert "PGDIAG_POSTGRES_MAIN_PID=1\n" in result.stdout
+        assert "PGDIAG_LDD_BEGIN\n" in result.stdout
 
 
 def test_postgres_main_ldd_failure_is_an_item_error(content_path: Path) -> None:

@@ -50,8 +50,8 @@ class HarvesterProtocolError(Exception):
 # LocalLogSource._scan_range and are pinned by cross-equivalence tests.
 _AWK_PROGRAM = r"""
 BEGIN {
-  wfrom = substr(ENVIRON["WFROM"], 1, 19)
-  wto = substr(ENVIRON["WTO"], 1, 19)
+  wfrom = stampkey(ENVIRON["WFROM"])
+  wto = stampkey(ENVIRON["WTO"])
   rawcap = ENVIRON["RAWCAP"] + 0
   wireleft = ENVIRON["WIRELEFT"] + 0
   rangelen = ENVIRON["RANGELEN"] + 0
@@ -127,9 +127,17 @@ function quotestate(l, q,   i, ch, len) {
   }
   return q
 }
+function stampkey(ts,   fraction) {
+  fraction = ""
+  if (substr(ts, 20, 1) == ".") {
+    fraction = substr(ts, 21)
+    sub(/[^0-9].*$/, "", fraction)
+  }
+  return substr(ts, 1, 19) "." substr(fraction "000000", 1, 6)
+}
 function finishrecord(   stamp, rtrunc) {
   if (rec_match) {
-    stamp = substr(rec_ts, 1, 19)
+    stamp = stampkey(rec_ts)
     if (stamp >= wfrom && stamp <= wto) {
       matched += 1
       rtrunc = (rec_len > rawcap) ? 1 : 0
@@ -513,7 +521,14 @@ class BashHarvesterSource(LogScanSource):
     async def scan(self, request: ScanRequest) -> ScanResult:
         stats = ScanStats(files_seen=len(request.files))
         script = build_script(request, stats=stats)
-        result = await self._transport.run_script_bytes(script, timeout=_HARVEST_TIMEOUT_SECONDS)
+        result = await self._transport.run_script_bytes(
+            script,
+            timeout=_HARVEST_TIMEOUT_SECONDS,
+            # The harvester enforces the data budget itself and emits a final
+            # coverage frame. A smaller generic SSH cap would discard all of
+            # that evidence instead of returning a useful partial window.
+            output_limit_bytes=request.wire_budget_bytes + 1_048_576,
+        )
         if result.returncode != 0:
             stderr = result.stderr
             if isinstance(stderr, bytes):

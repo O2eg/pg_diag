@@ -14,10 +14,13 @@ from datetime import datetime
 
 CHUNK_BYTES = 1_048_576
 RAW_RECORD_CAP = 8_192
-AUTO_EXPLAIN_RAW_RECORD_CAP = 65_536
+AUTO_EXPLAIN_RAW_RECORD_CAP = 512 * 1024
 LINE_CAP = 2_000
-SCAN_BUDGET_BYTES = 64 * 1_048_576
-WIRE_BUDGET_BYTES = 8 * 1_048_576
+# Full-detail plans from metadata/analytical workloads can exceed 64 KiB each
+# and tens of MiB over a diagnostic window. Keep bounded collection without
+# exhausting the transport budget after only a few minutes of such activity.
+SCAN_BUDGET_BYTES = 512 * 1_048_576
+WIRE_BUDGET_BYTES = 128 * 1_048_576
 SERIES_GAP_SECONDS = 60.0
 PHASE_WALLCLOCK_SECONDS = 60.0
 MAX_CANDIDATE_FILES = 64
@@ -178,6 +181,8 @@ class LogCoverage:
     truncation_reasons: tuple[str, ...]
     ranking_complete: bool
     locale_supported: bool
+    requested_from: str | None = None
+    requested_to: str | None = None
 
 
 @dataclass(frozen=True)

@@ -1918,7 +1918,7 @@ metrics:
       mode: interval
       limit: 12
       key_refs: [dimensions.database, dimensions.wait_event_type, dimensions.wait_event, dimensions.query_id]
-      label_refs: [dimensions.wait_event_type, dimensions.wait_event, dimensions.query_id]
+      label_refs: [dimensions.wait_event_type, dimensions.wait_event, dimensions.query_id, dimensions.database]
       value_ref: gauges.sessions
       transform: avg
       unit: sessions

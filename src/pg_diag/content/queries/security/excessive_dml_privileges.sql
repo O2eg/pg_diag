@@ -3,7 +3,6 @@ with storage_relation_roots_bounded as (
   from pg_catalog.pg_class c
   join pg_catalog.pg_namespace n on n.oid = c.relnamespace
   where c.relkind = 'r'
-    and greatest(coalesce(c.relpages, 0), 0) > 0
     and n.nspname not in ('pg_catalog', 'information_schema', 'pg_toast')
     and n.nspname not like 'pg_temp_%'
     and n.nspname not like 'pg_toast_temp_%'

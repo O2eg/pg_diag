@@ -305,3 +305,20 @@ def test_graph_preserves_waits_when_collected_top_n_members_change(content_path:
     assert nodes["cpu.contention"]["ownScore"] == 1
     assert source in nodes["cpu.contention"]["evidence"]
     assert any("p95 30.0 sessions" in reason for reason in nodes["cpu.contention"]["reasons"])
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_graph_recognizes_collected_client_write_wait_labels(content_path: Path) -> None:
+    samples = [{
+        "timestamp": f"2026-09-05T00:00:{index * 5:02d}Z",
+        "rows": [{"datname": "test", "wait_event_type": "Client",
+                  "wait_event": "ClientWrite", "query_id": "123", "sessions": 10}],
+    } for index in range(4)]
+    source = "activity_locks.wait_event_sample_profile"
+    nodes = _evaluate_graph({"items": {
+        source: _collected_metric(content_path, "activity.wait_sample_profile", samples),
+    }})
+    node = nodes["network.clients.write"]
+    assert node["ownScore"] > 0
+    assert source in node["evidence"]
+    assert any("sampled p95 10.0" in reason for reason in node["reasons"])

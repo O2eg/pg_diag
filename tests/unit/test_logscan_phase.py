@@ -7,7 +7,10 @@ import csv
 from datetime import datetime, timedelta, timezone
 import io
 import json
+import runpy
 from types import SimpleNamespace
+
+import pytest
 
 from pg_diag.artifact_schema import _validate_json_data
 from pg_diag.logscan.model import LINE_CAP
@@ -134,6 +137,9 @@ def test_phase_preserves_numeric_events_and_query_identity(tmp_path) -> None:
         f"app{i % 2}" for i in range(len(messages))
     ]
     assert all(record.count_complete for record in window.records)
+    coverage = run.artifact["runtime"]["log_collection"]["coverage"]
+    assert coverage["requested_from"] == "2026-08-31 10:20:00"
+    assert coverage["requested_to"] == "2026-08-31 10:30:00"
 
 
 def test_phase_skipped_when_no_server_log_items_selected() -> None:
@@ -328,7 +334,7 @@ def test_phase_keeps_lock_wait_events_distinct_and_detail_intact(tmp_path) -> No
 
 def test_phase_extracts_large_multiline_auto_explain_plan_without_query_text(tmp_path) -> None:
     now = datetime(2026, 8, 31, 10, 30)
-    query_text = "select 'do-not-retain' /* " + ("x" * 9_000) + " */"
+    query_text = "select 'do-not-retain' /* " + ("x" * 90_000) + " */"
     message = "duration: 1234.5 ms  plan:\n" + json.dumps(
         {
             "Query Text": query_text,
@@ -415,7 +421,7 @@ def test_phase_collected_remote_via_local_sh(tmp_path) -> None:
     import subprocess
 
     class LocalShellTransport:
-        async def run_script_bytes(self, script, *, arguments=(), timeout):
+        async def run_script_bytes(self, script, *, arguments=(), timeout, output_limit_bytes=None):
             proc = subprocess.run(
                 ["/bin/sh", "-s", "--", *arguments],
                 input=script,
@@ -463,7 +469,8 @@ def test_phase_locale_flag(tmp_path) -> None:
     assert window.coverage.locale_supported is False
 
 
-def test_phase_truncated_window_makes_counts_lower_bounds(tmp_path) -> None:
+@pytest.mark.parametrize("budget", ["scan_budget_bytes", "wire_budget_bytes"])
+def test_phase_truncated_window_makes_counts_lower_bounds(tmp_path, content_path, budget) -> None:
     now = datetime(2026, 8, 31, 10, 30)
     body = "".join(
         _record(now - timedelta(minutes=5) + timedelta(seconds=i // 10), "ERROR", f"e {i:04d}")
@@ -494,7 +501,7 @@ def test_phase_truncated_window_makes_counts_lower_bounds(tmp_path) -> None:
     async def tiny_budget_scan(self, request):
         from dataclasses import replace as dc_replace
 
-        return await original_scan(self, dc_replace(request, scan_budget_bytes=32 * 1024))
+        return await original_scan(self, dc_replace(request, **{budget: 32 * 1024}))
 
     LocalLogSource.scan = tiny_budget_scan
     try:
@@ -507,3 +514,10 @@ def test_phase_truncated_window_makes_counts_lower_bounds(tmp_path) -> None:
     assert window2.records
     assert all(record.count_complete is False for record in window2.records)
     assert original == logscan_model.SCAN_BUDGET_BYTES
+    # A bounded scan remains usable by report items; the retained evidence is
+    # rendered with incomplete coverage rather than dropping the whole item.
+    module = runpy.run_path(str(content_path / "python/server_log/error_chronology.py"))
+    item = module["collect"](SimpleNamespace(server_log=run2.server_log))
+    assert item.collection_status == "ok"
+    assert item.result["rows"]
+    assert "lower bounds" in item.issues["summary"]["description"]

@@ -16,8 +16,10 @@ import asyncssh
 import pytest
 
 from pg_diag.content_loader import load_content
+from pg_diag.metric_engine import build_table_result
 from pg_diag.planner import build_plan
 from pg_diag.runtime_config import ONE_SHOT_MODE, REMOTE_COLLECTION_MODE, SNAPSHOTS_MODE
+from pg_diag.versioning import select_query_variant
 
 
 ENABLE_ENV = "PG_DIAG_DOCKER_INTEGRATION"
@@ -540,6 +542,104 @@ def assert_items_ran(artifact: dict[str, object], item_ids: set[str]) -> None:
         if items[item_id].get("collection_status") in {"error", "skipped", "unsupported"}
     )
     assert failed == []
+
+
+def _psql_json_values(container_name: str, sql: str) -> list:
+    # stdin returns every result on older psql versions too; -c only returns
+    # the final result of a multi-statement command on PostgreSQL <= 14.
+    proc = run(["docker", "exec", "--interactive", container_name, "psql", "-XqAt",
+                "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "postgres"], input=sql)
+    return [json.loads(line) for line in proc.stdout.splitlines() if line.strip()]
+
+
+@pytest.mark.parametrize("populated", [False, True])
+@pytest.mark.parametrize("query_name", [
+    "grant_option_holders", "rls_table_privilege_mismatch", "direct_user_grants",
+    "excessive_dml_privileges", "unused_privileged_grants", "object_acl_drift",
+])
+def test_security_checks_include_unanalyzed_tables(
+    prepared_postgres: PreparedPostgres, query_name: str, populated: bool,
+) -> None:
+    query = (CONTENT_PATH / f"queries/security/{query_name}.sql").read_text().rstrip(";\n")
+    insert = "insert into diag_acl_review.docs values (1);" if populated else ""
+    sql = f"""
+        begin;
+        create role diag_acl_reader login;
+        create schema diag_acl_review;
+        create table diag_acl_review.docs(id integer);
+        create table diag_acl_review.baseline(id integer);
+        {insert}
+        alter table diag_acl_review.docs enable row level security;
+        grant all on diag_acl_review.docs to diag_acl_reader with grant option;
+        select json_build_object('relpages', relpages) from pg_class
+          where oid = 'diag_acl_review.docs'::regclass;
+        select coalesce(jsonb_agg(q), '[]'::jsonb) from ({query}) q;
+        rollback;
+    """
+    stats, rows = _psql_json_values(prepared_postgres.container_name, sql)
+    assert stats["relpages"] == 0
+    if query_name == "object_acl_drift":
+        assert any(row.get("schema_name") == "diag_acl_review"
+                   and "docs" in row.get("sample_objects", "") for row in rows)
+    else:
+        assert any("docs" in row.values() and "diag_acl_reader" in row.values() for row in rows)
+
+
+def test_table_scan_delta_keeps_tables_without_indexes(prepared_postgres: PreparedPostgres) -> None:
+    query = (CONTENT_PATH / "queries/metrics/objects_table_scan_delta.sql").read_text().rstrip(";\n")
+    sql = f"""
+        begin;
+        create table diag_scan_review(id integer);
+        select row_to_json(q) from ({query}) q where relname = 'diag_scan_review';
+        rollback;
+    """
+    [row] = _psql_json_values(prepared_postgres.container_name, sql)
+    assert row["idx_scan"] == 0
+    assert row["idx_tup_fetch"] == 0
+    content = load_content(CONTENT_PATH)
+    metric = content.metrics["objects.table_scan_delta"]
+    source = content.queries[metric["source_query"]]
+    semantics = select_query_variant(source["title"], source, prepared_postgres.major * 10000).variant["semantic_columns"]
+    result = build_table_result(metric, [
+        {"timestamp": "2026-09-05T00:00:00Z", "rows": [{**row, "snapshot_time": "2026-09-05T00:00:00Z"}]},
+        {"timestamp": "2026-09-05T00:00:10Z", "rows": [{
+            **row, "snapshot_time": "2026-09-05T00:00:10Z", "seq_scan": row["seq_scan"] + 3,
+            "seq_tup_read": row["seq_tup_read"] + 300,
+        }]},
+    ], semantics)
+    assert result["interval_coverage"]["invalid"] == 0
+    values = dict(zip((c["name"] for c in result["columns"]), result["rows"][0]))
+    assert values["seq_scan_delta"] == 3
+    assert values["seq_tup_read_delta"] == 300
+    assert values["seq_scans_per_sec"] == 0.3
+
+
+def test_logical_slot_delta_excludes_lost_slots(prepared_postgres: PreparedPostgres) -> None:
+    if prepared_postgres.major < 14:
+        pytest.skip("logical slot statistics require PostgreSQL 14+")
+    name = prepared_postgres.container_name
+    psql(name, "alter system set wal_level = logical")
+    psql(name, "alter system set max_slot_wal_keep_size = 0")
+    run(["docker", "restart", name])
+    wait_for_postgres(name)
+    try:
+        psql(name, "select pg_create_logical_replication_slot('diag_lost_review', 'test_decoding')")
+        query = (CONTENT_PATH / "queries/metrics/logical_decoding_slot_delta.sql").read_text().rstrip(";\n")
+        read = f"select coalesce(jsonb_agg(q), '[]'::jsonb) from ({query}) q;"
+        [healthy] = _psql_json_values(name, read)
+        assert any(row["slot_name"] == "diag_lost_review" for row in healthy)
+        for _ in range(2):
+            psql(name, "select pg_switch_wal()")
+            psql(name, "checkpoint")
+        assert psql(name, "select wal_status from pg_replication_slots where slot_name = 'diag_lost_review'").stdout.strip() == "lost"
+        [lost] = _psql_json_values(name, read)
+        assert not any(row["slot_name"] == "diag_lost_review" for row in lost)
+    finally:
+        psql(name, "select pg_drop_replication_slot(slot_name) from pg_replication_slots where slot_name = 'diag_lost_review'")
+        psql(name, "alter system reset max_slot_wal_keep_size")
+        psql(name, "alter system reset wal_level")
+        run(["docker", "restart", name])
+        wait_for_postgres(name)
 
 
 def test_remote_one_shot_runs_all_applicable_items(

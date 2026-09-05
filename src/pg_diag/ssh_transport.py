@@ -131,7 +131,9 @@ class _OutputBudget:
     def consume(self, value: str | bytes) -> None:
         self.size += len(value if isinstance(value, bytes) else value.encode("utf-8"))
         if self.size > self.limit:
-            raise SshTransportError("remote command output exceeds the 32 MiB limit")
+            raise SshTransportError(
+                f"remote command output exceeds the {self.limit / (1024 * 1024):g} MiB limit"
+            )
 
 
 def remote_database_endpoint(
@@ -499,6 +501,7 @@ class SshTransport:
         *,
         arguments: tuple[str, ...] = (),
         timeout: float,
+        output_limit_bytes: int = REMOTE_OUTPUT_LIMIT,
     ) -> _RawCommandResult:
         """Run a script from stdin with binary stdout/stderr.
 
@@ -514,6 +517,7 @@ class SshTransport:
             input_data=script,
             timeout=timeout,
             encoding=None,
+            output_limit_bytes=output_limit_bytes,
         )
 
     async def run_bytes(
@@ -555,6 +559,7 @@ class SshTransport:
         input_data: bytes | str | None = None,
         timeout: float,
         encoding: str | None,
+        output_limit_bytes: int = REMOTE_OUTPUT_LIMIT,
     ) -> _RawCommandResult:
         try:
             process = await self._connection.create_process(
@@ -565,7 +570,7 @@ class SshTransport:
         except Exception as exc:
             raise SshTransportError(f"cannot start remote command: {redact_error(exc)}") from exc
 
-        budget = _OutputBudget(REMOTE_OUTPUT_LIMIT)
+        budget = _OutputBudget(output_limit_bytes)
         stdout_task = asyncio.create_task(
             _read_bounded(process.stdout, budget, binary=encoding is None)
         )

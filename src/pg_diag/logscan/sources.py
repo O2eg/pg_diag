@@ -33,6 +33,13 @@ _SERIES_WIRE_OVERHEAD = 64
 _QUOTE = 0x22
 
 
+def _timestamp_key(value: str) -> str:
+    # log_timezone is fixed for the scan. Normalize fractional seconds before
+    # RLE: a merged series cannot subsequently be split at a subsecond bound.
+    fraction = value[20:].split(" ", 1)[0] if value[19:20] == "." else ""
+    return value[:19] + "." + (fraction + "000000")[:6]
+
+
 class _LogicalRecordAssembler:
     """Assemble newline-containing PostgreSQL CSV records with a hard cap."""
 
@@ -324,8 +331,8 @@ class LocalLogSource(LogScanSource):
     ) -> tuple[int, bool]:
         """Read [start, size), assemble CSV records, and feed matches through RLE."""
         handle.seek(start)
-        window_from = request.window_from_ts[:_TS_COMPARE_LEN]
-        window_to = request.window_to_ts[:_TS_COMPARE_LEN]
+        window_from = _timestamp_key(request.window_from_ts)
+        window_to = _timestamp_key(request.window_to_ts)
         rle = PhysicalRle(file_name, request.raw_record_cap)
         assembler = _LogicalRecordAssembler(request.raw_record_cap)
         pending = b""
@@ -362,7 +369,7 @@ class LocalLogSource(LogScanSource):
                 if not is_match:
                     continue
                 ts = ts_prefix(raw)
-                stamp = ts[:_TS_COMPARE_LEN]
+                stamp = _timestamp_key(ts)
                 if stamp < window_from or stamp > window_to:
                     # Out-of-window records (including a series head before
                     # the boundary) must not be counted — review finding.

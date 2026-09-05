@@ -319,6 +319,7 @@ def test_one_shot_host_only_item_does_not_require_database_connection(
 
     proc = run_cli(
         repo_root,
+        "--machine",
         "one-shot",
         "--collection-mode",
         "local",
@@ -330,6 +331,8 @@ def test_one_shot_host_only_item_does_not_require_database_connection(
 
     assert proc.returncode == 0, proc.stderr + proc.stdout
     artifact = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+    descriptor = json.loads(proc.stdout)["artifacts"][0]
+    assert descriptor["schema_version"] == f"pg_diag/artifact-v{artifact['artifact_schema_version']}"
     assert artifact["runtime"]["targets"] == ["host"]
     assert artifact["runtime"]["database_connected"] is False
     assert artifact["runtime"]["server_version_num"] is None

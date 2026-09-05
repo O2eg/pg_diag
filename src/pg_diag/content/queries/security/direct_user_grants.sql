@@ -4,7 +4,6 @@ with storage_relation_roots_bounded as (
     join pg_namespace n on n.oid = c.relnamespace
     where c.relacl is not null
       and c.relkind in ('r', 'm')
-      and greatest(coalesce(c.relpages, 0), 0) > 0
       and n.nspname not in ('pg_catalog', 'information_schema')
       and n.nspname not like 'pg_toast%'
     order by c.relpages desc, n.nspname, c.relname, c.oid

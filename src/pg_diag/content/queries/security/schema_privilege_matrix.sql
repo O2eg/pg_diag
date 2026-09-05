@@ -50,7 +50,6 @@ storage_object_roots_bounded as (
     from pg_class c
     join user_schemas s on s.schema_oid = c.relnamespace
     where c.relkind in ('r', 'm')
-      and greatest(coalesce(c.relpages, 0), 0) > 0
     order by c.relpages desc, s.schema_name, c.relname, c.oid
     limit 10001
 ),

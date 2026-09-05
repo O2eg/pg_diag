@@ -457,6 +457,8 @@ def _build_window(
     truncated = bool(stats.truncation_reasons)
     coverage = LogCoverage(
         requested_minutes=depth_minutes,
+        requested_from=window_from,
+        requested_to=window_to,
         covered_from=result.covered_from_ts,
         covered_to=result.covered_to_ts or window_to,
         files_seen=stats.files_seen,

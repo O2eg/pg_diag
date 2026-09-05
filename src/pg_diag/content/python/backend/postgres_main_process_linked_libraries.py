@@ -56,13 +56,15 @@ case "$backend_name" in
 esac
 
 case "$postgres_main_pid" in
-  ''|*[!0-9]*|0|1)
+  ''|*[!0-9]*|0)
     echo "cannot resolve the parent of PostgreSQL backend PID $backend_pid" >&2
     exit 43
     ;;
 esac
 
 postgres_main_status=/proc/$postgres_main_pid/status
+# In a container the postmaster can be PID 1. Validate its process name below
+# just as for any other parent, rather than rejecting the namespace init PID.
 if [ ! -r "$postgres_main_status" ]; then
   echo "parent PID $postgres_main_pid of PostgreSQL backend PID $backend_pid is not visible" >&2
   exit 43
@@ -89,6 +91,16 @@ case "$postgres_main_name" in
 esac
 
 postgres_executable=$(readlink "/proc/$postgres_main_pid/exe" 2>/dev/null || true)
+postgres_owner=
+runuser_bin=$(command -v runuser 2>/dev/null || true)
+if [ -z "$postgres_executable" ] && [ "$(id -u)" = 0 ] && [ -n "$runuser_bin" ]; then
+  # Container root may lack CAP_SYS_PTRACE. The actual process owner can still
+  # inspect its executable; use that identity only for readlink and ldd.
+  postgres_owner=$(stat -c %U "$postgres_main_status" 2>/dev/null || true)
+  if [ -n "$postgres_owner" ]; then
+    postgres_executable=$("$runuser_bin" -u "$postgres_owner" -- readlink "/proc/$postgres_main_pid/exe" 2>/dev/null || true)
+  fi
+fi
 if [ -z "$postgres_executable" ]; then
   echo "cannot resolve /proc/$postgres_main_pid/exe for PostgreSQL backend PID $backend_pid" >&2
   exit 45
@@ -105,7 +117,11 @@ printf 'PGDIAG_POSTGRES_MAIN_PID=%s\n' "$postgres_main_pid"
 printf 'PGDIAG_POSTGRES_EXECUTABLE=%s\n' "$postgres_executable"
 printf 'PGDIAG_LDD_PATH=%s\n' "$ldd_bin"
 printf '%s\n' 'PGDIAG_LDD_BEGIN'
-"$ldd_bin" "/proc/$postgres_main_pid/exe"
+if [ -n "$postgres_owner" ]; then
+  "$runuser_bin" -u "$postgres_owner" -- "$ldd_bin" "/proc/$postgres_main_pid/exe"
+else
+  "$ldd_bin" "/proc/$postgres_main_pid/exe"
+fi
 """
 
 _RESOLVED_RE = re.compile(

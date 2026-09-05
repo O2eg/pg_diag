@@ -15,6 +15,22 @@ SENSITIVE_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Utility statements are not literal-normalized by pg_stat_statements. In
+# particular, CREATE/ALTER SUBSCRIPTION can retain a full connection password.
+_QUERY_CREDENTIAL_LITERAL_RE = re.compile(
+    r"(?P<prefix>\b(?:PASSWORD|CONNECTION)(?:\s|/\*.*?\*/|--[^\n]*(?:\n|$))+)"
+    r"(?:E'(?:''|\\.|[^'\\])*'|'(?:''|[^'])*'"
+    r"|\$(?P<tag>[A-Za-z_][A-Za-z_0-9]*|)\$.*?\$(?P=tag)\$)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def redact_query_credentials(value: str) -> str:
+    """Hide password clauses and connection literals in retained SQL text."""
+    return _QUERY_CREDENTIAL_LITERAL_RE.sub(
+        lambda match: match.group("prefix") + f"'{REDACTED}'", value
+    )
+
 
 def is_sensitive_name(name: str | None) -> bool:
     return bool(name and SENSITIVE_NAME_RE.search(name))

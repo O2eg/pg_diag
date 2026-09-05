@@ -12,8 +12,9 @@ This instruction belongs to report item `snapshot_delta_workload.logical_decodin
 - No severity is assigned because spilling can be acceptable for large transactions and bounded workloads.
 
 ## Interval coverage
-- Slot name is the stable key and `stats_reset` is the reset epoch.
-- New, dropped, or reset slots are omitted rather than represented as zero deltas.
+- Slot name identifies the endpoint pair and `stats_reset` detects explicit statistics resets.
+- Slots absent or already lost at either endpoint, changed reset epochs, and decreasing counters are omitted rather than represented as zero deltas.
+- PostgreSQL does not expose a slot creation identifier here. Dropping and recreating a healthy slot with the same name between endpoints can remain undetectable when `stats_reset` is NULL and counters do not decrease. Check lifecycle logs before interpreting such a window.
 
 ## Common fault causes
 - Large transactions, insufficient `logical_decoding_work_mem`, slow consumers, and output-plugin behavior.

@@ -82,6 +82,11 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
             if rank < len(top_by_bucket[bucket]) and displayed_plan_count < event_point_limit:
                 selected[bucket][rank] = top_by_bucket[bucket][rank]
                 displayed_plan_count += 1
+    occupied_first_rank = {
+        _iso_timestamp(bucket, utc_offset_seconds)
+        for bucket, ranks in selected.items() if 0 in ranks
+    }
+    axis_points = [point for point in axis_points if point["t"] not in occupied_first_rank]
     refs = ChartReferencePool()
 
     result = {

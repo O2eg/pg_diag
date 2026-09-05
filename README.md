@@ -1115,6 +1115,13 @@ block opens its sanitized, bounded plan in the bundled read-only
 `pg-explain-viewer`. An SFTP fallback for shell-less SSH
 accounts is planned but deliberately not part of this release.
 
+Log collection is bounded to 512 MiB scanned and 128 MiB returned per window.
+An auto_explain record can retain up to 512 KiB; chart plan references have a
+separate 64 MiB / 1024-plan budget. Reaching a scan or return limit preserves
+already collected events and marks coverage incomplete; it does not discard the
+whole item. Larger limits allow detailed analytical plans while keeping resource
+use bounded.
+
 The artifact records the phase outcome in `runtime.log_collection`
 (`{status, reason, coverage}`); `coverage` states the requested and actually
 covered window, scanned bytes, and truncation reasons, so an incomplete window

@@ -453,6 +453,19 @@ def test_auto_explain_chart_always_uses_aligned_minute_buckets() -> None:
     }
 
 
+def test_auto_explain_boundary_does_not_duplicate_a_real_plan_bucket() -> None:
+    module = _load("auto_explain_plans")
+    plan = AutoExplainPlan(1000, "json", "Result", 1, True, True, "select 1")
+    records = [_record(second, "LOG", auto_explain_plan=plan) for second in (1, 61)]
+    result = module.collect(_context(_window(records), inventory={
+        "window_from": "2026-08-31 10:00:00", "collected_to": "2026-08-31 10:01:30",
+    })).result
+    points = next(series["points"] for series in result["series"] if series["name"] == "Rank 1")
+    assert len({point["t"] for point in points}) == len(points) == 2
+    assert all(point["value"] == 1000 for point in points)
+    assert result["display_point_count"] == result["displayed_plan_count"] == 2
+
+
 def _by(result):
     res = result.result
     cols = [c["name"] if isinstance(c, dict) else c for c in res["columns"]]

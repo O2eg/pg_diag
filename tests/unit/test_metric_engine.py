@@ -751,6 +751,30 @@ def test_top_n_interval_allows_different_limited_row_sets() -> None:
     }
 
 
+def test_wait_profile_keeps_databases_separate(content_path: Path) -> None:
+    content = load_content(content_path)
+    metric = content.metrics["activity.wait_sample_profile"]
+    source = content.queries[metric["source_query"]]
+    semantics = select_query_variant(source["title"], source, 180000).variant["semantic_columns"]
+    samples = [
+        {
+            "timestamp": timestamp,
+            "rows": [
+                {"datname": database, "wait_event_type": "Client",
+                 "wait_event": "WalSenderWaitForWal", "query_id": None, "sessions": 1}
+                for database in ("app_01", "workload_trace")
+            ],
+        }
+        for timestamp in ("2026-09-05T19:45:04Z", "2026-09-05T19:45:09Z")
+    ]
+    result = build_chart_result(metric, samples, semantics)
+    assert {series["name"] for series in result["series"]} == {
+        "Client.WalSenderWaitForWal.app_01", "Client.WalSenderWaitForWal.workload_trace",
+    }
+    assert all(series["points"] == [{"t": samples[1]["timestamp"], "value": 1.0}]
+               for series in result["series"])
+
+
 def test_metric_item_warns_for_invalid_delta_but_not_limited_row_churn() -> None:
     planned = PlannedItem(
         item_id="snapshot_charts_db.tables_top_insert_rate",
