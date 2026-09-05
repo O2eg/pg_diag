@@ -734,6 +734,14 @@ already scaled MiB, GiB, thousands, or percentages represented as strings.
 - a series whose complete collection window contains no non-zero datapoint is
   omitted from the artifact, legend, and tooltip; a required all-null series
   carrying invalid-coverage evidence is not treated as an all-zero series;
+- suppressed zero lines retain compact `result.zero_series` metadata: unique
+  `name`, positive integer `sample_count` of observed zeros, and non-negative
+  integer `missing_count`, including absent partition rows in gauge samples.
+  Gauge series retain the complete sample time axis with nulls for missing rows.
+  This is not a plotted series. Consumers must not
+  treat an empty chart without this metadata as a measured zero; two observed
+  samples with no missing points are required for a zero-rate graph verdict;
+  OS gauge zeros must cover every collected sample, with no sampler warning/error;
 - rates use actual adjacent-snapshot duration;
 - timestamp coordinates use UTC artifact instants and browser-local display.
 - before passing sparse series to a shared-tooltip chart library, the renderer

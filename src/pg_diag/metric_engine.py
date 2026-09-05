@@ -393,8 +393,11 @@ def build_chart_result(
             interval_counts.update(point_counts)
         else:
             points = [
-                {"t": point["t"], "value": point["value"]}
-                for _sample_index, point in sorted(raw["raw_points"].items())
+                {
+                    "t": raw["raw_points"].get(index, {}).get("t", timestamp),
+                    "value": raw["raw_points"].get(index, {}).get("value"),
+                }
+                for index, timestamp in enumerate(sample_timestamps)
             ]
         if raw.get("optional") and not any(point.get("value") is not None for point in points):
             continue
@@ -422,6 +425,19 @@ def build_chart_result(
 
 
 def _without_all_zero_series(result: dict[str, Any]) -> dict[str, Any]:
+    # Keep compact evidence that a hidden series was actually sampled at zero.
+    # An empty chart alone cannot distinguish zero errors from no interfaces/data.
+    zero_series = [
+        {
+            "name": series["name"],
+            "sample_count": sum(point.get("value") is not None for point in series["points"]),
+            "missing_count": sum(point.get("value") is None for point in series["points"]),
+        }
+        for series in result.get("series") or []
+        if _series_is_all_zero(series)
+    ]
+    if zero_series:
+        result["zero_series"] = zero_series
     result["series"] = [
         series
         for series in result.get("series") or []

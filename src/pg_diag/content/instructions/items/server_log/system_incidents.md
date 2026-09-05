@@ -5,6 +5,8 @@ This instruction belongs to report item `server_log.system_incidents`. The item 
 ## What this item shows
 - Incident-grade capacity, operating-system I/O, checksum, and corruption records, ranked by severity, frequency, and recency.
 - Stable SQLSTATE categories work with every `lc_messages` locale. English message signatures add evidence that PostgreSQL may log without a specific SQLSTATE.
+- A known application SQLSTATE takes precedence over incident phrases in the message.
+  Message fallback matches the start of a server message, not text inside SQL identifiers.
 - At most 100 series are emitted. `omitted_series_count` warns when lower-ranked matches were dropped; `count_complete = false` means global collection loss made the count a lower bound.
 
 ## What to watch

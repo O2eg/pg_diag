@@ -1157,3 +1157,64 @@ def test_normal_end_of_wal_is_lifecycle_evidence_not_corruption() -> None:
     ):
         result = incidents.collect(_context(_window([record])))
         assert len(_by(result)) == 1
+
+
+def test_system_incidents_do_not_classify_application_identifiers_as_incidents() -> None:
+    module = _load("system_incidents")
+    records = [
+        _record(1, message='relation "out of memory" does not exist', sql_state="42P01"),
+        _record(2, message='column "could not write" does not exist', sql_state=None),
+        _record(3, message="out of memory", sql_state="42P01"),
+        _record(4, message="out of memory", sql_state=None),
+        _record(5, message="не хватает памяти", sql_state="53200"),
+        _record(6, message='could not fsync file "base/1/2": Input/output error', sql_state=None),
+        _record(7, message='could not write to file "pg_wal/xlogtemp.12": No space left on device',
+                sql_state=None),
+    ]
+    rows = _by(module.collect(_context(_window(records))))
+    assert len(rows) == 4
+    assert sorted(row["incident_type"] for row in rows) == [
+        "disk_full", "fsync_failure", "out_of_memory", "out_of_memory",
+    ]
+
+
+def test_checkpoint_item_preserves_cap_and_rle_coverage() -> None:
+    module = _load("checkpoints")
+    records = [
+        _record(n, "LOG", "checkpoint starting: time", sql_state=None)
+        for n in range(module.EVENT_LIMIT + 1)
+    ]
+    records[-1] = _record(module.EVENT_LIMIT, "LOG", "checkpoint starting: wal", repeat=3,
+                          sql_state=None, count_complete=False)
+    result = module.collect(_context(_window(records)))
+    assert result.result["matched_series_count"] == module.EVENT_LIMIT + 1
+    assert result.result["omitted_series_count"] == 1
+    assert result.result["row_limit"] == module.EVENT_LIMIT
+    latest = _by(result)[0]
+    assert latest["repeat_count"] == 3
+    assert latest["count_complete"] is False
+    assert latest["last_time"] > latest["log_time"]
+    assert "3 checkpoint(s)" in result.issues["summary"]["description"]
+    empty = module.collect(_context(_window([])))
+    assert empty.result["omitted_series_count"] == 0
+
+
+def test_explicit_checkpoints_and_sql_fragments_are_not_wal_pressure() -> None:
+    module = _load("checkpoints")
+    records = [
+        _record(1, "LOG", "checkpoint starting: immediate force wait", sql_state=None),
+        _record(2, message='relation "checkpoint starting: wal" does not exist'),
+    ]
+    result = module.collect(_context(_window(records)))
+    assert len(_by(result)) == 1
+    assert result.severity_level == "ok"
+    assert result.result["omitted_series_count"] == 0
+
+
+def test_checkpoint_item_carries_server_timezone_offset() -> None:
+    module = _load("checkpoints")
+    window = _window([_record(1, "LOG", "checkpoint starting: time", sql_state=None)])
+    result = module.collect(_context(window, inventory={"settings": {"log_utc_offset_seconds": 10800}}))
+    assert result.result["log_utc_offset_seconds"] == 10800
+    legacy = module.collect(_context(window))
+    assert legacy.result["log_utc_offset_seconds"] is None

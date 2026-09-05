@@ -2,8 +2,8 @@
 
 Status: normative contract for the diagnostic graph module that ships inside the
 pg_diag HTML report (`src/pg_diag/render/graph/`). The module turns a rendered
-report artifact into a compact cause tree with five roots — `cpu`, `ram`,
-`disk`, `database_health`, `database_security` — evaluates every node from the
+report artifact into a compact cause tree with six roots — `cpu`, `ram`,
+`disk`, `network`, `database_health`, `database_security` — evaluates every node from the
 raw item data, and renders the result as an interactive top-down graph above the
 report sections.
 
@@ -37,7 +37,7 @@ to a bound item with the same behaviour as a related-item link in an instruction
 ```json
 {
   "schema_version": 1,
-  "roots": ["cpu", "ram", "disk", "database_health", "database_security"],
+  "roots": ["cpu", "ram", "disk", "network", "database_health", "database_security"],
   "nodes": [
     {
       "id": "disk.write.checkpoints",
@@ -62,7 +62,7 @@ Rules:
 
 - `id` is unique; dots separate the path but carry no semantics for the engine.
 - Every non-root node has exactly one `parent`; the parent graph MUST be a tree
-  with the five roots as its only sources. `links` are additional directed cause
+  with the six roots as its only sources. `links` are additional directed cause
   edges between any two nodes and MUST NOT create a parent cycle (they are not
   part of the tree and never propagate scores).
 - `bindings[]` lists the report items that carry the evidence for the node. One
@@ -90,6 +90,13 @@ Rules:
   contributor is assessed: `cpu_user`, `cpu_system`, `cpu_iowait`, `ram`, or
   `disk`. Damping is applied once, after the evaluator, not once per helper.
   Repeated evidence under different resources uses that branch's pressure.
+  The damping factor is `0.2 + 0.8 × pressure` (0.5 when the pressure is
+  unknown, as in one-shot reports): a contributor on an idle resource keeps its
+  explanation but can never reach `warn` on its own.
+- `cap`, when present, bounds the node's own score after damping. It marks
+  findings that are real but are not a failure of this root: configuration
+  advice (`health.observability` 0.3) and security checks repeated under
+  Network (`network.access.*` 0.6). Children still propagate above a cap.
 
 Resource branches follow observed symptoms, then possible contributors:
 
@@ -106,6 +113,15 @@ Resource branches follow observed symptoms, then possible contributors:
   readers, scans, indexes, cache misses, vacuum, backups and temporary files;
   writes to data-file writers, WAL and spills. Bloat also belongs below
   capacity. Bindings are intentionally repeated where evidence is relevant.
+- Network: traffic (receive, transmit, packet processing), interface health
+  (errors, drops, NIC/address inventory), client connections (ClientWrite,
+  ClientRead, capacity, reconnects, frequent calls, transport failures), WAL
+  transport (send backlog, receiver, synchronous replies, topology, streaming
+  disconnects), TCP/UDP configuration, and access/encryption (listeners,
+  firewall, TLS/GSS, authentication/HBA, local sockets). Every Network-tagged
+  catalog item MUST be bound under this root, alongside related client,
+  replication, security and workload evidence. Existing CPU/health/security
+  bindings remain, with cause links between the related branches.
 
 ## 3. Traversal
 
@@ -129,7 +145,10 @@ Resource branches follow observed symptoms, then possible contributors:
 5. Coverage: for every node the engine reports `present`, `missing`, and
    `hints` — one hint per unmet requirement, derived from the artifact runtime
    (`runtime.mode`, `runtime.collection_mode`, `runtime.log_collection`) and the
-   bound items' statuses and `reason` texts.
+   bound items' statuses and `reason` texts. A mode hint appears only when the
+   whole category (snapshots, host, log) is missing from the node; when any
+   `server_log.*` item was collected, an absent log item is a catalog
+   difference and produces no log hint.
 
 ## 4. Evaluation
 
@@ -147,10 +166,12 @@ Scores are numbers in `[0, 1]`; `status` is `ok` (< 0.34), `warn` (< 0.67),
   (`Number()`; values above 2^53 lose precision, which is acceptable for
   scoring), `json_number` as is, `json_boolean` as is, others as text.
 - `generic`: for each `primary`/`support` binding with rows, the severity is the
-  worst `risk_level` cell in the rows (`high` 1.0, `medium` 0.6, `low` 0.3) when
-  the table has that column, otherwise `binding.weight` (default 0.6) scaled by
-  the row count (`0.6 + 0.4 × min(1, rows / 10)`). The node score is the
-  maximum. Bindings with role `fact` are ignored.
+  worst `risk_level` cell in the rows (`high` 1.0, `medium` 0.6, `low` 0.3,
+  `ok`/`unknown` 0) when the table has that column, otherwise `binding.weight`
+  scaled by the row count (weight ≥ 1 is critical on its own; lighter weights
+  use `weight × (0.6 + 0.4 × min(1, rows / 10))`). Bindings with neither a
+  weight nor a `risk_level` column are context and never score. The node score
+  is the maximum. Bindings with role `fact` are ignored.
 - Named evaluators implement the runbook rules (CPU busy share and load per
   core, system share, disk latency by media type, cache hit ratio, checkpoint
   requested/timed ratio, backend writes share, connection usage, lock wait
@@ -170,10 +191,59 @@ Scores are numbers in `[0, 1]`; `status` is `ok` (< 0.34), `warn` (< 0.67),
   unknown; zero swap is valid evidence. Available memory and OOM are assessed
   separately from swap. Throughput without device-pressure evidence likewise
   does not establish a healthy disk.
-- Log errors use the worst severity across chronology and top-errors rows.
-  Chronology, top errors and query termination counts overlap and may each be
-  capped; their maximum is a lower bound, never an additive total. A missing
-  chronology must not hide PANIC/FATAL in top errors or termination events.
+- Log errors are classified per row by SQLSTATE class, or by an anchored message signature
+  when the log line prefix carries no `%e`: PANIC, internal/system errors,
+  corruption and disk-full (class XX, 58, 53100, 57P02) score 1.0; out of memory
+  and connection exhaustion (53200, 53300) 0.8; server unavailable (57P03),
+  and other FATAL 0.6; deadlock (40P01) uses the shared rate rule below;
+  timeouts and cancellations (57014,
+  55P03) 0.4; administrator terminations (57P01) and client connection loss
+  (class 08) 0.3; authentication failures (class 28) 0.15 because the security
+  root owns them. Everything else (constraint, syntax, data, privilege errors)
+  is an application error: it stays visible at 0.1 and only a flood (20–200 per
+  minute) reaches `warn`. Chronology, top errors and query termination counts
+  overlap and may each be capped; per class the larger count is kept, never a
+  sum. A missing chronology must not hide PANIC/FATAL in top errors or
+  termination events. A known nonzero SQLSTATE takes precedence over message
+  text; SQL identifiers containing incident phrases are not server incidents.
+  Query terminations score 0.4, rising with their rate.
+- Deadlocks are resolved by the server: any deadlock stays visible at 0.3 and
+  the rate per minute (0.1 warn, 5 critical) decides the rest, separately for
+  the log window and the snapshot window, consistently in locks and errors.
+  Delta rates use the source item's `delta_window.duration_seconds`; only legacy
+  artifacts without that field fall back to the actual runtime window, then the
+  configured duration. An explicitly invalid delta window stays unknown.
+- Autovacuum lag counts tables whose dead tuples passed the threshold with at
+  least 10 000 dead rows and no vacuum running; insert-triggered vacuums are
+  routine and only reported. The worst overdue factor and the dead-tuple share
+  on large tables carry the score, together with bloat.
+- Sequential scans: the sequential share of tuple reads can only warn; the
+  number of tables where sequential reads beat index fetches (> 1M tuples) and
+  the worst table's volume carry the weight. Foreign keys without a supporting
+  index on tables above 10k rows are missing-index evidence under the same
+  nodes, never under database health.
+- Heavy statements: with pg_stat_kcache the CPU seconds per second of the top
+  statements and the sum over the listed statements against the core count
+  are the primary CPU evidence; mean execution time alone can only warn.
+- Checkpoints: when the log names the trigger, only `wal` checkpoints count as
+  requested against `time` ones; immediate/force/shutdown/end-of-recovery
+  checkpoints are explicit and excluded. One requested checkpoint in a window
+  (or a handful since a stats reset) is too few to judge. Log reasons replace
+  snapshot trigger counts only when the scan covers the entire snapshot window,
+  ranking and per-item counts are complete, no rows were capped, and the log
+  accounts for the observed trigger counts. Only checkpoint starts inside that
+  window qualify; restartpoints and RLE groups crossing its boundary cannot
+  explain snapshot counts. Server-local log times use the collected
+  `log_utc_offset_seconds`; an unknown log zone cannot replace snapshot counts.
+  A log window never replaces counters since reset.
+- Relation block counts use the server's `block_size`. Without that setting,
+  the graph reports blocks and skips byte thresholds. `pg_stat_io` byte shares
+  prefer native byte counters, otherwise use each row's `op_bytes`; they never
+  assume 8192 bytes per operation or use a partial denominator.
+- Backend writes from `pg_stat_io` use the `normal` context only: bulk loads
+  write through ring buffers and do not show a lagging checkpointer.
+- Huge pages and THP are memory pressure only with at least 4 GB of shared
+  memory; below that the same findings are advice (0.15).
 - Mixed log signals are classified by `event_type`/`incident_type` and, for
   legacy rows, explicit message signatures. OOM belongs to memory pressure,
   disk-full to free-space pressure, crash/corruption to health. Readiness,
@@ -200,6 +270,56 @@ Scores are numbers in `[0, 1]`; `status` is `ok` (< 0.34), `warn` (< 0.67),
 
 Thresholds are constants in the engine (`THRESHOLDS`), documented inline with
 the runbook section they come from, and covered by unit tests.
+
+### Network evaluation constraints
+
+- Traffic is per interface and direction, never a sum across virtual/physical
+  interfaces. NIC `configuration.speed` must match the exact interface name
+  before assessing throughput against link speed; hardware `capacity` is not
+  the current negotiated speed. RX and TX are not added for full-duplex usage.
+- Error/drop rates come from adjacent `/proc/net/dev` samples, not cumulative
+  totals. Counter rollback and missing data stay unknown. The report suppresses
+  zero lines; only explicit `zero_series` metadata with at least two observed
+  samples covering every collected interval and no missing points permits a
+  zero-rate verdict. Missing partition rows count as gaps. Sampler warnings or
+  errors prevent a hidden-zero verdict. The same rule applies to hidden CPU
+  components; rounded totals near 100% do not prove an unreported component is
+  zero. Old empty charts must not manufacture healthy interface status.
+- Packet processing uses the p95 of joint packet/system CPU pressure at matching
+  timestamps (at least two pairs). Independent peaks at different times do not
+  establish packet-related CPU pressure.
+- Any observed interface error gives a warning; peak 10 errors/s gives a
+  critical triage flag. Drops stay visible from the first one (0.2), warn from
+  10/s and are critical at 100/s, because Linux counts unknown protocols, VLAN
+  tags and filtered frames as drops on healthy hosts. Link-use thresholds
+  (70/95) and ClientWrite thresholds (3/20 sessions, visible from one) are
+  explicit heuristics, not universal limits. Errors/drops are not added as
+  disjoint losses. Linux procfs combines some RX dropped/missed counters;
+  filtering or unsupported protocols may contribute.
+- ClientRead, configuration and inventory are facts without an automatic
+  health verdict. ClientWrite can reflect a slow application consumer or large
+  results as well as transport. Cumulative calls are not RTT measurements.
+- Only transport SQLSTATEs/anchored log messages and abandoned-session deltas
+  feed client transport failures. Overlapping log sources use the maximum as a
+  lower bound, not a sum. Logged transport failures warn from the first one
+  (0.4, rising to 0.8 at 50); abandoned sessions alone are visible (0.2) and
+  warn only when dozens of clients vanish. Statement/lock timeouts and
+  administrative kills do not prove network failure. Streaming failures filter typed sender/receiver
+  disconnects; archive failures and recovery conflicts are not network faults.
+- WAL send/receive backlog may also reflect sender CPU or receiver writes.
+  Receive backlog uses `latest_end_lsn - written_lsn`; `written_lsn - flushed_lsn`
+  is a local flush fact. Legacy receiver rows without a written LSN cannot use
+  their receive/flush gap as transport pressure. Flush/replay delay and old message
+  timestamps alone do not score transport. SyncRep uses the same rule in Network
+  and Health: recovery applies configuration after promotion, while primary-side
+  quorum severity respects actual waiters, commit requirements and source risk.
+  SyncRep waits can involve remote disk/replay, not just the network.
+- TCP settings are not retransmission, RTT or socket-queue measurements; those
+  measurements are not collected by these items. The graph must say so.
+
+Semantics: [Linux interface statistics](https://docs.kernel.org/networking/statistics.html),
+[PostgreSQL wait events and statistics](https://www.postgresql.org/docs/18/monitoring-stats.html),
+and runbook sections 3.6, 4.5 and 6.
 
 ## 5. Rendering
 
@@ -249,7 +369,7 @@ the runbook section they come from, and covered by unit tests.
   measurement observers. Item buttons remain clickable after pan/zoom; SVG
   viewport gestures do not consume button presses or keyboard activation.
 - The panel above the sections carries a legend, the overall status line
-  ("3 of 5 roots have data; snapshots mode adds 19 nodes"), and a
+  ("3 of 6 roots have data; snapshots mode adds 19 nodes"), and a
   collapse control; the rendered state is kept in `localStorage` only for the
   collapse flag.
 - No external libraries. The renderer uses only CSS variables defined by the
@@ -259,7 +379,7 @@ the runbook section they come from, and covered by unit tests.
 ## 6. Tests
 
 - `tests/unit/test_diagnostic_graph.py`: `graph.json` structure, parent tree
-  acyclicity, five roots, every catalog item bound, every bound id in the
+  acyclicity, six roots, every catalog item bound, every bound id in the
   catalog, evaluator names exist in the engine, HTML placeholders replaced, and
   a subprocess run of the node test suite when `node` is available.
 - `tests/js/diagnostic_graph.test.js` (`node --test tests/js`): decoding,

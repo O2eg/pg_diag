@@ -120,8 +120,8 @@ def test_diagnostic_graph_renders_and_navigates(
               };
             }"""
         )
-        assert state["roots"] == ["cpu", "ram", "disk", "database_health", "database_security"]
-        assert state["nodes"] >= 5
+        assert state["roots"] == ["cpu", "ram", "disk", "network", "database_health", "database_security"]
+        assert state["nodes"] >= 6
         assert state["errors"] == 0
         assert "no_data" not in state["rootStatuses"]
         assert state["width"] <= viewport_width, "the canvas must not widen the report"
@@ -277,6 +277,38 @@ def test_diagnostic_graph_renders_and_navigates(
         scrolled = page.evaluate("window.scrollY")
         assert scrolled > 0, "clicking an item chip scrolls the report to the item"
         assert errors == []
+        browser.close()
+
+
+@pytest.mark.parametrize("theme", ["dark", "light"])
+def test_network_details_navigate_at_canvas_scale(tmp_path: Path, theme: str) -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    report_path = tmp_path / "report.html"
+    report_path.write_text(render_html(_artifact(), validate=False), encoding="utf-8")
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1600, "height": 1000})
+        page.set_default_timeout(5000)
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.goto(report_path.as_uri())
+        page.wait_for_selector("#diagnosticGraph .dg-node")
+        page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+        page.get_by_role("button", name="Fit graph", exact=True).click()
+        page.locator('.dg-node[data-node-id="network"]').click()
+        page.wait_for_selector('.dg-svg[data-animating="false"]')
+        assert page.locator('.dg-detail').get_attribute('data-node-id') == "network"
+        page.locator("#diagnosticGraph").get_by_role("button", name="Expand all", exact=True).click()
+        page.wait_for_selector('.dg-svg[data-animating="false"]')
+        page.get_by_role("button", name="Fit graph", exact=True).click()
+        page.locator('.dg-node[data-node-id="network.traffic.receive"]').click()
+        page.wait_for_selector('.dg-svg[data-animating="false"]')
+        assert "mean / p95 / peak" in page.locator('.dg-panel').inner_text()
+        assert "No matching current link speed" in page.locator('.dg-panel').inner_text()
+        page.get_by_role("button", name="Fit graph", exact=True).click()
+        page.locator('.dg-item[data-item-id="snapshot_charts_os.os_network_receive"]').click()
+        page.wait_for_function("document.querySelector('details.item[data-item-id=\"snapshot_charts_os.os_network_receive\"]').open")
+        assert not errors
         browser.close()
 
 

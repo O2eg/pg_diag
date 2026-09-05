@@ -29,4 +29,6 @@ This instruction belongs to report item `snapshot_charts_os.os_network_packets`.
 ## Checklist
 - Compare with connection pressure.
 - Check pooler behavior.
-- Use external NIC counters for drops/errors.
+- Compare [snapshot_charts_os.os_network_errors](#item-snapshot_charts_os.os_network_errors) and
+  [snapshot_charts_os.os_network_drops](#item-snapshot_charts_os.os_network_drops); use driver-specific
+  counters for further detail.

@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from pg_diag.artifact_schema import _validate_result
 from pg_diag.content_loader import load_content
+from pg_diag.errors import ValidationError
 from pg_diag.metric_engine import (
     _metric_source_text,
     build_chart_result,
@@ -37,6 +41,17 @@ NEW_DELTA_METRICS = {
     "replication.logical_slot_delta",
     "replication.subscription_errors_delta",
 }
+
+
+@pytest.mark.parametrize("entry", [
+    {"name": "rx", "sample_count": 2, "missing_count": -1},
+    {"name": "rx", "sample_count": True, "missing_count": 0},
+    {"name": "rx", "sample_count": 0, "missing_count": 0},
+    {"name": [], "sample_count": 2, "missing_count": 0},
+])
+def test_invalid_zero_series_metadata_is_rejected(entry: dict) -> None:
+    with pytest.raises(ValidationError, match="zero_series"):
+        _validate_result("network", {"kind": "chart", "series": [], "zero_series": [entry]}, {})
 
 
 def test_new_delta_metric_contracts_resolve_all_columns(content_path: Path) -> None:
@@ -390,6 +405,28 @@ def test_optional_chart_series_omits_null_counter_intervals_without_warning() ->
         "invalid": 0,
         "counts": {"ok": 1},
     }
+
+
+def test_network_charts_preserve_hidden_zero_and_missing_evidence(content_path: Path) -> None:
+    content = load_content(content_path)
+    for metric_id, counter in [("os.network_errors", "errors"), ("os.network_drops", "dropped")]:
+        metric = content.metrics[metric_id]
+        samples = [
+            {"timestamp": f"2026-09-05T00:00:0{n}Z", "rows": [
+                {"interface": "eth0", f"rx_{counter}_per_sec": 0, f"tx_{counter}_per_sec": None},
+                {"interface": "eth1", f"rx_{counter}_per_sec": 12.5, f"tx_{counter}_per_sec": 0},
+            ]} for n in range(3)
+        ]
+        result = build_chart_result(metric, samples, {})
+        assert len(result["zero_series"]) == 2
+        assert all(s["sample_count"] == 3 and s["missing_count"] == 0 for s in result["zero_series"])
+        assert len(result["series"]) == 2  # real errors and the required unknown TX series
+        assert all(s["unit"] == "packets/s" for s in result["series"])
+        assert {tuple(p["value"] for p in s["points"]) for s in result["series"]} == {
+            (12.5, 12.5, 12.5), (None, None, None),
+        }
+        result = build_chart_result(metric, [{"timestamp": "2026-09-05T00:00:00Z", "rows": []}], {})
+        assert "zero_series" not in result
 
 
 def test_chart_omits_series_when_every_observed_datapoint_is_zero() -> None:
@@ -1263,3 +1300,48 @@ def test_sampler_metric_item_embeds_bash_source_text() -> None:
     assert "# pg_diag metric: CPU Utilization" in item["source_metadata"]["source_text"]
     assert "# source_sampler: os.cpu" in item["source_metadata"]["source_text"]
     assert "cat /proc/stat" in item["source_metadata"]["source_text"]
+
+
+def test_network_gauges_count_disappeared_and_new_interfaces_as_missing(content_path: Path) -> None:
+    from pg_diag.providers.linux_helpers import _network_rows
+
+    metric = load_content(content_path).metrics["os.network_errors"]
+    counters = dict.fromkeys(
+        ("rx_bytes", "rx_packets", "tx_bytes", "tx_packets", "rx_errors", "rx_dropped",
+         "tx_errors", "tx_dropped"),
+        0,
+    )
+    snapshots = [
+        {"eth0": counters}, {"eth0": counters}, {"eth0": counters},
+        {}, {"eth1": counters}, {"eth1": counters},
+    ]
+    samples = [
+        {"timestamp": f"2026-09-05T00:00:0{n}Z", "rows": _network_rows(previous, current, 1)}
+        for n, (previous, current) in enumerate(zip(snapshots, snapshots[1:]))
+    ]
+    result = build_chart_result(metric, samples, {})
+    assert result["sample_count"] == 5
+    assert result["series"] == []
+    zeros = {entry["name"]: entry for entry in result["zero_series"]}
+    for direction in ("rx", "tx"):
+        assert zeros[f"{direction} errors (eth0)"] == {
+            "name": f"{direction} errors (eth0)", "sample_count": 2, "missing_count": 3,
+        }
+        assert zeros[f"{direction} errors (eth1)"] == {
+            "name": f"{direction} errors (eth1)", "sample_count": 1, "missing_count": 4,
+        }
+
+
+def test_gauge_partitions_keep_null_points_on_the_shared_time_axis() -> None:
+    metric = {"partition_by": ["interface"], "series": [
+        {"name": "rx", "value_ref": "rate", "transform": "gauge"},
+    ]}
+    samples = [
+        {"timestamp": f"2026-09-05T00:00:0{n}Z", "rows": rows}
+        for n, rows in enumerate([
+            [{"interface": "eth0", "rate": 10}], [], [{"interface": "eth0", "rate": 20}],
+        ])
+    ]
+    points = build_chart_result(metric, samples, {})["series"][0]["points"]
+    assert [point["value"] for point in points] == [10, None, 20]
+    assert [point["t"] for point in points] == [sample["timestamp"] for sample in samples]

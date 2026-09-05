@@ -7,7 +7,8 @@ This instruction belongs to report item `server_log.checkpoints`. The item is ba
 - Requires `log_checkpoints = on` (the default since PostgreSQL 15).
 
 ## What to watch
-- Starting reason `wal` or `force`: WAL pressure is driving checkpoints off schedule — the summary flags this as `medium`.
+- Starting reason `wal`: WAL pressure is driving checkpoints off schedule — the summary flags this as `medium`.
+- `force`/`immediate` alone can come from an explicit CHECKPOINT or a backup and do not prove WAL volume pressure.
 - Large `sync_s` relative to `write_s`: storage flush latency, not dirty-buffer volume.
 - Restartpoints on a standby lagging far behind checkpoints on the primary.
 
@@ -17,8 +18,10 @@ This instruction belongs to report item `server_log.checkpoints`. The item is ba
 - Slow fsync on network or overloaded storage.
 
 ## Automatic evaluation
-- `medium`: at least one checkpoint in the window started for `wal`/`force` reasons.
-- `ok`: only timed checkpoints.
+- `medium`: at least one checkpoint in the window started for `wal` reasons.
+- `ok`: no WAL-triggered checkpoint in the listed events; timed and explicit starts do not raise this flag.
+- The newest 200 event series are listed. `omitted_series_count` identifies a capped result;
+  `count_complete` and the first/last event times preserve count and window coverage.
 - An empty result with an incomplete window is reported as unproven, not as absence.
 
 ## Related report items
@@ -26,5 +29,5 @@ This instruction belongs to report item `server_log.checkpoints`. The item is ba
 - [server_log.log_files_overview](#item-server_log.log_files_overview) — Log rotation health for this evidence.
 
 ## Checklist
-- Raise `max_wal_size` when forced checkpoints repeat under normal load.
+- Review `max_wal_size` when WAL-triggered checkpoints repeat under normal load.
 - Investigate storage when `sync_s` dominates `total_s`.

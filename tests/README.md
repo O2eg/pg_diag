@@ -58,6 +58,10 @@ The main unit-test groups are:
   The JS regressions cover critical-child propagation, overlapping log/deadlock
   counts, mixed log event types, idle standby replay age, I/O wait versus CPU
   work, one-point event charts, and explanations reused across graph branches.
+  Network tests cover all Network-tagged bindings, per-interface throughput,
+  explicit current link speed, error/drop rates and hidden-zero evidence,
+  counter resets, client waits, disconnect-source overlap, and the distinction
+  between WAL transport and replay/disk delays.
 - `test_os_metrics.py` - Linux provider parsing, derived values, and backend
   process window-endpoint rates.
 - `test_sampler_runtime.py` - declarative provider dispatch, output/error
@@ -256,3 +260,11 @@ PYTHONDONTWRITEBYTECODE=1 python -m py_compile \
   src/pg_diag/executors/*.py \
   src/pg_diag/render/*.py
 ```
+
+`tests/js/diagnostic_graph_regressions.test.js` covers checkpoint log/window
+completeness, hidden CPU/network zeros, actual delta durations, simultaneous
+packet/CPU pressure, receiver write versus flush lag, SQLSTATE precedence,
+consistent deadlock/SyncRep scores, and block-size-aware I/O calculations.
+`test_metric_engine.py` also checks missing interface partitions through the
+Linux provider; `test_server_log_items.py` checks incident signatures and checkpoint
+cap/RLE metadata at collection time.

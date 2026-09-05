@@ -53,9 +53,23 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
         if is_recovery_end_of_wal(record):
             continue
         kind = _SQLSTATE_KIND.get(record.sql_state or "")
-        if kind is None and window.coverage.locale_supported:
-            message = record.message.lower()
-            kind = next((value for fragment, value in _MESSAGE_KIND if fragment in message), None)
+        if (
+            kind is None
+            and record.sql_state in (None, "", "00000", "XX000")
+            and window.coverage.locale_supported
+        ):
+            message = record.message.lower().lstrip()
+            kind = next(
+                (value for fragment, value in _MESSAGE_KIND if message.startswith(fragment)),
+                None,
+            )
+            # An OS errno follows a recognized server I/O message. Keep its
+            # specific incident type without matching phrases in SQL identifiers.
+            if kind in {"fsync_failure", "write_failure", "read_failure"}:
+                if message.rstrip().endswith(": no space left on device"):
+                    kind = "disk_full"
+                elif message.rstrip().endswith(": cannot allocate memory"):
+                    kind = "out_of_memory"
         if kind is not None:
             candidates.append((record, kind))
 

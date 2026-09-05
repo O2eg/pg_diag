@@ -1295,8 +1295,8 @@ permissions, collection mode, and host permissions.
 
 ### Diagnostic Graph
 
-The HTML report opens with a diagnostic graph: five roots (`cpu`, `ram`,
-`disk`, `database_health`, `database_security`), each with a cause tree
+The HTML report opens with a diagnostic graph: six roots (`cpu`, `ram`,
+`disk`, `network`, `database_health`, `database_security`), each with a cause tree
 underneath, drawn as a top-down tree with siblings side by side on a zoomable,
 pannable canvas. Root names sit inside enlarged circles. Drag to pan, scroll
 to zoom, or use the in-canvas minus/plus, Fit and 1:1 controls. Every node is bound to the report
@@ -1308,6 +1308,13 @@ resource. CPU separates user work, system work, I/O wait and hypervisor steal;
 I/O-wait contributors use I/O-wait pressure, not user CPU. RAM separates
 available memory/OOM, swap usage and cache misses. Disk separates device
 latency, reads, writes and free space, with the relevant causes underneath.
+Network covers per-interface traffic, errors/drops, client connections and
+waits, WAL transport, TCP/UDP configuration, listeners, authentication and
+encryption. Every Network-tagged item is bound under this root. New snapshots
+collect RX/TX error and drop rates from `/proc/net/dev`; older reports show
+missing data instead of a healthy verdict. Traffic without a matching current
+link speed, ClientRead and inventory remain informational. Replication replay
+lag and query timeouts alone do not establish a network problem.
 The final branch score is the maximum of its own evidence and its children;
 a critical child always lights the path to its root. I/O wait is not counted
 as CPU work, and replay age alone does not make an idle, caught-up standby

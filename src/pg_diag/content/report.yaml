@@ -1500,6 +1500,14 @@ sections:
         metric: os.network_packets
         tags: [Network]
         state: collapsed
+      os_network_errors:
+        metric: os.network_errors
+        tags: [Network]
+        state: collapsed
+      os_network_drops:
+        metric: os.network_drops
+        tags: [Network]
+        state: collapsed
 
   snapshot_charts_db:
     title: Snapshot charts DB

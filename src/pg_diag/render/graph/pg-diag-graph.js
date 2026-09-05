@@ -31,8 +31,10 @@
     otherCpuPct: [20, 50],           // 3: non-PostgreSQL CPU percent of the host
     topStatementShare: [0.5, 0.9],   // 3.3: one statement's share of total time
     meanExecMs: [1000, 10000],       // 3.3: mean execution time of the slowest statement
+    statementCpuPerSec: [0.5, 2],    // 3.3: CPU seconds per second of one statement (pg_stat_kcache)
     seqShare: [0.3, 0.8],            // 3.1: seq tuple share on tables > 10k rows
-    seqTables: [3, 10],              // 3.1: tables where seq reads beat index fetches
+    seqTables: [0, 5],               // 3.1: tables where seq reads beat index fetches (each adds 20 %)
+    seqTuples: [1e6, 1e9],           // 3.1: sequentially read tuples of the worst table since stats reset
     idxScale: 100,                   // 3.2: idx_tup_read / idx_tup_fetch limit
     idxScaleCount: [1, 5],           // 3.2: indexes above the limit
     tpsHigh: [5000, 20000],          // 3.6: > 10k light statements per second
@@ -41,6 +43,13 @@
     connectionsMany: [500, 2000],    // 6: thousands of backends
     sessionRate: [5, 50],            // 6: reconnect storm, sessions per second
     packetsPerSec: [50000, 200000],  // 3.6: packet rate that costs kernel time
+    networkLinkUsedPct: [70, 95],   // Graph triage only: each direction against an explicit current NIC speed, not lshw capacity
+    networkErrorRate: [0, 10],      // Graph triage: any error warns; peak 10/s is critical, not a universal link SLA
+    networkDropRate: [10, 100],     // Graph triage: drops stay visible from the first one, warn from 10/s, critical at 100/s
+    clientWriteSessions: [3, 20],   // Runbook 6: slow clients/transport; a couple of sessions sending results is normal
+    transportFailures: [1, 50],     // Runbook 6: logged client connection failures (class 08) in the log window
+    abandonedSessions: [1, 50],     // Runbook 6: sessions the client dropped without closing, in the snapshot window
+    clientWriteSamplePct: [5, 30],  // Same symptom in sampled waits, not added to point-in-time sessions
     memAvailablePct: [10, 3],        // 4.3: available memory share (reversed)
     memUsedPct: [90, 97],            // 4.3: RAM used share
     swapUsedPct: [10, 50],           // 4.3: swap usage share
@@ -72,6 +81,8 @@
     deadTuplePct: [10, 30],          // 9.2
     deadTupleMinRows: 100000,
     vacuumOverdueFactor: [2, 10],    // 9.2: dead tuples over the threshold
+    vacuumMinDeadTuples: 10000,      // 9.2: below this a table is too small for its overdue factor to matter
+    vacuumDueTables: [5, 30],        // 9.2: tables with dead tuples past the threshold and no vacuum running
     xidAgeShare: [0.4, 0.8],         // 9.4: age / 2^31
     sequencePct: [80, 95],           // 9.4: sequence exhaustion
     longTransactionSec: [600, 3600], // 5.6
@@ -81,14 +92,19 @@
     horizonAgeTx: [1e6, 1e8],        // 9.2
     lockWaitMs: [5000, 60000],       // 5.1
     blockedSessions: [3, 20],        // 5.1
+    deadlocksPerMinute: [0.1, 5],    // 5.4: deadlock rate; one per hour is noise, several per minute is critical
+    deadlockScoreFloor: 0.3,         // 5.4: any deadlock stays visible
+    sessionFailures: [1, 50],        // 6: sessions ended fatally, killed or abandoned in the window
     connectionsUsedPct: [80, 95],    // 6
     replayLagBytes: [64 * 1024 ** 2, 1024 ** 3], // 4.5
     replayLagSec: [10, 60],          // 4.5
     capacityPct: [80, 95],           // 4.5
     eolDays: [180, 0],               // 10: end of life (reversed)
-    errorsPerMinute: [0.2, 2],       // health: ERROR rate in the log window
+    applicationErrorsPerMinute: [20, 200], // health: flood of application errors (SQLSTATE 22/23/42 ...) in the log window
+    applicationErrorFloor: 0.1,     // health: any application error stays visible but green
     fatalLogScore: 0.6,             // health: FATAL ends a session, PANIC/crash ends server operation
     terminationLogScore: 0.4,       // health: observed statement/lock timeouts or cancellations
+    terminationsPerMinute: [2, 50], // health: termination rate that turns the warning critical
     incidentLogScore: 1,            // 4.3 / health: explicit OOM, disk-full, crash or corruption evidence
     maintenanceAgeSec: [3600, 14400] // health: long maintenance
   };
@@ -575,17 +591,21 @@
           return rows.length ? rows[0] : null;
         });
       },
-      windowSeconds() {
-        return memo("windowSeconds", () => {
+      windowSeconds(itemId) {
+        return memo("windowSeconds:" + (itemId || "snapshot"), () => {
+          const delta = itemId && (resultOf(ctx.item(itemId)) || {}).delta_window;
+          if (delta) {
+            const seconds = toNumber(delta.duration_seconds);
+            return seconds > 0 ? seconds : null;
+          }
           const runtime = ctx.runtime;
-          const duration = toNumber(runtime.duration_seconds);
-          if (duration !== null && duration > 0) return duration;
           const start = Date.parse(runtime.snapshot_window_started_at || runtime.started_at || "");
           const finish = Date.parse(runtime.snapshot_window_finished_at || runtime.finished_at || "");
           if (Number.isFinite(start) && Number.isFinite(finish) && finish > start) {
             return (finish - start) / 1000;
           }
-          return null;
+          const duration = toNumber(runtime.duration_seconds);
+          return duration > 0 ? duration : null;
         });
       }
     };
@@ -609,6 +629,43 @@
     const list = prefix === undefined ? ctx.series(itemId) : seriesByPrefix(ctx, itemId, prefix);
     if (!list.length) return null;
     return seriesStats(sumSeries(list));
+  }
+
+  function networkRates(ctx, itemId, bytes) {
+    if (!["present", "empty"].includes(ctx.presence(itemId))) return [];
+    const rates = [];
+    for (const series of ctx.series(itemId)) {
+      const values = series.values.filter(value => isFiniteNumber(value) && value >= 0);
+      if (values.length < 2) continue;
+      const stats = seriesStats(values);
+      const format = bytes ? value => fmtBytes(value) + "/s" : value => fmtNum(value, 2) + "/s";
+      ctx.fact(series.name + " mean / p95 / peak", [stats.mean, stats.p95, stats.max].map(format).join(" / "));
+      ctx.reason(series.name + ": mean " + format(stats.mean) + ", p95 " + format(stats.p95) + ", peak " + format(stats.max), itemId);
+      rates.push({series, stats});
+    }
+    // The report hides all-zero lines. Use explicit collection metadata only;
+    // old empty charts, missing interfaces and all-null samples are not zeros.
+    for (const zero of observedZeros(ctx, itemId)) {
+      const series = {name: zero.name};
+      const stats = {mean: 0, p95: 0, max: 0};
+      ctx.fact(zero.name + " mean / p95 / peak", "0/s / 0/s / 0/s");
+      ctx.reason(zero.name + ": zero in " + zero.sample_count + " collected samples (line hidden in report)", itemId);
+      rates.push({series, stats});
+    }
+    return rates;
+  }
+
+  // These OS metrics are gauges of already calculated intervals. A hidden zero
+  // must cover every sample, including intervals where a partition disappeared.
+  function observedZeros(ctx, itemId) {
+    const item = ctx.item(itemId);
+    const result = resultOf(item) || {};
+    if (!item || !["present", "empty"].includes(ctx.presence(itemId)) ||
+        (item.diagnostics || []).some(d => ["warning", "error"].includes(d.level))) return [];
+    return (Array.isArray(result.zero_series) ? result.zero_series : []).filter(zero =>
+      zero && typeof zero.name === "string" && Number.isInteger(zero.sample_count) &&
+      zero.sample_count >= 2 && zero.missing_count === 0 &&
+      (!Number.isInteger(result.sample_count) || zero.sample_count === result.sample_count));
   }
 
   function cpuBusyStats(ctx) {
@@ -718,6 +775,33 @@
     // Compatibility crash_recovery_events has no event_type. A redo start alone
     // is normal on a standby; a SIGKILL proves a crash, but does not prove OOM.
     return /terminated by signal|was not properly shut down|automatic recovery in progress|terminating any other active server processes|invalid page|checksum failure|incorrect checksum/i.test(message);
+  }
+
+  // Classify one log error by SQLSTATE class (or message signature when the log line
+  // prefix carries no %e). weight null = application error, scored by rate only.
+  const LOG_ERROR_CLASSES = [
+    {label: "panic", weight: 1, test: (sev) => sev === "PANIC"},
+    {label: "storage or corruption", weight: 1, test: (sev, state, text) => /^XX/.test(state) || /^58/.test(state) || state === "53100" || state === "57P02" ||
+      /^(?:invalid page|checksum (?:failure|verification failed)|could not (?:read|write|fsync|open|access|extend|seek in|truncate) (?:(?:from|to) )?(?:file|block)|data (?:corrupt|is corrupt)|unexpected data beyond eof|no space left on device|unexpected chunk)/i.test(text)},
+    {label: "out of memory", weight: 0.8, test: (sev, state, text) => state === "53200" || /^(?:out of memory|could not fork)/i.test(text)},
+    {label: "connection exhaustion", weight: 0.8, test: (sev, state, text) => state === "53300" || /^(?:too many (?:connections|clients)|remaining connection slots)/i.test(text)},
+    {label: "server unavailable", weight: 0.6, test: (sev, state, text) => state === "57P03" || /^(?:database system is (?:starting up|shutting down|in recovery))/i.test(text)},
+    {label: "deadlock", weight: 0.6, test: (sev, state, text) => state === "40P01" || /^(?:deadlock detected)/i.test(text)},
+    {label: "timeout or cancellation", weight: 0.4, test: (sev, state, text) => state === "57014" || state === "55P03" || /^(?:canceling statement due to|lock timeout|could not obtain lock)/i.test(text)},
+    {label: "administrator termination", weight: 0.3, test: (sev, state, text) => state === "57P01" || /^(?:terminating connection due to (?:administrator command|idle-in-transaction|idle-session))/i.test(text)},
+    {label: "authentication failure", weight: 0.15, test: (sev, state, text) => /^28/.test(state) || /^(?:password authentication failed|no pg_hba\.conf entry|authentication failed)/i.test(text)},
+    {label: "client connection loss", weight: 0.3, test: (sev, state, text) => /^08/.test(state) || /^(?:could not (?:receive data from|send data to) client|unexpected eof on client connection|connection reset by peer|ssl syscall error)/i.test(text)},
+    {label: "other fatal", weight: 0.6, test: (sev) => sev === "FATAL"}
+  ];
+
+  function logErrorClass(severity, sqlState, message) {
+    const sev = String(severity || "").toUpperCase();
+    const state = String(sqlState || "").toUpperCase();
+    const text = (/^[0-9A-Z]{5}$/.test(state) && state !== "00000") ? "" : String(message || "").trim();
+    for (const entry of LOG_ERROR_CLASSES) {
+      if (entry.test(sev, state, text)) return {label: entry.label, weight: entry.weight};
+    }
+    return {label: "application", weight: null};
   }
 
   function logSignalScore(ctx, category) {
@@ -890,7 +974,19 @@
     },
 
     cpu_backends(ctx) {
-      return cpuShareScore(ctx, ["client", "parallel_worker"], THRESHOLDS.backendCpuShare, "Client backends");
+      let score = cpuShareScore(ctx, ["client", "parallel_worker"], THRESHOLDS.backendCpuShare, "Client backends");
+      // Process sampling misses short-lived backends; pg_stat_kcache attributes CPU
+      // seconds to statements over the whole window and gives a lower bound per core.
+      const statements = ctx.rows("snapshot_delta_workload.sql_cpu_efficiency_delta");
+      const total = sumBy(statements, "cpu_seconds_per_sec");
+      const cores = ctx.facts.cpuCores();
+      if (total !== null && cores) {
+        const share = total / cores;
+        score = maxScore(score, scalePair(share, THRESHOLDS.backendCpuShare));
+        ctx.fact("Statement CPU (window)", fmtNum(total, 2) + " CPU s/s, " + fmtPct(share * 100, 0) + " of " + cores + " cores");
+        ctx.reason("Statements consumed " + fmtNum(total, 2) + " CPU seconds per second in the window (" + fmtPct(share * 100, 0) + " of all cores, pg_stat_kcache, listed statements only)", "snapshot_delta_workload.sql_cpu_efficiency_delta");
+      }
+      return score;
     },
 
     cpu_autovacuum(ctx) {
@@ -920,10 +1016,15 @@
       const busy = cpuBusyStats(ctx);
       const rows = backendCpuRows(ctx);
       const cores = ctx.facts.cpuCores();
-      if (!busy || !rows.length || !cores) {
+      // pg_stat_kcache counts every statement's CPU over the window, including
+      // backends that exited before the process sample; take the larger estimate.
+      const kcache = seriesTotalStats(ctx, "snapshot_charts_db.database_kernel_cpu_rate");
+      if (!busy || (!rows.length && !kcache) || !cores) {
         return null;
       }
-      const pgPct = rows.reduce((acc, entry) => acc + entry.cpu, 0) / cores;
+      const sampledPct = rows.reduce((acc, entry) => acc + entry.cpu, 0) / cores;
+      const kcachePct = kcache ? (kcache.mean / cores) * 100 : 0;
+      const pgPct = Math.max(sampledPct, kcachePct);
       const otherPct = Math.max(0, busy.mean - pgPct);
       ctx.fact("PostgreSQL CPU", fmtPct(pgPct, 0) + " of host");
       ctx.fact("Other CPU", fmtPct(otherPct, 0) + " of host");
@@ -990,10 +1091,18 @@
       if (mean.length) {
         const slowest = maxBy(mean, "mean_exec_time_ms");
         if (slowest.value !== null) {
-          score = maxScore(score, scalePair(slowest.value, THRESHOLDS.meanExecMs));
+          // A slow statement may wait on locks, I/O or pg_sleep; it is not CPU work by itself.
+          score = maxScore(score, scalePair(slowest.value, THRESHOLDS.meanExecMs) * 0.6);
           ctx.reason("Slowest statement mean " + fmtNum(slowest.value, 0) + " ms (query_id " + slowest.row.query_id + ")", "sql_workload.top_sql_by_mean_time");
           ctx.fact("Slowest mean", fmtNum(slowest.value, 0) + " ms");
         }
+      }
+      const cpu = topRows(ctx.rows("snapshot_delta_workload.sql_cpu_efficiency_delta"), "cpu_seconds_per_sec", 3).filter((entry) => entry.value > 0);
+      if (cpu.length) {
+        // pg_stat_kcache: CPU seconds per wall second per statement; 0.5 = half a core busy all the time.
+        score = maxScore(score, scalePair(cpu[0].value, THRESHOLDS.statementCpuPerSec));
+        ctx.reason("Top CPU statements in the window (pg_stat_kcache): " + cpu.map((entry) => "query_id " + entry.row.query_id + " " + fmtNum(entry.value, 2) + " CPU s/s" + (toNumber(entry.row.cpu_ms_per_call) !== null ? " (" + fmtNum(toNumber(entry.row.cpu_ms_per_call), 1) + " ms per call)" : "")).join(", "), "snapshot_delta_workload.sql_cpu_efficiency_delta");
+        ctx.fact("Top statement CPU", fmtNum(cpu[0].value, 2) + " CPU s/s");
       }
       const delta = ctx.rows("snapshot_delta_workload.sql_time_delta");
       if (delta.length) {
@@ -1019,15 +1128,20 @@
         for (const row of rows) {
           const seqTup = toNumber(row.seq_tup_read) || 0;
           const idxTup = toNumber(row.idx_tup_fetch) || 0;
+          const scans = toNumber(row.seq_scan) || 0;
           seq += seqTup;
           idx += idxTup;
-          if (seqTup > idxTup && seqTup > 1e6) offenders.push({name: row.schemaname + "." + row.relname, seqTup});
+          if (seqTup > idxTup && seqTup > 1e6) offenders.push({name: row.schemaname + "." + row.relname, seqTup, scans});
         }
         const share = seq + idx > 0 ? seq / (seq + idx) : 0;
         offenders.sort((a, b) => b.seqTup - a.seqTup);
-        score = maxScore(score, scalePair(share, THRESHOLDS.seqShare), scalePair(offenders.length, THRESHOLDS.seqTables));
+        // The share alone says how the tables are read, not how much: it can only warn.
+        // Offender count and the worst table's sequential volume carry the weight.
+        score = maxScore(score, scalePair(share, THRESHOLDS.seqShare) * 0.6, scalePair(offenders.length, THRESHOLDS.seqTables),
+          offenders.length ? scalePair(offenders[0].seqTup, THRESHOLDS.seqTuples) : null);
         ctx.fact("Seq share (tables > 10k rows)", fmtPct(share * 100, 0));
-        ctx.reason(offenders.length + " table(s) above 10k rows read more tuples sequentially than by index" + (offenders.length ? ": " + offenders.slice(0, 3).map((o) => o.name).join(", ") : "") + "; sequential share " + fmtPct(share * 100, 0), "object_workload.table_workload");
+        const describe = (o) => o.name + " (" + fmtNum(o.seqTup, 0) + " rows by " + fmtNum(o.scans, 0) + " seq scans" + (o.scans ? ", " + fmtNum(o.seqTup / o.scans, 0) + " rows per scan" : "") + ")";
+        ctx.reason(offenders.length + " table(s) above 10k rows read more tuples sequentially than by index" + (offenders.length ? ": " + offenders.slice(0, 3).map(describe).join(", ") : "") + "; sequential share " + fmtPct(share * 100, 0), "object_workload.table_workload");
       }
       if (deltas.length) {
         const top = topRows(deltas, "seq_tup_read_per_sec", 3).filter((entry) => entry.value > 0);
@@ -1035,6 +1149,15 @@
           ctx.reason("Sequential reads in the window: " + top.map((entry) => entry.row.schemaname + "." + entry.row.relname + " " + fmtNum(entry.value, 0) + " rows/s").join(", "), "snapshot_delta_workload.table_scan_delta");
           score = maxScore(score, scale(top[0].value, 100000, 1000000) * 0.6);
         }
+      }
+      // Missing indexes: a foreign key without an index forces a sequential scan of the
+      // referencing table on every parent UPDATE/DELETE (runbook 3.1).
+      const fks = ctx.rows("indexes.foreign_keys_without_index").filter((row) => (toNumber(row.source_n_live_tup) || 0) >= 10000);
+      if (fks.length) {
+        fks.sort((a, b) => (toNumber(b.source_n_live_tup) || 0) - (toNumber(a.source_n_live_tup) || 0));
+        score = maxScore(score, 0.3 * (0.6 + 0.4 * Math.min(1, fks.length / 10)));
+        ctx.reason(fks.length + " foreign key(s) without a supporting index on tables above 10k rows: " + fks.slice(0, 3).map((row) => row.source_schema + "." + row.source_table + "(" + row.source_columns + ") -> " + row.target_schema + "." + row.target_table + ", " + fmtNum(toNumber(row.source_n_live_tup), 0) + " rows").join("; ") + (fks.length > 3 ? "; …" : ""), "indexes.foreign_keys_without_index");
+        ctx.fact("FK without index (tables > 10k rows)", String(fks.length));
       }
       return score;
     },
@@ -1142,6 +1265,7 @@
       return scalePair(packets.p95, THRESHOLDS.packetsPerSec);
     },
 
+
     contention_raw(ctx) {
       let score = null;
       const rows = ctx.rows("activity_locks.wait_events");
@@ -1149,9 +1273,13 @@
       if (rows.length) {
         const waiting = rows.filter((row) => lwlockTypes.includes(String(row.wait_event_type)));
         const sessions = sumBy(waiting, "sessions") || 0;
-        score = maxScore(score, scalePair(sessions, THRESHOLDS.lwlockSessions));
+        // Five sessions spinning on LWLocks are a problem among ten active backends and
+        // noise among five hundred: weight the count by its share of non-idle sessions.
+        const active = sumBy(rows.filter((row) => !/^(Client|Activity)$/.test(String(row.wait_event_type))), "sessions") || 0;
+        const sharePct = active > 0 ? (sessions / active) * 100 : 0;
+        score = maxScore(score, scalePair(sessions, THRESHOLDS.lwlockSessions) * (0.5 + 0.5 * scalePair(sharePct, THRESHOLDS.lwlockSharePct)));
         const top = topRows(waiting, "sessions", 3).map((entry) => entry.row.wait_event_type + ":" + entry.row.wait_event + " x" + entry.value);
-        ctx.reason(sessions + " session(s) in LWLock/Buffer/IPC waits" + (top.length ? ": " + top.join(", ") : ""), "activity_locks.wait_events");
+        ctx.reason(sessions + " session(s) in LWLock/Buffer/IPC waits" + (active ? " (" + fmtPct(sharePct, 0) + " of " + active + " non-idle sessions)" : "") + (top.length ? ": " + top.join(", ") : ""), "activity_locks.wait_events");
       }
       const profile = ctx.series("activity_locks.wait_event_sample_profile");
       if (profile.length) {
@@ -1198,7 +1326,7 @@
         ctx.reason("Backends p95 " + fmtNum(backends.p95, 0) + " in the window", "snapshot_charts_db.database_backends");
       }
       const outcomes = ctx.rows("snapshot_delta_workload.database_session_outcomes_delta");
-      const window = ctx.facts.windowSeconds();
+      const window = ctx.facts.windowSeconds("snapshot_delta_workload.database_session_outcomes_delta");
       if (outcomes.length && window) {
         const sessions = sumBy(outcomes, "sessions_delta") || 0;
         const rate = sessions / window;
@@ -1214,6 +1342,251 @@
       return maxScore(score, logSignalScore(ctx, "memory"), findingsScore(ctx, {roles: ["support"], weightedOnly: true, excludeItems: MIXED_LOG_ITEMS}));
     }
   };
+
+  const networkEvaluators = {
+    network_throughput(ctx) {
+      const id = ctx.node.id.endsWith("receive") ? "snapshot_charts_os.os_network_receive" : "snapshot_charts_os.os_network_transmit";
+      const rates = networkRates(ctx, id, true);
+      let score = null;
+      for (const {series, stats} of rates) {
+        const match = /\(([^()]+)\)$/.exec(series.name);
+        const iface = match && match[1];
+        for (const row of ctx.rows("os.lshw_network")) {
+          const names = Array.isArray(row.logicalname) ? row.logicalname : [row.logicalname];
+          if (!iface || !names.includes(iface)) continue;
+          // lshw capacity is a hardware maximum, not the negotiated link speed.
+          const config = row.configuration || {};
+          const speedText = typeof config === "object" ? config.speed : (/\bspeed=([^\s]+)/.exec(config) || [])[1];
+          const speed = /^([\d.]+)\s*([KMG]?)bit\/s$/i.exec(String(speedText || ""));
+          if (!speed) continue;
+          const bits = Number(speed[1]) * ({k: 1e3, m: 1e6, g: 1e9}[speed[2].toLowerCase()] || 1);
+          if (!(bits > 0)) continue;
+          const used = stats.p95 * 8 / bits * 100;
+          score = maxScore(score, scalePair(used, THRESHOLDS.networkLinkUsedPct));
+          ctx.fact(iface + " current link speed", speedText);
+          ctx.reason(series.name + " p95 uses " + fmtPct(used, 1) + " of this interface's reported speed; RX and TX are assessed separately", "os.lshw_network");
+        }
+      }
+      if (rates.length) ctx.reason("Host traffic is not PostgreSQL-only. Virtual and physical interfaces can observe the same packets; their rates are not summed.");
+      if (rates.length && score === null) ctx.reason("No matching current link speed: throughput is shown as a fact, not a saturation or health verdict.");
+      return score;
+    },
+
+    network_packets(ctx) {
+      const rates = networkRates(ctx, "snapshot_charts_os.os_network_packets");
+      if (!rates.length) return null;
+      const system = seriesNamed(ctx, "snapshot_charts_os.os_cpu_utilization", "system");
+      ctx.reason("High packet rates can cost kernel CPU, but they do not measure link utilization or TCP retransmissions.");
+      if (!system || system.finite < 2) return null;
+      const cpuByTime = new Map(system.times.map((time, index) => [Date.parse(time), system.values[index]]));
+      let score = null;
+      for (const {series} of rates) {
+        const paired = (series.times || []).map((time, index) => {
+          const cpu = cpuByTime.get(Date.parse(time));
+          const packets = series.values[index];
+          return Number.isFinite(Date.parse(time)) && isFiniteNumber(cpu) && isFiniteNumber(packets) && packets >= 0
+            ? scalePair(packets, THRESHOLDS.packetsPerSec) * scalePair(cpu, THRESHOLDS.cpuSystemPct) : NaN;
+        });
+        const stats = seriesStats(paired);
+        if (!stats || stats.n < 2) continue;
+        score = maxScore(score, stats.p95);
+        ctx.reason(series.name + ": packet and system CPU pressure evaluated in " + stats.n + " matching samples", "snapshot_charts_os.os_cpu_utilization");
+      }
+      return score;
+    },
+
+    network_interface_events(ctx) {
+      const drops = ctx.node.id.endsWith("drops");
+      const id = "snapshot_charts_os.os_network_" + (drops ? "drops" : "errors");
+      const rates = networkRates(ctx, id);
+      if (!rates.length) return null;
+      const peak = Math.max(...rates.map(r => r.stats.max));
+      const thresholds = drops ? THRESHOLDS.networkDropRate : THRESHOLDS.networkErrorRate;
+      ctx.reason(drops ? "Drops include host resource/filtering and missed-packet counters (unknown protocols, VLAN tags); a trickle is normal on most hosts and is not a link failure. Do not add them to errors as disjoint losses." : "Interface errors need link, driver and queue investigation; they do not identify the PostgreSQL connection path.");
+      // Any interface error is abnormal and warns; drops stay visible (0.2) below the
+      // warn rate, then run from warn to critical between the two thresholds.
+      if (!(peak > 0)) return 0;
+      if (drops) return peak < thresholds[0] ? 0.2 : 0.34 + 0.66 * scalePair(peak, thresholds);
+      return Math.max(0.4, scalePair(peak, thresholds));
+    },
+
+    network_inventory(ctx) {
+      for (const binding of ctx.node.bindings) {
+        if (ctx.presence(binding.id) !== "present") continue;
+        const rows = ctx.rows(binding.id);
+        ctx.reason(ctx.title(binding.id) + (rows.length ? ": " + rows.length + " inventory row(s)" : ": collected inventory"), binding.id);
+      }
+      for (const row of ctx.rows("os.lshw_network")) {
+        const name = String(row.logicalname || row.businfo || row.id || "NIC");
+        const config = row.configuration;
+        if (config && typeof config === "object") {
+          for (const key of ["driver", "speed", "duplex", "link"]) if (config[key] !== undefined) ctx.fact(name + " " + key, config[key]);
+        }
+      }
+      ctx.reason("Inventory is context, not evidence of a healthy or faulty path. Unused/down interfaces and missing link details can be intentional.");
+      return null;
+    },
+
+    network_settings(ctx) {
+      const udp = ctx.node.id.endsWith("udp");
+      const id = udp ? "os.sysctl_udp" : "os.sysctl_tcp";
+      for (const line of ctx.text(id).split("\n")) {
+        const match = /^\s*(net\.ipv4\.(?:tcp|udp)\S*)\s*=\s*(.+)$/.exec(line);
+        if (match && (udp || /keepalive|retries|rmem|wmem|congestion_control|syn_backlog|abort_on_overflow|syncookies|fin_timeout/.test(match[1]))) ctx.fact(match[1], match[2]);
+      }
+      if (!udp) for (const name of ["tcp_keepalives_idle", "tcp_keepalives_interval", "tcp_keepalives_count", "tcp_user_timeout", "client_connection_check_interval"]) {
+        const setting = ctx.facts.setting(name);
+        if (setting) ctx.fact(name, setting.raw);
+      }
+      if (ctx.presence(id) === "present") ctx.reason("Collected " + (udp ? "UDP" : "TCP") + " settings are configuration facts, not RTT, retransmission or socket-queue measurements", id);
+      ctx.reason("No universal tuning verdict is assigned. Correlate settings with transport counters and application requirements.");
+      return null;
+    },
+
+    network_client_waits(ctx) {
+      const write = ctx.node.id.endsWith("write");
+      const event = write ? "ClientWrite" : "ClientRead";
+      let score = null;
+      const id = "activity_locks.wait_events";
+      if (["present", "empty"].includes(ctx.presence(id))) {
+        const count = sumBy(ctx.rows(id).filter(row => row.wait_event === event), "sessions") || 0;
+        ctx.reason(count + " active session(s) in " + event + " at collection time", id);
+        ctx.fact(event + " sessions", count);
+        if (write) score = count > 0 ? Math.max(0.2, scalePair(count, THRESHOLDS.clientWriteSessions)) : 0;
+      }
+      const sampledId = "activity_locks.wait_event_sample_profile";
+      const sampled = ctx.series(sampledId).filter(s => new RegExp("(?:^|[: /])" + event + "(?:$|[ (])").test(s.name) && s.finite >= 2);
+      for (const series of sampled) {
+        const stats = seriesStats(series.values);
+        ctx.fact(event + " sampled p95", fmtNum(stats.p95, 1) + " sessions");
+        ctx.reason(series.name + " sampled p95 " + fmtNum(stats.p95, 1), sampledId);
+        if (write) score = maxScore(score, stats.p95 > 0 ? Math.max(0.2, scalePair(stats.p95, THRESHOLDS.clientWriteSessions)) : 0);
+      }
+      const profileId = "activity_locks.pg_wait_sampling_profile";
+      const share = sumBy(ctx.rows(profileId).filter(row => row.wait_event === event), "sample_share_pct");
+      if (share !== null) {
+        ctx.fact(event + " sample share", fmtPct(share, 1));
+        ctx.reason(event + " accounts for " + fmtPct(share, 1) + " of cumulative wait samples; this is not a snapshot-window session count", profileId);
+        if (write) score = maxScore(score, scalePair(share, THRESHOLDS.clientWriteSamplePct));
+      }
+      ctx.reason(write ? "ClientWrite may mean a slow consumer, large results or transport backpressure; it does not isolate the network." : "ClientRead is waiting for the application, often normal think time. It is not scored as a network fault.");
+      return score;
+    },
+
+    network_session_churn(ctx) {
+      const id = "snapshot_delta_workload.database_session_outcomes_delta";
+      const sessions = sumBy(ctx.rows(id), "sessions_delta");
+      const window = ctx.facts.windowSeconds(id);
+      if (sessions === null || !window || sessions < 0) return null;
+      const rate = sessions / window;
+      ctx.fact("New sessions per second", fmtNum(rate, 2));
+      ctx.reason(fmtNum(sessions, 0) + " new sessions in " + fmtSeconds(window) + "; consider pooling and connection reuse, not just TCP tuning", id);
+      return scalePair(rate, THRESHOLDS.sessionRate);
+    },
+
+    network_roundtrips(ctx) {
+      const id = "sql_workload.top_sql_by_calls";
+      for (const entry of topRows(ctx.rows(id), "calls", 3)) {
+        ctx.reason("Statement " + (entry.row.query_id || entry.row.queryid || "") + ": " + fmtNum(entry.value, 0) + " cumulative calls, mean execution " + fmtNum(toNumber(entry.row.mean_exec_time_ms), 2) + " ms", id);
+      }
+      const tps = seriesTotalStats(ctx, "snapshot_charts_db.database_transaction_rate");
+      if (tps) ctx.fact("Transactions p95", fmtNum(tps.p95, 1) + "/s");
+      ctx.reason("Calls are cumulative, not a measured request rate or RTT. Transactions may contain multiple protocol exchanges; batching requires application evidence.");
+      return null;
+    },
+
+    network_disconnects(ctx) {
+      let count = null;
+      for (const id of ["server_log.error_chronology", "server_log.top_errors"]) {
+        if (!["present", "empty"].includes(ctx.presence(id))) continue;
+        const rows = ctx.rows(id).filter(row => logErrorClass(row.severity || row.severity_worst, row.sql_state, row.message_sample ?? row.message).label === "client connection loss");
+        const occurrences = rows.reduce((total, row) => total + (toNumber(row.occurrences) || toNumber(row.repeat_count) || 1), 0);
+        count = count === null ? occurrences : Math.max(count, occurrences);
+        ctx.reason(occurrences + " connection/protocol failure occurrence(s) shown in " + ctx.title(id), id);
+      }
+      const outcomesId = "snapshot_delta_workload.database_session_outcomes_delta";
+      const abandoned = sumBy(ctx.rows(outcomesId), "sessions_abandoned_delta");
+      if (abandoned !== null) {
+        ctx.fact("Abandoned sessions in snapshot window", abandoned);
+        ctx.reason("Abandoned clients: " + abandoned + "; application exits can cause this too. Administrative kills and fatal SQL errors are not counted as transport failures", outcomesId);
+      }
+      if (count !== null) ctx.fact("Shown transport failures (overlapping sources)", count);
+      ctx.reason("Log sources overlap and may be capped; their maximum is a lower bound, not a sum. Snapshot session outcomes use a separate window.");
+      // Logged transport failures warn from the first one and grow with their count;
+      // abandoned sessions alone stay visible until dozens of clients vanish.
+      let score = count !== null || abandoned !== null ? 0 : null;
+      if (count > 0) score = maxScore(score, 0.4 + 0.4 * scalePair(count, THRESHOLDS.transportFailures));
+      if (abandoned > 0) score = maxScore(score, 0.2 + 0.4 * scalePair(abandoned, THRESHOLDS.abandonedSessions));
+      return score;
+    },
+
+    network_wal_send(ctx) {
+      let score = null;
+      const id = "replication.physical_replication";
+      for (const row of ctx.rows(id)) {
+        for (const key of ["current_to_sent_lag_bytes", "sent_to_write_lag_bytes"]) {
+          const value = toNumber(row[key]);
+          if (value === null || value < 0) continue;
+          score = maxScore(score, scalePair(value, THRESHOLDS.replayLagBytes));
+          ctx.reason((row.application_name || row.client_addr || "Sender") + " " + key + ": " + fmtBytes(value), id);
+        }
+      }
+      const chartId = "snapshot_charts_db.replication_sender_lag_bytes";
+      for (const series of ctx.series(chartId).filter(s => /^sent(?:\s|$)/.test(s.name) && s.finite >= 2)) {
+        const stats = seriesStats(series.values);
+        score = maxScore(score, scalePair(stats.p95, THRESHOLDS.replayLagBytes));
+        ctx.reason(series.name + " p95 " + fmtBytes(stats.p95), chartId);
+      }
+      ctx.reason("Unsent WAL can reflect sender CPU or transport; sent-to-write also includes receiver writes. Flush/replay lag is not used as proof of network pressure.");
+      if (score === null && ctx.presence(id) === "empty") return 0;
+      return score;
+    },
+
+    network_wal_receive(ctx) {
+      const id = "replication.wal_receiver";
+      let score = ctx.presence(id) === "empty" ? 0 : null;
+      for (const row of ctx.rows(id)) {
+        if (row.status) score = maxScore(score, row.status === "streaming" ? 0 : 0.6);
+        const lag = lsnGap(row.latest_end_lsn, row.written_lsn);
+        if (lag !== null && lag >= 0) score = maxScore(score, scalePair(lag, THRESHOLDS.replayLagBytes));
+        ctx.reason("WAL receiver " + (row.sender_host || "") + ": " + (row.status || "unknown") + ", announced-to-written gap " + fmtBytes(lag), id);
+        const flushGap = lsnGap(row.written_lsn, row.flushed_lsn);
+        if (flushGap !== null) ctx.fact("Written WAL awaiting local flush", fmtBytes(flushGap));
+        if (lag === null) ctx.reason("No written LSN: the reported receive_lag_bytes includes local flush and cannot isolate receive pressure", id);
+      }
+      ctx.reason("Announced-to-written lag can include local writes; flush lag is not transport evidence. An old last-message timestamp alone is not a failure. A stopped receiver needs topology context.");
+      return score;
+    },
+
+    network_sync(ctx) {
+      const score = synchronousReplicationScore(ctx);
+      ctx.reason("Remote write, flush or replay requirements can delay acknowledgements; this is not a network-only diagnosis.");
+      return score;
+    },
+
+    network_replication_failures(ctx) {
+      const id = "server_log.replication_events";
+      if (!["present", "empty"].includes(ctx.presence(id))) return null;
+      const rows = ctx.rows(id).filter(row => ["walreceiver_disconnect", "walsender_disconnect"].includes(row.event_type));
+      const count = rows.reduce((n, row) => n + (toNumber(row.occurrences) || 1), 0);
+      ctx.fact("Shown streaming disconnects", count);
+      ctx.reason(count + " streaming disconnect occurrence(s) shown; planned failover or shutdown can also disconnect streams. Archive failures, missing WAL and recovery conflicts are not counted", id);
+      return count ? 0.6 : 0;
+    },
+  };
+  for (const [name, fn] of Object.entries(networkEvaluators)) {
+    evaluators[name] = (ctx) => {
+      // A failed/skipped item may retain a partial payload. Context bindings
+      // must not turn that payload into fresh transport evidence.
+      const observed = Object.assign({}, ctx, {
+        rows: id => ctx.presence(id) === "present" ? ctx.rows(id) : [],
+        series: id => ctx.presence(id) === "present" ? ctx.series(id) : [],
+        text: id => ctx.presence(id) === "present" ? ctx.text(id) : ""
+      });
+      observed.facts = makeFacts(observed);
+      return fn(observed);
+    };
+  }
 
   // The memory pressure helper is shared with the damping of RAM causes.
   function memoryPressure(ctx) {
@@ -1389,10 +1762,15 @@
       if (!hp) return null;
       let score = 0;
       const actual = String(hp.huge_pages_actual || "").toLowerCase();
+      const requested = String(hp.huge_pages_requested || "").toLowerCase();
       const shared = toNumber(hp.shared_memory_size_bytes) || toNumber(hp.shared_buffers_bytes) || 0;
+      // Huge pages matter for large shared memory (runbook 10); with a small
+      // shared_buffers the same findings are advice, not a memory problem.
+      const large = shared >= THRESHOLDS.hugePagesMinBytes;
+      const weight = large ? 0.6 : 0.15;
       ctx.fact("huge_pages", String(hp.huge_pages_requested) + " -> " + String(hp.huge_pages_actual));
       ctx.fact("Shared memory", fmtBytes(shared));
-      if (actual !== "on" && shared >= THRESHOLDS.hugePagesMinBytes) {
+      if (actual !== "on" && large) {
         score = Math.max(score, 0.6);
         ctx.reason("huge_pages are " + (actual || "unknown") + " with " + fmtBytes(shared) + " of shared memory: page tables grow and TLB misses cost CPU", "os.postgresql_huge_pages");
       }
@@ -1400,8 +1778,8 @@
       if (thp) {
         ctx.fact("transparent_hugepage", thp);
         if (/always/.test(thp)) {
-          score = Math.max(score, 0.6);
-          ctx.reason("transparent_hugepage = always: khugepaged compaction stalls; set never or madvise", "os.postgresql_huge_pages");
+          score = Math.max(score, weight);
+          ctx.reason("transparent_hugepage = always: khugepaged compaction stalls; set never or madvise" + (large ? "" : " (low impact with " + fmtBytes(shared) + " of shared memory)"), "os.postgresql_huge_pages");
         }
       }
       const pageTablesPct = toNumber(hp.host_page_tables_pct_ram);
@@ -1410,9 +1788,9 @@
         ctx.fact("Page tables", fmtPct(pageTablesPct, 2) + " of RAM");
       }
       const shortfall = toNumber(hp.default_pool_shortfall_pages);
-      if (shortfall !== null && shortfall > 0) {
-        score = Math.max(score, 0.6);
-        ctx.reason("Huge page pool is short by " + fmtNum(shortfall, 0) + " pages (vm.nr_hugepages)", "os.postgresql_huge_pages");
+      if (shortfall !== null && shortfall > 0 && actual !== "on" && (requested === "on" || requested === "try" || large)) {
+        score = Math.max(score, weight);
+        ctx.reason("Huge page pool is short by " + fmtNum(shortfall, 0) + " pages (vm.nr_hugepages)" + (large ? "" : "; with " + fmtBytes(shared) + " of shared memory this is advice, not pressure"), "os.postgresql_huge_pages");
       }
       if (score === 0) ctx.reason("Huge page configuration matches the shared memory size");
       return score;
@@ -1439,20 +1817,25 @@
         if (sum > 0 && top.length) {
           const share = top[0].value / sum;
           score = maxScore(score, scalePair(share, THRESHOLDS.topStatementShare) * 0.6);
-          ctx.reason("Top statement reads " + fmtPct(share * 100, 0) + " of the listed shared blocks (query_id " + top[0].row.query_id + ", " + fmtBytes(top[0].value * 8192) + ")", "sql_workload.top_sql_by_shared_io");
+          ctx.reason("Top statement reads " + fmtPct(share * 100, 0) + " of the listed shared blocks (query_id " + top[0].row.query_id + ", " + formatBlocks(ctx, top[0].value) + ")", "sql_workload.top_sql_by_shared_io");
         }
       }
       const delta = ctx.rows("snapshot_delta_workload.sql_io_delta");
       if (delta.length) {
         const top = topRows(delta, "shared_read_blks_per_sec", 3).filter((entry) => entry.value > 0);
         if (top.length) {
-          ctx.reason("Readers in the window: " + top.map((entry) => "query_id " + entry.row.query_id + " " + fmtBytes(entry.value * 8192) + "/s").join(", "), "snapshot_delta_workload.sql_io_delta");
-          score = maxScore(score, scale(top[0].value * 8192, 20 * 1024 ** 2, 200 * 1024 ** 2) * 0.6);
+          ctx.reason("Readers in the window: " + top.map((entry) => "query_id " + entry.row.query_id + " " + formatBlocks(ctx, entry.value) + "/s").join(", "), "snapshot_delta_workload.sql_io_delta");
+          if (relationBlockSize(ctx)) score = maxScore(score, scale(top[0].value * relationBlockSize(ctx), 20 * 1024 ** 2, 200 * 1024 ** 2) * 0.6);
         }
+      }
+      const windowTables = topRows(ctx.rows("snapshot_delta_workload.table_io_delta"), "total_blks_read_per_sec", 3).filter((entry) => entry.value > 0);
+      if (windowTables.length) {
+        ctx.reason("Tables read from the OS in the window: " + windowTables.map((entry) => entry.row.schemaname + "." + entry.row.relname + " " + formatBlocks(ctx, entry.value) + "/s").join(", "), "snapshot_delta_workload.table_io_delta");
+        if (relationBlockSize(ctx)) score = maxScore(score, scale(windowTables[0].value * relationBlockSize(ctx), 20 * 1024 ** 2, 200 * 1024 ** 2) * 0.6);
       }
       const tables = topRows(ctx.rows("object_workload.table_io"), "total_blks_read", 3);
       if (tables.length) {
-        ctx.fact("Most read tables", tables.map((entry) => entry.row.schemaname + "." + entry.row.relname).join(", "));
+        ctx.fact("Most read tables (since reset)", tables.map((entry) => entry.row.schemaname + "." + entry.row.relname).join(", "));
       }
       return shareScaled(ctx, score, "read", ["client backend"]);
     },
@@ -1525,6 +1908,39 @@
 
     checkpoints(ctx) {
       let score = null;
+      // The log names the trigger: "wal" checkpoints are the max_wal_size symptom
+      // (runbook 4.4); "time" ones are healthy; immediate/force/shutdown/end-of-recovery
+      // ones are explicit (CHECKPOINT, base backups, restarts) and prove nothing.
+      const logId = "server_log.checkpoints";
+      const log = ["present", "empty"].includes(ctx.presence(logId)) ? ctx.rows(logId) : [];
+      const fullLog = checkpointLogCoversWindow(ctx, log);
+      const triggers = {wal: 0, time: 0, explicit: 0};
+      const reasons = {};
+      for (const row of log) {
+        if (row.event && row.event !== "checkpoint" || row.phase && row.phase !== "starting") continue;
+        if (fullLog && !inSnapshotWindow(ctx, row.log_time)) continue;
+        const key = String(row.reason || "").trim().toLowerCase();
+        if (!key) continue;
+        const count = toNumber(row.repeat_count) || 1;
+        reasons[key] = (reasons[key] || 0) + count;
+        if (/\bwal\b/.test(key)) triggers.wal += count;
+        else if (/\btime\b/.test(key)) triggers.time += count;
+        else triggers.explicit += count;
+      }
+      const logKnown = triggers.wal + triggers.time + triggers.explicit > 0;
+      // confidence: a single requested checkpoint in a window, or a handful since a
+      // stats reset, cannot establish a pattern.
+      const requestedShare = (req, timed, source, period, confidence) => {
+        if (req + timed <= 0) return;
+        const share = req / (req + timed);
+        score = maxScore(score, scalePair(share, THRESHOLDS.requestedCheckpointShare) * confidence);
+        ctx.reason(fmtNum(req, 0) + " requested and " + fmtNum(timed, 0) + " timed checkpoints " + period + " (requested share " + fmtPct(share * 100, 0) + (confidence < 1 ? ", too few to judge" : "") + ")", source);
+      };
+      if (logKnown) {
+        requestedShare(triggers.wal, triggers.time, "server_log.checkpoints", "in the log window, triggered by WAL volume", Math.min(1, triggers.wal / 2));
+        if (triggers.explicit) ctx.reason(fmtNum(triggers.explicit, 0) + " explicit checkpoint(s) (CHECKPOINT, backup, restart) are not counted as WAL pressure", "server_log.checkpoints");
+        if (triggers.wal + triggers.time === 0) score = maxScore(score, 0);
+      }
       const requested = seriesNamed(ctx, "snapshot_charts_db.checkpoint_trigger_events", "requested");
       const timedSeries = seriesNamed(ctx, "snapshot_charts_db.checkpoint_trigger_events", "timed");
       const completed = seriesNamed(ctx, "snapshot_charts_db.checkpoint_trigger_events", "completed");
@@ -1534,9 +1950,11 @@
         // (18+) counts every performed checkpoint, requested ones included.
         const timedSum = timedSeries ? (seriesStats(timedSeries.values) || {sum: 0}).sum : Math.max(0, (seriesStats(completed.values) || {sum: 0}).sum - req.sum);
         if (req.sum + timedSum > 0) {
-          const share = req.sum / (req.sum + timedSum);
-          score = maxScore(score, scalePair(share, THRESHOLDS.requestedCheckpointShare));
-          ctx.reason(fmtNum(req.sum, 0) + " requested and " + fmtNum(timedSum, 0) + " timed checkpoints in the window (requested share " + fmtPct(share * 100, 0) + ")", "snapshot_charts_db.checkpoint_trigger_events");
+          if (fullLog && logKnown && triggers.wal + triggers.explicit >= req.sum && triggers.time >= timedSum) {
+            ctx.reason(fmtNum(req.sum, 0) + " requested and " + fmtNum(timedSum, 0) + " timed checkpoints in the window; the log decides which ones WAL volume forced", "snapshot_charts_db.checkpoint_trigger_events");
+          } else {
+            requestedShare(req.sum, timedSum, "snapshot_charts_db.checkpoint_trigger_events", "in the window", Math.min(1, req.sum / 2));
+          }
         } else {
           ctx.reason("No checkpoint started in the window", "snapshot_charts_db.checkpoint_trigger_events");
           score = maxScore(score, 0);
@@ -1548,25 +1966,17 @@
         if (row) {
           const req = toNumber(row.num_requested === undefined ? row.checkpoints_req : row.num_requested);
           const tim = toNumber(row.num_timed === undefined ? row.checkpoints_timed : row.num_timed);
-          if (req !== null && tim !== null && req + tim > 0) {
-            const share = req / (req + tim);
-            score = maxScore(score, scalePair(share, THRESHOLDS.requestedCheckpointShare));
-            ctx.reason(fmtNum(req, 0) + " requested and " + fmtNum(tim, 0) + " timed checkpoints since stats reset (requested share " + fmtPct(share * 100, 0) + ")", checkpointer.length ? "wal_io_checkpoints.checkpointer" : "wal_io_checkpoints.bgwriter");
+          if (req !== null && tim !== null) {
+            requestedShare(req, tim, checkpointer.length ? "wal_io_checkpoints.checkpointer" : "wal_io_checkpoints.bgwriter", "since stats reset", Math.min(1, (req + tim) / 6));
           }
         }
       }
-      const log = ctx.rows("server_log.checkpoints");
       if (log.length) {
         const sync = maxBy(log, "sync_s");
         if (sync.value !== null) {
           score = maxScore(score, scalePair(sync.value, THRESHOLDS.checkpointSyncSec));
           ctx.reason("Longest checkpoint sync phase " + sync.value.toFixed(1) + " s in the log window", "server_log.checkpoints");
           ctx.fact("Max sync", sync.value.toFixed(1) + " s");
-        }
-        const reasons = {};
-        for (const row of log) {
-          const key = String(row.reason || "").trim();
-          if (key) reasons[key] = (reasons[key] || 0) + (toNumber(row.repeat_count) || 1);
         }
         const keys = Object.keys(reasons);
         if (keys.length) ctx.fact("Checkpoint reasons", keys.map((key) => key + " x" + reasons[key]).join(", "));
@@ -1601,14 +2011,16 @@
         }
       }
       if (score === null) {
-        const io = ctx.rows("wal_io_checkpoints.pg_stat_io").filter((row) => row.object === "relation");
+        // Only the "normal" context shows backends evicting dirty buffers because the
+        // checkpointer and bgwriter fell behind; bulk loads write through ring buffers.
+        const io = ctx.rows("wal_io_checkpoints.pg_stat_io").filter((row) => row.object === "relation" && (row.context === undefined || row.context === null || row.context === "normal"));
         if (io.length) {
           const total = sumBy(io, "writes") || 0;
           const client = sumBy(io.filter((row) => row.backend_type === "client backend"), "writes") || 0;
           if (total > 0) {
             const share = client / total;
             score = maxScore(score, scalePair(share, THRESHOLDS.clientWriteShare));
-            ctx.reason("Client backends did " + fmtPct(share * 100, 0) + " of relation writes since stats reset", "wal_io_checkpoints.pg_stat_io");
+            ctx.reason("Client backends did " + fmtPct(share * 100, 0) + " of normal-context relation writes since stats reset (bulk-load ring buffers excluded)", "wal_io_checkpoints.pg_stat_io");
           }
           const fsyncs = sumBy(io.filter((row) => row.backend_type === "client backend"), "fsyncs") || 0;
           if (fsyncs > 0) {
@@ -1713,7 +2125,7 @@
       }
       const dirtied = topRows(ctx.rows("sql_workload.top_sql_by_shared_io"), "shared_blks_dirtied", 2);
       if (dirtied.length && dirtied[0].value > 0) {
-        ctx.fact("Top dirtying statement", "query_id " + dirtied[0].row.query_id + " " + fmtBytes(dirtied[0].value * 8192));
+        ctx.fact("Top dirtying statement", "query_id " + dirtied[0].row.query_id + " " + formatBlocks(ctx, dirtied[0].value));
       }
       return score;
     },
@@ -1761,38 +2173,65 @@
       const chronology = ctx.rows("server_log.error_chronology");
       const top = ctx.rows("server_log.top_errors");
       let score = ctx.anyCollected() ? 0 : null;
+      const window = ctx.logWindowMinutes();
       const observations = [];
+      // Per class, keep the larger count of the overlapping sources (never the sum).
+      const classes = {};
       for (const [itemId, rows, severityColumn, countColumn] of [
         ["server_log.error_chronology", chronology, "severity", "repeat_count"],
         ["server_log.top_errors", top, "severity_worst", "occurrences"]
       ]) {
         if (!rows.length) continue;
-        const count = rows.reduce((total, row) => total + (toNumber(row[countColumn]) || 1), 0);
+        const perClass = {};
+        let count = 0;
+        for (const row of rows) {
+          const occurrences = toNumber(row[countColumn]) || 1;
+          count += occurrences;
+          const kind = logErrorClass(row[severityColumn], row.sql_state, row.message_sample === undefined ? row.message : row.message_sample);
+          const entry = perClass[kind.label] || (perClass[kind.label] = {weight: kind.weight, count: 0, sample: null});
+          entry.count += occurrences;
+          if (!entry.sample) entry.sample = truncate(row.message_sample === undefined ? row.message : row.message_sample, 70);
+        }
+        for (const [label, entry] of Object.entries(perClass)) {
+          const known = classes[label];
+          if (!known || entry.count > known.count) classes[label] = Object.assign({}, entry, {source: itemId});
+        }
         const severities = [...new Set(rows.map((row) => String(row[severityColumn] || "").toUpperCase()))];
-        if (severities.includes("PANIC")) score = 1;
-        else if (severities.includes("FATAL")) score = maxScore(score, THRESHOLDS.fatalLogScore);
         observations.push(count);
         ctx.reason(ctx.title(itemId) + ": " + count + " listed error occurrences (" + severities.join(", ") + "; counts may be lower bounds)", itemId);
+      }
+      // Server-side classes score on their own; application errors (constraint,
+      // syntax, data exceptions) are the application's problem and only a flood warns.
+      let appCount = 0;
+      const appSamples = [];
+      for (const [label, entry] of Object.entries(classes)) {
+        if (entry.weight === null) {
+          appCount += entry.count;
+          appSamples.push(entry.sample);
+          continue;
+        }
+        score = maxScore(score, label === "deadlock" ? deadlockScore(entry.count, window) : entry.weight);
+        ctx.reason(entry.count + " " + label + " event(s): " + entry.sample, entry.source);
+      }
+      if (appCount > 0) {
+        const rate = window ? appCount / window : null;
+        score = maxScore(score, THRESHOLDS.applicationErrorFloor + (rate === null ? 0 : scalePair(rate, THRESHOLDS.applicationErrorsPerMinute) * (0.5 - THRESHOLDS.applicationErrorFloor)));
+        ctx.reason(appCount + " application error(s)" + (rate === null ? "" : " at " + rate.toFixed(2) + " per minute") + " (constraint, syntax, data or privilege errors are not database failures): " + appSamples.filter(Boolean).slice(0, 2).join(" | "), classes[Object.keys(classes).find((label) => classes[label].weight === null)].source);
       }
       const terminations = seriesTotalStats(ctx, "server_log.query_termination_events");
       if (terminations && terminations.sum > 0) {
         observations.push(terminations.sum);
-        score = maxScore(score, THRESHOLDS.terminationLogScore);
+        const rate = window ? terminations.sum / window : null;
+        score = maxScore(score, THRESHOLDS.terminationLogScore + (rate === null ? 0 : scalePair(rate, THRESHOLDS.terminationsPerMinute) * 0.3));
         ctx.fact("Query terminations", fmtNum(terminations.sum, 0));
-        ctx.reason(fmtNum(terminations.sum, 0) + " statement/lock timeouts or cancellations in the log window", "server_log.query_termination_events");
+        ctx.reason(fmtNum(terminations.sum, 0) + " statement/lock timeouts or cancellations in the log window" + (rate === null ? "" : " (" + rate.toFixed(2) + " per minute)"), "server_log.query_termination_events");
       }
       // All sources overlap and have independent caps. Without event identities,
       // their maximum is a safe lower bound; their sum would double-count events.
       const occurrences = Math.max(0, ...observations);
-      const window = ctx.logWindowMinutes();
       if (occurrences > 0) {
         ctx.fact("Observed log events (lower bound)", String(occurrences));
-        if (window) {
-          score = maxScore(score, scalePair(occurrences / window, THRESHOLDS.errorsPerMinute));
-          ctx.reason("Observed log event rate at least " + (occurrences / window).toFixed(2) + " per minute; overlapping sources are not added");
-        } else {
-          score = maxScore(score, 0.3);
-        }
+        if (window) ctx.fact("Log window", fmtSeconds(window * 60));
       }
       const worst = topRows(top, "occurrences", 3);
       if (worst.length) {
@@ -1862,13 +2301,17 @@
       let score = null;
       const queue = ctx.rows("storage_vacuum.autovacuum_queue");
       if (queue.length) {
-        const due = queue.filter((row) => row.dead_tuple_vacuum_due === true || row.insert_vacuum_due === true);
-        const overdue = maxBy(queue, "dead_tuple_overdue_factor");
+        // Lag means dead tuples pile up: insert-triggered vacuums are routine, tiny
+        // tables cross their threshold with a few hundred rows, and a table already
+        // being vacuumed is being handled.
+        const due = queue.filter((row) => row.dead_tuple_vacuum_due === true && row.vacuum_in_progress !== true && (toNumber(row.n_dead_tup) || 0) >= THRESHOLDS.vacuumMinDeadTuples);
+        const insertDue = queue.filter((row) => row.insert_vacuum_due === true && row.dead_tuple_vacuum_due !== true).length;
+        const overdue = maxBy(due, "dead_tuple_overdue_factor");
         if (overdue.value !== null) {
           score = maxScore(score, scalePair(overdue.value, THRESHOLDS.vacuumOverdueFactor));
         }
-        score = maxScore(score, scalePair(due.length, [3, 15]) * 0.6);
-        ctx.reason(due.length + " table(s) past their autovacuum threshold" + (overdue.value !== null && overdue.value >= 1 ? "; worst " + overdue.row.schemaname + "." + overdue.row.relname + " at " + overdue.value.toFixed(1) + "x the threshold" : ""), "storage_vacuum.autovacuum_queue");
+        score = maxScore(score, scalePair(due.length, THRESHOLDS.vacuumDueTables) * 0.6);
+        ctx.reason(due.length + " table(s) with at least " + fmtNum(THRESHOLDS.vacuumMinDeadTuples, 0) + " dead tuples past their autovacuum threshold" + (overdue.value !== null && overdue.value >= 1 ? "; worst " + overdue.row.schemaname + "." + overdue.row.relname + " at " + overdue.value.toFixed(1) + "x the threshold (" + fmtNum(toNumber(overdue.row.n_dead_tup), 0) + " dead)" : "") + (insertDue ? "; " + insertDue + " more await a routine insert-triggered vacuum" : ""), "storage_vacuum.autovacuum_queue");
         const dead = queue.filter((row) => (toNumber(row.n_live_tup) || 0) + (toNumber(row.n_dead_tup) || 0) > THRESHOLDS.deadTupleMinRows)
           .map((row) => ({name: row.schemaname + "." + row.relname, pct: ((toNumber(row.n_dead_tup) || 0) / ((toNumber(row.n_live_tup) || 0) + (toNumber(row.n_dead_tup) || 0))) * 100}))
           .sort((a, b) => b.pct - a.pct);
@@ -1964,10 +2407,15 @@
       const windowDeadlocks = Math.max(chart ? chart.sum : 0, delta || 0);
       const windowSource = delta !== null && (!chart || delta >= chart.sum)
         ? "snapshot_delta_workload.database_workload_delta" : "snapshot_charts_db.database_deadlocks";
-      if (deadlockCount > 0 || windowDeadlocks > 0) {
-        score = maxScore(score, scale(Math.max(deadlockCount, windowDeadlocks), 1, 10) * 0.4 + 0.6);
-        if (deadlockCount > 0) ctx.reason(deadlockCount + " deadlock(s) in the log window", "server_log.deadlock_events");
-        if (windowDeadlocks > 0) ctx.reason(windowDeadlocks + " deadlock(s) in the snapshot window (overlapping chart and endpoint counts are not added)", windowSource);
+      // The server resolves deadlocks; their rate, not one occurrence, is the health signal.
+      if (deadlockCount > 0) {
+        score = maxScore(score, deadlockScore(deadlockCount, ctx.logWindowMinutes()));
+        ctx.reason(deadlockCount + " deadlock(s) in the log window", "server_log.deadlock_events");
+      }
+      if (windowDeadlocks > 0) {
+        const seconds = ctx.facts.windowSeconds(windowSource);
+        score = maxScore(score, deadlockScore(windowDeadlocks, seconds ? seconds / 60 : null));
+        ctx.reason(windowDeadlocks + " deadlock(s) in the snapshot window (overlapping chart and endpoint counts are not added)", windowSource);
       }
       const terminations = ctx.series("server_log.query_termination_events");
       if (terminations.length) {
@@ -1996,6 +2444,14 @@
           ctx.fact("Connections used", fmtPct(usedPct, 0));
         }
       }
+      // Refused connections in the log are the exhaustion itself, whatever the usage looks like now.
+      const refused = ctx.rows("server_log.system_incidents").filter((row) => String(row.incident_type) === "too_many_connections");
+      if (refused.length) {
+        const count = refused.reduce((total, row) => total + (toNumber(row.occurrences) || 1), 0);
+        score = maxScore(score, 0.8);
+        ctx.reason(count + " connection(s) refused in the log window (too many clients / reserved slots): " + truncate(refused[0].message, 80), "server_log.system_incidents");
+        ctx.fact("Refused connections (log)", String(count));
+      }
       const usage = ctx.rows("users_roles.session_usage");
       const worst = maxBy(usage, "limit_utilization_pct");
       if (worst.value !== null) {
@@ -2008,12 +2464,13 @@
       if (outcomes.length) {
         const fatal = (sumBy(outcomes, "sessions_fatal_delta") || 0) + (sumBy(outcomes, "sessions_killed_delta") || 0);
         const abandoned = sumBy(outcomes, "sessions_abandoned_delta") || 0;
+        // One failed login or one pg_terminate_backend is not a health problem; dozens are.
         if (fatal > 0) {
-          score = maxScore(score, 0.6);
+          score = maxScore(score, 0.6 * scalePair(fatal, THRESHOLDS.sessionFailures));
           ctx.reason(fmtNum(fatal, 0) + " session(s) ended fatally or were killed in the window", "snapshot_delta_workload.database_session_outcomes_delta");
         }
         if (abandoned > 0) {
-          score = maxScore(score, 0.3);
+          score = maxScore(score, 0.3 * scalePair(abandoned, THRESHOLDS.sessionFailures));
           ctx.reason(fmtNum(abandoned, 0) + " session(s) abandoned by clients in the window", "snapshot_delta_workload.database_session_outcomes_delta");
         }
       }
@@ -2062,19 +2519,7 @@
           ctx.reason("Inactive slot " + row.slot_name + " retains " + fmtBytes(retained) + (status ? " (" + status + ")" : ""), "replication.replication_slots");
         }
       }
-      const sync = ctx.rows("replication.synchronous_replication_status");
-      if (sync.length) {
-        const row = sync[0];
-        if (row.quorum_satisfied === false) {
-          score = maxScore(score, 1);
-          ctx.reason("Synchronous replication quorum is not satisfied: commits wait", "replication.synchronous_replication_status");
-        }
-        const waiting = toNumber(row.syncrep_waiting_sessions);
-        if (waiting !== null && waiting > 0) {
-          score = maxScore(score, 0.6);
-          ctx.reason(fmtNum(waiting, 0) + " session(s) waiting in SyncRep", "replication.synchronous_replication_status");
-        }
-      }
+      score = maxScore(score, synchronousReplicationScore(ctx));
       const capacity = maxBy(ctx.rows("replication.replication_capacity"), "utilization_pct");
       if (capacity.value !== null) {
         score = maxScore(score, scalePair(capacity.value, THRESHOLDS.capacityPct));
@@ -2165,7 +2610,9 @@
     },
 
     configuration(ctx) {
-      let score = findingsScore(ctx);
+      // Configuration file entries the server cannot apply are a misconfiguration to
+      // fix, not a database failure: they warn, whatever the item's own risk level.
+      let score = findingsScore(ctx, {excludeItems: ["cluster_inventory.configuration_file_errors"]});
       const eol = ctx.rows("overview.version_eol_status");
       if (eol.length) {
         const days = toNumber(eol[0].days_to_eol);
@@ -2196,7 +2643,8 @@
       }
       const errors = ctx.rows("cluster_inventory.configuration_file_errors").filter((row) => row.error);
       if (errors.length) {
-        ctx.reason(errors.length + " configuration entr(ies) the server cannot apply", "cluster_inventory.configuration_file_errors");
+        score = maxScore(score, 0.6);
+        ctx.reason(errors.length + " configuration entr(ies) the server cannot apply: " + errors.slice(0, 3).map((row) => row.setting_name + " = " + row.file_value + " (" + truncate(row.error, 60) + ")").join(", "), "cluster_inventory.configuration_file_errors");
       }
       return score;
     },
@@ -2278,7 +2726,9 @@
   }
 
   // A cause is a bottleneck only when its resource is under pressure: full weight at
-  // pressure 1, 30 % at pressure 0, 50 % when the pressure is unknown (one-shot reports).
+  // pressure 1, 20 % at pressure 0, 50 % when the pressure is unknown (one-shot reports).
+  // The floor keeps the explanation visible but can never reach "warn" (0.34) on an
+  // idle resource, so causes colour a root only together with a pressured resource.
   function damp(ctx, score, kind) {
     // Declarative pressure is applied once, after the evaluator. In particular,
     // copies under I/O wait must not also be damped by unrelated CPU/disk pressure.
@@ -2289,7 +2739,7 @@
   function dampByPressure(ctx, score, kind) {
     if (!isFiniteNumber(score)) return null;
     const pressure = pressureOf(ctx, kind);
-    const factor = pressure === null ? 0.5 : 0.3 + 0.7 * pressure;
+    const factor = pressure === null ? 0.5 : 0.2 + 0.8 * pressure;
     if (pressure !== null && score >= 0.34) {
       ctx.fact("Resource pressure", {ok: "Low", warn: "Elevated", crit: "High"}[statusOf(pressure)]);
     }
@@ -2319,11 +2769,113 @@
 
   // --------------------------------------------- shared evaluator helpers
 
+  function timestamp(value, offsetSeconds) {
+    const text = String(value || "").replace(" UTC", "Z").replace(" ", "T");
+    if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(text)) return Date.parse(text);
+    // Log timestamps are server-local wall times. Never use the browser's zone.
+    return isFiniteNumber(offsetSeconds) ? Date.parse(text + "Z") - offsetSeconds * 1000 : NaN;
+  }
+
+  function inSnapshotWindow(ctx, value) {
+    const offset = toNumber((resultOf(ctx.item("server_log.checkpoints")) || {}).log_utc_offset_seconds);
+    const time = timestamp(value, offset);
+    return time >= timestamp(ctx.runtime.snapshot_window_started_at) && time <= timestamp(ctx.runtime.snapshot_window_finished_at);
+  }
+
+  function checkpointLogCoversWindow(ctx, rows) {
+    const id = "server_log.checkpoints";
+    const phase = ctx.runtime.log_collection || {};
+    const coverage = phase.coverage || {};
+    const result = resultOf(ctx.item(id)) || {};
+    const offset = toNumber(result.log_utc_offset_seconds);
+    const logTime = value => timestamp(value, offset);
+    const start = timestamp(ctx.runtime.snapshot_window_started_at);
+    const end = timestamp(ctx.runtime.snapshot_window_finished_at);
+    // Even a complete log scan can have an independently capped item. Old
+    // artifacts without explicit completeness evidence cannot replace counters.
+    return phase.status === "collected" && coverage.ranking_complete === true &&
+      coverage.window_truncated === false && !(coverage.truncation_reasons || []).length &&
+      end > start && logTime(coverage.covered_from) <= start && logTime(coverage.covered_to) >= end &&
+      result.omitted_series_count === 0 && rows.every(row => row.count_complete === true &&
+        Number.isFinite(logTime(row.log_time)) &&
+        // RLE groups crossing the boundary cannot be attributed to this window.
+        ((toNumber(row.repeat_count) || 1) === 1 ||
+          Number.isFinite(logTime(row.last_time)) &&
+          (logTime(row.last_time) < start || logTime(row.log_time) > end ||
+            inSnapshotWindow(ctx, row.log_time) && inSnapshotWindow(ctx, row.last_time))));
+  }
+
+  function relationBlockSize(ctx) {
+    const setting = ctx.facts.setting("block_size");
+    const value = setting && (setting.value ?? toNumber(setting.raw));
+    if (!(value > 0)) return null;
+    ctx.fact("PostgreSQL block size", fmtBytes(value));
+    return value;
+  }
+
+  function formatBlocks(ctx, blocks) {
+    const size = relationBlockSize(ctx);
+    return size ? fmtBytes(blocks * size) : fmtNum(blocks, 0) + " blocks";
+  }
+
+  function ioOperationBytes(row, bytesColumn, countColumn) {
+    const bytes = toNumber(row[bytesColumn]);
+    if (bytes !== null && bytes >= 0) return bytes;
+    const count = toNumber(row[countColumn]);
+    const size = toNumber(row.op_bytes);
+    return count === 0 ? 0 : count > 0 && size > 0 ? count * size : null;
+  }
+
+  function lsnGap(end, start) {
+    const parse = value => {
+      const match = /^([0-9a-f]{1,8})\/([0-9a-f]{1,8})$/i.exec(String(value || ""));
+      return match ? (BigInt("0x" + match[1]) << 32n) + BigInt("0x" + match[2]) : null;
+    };
+    const a = parse(end), b = parse(start);
+    return a !== null && b !== null && a >= b ? Number(a - b) : null;
+  }
+
+  function synchronousReplicationScore(ctx) {
+    const id = "replication.synchronous_replication_status";
+    let score = null;
+    for (const row of ctx.rows(id)) {
+      if (row.in_recovery === true) {
+        score = maxScore(score, 0);
+        ctx.reason("Server is in recovery; synchronous standby requirements apply after promotion", id);
+        continue;
+      }
+      const waiting = toNumber(row.syncrep_waiting_sessions);
+      if (waiting !== null) score = maxScore(score, waiting > 0 ? 0.6 : 0);
+      if (row.quorum_satisfied === false) {
+        const blocking = waiting > 0 || row.risk_level === "high" ||
+          (!row.risk_level && row.commit_waits_for_standby === true);
+        score = maxScore(score, blocking ? 1 : 0.6);
+      }
+      ctx.reason("SyncRep waiting sessions: " + fmtNum(waiting, 0) + "; quorum " +
+        (row.quorum_satisfied === false ? "not satisfied" : row.quorum_satisfied === true ? "satisfied" : "unknown") +
+        (row.risk_reason ? "; " + row.risk_reason : ""), id);
+    }
+    return score;
+  }
+
+  function deadlockScore(count, minutes) {
+    return THRESHOLDS.deadlockScoreFloor + (minutes ? scalePair(count / minutes, THRESHOLDS.deadlocksPerMinute) : scale(count, 1, 10) * 0.3) * (1 - THRESHOLDS.deadlockScoreFloor);
+  }
+
   function cpuComponent(ctx, names, thresholds, label) {
-    const parts = ctx.series("snapshot_charts_os.os_cpu_utilization").filter((series) => names.includes(series.name.toLowerCase()));
+    const chartId = "snapshot_charts_os.os_cpu_utilization";
+    const all = ctx.series(chartId);
+    const parts = all.filter((series) => names.includes(series.name.toLowerCase()));
     // Require the main counter. Supplementary nice/irq counters alone cannot
     // establish that user/system time was low when the main series is missing.
-    if (!parts.some((series) => series.name.toLowerCase() === names[0])) return null;
+    if (!parts.some((series) => series.name.toLowerCase() === names[0])) {
+      if (!observedZeros(ctx, chartId).some(zero => zero.name.toLowerCase() === names[0])) return null;
+      ctx.reason(label + " main counter was measured at zero in every collected sample (line hidden)", chartId);
+      if (!parts.length) {
+        ctx.fact(label + " p95", "0 %");
+        return 0;
+      }
+    }
     const totals = parts[0].times.map((time) => {
       let value = 0;
       for (const part of parts) {
@@ -2334,7 +2886,7 @@
       return value;
     });
     const stats = seriesStats(totals);
-    if (!stats) return null;
+    if (!stats || stats.n < 2) return null;
     ctx.fact(label + " p95", fmtPct(stats.p95, 0));
     ctx.reason(label + " p95 " + fmtPct(stats.p95, 0) + ", mean " + fmtPct(stats.mean, 0), "snapshot_charts_os.os_cpu_utilization");
     return scalePair(stats.p95, thresholds);
@@ -2410,7 +2962,8 @@
       const fallback = direction === "read" ? "reads_delta" : "writes_delta";
       if (rows.length) {
         for (const row of rows) {
-          const value = toNumber(row[column]) !== null ? toNumber(row[column]) : (toNumber(row[fallback]) || 0) * 8192;
+          const value = ioOperationBytes(row, column, fallback);
+          if (value === null) return {shares: {}, total: 0, source: null};
           shares[row.backend_type] = (shares[row.backend_type] || 0) + value;
           total += value;
         }
@@ -2420,7 +2973,8 @@
         const col = direction === "read" ? "reads" : "writes";
         const bytesCol = direction === "read" ? "read_bytes" : "write_bytes";
         for (const row of io) {
-          const value = toNumber(row[bytesCol]) !== null ? toNumber(row[bytesCol]) : (toNumber(row[col]) || 0) * 8192;
+          const value = ioOperationBytes(row, bytesCol, col);
+          if (value === null) return {shares: {}, total: 0, source: null};
           shares[row.backend_type] = (shares[row.backend_type] || 0) + value;
           total += value;
         }
@@ -2535,17 +3089,20 @@
     pg_buffercache: "Install pg_buffercache to see shared_buffers occupancy."
   };
 
-  function requirementUnmet(requirement, runtime, node, presenceOf) {
+  function requirementUnmet(requirement, runtime, node, presenceOf, logCollected) {
     if (requirement === "snapshots") return runtime.mode !== "snapshots";
     if (requirement === "host") return runtime.collection_mode === "remote-db-only";
     if (requirement === "log") {
+      // When the log was collected, an absent log item is a catalog difference
+      // (older artifact), not a missing --log-depth-time-min.
+      if (logCollected) return false;
       const logItems = node.bindings.filter((binding) => binding.id.startsWith("server_log."));
       return logItems.length > 0 && logItems.every((binding) => ["absent", "skipped", "unsupported"].includes(presenceOf(binding.id)));
     }
     return null; // extension requirements are judged from item presence below
   }
 
-  function buildHints(node, runtime, presenceOf, itemOf) {
+  function buildHints(node, runtime, presenceOf, itemOf, logCollected) {
     const hints = [];
     const seen = new Set();
     const push = (text) => {
@@ -2555,7 +3112,7 @@
       }
     };
     for (const requirement of node.requires || []) {
-      const unmet = requirementUnmet(requirement, runtime, node, presenceOf);
+      const unmet = requirementUnmet(requirement, runtime, node, presenceOf, logCollected);
       if (unmet === true) push(HINTS[requirement]);
       if (unmet === null) {
         const scoped = node.bindings.filter((binding) => binding.role !== "fact");
@@ -2581,7 +3138,7 @@
     }
     if (categories.snapshots && !categories.snapshots.collected && categories.snapshots.missing && runtime.mode !== "snapshots") push(HINTS.snapshots);
     if (categories.host && !categories.host.collected && categories.host.missing && runtime.collection_mode === "remote-db-only") push(HINTS.host);
-    if (categories.log && !categories.log.collected && categories.log.missing) push(HINTS.log);
+    if (categories.log && !categories.log.collected && categories.log.missing && !logCollected) push(HINTS.log);
     for (const binding of node.bindings) {
       const presence = presenceOf(binding.id);
       const item = itemOf(binding.id);
@@ -2611,6 +3168,7 @@
       return presenceCache[itemId];
     };
     const itemOf = (itemId) => items[itemId] || null;
+    const logCollected = Object.keys(items).some((itemId) => itemId.startsWith("server_log.") && ["present", "empty"].includes(presenceOf(itemId)));
     const shared = {};
     const evidencePool = (node) => {
       const scored = node.bindings.filter((binding) => binding.role !== "fact");
@@ -2677,6 +3235,9 @@
           try {
             let value = evaluator(ctx);
             if (node.pressure) value = dampByPressure(ctx, value, node.pressure);
+            // A declarative cap bounds nodes whose findings are real but are not a
+            // failure of this root (configuration advice, duplicated security checks).
+            if (isFiniteNumber(node.cap) && isFiniteNumber(value)) value = Math.min(value, node.cap);
             ownScore = isFiniteNumber(value) ? clamp01(value) : null;
           } catch (caught) {
             error = String(caught && caught.message ? caught.message : caught);
@@ -2719,7 +3280,7 @@
         bindings,
         present: bindings.filter((binding) => binding.presence === "present").length,
         scoredBindings: bindings.filter((binding) => binding.role !== "fact").length,
-        hints: buildHints(node, runtime, presenceOf, itemOf),
+        hints: buildHints(node, runtime, presenceOf, itemOf, logCollected),
         causes: [],
         causedBy: []
       };

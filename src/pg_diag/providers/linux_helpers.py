@@ -201,6 +201,13 @@ def _network_rows(
                 "tx_bytes_per_sec": _counter_rate(prev["tx_bytes"], cur["tx_bytes"], seconds),
                 "rx_packets_per_sec": _counter_rate(prev["rx_packets"], cur["rx_packets"], seconds),
                 "tx_packets_per_sec": _counter_rate(prev["tx_packets"], cur["tx_packets"], seconds),
+                **{
+                    f"{counter}_per_sec": (
+                        _counter_rate(prev[counter], cur[counter], seconds)
+                        if counter in prev and counter in cur else None
+                    )
+                    for counter in ("rx_errors", "tx_errors", "rx_dropped", "tx_dropped")
+                },
             }
         )
     return rows

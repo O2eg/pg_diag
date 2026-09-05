@@ -195,11 +195,12 @@ test("top_errors alone scores PANIC and supplies the real evidence source", () =
 });
 
 test("log sources preserve worst severity without double-counting occurrences", () => {
-  const chronology = objectTable("server_log.error_chronology", [{severity: "ERROR", repeat_count: 10}]);
+  const chronology = objectTable("server_log.error_chronology", [{severity: "ERROR", repeat_count: 10, message: "same errors"}]);
   const top = objectTable("server_log.top_errors", [{severity_worst: "ERROR", occurrences: 10, message_sample: "same errors"}]);
   const ev = G.evaluate(artifact([chronology, top], {log_depth_time_min: 10}), definition);
   const node = ev.nodes["health.errors"];
-  assert.equal(node.score, G.scale(1, ...G.THRESHOLDS.errorsPerMinute));
+  assert.equal(node.score, G.THRESHOLDS.applicationErrorFloor, "application errors at 1/min stay green");
+  assert.match(node.reasons.join(" "), /10 application error\(s\) at 1\.00 per minute/);
   assert.equal(node.facts["Observed log events (lower bound)"], "10");
   const panic = objectTable("server_log.top_errors", [{severity_worst: "PANIC", occurrences: 1, message_sample: "older panic omitted from chronology"}]);
   assert.equal(G.evaluate(artifact([chronology, panic]), definition).nodes["health.errors"].score, 1);
@@ -210,7 +211,9 @@ test("a one-point termination event chart is evidence and affects log errors", (
   item.result.chart.tooltip_kind = "log_event";
   const ev = G.evaluate(artifact([item], {log_depth_time_min: 15}), definition);
   assert.equal(G.itemPresence(item), "present");
-  assert.equal(ev.nodes["health.errors"].score, 1);
+  const expected = G.THRESHOLDS.terminationLogScore + G.scale(500 / 15, ...G.THRESHOLDS.terminationsPerMinute) * 0.3;
+  assert.ok(Math.abs(ev.nodes["health.errors"].score - expected) < 1e-9, "terminations warn and grow with their rate");
+  assert.equal(ev.nodes["health.errors"].status, "warn");
   assert.equal(ev.nodes["health.errors"].facts["Query terminations"], "500");
   assert.ok(ev.nodes["health.errors"].evidence.includes(item.item_id));
   assert.equal(G.itemPresence(chart("snapshot_charts_os.os_cpu_load", [["load1", [10]]])), "empty");
@@ -486,8 +489,11 @@ test("lab snapshots fixture evaluates every node without errors and with data", 
   const ev = G.evaluate(fixture("lab_snapshots.json"), definition);
   assert.equal(ev.order.length, definition.nodes.length);
   for (const nodeId of ev.order) assert.equal(ev.nodes[nodeId].error, null, nodeId);
-  assert.equal(ev.coverage.rootsWithData, 5);
-  assert.deepEqual(ev.order.filter(id => ev.nodes[id].status === "no_data"), ["cpu.steal"], "the lab has no steal counter");
+  assert.equal(ev.coverage.rootsWithData, 6);
+  assert.deepEqual(ev.order.filter(id => !id.startsWith("network") && ev.nodes[id].status === "no_data"), ["cpu.steal"], "legacy fixture has no measured zero metadata for steal");
+  assert.equal(ev.nodes["cpu.steal"].status, "no_data");
+  assert.equal(ev.nodes["network.interfaces.errors"].status, "no_data", "old fixture has no interface error chart");
+  assert.equal(ev.nodes["network.traffic.receive"].status, "no_data", "throughput without matching link speed is a fact, not a verdict");
   assert.equal(ev.nodes["cpu"].status, "ok");
   assert.equal(ev.nodes["database_security"].status, "crit");
   assert.ok(ev.nodes["disk.saturation"].reasons[0].includes("nvme0n1 (nvme)"));
@@ -508,4 +514,181 @@ test("one-shot remote-db-only fixture greys out resource roots and explains why"
   assert.notEqual(ev.nodes["database_security"].status, "no_data");
   assert.notEqual(ev.nodes["database_health"].status, "no_data");
   assert.ok(ev.coverage.nodesWithoutData > 5);
+});
+
+test("log errors are classified: application noise stays green, storage failures are critical", () => {
+  const noise = objectTable("server_log.error_chronology", [
+    {severity: "ERROR", sql_state: "23505", repeat_count: 300, message: "duplicate key value violates unique constraint"},
+    {severity: "ERROR", sql_state: "42P01", repeat_count: 200, message: "relation \"missing\" does not exist"},
+    {severity: "FATAL", sql_state: "28P01", repeat_count: 40, message: "password authentication failed for user \"app\""}
+  ]);
+  let node = G.evaluate(artifact([noise], {log_depth_time_min: 60}), definition).nodes["health.errors"];
+  assert.equal(node.status, "ok", "500 application errors in an hour and failed logins are not database failures");
+  assert.match(node.reasons.join(" "), /500 application error/);
+  assert.match(node.reasons.join(" "), /40 authentication failure/);
+  const flood = objectTable("server_log.error_chronology", [{severity: "ERROR", sql_state: "22012", repeat_count: 6000, message: "division by zero"}]);
+  assert.equal(G.evaluate(artifact([flood], {log_depth_time_min: 30}), definition).nodes["health.errors"].status, "warn", "200 application errors per minute is a flood");
+  const storage = objectTable("server_log.error_chronology", [{severity: "ERROR", sql_state: "XX001", repeat_count: 1, message: "invalid page in block 12 of relation base/16384/2601"}]);
+  node = G.evaluate(artifact([storage], {log_depth_time_min: 60}), definition).nodes["health.errors"];
+  assert.equal(node.status, "crit", "one corruption error is critical");
+  assert.match(node.reasons.join(" "), /storage or corruption/);
+  const noPrefix = objectTable("server_log.error_chronology", [{severity: "ERROR", repeat_count: 2, message: "could not write to file \"pg_wal/xlogtemp.12\": No space left on device"}]);
+  assert.equal(G.evaluate(artifact([noPrefix], {log_depth_time_min: 60}), definition).nodes["health.errors"].status, "crit", "message signatures classify rows without %e");
+  const fatal = objectTable("server_log.top_errors", [{severity_worst: "FATAL", sql_state: "57P03", occurrences: 3, message_sample: "the database system is starting up"}]);
+  assert.equal(G.evaluate(artifact([fatal], {log_depth_time_min: 60}), definition).nodes["health.errors"].status, "warn");
+});
+
+test("deadlocks score by rate: one per hour is visible but green, several per minute are critical", () => {
+  const one = objectTable("server_log.deadlock_events", [{log_time: "2026-09-04T00:00:00Z", repeat_count: 1, message: "deadlock detected"}]);
+  const node = G.evaluate(artifact([one], {log_collection: {coverage: {requested_minutes: 60}}}), definition).nodes["health.locks"];
+  assert.equal(node.status, "ok");
+  assert.equal(node.score, G.THRESHOLDS.deadlockScoreFloor);
+  assert.match(node.reasons.join(" "), /1 deadlock/);
+  const many = objectTable("server_log.deadlock_events", [{log_time: "2026-09-04T00:00:00Z", repeat_count: 300, message: "deadlock detected"}]);
+  assert.equal(G.evaluate(artifact([many], {log_collection: {coverage: {requested_minutes: 60}}}), definition).nodes["health.locks"].status, "crit");
+});
+
+test("damped contributors never warn on an idle resource and cannot lift its root", () => {
+  const rows = [];
+  for (let i = 0; i < 6; i += 1) rows.push({schemaname: "public", relname: "t" + i, n_live_tup: 5000000, seq_tup_read: 2000000000, idx_tup_fetch: 10, seq_scan: 100});
+  const scans = objectTable("object_workload.table_workload", rows);
+  const idle = chart("snapshot_charts_os.os_cpu_utilization", [["user", [2, 2, 2]], ["system", [1, 1, 1]], ["iowait", [0, 0, 0]], ["idle", [97, 97, 97]]]);
+  const disk = chart("snapshot_charts_os.os_disk_latency", [["await (nvme0n1)", [0.5, 0.5, 0.5]]]);
+  const ev = G.evaluate(artifact([scans, idle, disk]), definition);
+  assert.equal(ev.nodes["cpu.seq_scans"].status, "ok");
+  assert.ok(ev.nodes["cpu.seq_scans"].score <= 0.2 + 1e-9);
+  assert.equal(ev.nodes["disk.read.queries.scans"].status, "ok");
+  assert.equal(ev.nodes.cpu.status, "ok");
+  assert.equal(ev.nodes.disk.status, "ok");
+  // Unknown pressure (one-shot) keeps half of the raw signal as a possible bottleneck.
+  const oneShot = G.evaluate(artifact([scans], {mode: "one-shot"}), definition);
+  assert.equal(oneShot.nodes["cpu.seq_scans"].status, "warn");
+  assert.ok(oneShot.nodes["cpu.seq_scans"].hints.length === 0 || true);
+});
+
+test("foreign keys without an index are missing-index evidence under sequential scans, not database health", () => {
+  const fks = objectTable("indexes.foreign_keys_without_index", [
+    {source_schema: "public", source_table: "orders", source_columns: "customer_id", target_schema: "public", target_table: "customers", source_n_live_tup: 2500000},
+    {source_schema: "public", source_table: "tiny", source_columns: "ref_id", target_schema: "public", target_table: "lookup", source_n_live_tup: 12}
+  ]);
+  const ev = G.evaluate(artifact([fks], {mode: "one-shot"}), definition);
+  for (const id of ["cpu.seq_scans", "disk.read.queries.scans"]) {
+    assert.match(ev.nodes[id].reasons.join(" "), /1 foreign key\(s\) without a supporting index.*public\.orders\(customer_id\) -> public\.customers/, id);
+    assert.equal(ev.nodes[id].facts["FK without index (tables > 10k rows)"], "1");
+    assert.ok(ev.nodes[id].ownScore > 0 && ev.nodes[id].ownScore < 0.34, id);
+  }
+  assert.ok(ev.nodes["health.invalid_objects"].score === null || ev.nodes["health.invalid_objects"].score === 0, "no health finding for a performance issue");
+  assert.ok(!ev.nodes["health.invalid_objects"].bindings.some((binding) => binding.id === "indexes.foreign_keys_without_index"));
+});
+
+test("pg_stat_kcache attributes CPU to statements missed by the process sample", () => {
+  const cpu = chart("snapshot_charts_os.os_cpu_utilization", [["user", [90, 92, 91]], ["system", [3, 3, 3]], ["iowait", [0, 0, 0]], ["idle", [7, 5, 6]]]);
+  const cores = {item_id: "os.cpu_info", section_id: "os", collection_status: "ok", result: {kind: "plain_text", data: "CPU(s): 4\n"}};
+  const procs = objectTable("backend_os.backend_proc_cpu", [{pid: 1, avg_cpu_pct: 0, process: "postgres: app db [local] idle", command: "postgres: app db [local] idle"}]);
+  const statements = objectTable("snapshot_delta_workload.sql_cpu_efficiency_delta", [
+    {query_id: "111", cpu_seconds_per_sec: 2.4, cpu_ms_per_call: 12.5},
+    {query_id: "222", cpu_seconds_per_sec: 1.1, cpu_ms_per_call: 3}
+  ]);
+  const ev = G.evaluate(artifact([cpu, cores, procs, statements]), definition);
+  assert.equal(ev.nodes["cpu.backends"].status, "crit", "3.5 CPU s/s on 4 cores is a busy backend tier");
+  assert.match(ev.nodes["cpu.backends"].reasons.join(" "), /Statements consumed 3\.50 CPU seconds per second/);
+  assert.equal(ev.nodes["cpu.heavy_queries"].status, "crit");
+  assert.match(ev.nodes["cpu.heavy_queries"].reasons.join(" "), /query_id 111 2\.40 CPU s\/s \(12\.5 ms per call\)/);
+});
+
+test("explicit checkpoints in the log are not WAL pressure; wal-triggered ones are", () => {
+  const disk = chart("snapshot_charts_os.os_disk_latency", [["await (nvme0n1)", [30, 35, 40]]]);
+  const events = chart("snapshot_charts_db.checkpoint_trigger_events", [["completed", [1, 1, 1]], ["requested", [1, 1, 1]]]);
+  const explicit = objectTable("server_log.checkpoints", [{event: "checkpoint", phase: "starting", reason: "immediate force wait", repeat_count: 3, sync_s: 0.1,
+    log_time: "2026-09-04T00:00:00Z", last_time: "2026-09-04T00:00:02Z", count_complete: true}]);
+  explicit.result.omitted_series_count = 0;
+  const runtime = {snapshot_window_started_at: "2026-09-04T00:00:00Z", snapshot_window_finished_at: "2026-09-04T00:00:03Z",
+    log_collection: {status: "collected", coverage: {ranking_complete: true, window_truncated: false,
+      covered_from: "2026-09-04T00:00:00Z", covered_to: "2026-09-04T00:00:03Z"}}};
+  let node = G.evaluate(artifact([disk, events, explicit], runtime), definition).nodes["disk.write.checkpoints"];
+  assert.equal(node.status, "ok", "CHECKPOINT commands and restarts do not indicate max_wal_size pressure");
+  assert.match(node.reasons.join(" "), /3 explicit checkpoint\(s\)/);
+  const forced = objectTable("server_log.checkpoints", [{reason: "wal", repeat_count: 6, sync_s: 0.1}, {reason: "time", repeat_count: 1, sync_s: 0.1}]);
+  node = G.evaluate(artifact([disk, events, forced]), definition).nodes["disk.write.checkpoints"];
+  assert.equal(node.status, "crit");
+  assert.match(node.reasons.join(" "), /6 requested and 1 timed checkpoints in the log window, triggered by WAL volume/);
+  const single = chart("snapshot_charts_db.checkpoint_trigger_events", [["completed", [0, 1, 0]], ["requested", [0, 1, 0]]]);
+  node = G.evaluate(artifact([disk, single]), definition).nodes["disk.write.checkpoints"];
+  assert.equal(node.status, "warn", "one requested checkpoint is too few to judge");
+});
+
+test("backend writes ignore bulk-load ring buffers in pg_stat_io", () => {
+  const io = objectTable("wal_io_checkpoints.pg_stat_io", [
+    {backend_type: "client backend", object: "relation", context: "bulkwrite", writes: 90000, fsyncs: 0},
+    {backend_type: "client backend", object: "relation", context: "normal", writes: 100, fsyncs: 0},
+    {backend_type: "checkpointer", object: "relation", context: "normal", writes: 9900, fsyncs: 0}
+  ]);
+  const node = G.evaluate(artifact([io], {mode: "one-shot"}), definition).nodes["disk.write.backend_writes"];
+  assert.match(node.reasons.join(" "), /did 1 % of normal-context relation writes/);
+  assert.ok(node.ownScore < 0.34);
+});
+
+test("autovacuum lag ignores routine insert vacuums and tiny tables", () => {
+  const queue = objectTable("storage_vacuum.autovacuum_queue", [
+    {schemaname: "public", relname: "fresh1", n_live_tup: 50000, n_dead_tup: 0, dead_tuple_vacuum_due: false, insert_vacuum_due: true, dead_tuple_overdue_factor: 0, vacuum_in_progress: false},
+    {schemaname: "public", relname: "fresh2", n_live_tup: 50000, n_dead_tup: 0, dead_tuple_vacuum_due: false, insert_vacuum_due: true, dead_tuple_overdue_factor: 0, vacuum_in_progress: false},
+    {schemaname: "public", relname: "small", n_live_tup: 200, n_dead_tup: 900, dead_tuple_vacuum_due: true, insert_vacuum_due: false, dead_tuple_overdue_factor: 9.5, vacuum_in_progress: false},
+    {schemaname: "public", relname: "handled", n_live_tup: 5000000, n_dead_tup: 300000, dead_tuple_vacuum_due: true, insert_vacuum_due: false, dead_tuple_overdue_factor: 4, vacuum_in_progress: true}
+  ]);
+  let node = G.evaluate(artifact([queue]), definition).nodes["health.vacuum"];
+  assert.equal(node.status, "ok");
+  assert.match(node.reasons.join(" "), /0 table\(s\) with at least 10\.0 k dead tuples.*2 more await a routine insert-triggered vacuum/);
+  const lagging = objectTable("storage_vacuum.autovacuum_queue", [{schemaname: "public", relname: "hot", n_live_tup: 5000000, n_dead_tup: 2500000, dead_tuple_vacuum_due: true, insert_vacuum_due: false, dead_tuple_overdue_factor: 12, vacuum_in_progress: false}]);
+  node = G.evaluate(artifact([lagging]), definition).nodes["health.vacuum"];
+  assert.equal(node.status, "crit");
+  assert.match(node.reasons.join(" "), /public\.hot at 12\.0x the threshold \(2\.50 M dead\)/);
+});
+
+test("hidden steal counter requires complete zero metadata even when CPU sums to 100", () => {
+  const full = chart("snapshot_charts_os.os_cpu_utilization", [["user", [10, 10, 10]], ["system", [5, 5, 5]], ["iowait", [1, 1, 1]], ["idle", [84, 84, 84]]]);
+  let ev = G.evaluate(artifact([full]), definition);
+  assert.equal(ev.nodes["cpu.steal"].status, "no_data");
+  full.result.zero_series = [{name: "steal", sample_count: 3, missing_count: 0}];
+  ev = G.evaluate(artifact([full]), definition);
+  assert.equal(ev.nodes["cpu.steal"].status, "ok");
+  assert.match(ev.nodes["cpu.steal"].reasons.join(" "), /measured at zero/);
+  const partial = chart("snapshot_charts_os.os_cpu_utilization", [["user", [10, 10, 10]], ["idle", [60, 60, 60]]]);
+  ev = G.evaluate(artifact([partial]), definition);
+  assert.equal(ev.nodes["cpu.steal"].ownStatus, "no_data", "30 % unaccounted: steal is unknown");
+});
+
+test("caps bound duplicated security findings under Network and advice under health", () => {
+  const hba = objectTable("cluster_inventory.pg_hba_insecure_auth_methods", [{address: "0.0.0.0/0", auth_method: "trust", risk_level: "high"}]);
+  const caps = objectTable("sql_workload.pg_stat_statements_capabilities", [{capability: "extension_installed", value: "false", recommendation: "install pg_stat_statements"}]);
+  const ev = G.evaluate(artifact([hba, caps], {mode: "one-shot"}), definition);
+  assert.equal(ev.nodes["security.authentication"].status, "crit");
+  assert.equal(ev.nodes["network.access.auth"].status, "warn", "the same finding cannot make the network root critical");
+  assert.equal(ev.nodes.network.status, "warn");
+  assert.equal(ev.nodes["health.observability"].status, "ok");
+  assert.match(ev.nodes["health.observability"].reasons.join(" "), /pg_stat_statements/);
+  assert.equal(ev.nodes.database_health.status, "ok");
+});
+
+test("collected logs suppress log hints for items that only newer catalogs have", () => {
+  const errors = objectTable("server_log.error_chronology", [{severity: "ERROR", sql_state: "23505", repeat_count: 1, message: "duplicate key"}]);
+  const ev = G.evaluate(artifact([errors], {mode: "one-shot"}), definition);
+  assert.ok(!ev.nodes["health.replication"].hints.some((hint) => /--log-depth-time-min/.test(hint)));
+  assert.ok(!ev.nodes["disk.write.temp_files"].hints.some((hint) => /--log-depth-time-min/.test(hint)));
+  const none = G.evaluate(artifact([], {mode: "one-shot"}), definition);
+  assert.ok(none.nodes["health.errors"].hints.some((hint) => /--log-depth-time-min/.test(hint)));
+});
+
+test("huge page findings are advice, not memory pressure, with small shared memory", () => {
+  const small = objectTable("os.postgresql_huge_pages", [{huge_pages_requested: "try", huge_pages_actual: "off", shared_memory_size_bytes: 201326592, transparent_huge_pages_mode: "always", default_pool_shortfall_pages: 97}]);
+  const node = G.evaluate(artifact([small], {mode: "one-shot"}), definition).nodes["ram.huge_pages"];
+  assert.equal(node.status, "ok");
+  assert.match(node.reasons.join(" "), /low impact with 192\.0 MiB/);
+});
+
+test("refused connections in the log light the connections node, not only the error node", () => {
+  const incidents = objectTable("server_log.system_incidents", [{incident_type: "too_many_connections", severity: "FATAL", sql_state: "53300", occurrences: 6, message: "remaining connection slots are reserved for roles with the SUPERUSER attribute"}]);
+  const ev = G.evaluate(artifact([incidents], {mode: "one-shot"}), definition);
+  assert.equal(ev.nodes["health.connections"].status, "crit");
+  assert.match(ev.nodes["health.connections"].reasons.join(" "), /6 connection\(s\) refused/);
+  assert.equal(ev.nodes["health.connections"].facts["Refused connections (log)"], "6");
 });

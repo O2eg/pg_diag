@@ -376,6 +376,24 @@ def _validate_result(item_id: str, result: dict[str, Any], units: set[str]) -> N
                     f"Artifact chart item {item_id!r} point {point_index}",
                 )
         _validate_chart_references(item_id, result, series)
+        if "zero_series" in result:
+            zero_series = result["zero_series"]
+            if not isinstance(zero_series, list):
+                raise ValidationError(f"Artifact chart item {item_id!r} zero_series must be a list")
+            names = {entry.get("name") for entry in series}
+            for entry in zero_series:
+                if (
+                    not isinstance(entry, dict)
+                    or not isinstance(entry.get("name"), str)
+                    or not entry["name"]
+                    or entry["name"] in names
+                    or type(entry.get("sample_count")) is not int
+                    or entry["sample_count"] <= 0
+                    or type(entry.get("missing_count")) is not int
+                    or entry["missing_count"] < 0
+                ):
+                    raise ValidationError(f"Artifact chart item {item_id!r} has invalid zero_series")
+                names.add(entry["name"])
         chart = result.get("chart") or {}
         if (
             isinstance(chart, dict)

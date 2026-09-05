@@ -4,10 +4,47 @@ from pg_diag.providers.linux_helpers import (
     _cpu_row,
     _counter_rate,
     _memory_row_from_values,
+    _network_rows,
     build_backend_proc_window_samples,
     normalize_iostat_row,
     parse_iostat_reports,
 )
+from pg_diag.providers.linux import _parse_proc_sample
+
+
+def test_network_sampler_reads_all_error_and_drop_columns_without_loopback() -> None:
+    output = """__PG_DIAG_STAT__
+cpu 1 2 3 4 5 6 7 8
+__PG_DIAG_LOAD__
+0.1 0.2 0.3
+__PG_DIAG_MEM__
+MemTotal: 1024 kB
+__PG_DIAG_NET__
+Inter-| Receive | Transmit
+ face |bytes packets errs drop fifo frame compressed multicast|bytes packets errs drop fifo colls carrier compressed
+ lo: 100 10 0 0 0 0 0 0 100 10 0 0 0 0 0 0
+ eth0: 1000 100 2 3 4 5 6 7 2000 200 11 12 13 14 15 16
+"""
+    network = _parse_proc_sample(output)[3]
+    assert set(network) == {"eth0"}
+    assert network["eth0"] == {
+        "rx_bytes": 1000, "rx_packets": 100, "rx_errors": 2, "rx_dropped": 3,
+        "tx_bytes": 2000, "tx_packets": 200, "tx_errors": 11, "tx_dropped": 12,
+    }
+    current = {"eth0": {key: value + 10 for key, value in network["eth0"].items()}}
+    rates = _network_rows(network, current, 2.5)[0]
+    assert all(rates[name + "_per_sec"] == 4 for name in network["eth0"])
+    current["eth0"]["rx_errors"] = 0
+    assert _network_rows(network, current, 2.5)[0]["rx_errors_per_sec"] is None
+    assert _network_rows({}, current, 2.5) == []
+
+
+def test_network_legacy_samples_do_not_manufacture_zero_errors() -> None:
+    sample = {"eth0": {"rx_bytes": 100, "rx_packets": 5, "tx_bytes": 100, "tx_packets": 5}}
+    row = _network_rows(sample, sample, 2)[0]
+    assert row["rx_bytes_per_sec"] == 0
+    assert row["rx_errors_per_sec"] is None
+    assert row["tx_dropped_per_sec"] is None
 
 
 def test_cpu_row_reports_idle_iowait_and_steal_separately() -> None:

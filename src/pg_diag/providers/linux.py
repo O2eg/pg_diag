@@ -337,8 +337,12 @@ def _parse_proc_sample(
         network[interface] = {
             "rx_bytes": int(values[0]),
             "rx_packets": int(values[1]),
+            "rx_errors": int(values[2]),
+            "rx_dropped": int(values[3]),
             "tx_bytes": int(values[8]),
             "tx_packets": int(values[9]),
+            "tx_errors": int(values[10]),
+            "tx_dropped": int(values[11]),
         }
     return cpu, load, memory, network
 

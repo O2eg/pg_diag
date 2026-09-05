@@ -17,7 +17,7 @@ from pg_diag.render.html import render_html
 ROOT = Path(__file__).resolve().parents[2]
 GRAPH_DIR = ROOT / "src" / "pg_diag" / "render" / "graph"
 FIXTURES = ROOT / "tests" / "data" / "diagnostic_graph"
-ROOTS = ["cpu", "ram", "disk", "database_health", "database_security"]
+ROOTS = ["cpu", "ram", "disk", "network", "database_health", "database_security"]
 ROLES = {"primary", "support", "fact"}
 REQUIREMENTS = {
     "snapshots",
@@ -55,7 +55,7 @@ def _engine_evaluator_names() -> set[str]:
     return names
 
 
-def test_graph_definition_is_a_tree_with_five_roots() -> None:
+def test_graph_definition_is_a_tree_with_six_roots() -> None:
     graph = _graph()
     assert graph["schema_version"] == 1
     assert graph["roots"] == ROOTS
@@ -105,6 +105,31 @@ def test_every_node_evaluator_exists_in_the_engine() -> None:
     for node in graph["nodes"]:
         evaluator = node.get("evaluator", "generic")
         assert evaluator in names, f"{node['id']}: evaluator {evaluator} is not implemented"
+
+
+def test_every_network_tagged_item_is_bound_under_network() -> None:
+    report = yaml.safe_load((ROOT / "src/pg_diag/content/report.yaml").read_text())
+    expected = {
+        f"{sid}.{iid}"
+        for sid, section in report["sections"].items()
+        for iid, item in section["items"].items()
+        if "Network" in item.get("tags", [])
+    }
+    nodes = {node["id"]: node for node in _graph()["nodes"]}
+    bound = set()
+    for node in nodes.values():
+        ancestor = node
+        while ancestor.get("parent"):
+            ancestor = nodes[ancestor["parent"]]
+        if ancestor["id"] == "network":
+            bound.update(binding["id"] for binding in node["bindings"])
+    assert expected <= bound, expected - bound
+    assert {
+        "activity_locks.wait_events", "replication.physical_replication",
+        "server_log.replication_events", "sql_workload.top_sql_by_calls",
+        "snapshot_delta_workload.database_session_outcomes_delta",
+        "cluster_inventory.unix_socket_permissions",
+    } <= bound
 
 
 def test_report_html_embeds_the_graph_module() -> None:

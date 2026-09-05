@@ -317,6 +317,42 @@ metrics:
       kind: stacked_area
       unit: packets/s
 
+  os.network_errors:
+    title: Network Interface Errors
+    source_sampler: os.network
+    targets: [host]
+    partition_by: [interface]
+    series:
+      - name: rx errors
+        value_ref: rx_errors_per_sec
+        transform: gauge
+        unit: packets/s
+      - name: tx errors
+        value_ref: tx_errors_per_sec
+        transform: gauge
+        unit: packets/s
+    chart:
+      kind: line
+      unit: packets/s
+
+  os.network_drops:
+    title: Network Interface Drops
+    source_sampler: os.network
+    targets: [host]
+    partition_by: [interface]
+    series:
+      - name: rx drops
+        value_ref: rx_dropped_per_sec
+        transform: gauge
+        unit: packets/s
+      - name: tx drops
+        value_ref: tx_dropped_per_sec
+        transform: gauge
+        unit: packets/s
+    chart:
+      kind: line
+      unit: packets/s
+
   database.transaction_rate:
     title: Database Transaction Rate
     database_scope: all_databases

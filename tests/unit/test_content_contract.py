@@ -2773,7 +2773,7 @@ def test_remaining_chart_sections_have_complete_and_consistent_contracts(
         for section_id, _item_key, item_id, _item in iter_report_items(content)
         if section_id in {"snapshot_charts_os", "snapshot_charts_db"}
     ]
-    assert len(chart_items) == 54
+    assert len(chart_items) == 56
     for item_id in chart_items:
         assert "## Automatic evaluation" in content.instructions[item_id]["text"], item_id
 

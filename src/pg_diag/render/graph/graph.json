@@ -4,6 +4,7 @@
     "cpu",
     "ram",
     "disk",
+    "network",
     "database_health",
     "database_security"
   ],
@@ -93,6 +94,10 @@
           "role": "support"
         },
         {
+          "id": "snapshot_delta_workload.sql_cpu_efficiency_delta",
+          "role": "support"
+        },
+        {
           "id": "snapshot_delta_workload.sql_planning_delta",
           "role": "support"
         },
@@ -119,7 +124,7 @@
       "id": "cpu.seq_scans",
       "parent": "cpu.backends",
       "label": "Sequential scans",
-      "summary": "Large tables read by sequential scans instead of indexes.",
+      "summary": "Large tables read by sequential scans instead of indexes; foreign keys without a supporting index.",
       "evaluator": "seq_scans",
       "bindings": [
         {
@@ -137,6 +142,11 @@
         {
           "id": "snapshot_delta_workload.table_scan_delta",
           "role": "support"
+        },
+        {
+          "id": "indexes.foreign_keys_without_index",
+          "role": "support",
+          "weight": 0.3
         }
       ],
       "pressure": "cpu_user"
@@ -332,6 +342,10 @@
         {
           "id": "backend_os.backend_proc_cpu",
           "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.database_kernel_cpu_rate",
+          "role": "support"
         },
         {
           "id": "backend_os.postgres_process_tree",
@@ -647,6 +661,10 @@
       ],
       "bindings": [
         {
+          "id": "overview.pg_settings",
+          "role": "fact"
+        },
+        {
           "id": "sql_workload.top_sql_by_shared_io",
           "role": "primary"
         },
@@ -660,6 +678,10 @@
         },
         {
           "id": "object_workload.table_io",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.table_io_delta",
           "role": "support"
         },
         {
@@ -677,7 +699,7 @@
       "id": "cpu.iowait.read.queries.scans",
       "parent": "cpu.iowait.read.queries",
       "label": "Sequential scans",
-      "summary": "Large tables read by sequential scans instead of indexes.",
+      "summary": "Large tables read by sequential scans instead of indexes; foreign keys without a supporting index.",
       "evaluator": "seq_scans",
       "bindings": [
         {
@@ -695,6 +717,11 @@
         {
           "id": "snapshot_delta_workload.table_scan_delta",
           "role": "support"
+        },
+        {
+          "id": "indexes.foreign_keys_without_index",
+          "role": "support",
+          "weight": 0.3
         }
       ],
       "pressure": "cpu_iowait"
@@ -832,6 +859,10 @@
       "summary": "Autovacuum workers' share of reads.",
       "evaluator": "io_autovacuum_reads",
       "bindings": [
+        {
+          "id": "snapshot_delta_workload.postgresql_io_delta",
+          "role": "support"
+        },
         {
           "id": "wal_io_checkpoints.pg_stat_io",
           "role": "primary"
@@ -1189,6 +1220,10 @@
       "summary": "Autovacuum workers' share of writes.",
       "evaluator": "io_autovacuum_writes",
       "bindings": [
+        {
+          "id": "snapshot_delta_workload.postgresql_io_delta",
+          "role": "support"
+        },
         {
           "id": "wal_io_checkpoints.pg_stat_io",
           "role": "primary"
@@ -1572,7 +1607,7 @@
       "id": "ram.cache_efficiency.scans",
       "parent": "ram.cache_efficiency",
       "label": "Sequential scans",
-      "summary": "Large tables read by sequential scans instead of indexes.",
+      "summary": "Large tables read by sequential scans instead of indexes; foreign keys without a supporting index.",
       "evaluator": "seq_scans",
       "bindings": [
         {
@@ -1590,6 +1625,11 @@
         {
           "id": "snapshot_delta_workload.table_scan_delta",
           "role": "support"
+        },
+        {
+          "id": "indexes.foreign_keys_without_index",
+          "role": "support",
+          "weight": 0.3
         }
       ],
       "pressure": "ram"
@@ -1768,6 +1808,10 @@
       ],
       "bindings": [
         {
+          "id": "overview.pg_settings",
+          "role": "fact"
+        },
+        {
           "id": "sql_workload.top_sql_by_shared_io",
           "role": "primary"
         },
@@ -1784,6 +1828,10 @@
           "role": "support"
         },
         {
+          "id": "snapshot_delta_workload.table_io_delta",
+          "role": "support"
+        },
+        {
           "id": "snapshot_charts_db.tables_top_heap_read_rate",
           "role": "support"
         },
@@ -1797,7 +1845,7 @@
       "id": "disk.read.queries.scans",
       "parent": "disk.read.queries",
       "label": "Sequential scans",
-      "summary": "Large tables read by sequential scans instead of indexes.",
+      "summary": "Large tables read by sequential scans instead of indexes; foreign keys without a supporting index.",
       "evaluator": "seq_scans",
       "bindings": [
         {
@@ -1815,6 +1863,11 @@
         {
           "id": "snapshot_delta_workload.table_scan_delta",
           "role": "support"
+        },
+        {
+          "id": "indexes.foreign_keys_without_index",
+          "role": "support",
+          "weight": 0.3
         }
       ],
       "pressure": "disk"
@@ -1952,6 +2005,10 @@
       "summary": "Autovacuum workers' share of reads.",
       "evaluator": "io_autovacuum_reads",
       "bindings": [
+        {
+          "id": "snapshot_delta_workload.postgresql_io_delta",
+          "role": "support"
+        },
         {
           "id": "wal_io_checkpoints.pg_stat_io",
           "role": "primary"
@@ -2302,6 +2359,10 @@
       "evaluator": "io_autovacuum_writes",
       "bindings": [
         {
+          "id": "snapshot_delta_workload.postgresql_io_delta",
+          "role": "support"
+        },
+        {
           "id": "wal_io_checkpoints.pg_stat_io",
           "role": "primary"
         },
@@ -2380,6 +2441,681 @@
           "role": "support"
         }
       ]
+    },
+    {
+      "id": "network",
+      "label": "Network",
+      "summary": "Host traffic and interface health, client transport, replication paths, TCP configuration and network access. Symptoms are not proof of a network root cause.",
+      "evaluator": "aggregate",
+      "bindings": []
+    },
+    {
+      "id": "network.traffic",
+      "parent": "network",
+      "label": "Traffic",
+      "summary": "Per-interface receive, transmit and packet rates. Host traffic includes non-PostgreSQL processes and virtual interfaces may overlap.",
+      "evaluator": "aggregate",
+      "bindings": []
+    },
+    {
+      "id": "network.traffic.receive",
+      "parent": "network.traffic",
+      "label": "Receive throughput",
+      "summary": "Inbound byte rates by interface; link utilization is assessed only when that interface has an explicit current link speed.",
+      "evaluator": "network_throughput",
+      "requires": [
+        "snapshots",
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "snapshot_charts_os.os_network_receive",
+          "role": "primary"
+        },
+        {
+          "id": "os.lshw_network",
+          "role": "fact"
+        },
+        {
+          "id": "os.network_addresses",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "network.traffic.transmit",
+      "parent": "network.traffic",
+      "label": "Transmit throughput",
+      "summary": "Outbound byte rates by interface. Do not add RX and TX to estimate full-duplex link utilization.",
+      "evaluator": "network_throughput",
+      "requires": [
+        "snapshots",
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "snapshot_charts_os.os_network_transmit",
+          "role": "primary"
+        },
+        {
+          "id": "os.lshw_network",
+          "role": "fact"
+        },
+        {
+          "id": "os.network_addresses",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "network.traffic.packets",
+      "parent": "network.traffic",
+      "label": "Packet processing",
+      "summary": "Packet rates by interface; high rates become a processing concern only with system CPU pressure. Not a bandwidth limit.",
+      "evaluator": "network_packets",
+      "requires": [
+        "snapshots",
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "snapshot_charts_os.os_network_packets",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_os.os_cpu_utilization",
+          "role": "support"
+        },
+        {
+          "id": "os.sysctl_tcp",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "network.interfaces",
+      "parent": "network",
+      "label": "Interface health",
+      "summary": "Observed RX/TX errors and drops, with NIC and address context. Rates describe the collection window, not interface lifetime.",
+      "evaluator": "aggregate",
+      "bindings": []
+    },
+    {
+      "id": "network.interfaces.errors",
+      "parent": "network.interfaces",
+      "label": "RX / TX errors",
+      "summary": "Error rates per interface. Link, driver and queue investigation is needed; these counters do not identify the PostgreSQL path.",
+      "evaluator": "network_interface_events",
+      "requires": [
+        "snapshots",
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "snapshot_charts_os.os_network_errors",
+          "role": "primary"
+        },
+        {
+          "id": "os.lshw_network",
+          "role": "fact"
+        },
+        {
+          "id": "os.network_addresses",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "network.interfaces.drops",
+      "parent": "network.interfaces",
+      "label": "RX / TX drops",
+      "summary": "Dropped and missed packets exposed by /proc/net/dev. Drops are not necessarily hardware failures or TCP retransmissions.",
+      "evaluator": "network_interface_events",
+      "requires": [
+        "snapshots",
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "snapshot_charts_os.os_network_drops",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_os.os_network_packets",
+          "role": "support"
+        },
+        {
+          "id": "os.lshw_network",
+          "role": "fact"
+        },
+        {
+          "id": "os.sysctl_tcp",
+          "role": "fact"
+        },
+        {
+          "id": "os.sysctl_udp",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "network.interfaces.inventory",
+      "parent": "network.interfaces",
+      "label": "NICs and addresses",
+      "summary": "Interface names, addresses, current link speeds and driver inventory; inactive or virtual NICs are not faults by themselves.",
+      "evaluator": "network_inventory",
+      "requires": [
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "os.lshw_network",
+          "role": "fact"
+        },
+        {
+          "id": "os.lshw_communication",
+          "role": "fact"
+        },
+        {
+          "id": "os.network_addresses",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "network.clients",
+      "parent": "network",
+      "label": "Client connections",
+      "summary": "Client transport waits, connection demand, reconnects and disconnections. Application behavior may cause these symptoms.",
+      "evaluator": "aggregate",
+      "bindings": []
+    },
+    {
+      "id": "network.clients.write",
+      "parent": "network.clients",
+      "label": "ClientWrite waits",
+      "summary": "Backends waiting to send data to clients: check slow consumers, result size and the network; the wait does not isolate the cause.",
+      "evaluator": "network_client_waits",
+      "bindings": [
+        {
+          "id": "activity_locks.wait_events",
+          "role": "primary"
+        },
+        {
+          "id": "activity_locks.wait_event_sample_profile",
+          "role": "support"
+        },
+        {
+          "id": "activity_locks.pg_wait_sampling_profile",
+          "role": "support"
+        },
+        {
+          "id": "backend_os.backend_activity",
+          "role": "support"
+        },
+        {
+          "id": "activity_locks.pg_wait_sampling_capabilities",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "network.clients.read",
+      "parent": "network.clients",
+      "label": "ClientRead waits",
+      "summary": "Backends waiting for clients to send data. Idle clients and application think time are not network faults.",
+      "evaluator": "network_client_waits",
+      "bindings": [
+        {
+          "id": "activity_locks.wait_events",
+          "role": "primary"
+        },
+        {
+          "id": "activity_locks.wait_event_sample_profile",
+          "role": "support"
+        },
+        {
+          "id": "activity_locks.pg_wait_sampling_profile",
+          "role": "support"
+        },
+        {
+          "id": "backend_os.backend_activity",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "network.clients.capacity",
+      "parent": "network.clients",
+      "label": "Connection capacity",
+      "summary": "Connection and role limits, including local sockets; capacity pressure does not by itself prove a network fault.",
+      "evaluator": "connections",
+      "bindings": [
+        {
+          "id": "activity_locks.connection_pressure",
+          "role": "primary"
+        },
+        {
+          "id": "server_log.system_incidents",
+          "role": "support"
+        },
+        {
+          "id": "users_roles.session_usage",
+          "role": "support"
+        },
+        {
+          "id": "activity_locks.session_states",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.activity_sessions_by_state",
+          "role": "support"
+        },
+        {
+          "id": "overview.pg_settings",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "network.clients.churn",
+      "parent": "network.clients",
+      "label": "Reconnect rate",
+      "summary": "New sessions per second during the snapshot window; pooling and application connection reuse are possible contributors.",
+      "evaluator": "network_session_churn",
+      "requires": [
+        "snapshots"
+      ],
+      "bindings": [
+        {
+          "id": "snapshot_delta_workload.database_session_outcomes_delta",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.database_backends",
+          "role": "support"
+        },
+        {
+          "id": "activity_locks.session_states",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "network.clients.roundtrips",
+      "parent": "network.clients",
+      "label": "Frequent statements",
+      "summary": "Statement call counts and query rates are context for chatty clients, not direct RTT measurements.",
+      "evaluator": "network_roundtrips",
+      "bindings": [
+        {
+          "id": "sql_workload.top_sql_by_calls",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.database_transaction_rate",
+          "role": "support"
+        },
+        {
+          "id": "sql_workload.pg_stat_statements_capabilities",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_os.os_network_packets",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "network.clients.disconnects",
+      "parent": "network.clients",
+      "label": "Connection failures",
+      "summary": "Transport-specific SQLSTATEs and anchored server messages; abandoned clients may also reflect application exits. Query timeouts and administrator kills are not network evidence.",
+      "evaluator": "network_disconnects",
+      "bindings": [
+        {
+          "id": "server_log.error_chronology",
+          "role": "primary"
+        },
+        {
+          "id": "server_log.top_errors",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_delta_workload.database_session_outcomes_delta",
+          "role": "support"
+        },
+        {
+          "id": "overview.pg_settings",
+          "role": "fact"
+        },
+        {
+          "id": "os.sysctl_tcp",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "network.replication",
+      "parent": "network",
+      "label": "Replication transport",
+      "summary": "WAL sending and receiving, streaming sessions and synchronous acknowledgement. Replay and disk delays are not automatically network problems.",
+      "evaluator": "aggregate",
+      "bindings": []
+    },
+    {
+      "id": "network.replication.send",
+      "parent": "network.replication",
+      "label": "WAL send backlog",
+      "summary": "WAL generated but not sent and sent-to-write acknowledgement backlog; investigate sender CPU, transport and receiver writes separately.",
+      "evaluator": "network_wal_send",
+      "bindings": [
+        {
+          "id": "replication.physical_replication",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.replication_sender_lag_bytes",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.replication_sender_lag_seconds",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_delta_workload.physical_replication_progress_delta",
+          "role": "support"
+        },
+        {
+          "id": "backend_os.backend_proc_cpu",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_os.os_network_transmit",
+          "role": "support"
+        },
+        {
+          "id": "backend_os.postgres_process_tree",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "network.replication.receive",
+      "parent": "network.replication",
+      "label": "WAL receiver",
+      "summary": "Receiver streaming state and announced-to-received WAL gap; message age alone is not a transport fault.",
+      "evaluator": "network_wal_receive",
+      "bindings": [
+        {
+          "id": "replication.wal_receiver",
+          "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_db.standby_wal_rate",
+          "role": "support"
+        },
+        {
+          "id": "replication.standby_recovery_state",
+          "role": "support"
+        },
+        {
+          "id": "snapshot_charts_os.os_network_receive",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "network.replication.sync",
+      "parent": "network.replication",
+      "label": "Synchronous replies",
+      "summary": "Missing synchronous quorum or commits waiting in SyncRep. Remote disk writes and replay may be responsible as well as transport.",
+      "evaluator": "network_sync",
+      "bindings": [
+        {
+          "id": "replication.synchronous_replication_status",
+          "role": "primary"
+        },
+        {
+          "id": "replication.physical_replication",
+          "role": "support"
+        },
+        {
+          "id": "activity_locks.wait_events",
+          "role": "support"
+        }
+      ]
+    },
+    {
+      "id": "network.replication.streams",
+      "parent": "network.replication",
+      "label": "Streaming topology",
+      "summary": "Physical senders, logical subscriptions, slots and capacity as context. Apply errors and retained WAL are evaluated under database health.",
+      "evaluator": "network_inventory",
+      "bindings": [
+        {
+          "id": "replication.subscription_workers",
+          "role": "fact"
+        },
+        {
+          "id": "replication.subscription_table_sync",
+          "role": "fact"
+        },
+        {
+          "id": "replication.replication_slots",
+          "role": "fact"
+        },
+        {
+          "id": "replication.replication_capacity",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.subscription_ownership",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.publication_ownership",
+          "role": "fact"
+        },
+        {
+          "id": "replication.replication_roles",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "network.replication.failures",
+      "parent": "network.replication",
+      "label": "Streaming disconnects",
+      "summary": "Only transport disconnect events affect this node; archive failures, recovery conflicts and missing WAL are not proof of network failure.",
+      "evaluator": "network_replication_failures",
+      "requires": [
+        "log"
+      ],
+      "bindings": [
+        {
+          "id": "server_log.replication_events",
+          "role": "primary"
+        }
+      ]
+    },
+    {
+      "id": "network.protocol",
+      "parent": "network",
+      "label": "TCP / UDP configuration",
+      "summary": "Transport configuration is evidence for follow-up, not a measurement of RTT, TCP retransmissions or socket queues.",
+      "evaluator": "aggregate",
+      "bindings": []
+    },
+    {
+      "id": "network.protocol.tcp",
+      "parent": "network.protocol",
+      "label": "TCP and keepalives",
+      "summary": "Kernel TCP buffers, congestion control, retries, keepalives and PostgreSQL connection timeouts. No universal configuration score.",
+      "evaluator": "network_settings",
+      "bindings": [
+        {
+          "id": "os.sysctl_tcp",
+          "role": "fact"
+        },
+        {
+          "id": "overview.pg_settings",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "network.protocol.udp",
+      "parent": "network.protocol",
+      "label": "UDP buffers",
+      "summary": "Kernel UDP configuration; PostgreSQL client connections use TCP or Unix sockets, not UDP.",
+      "evaluator": "network_settings",
+      "requires": [
+        "host"
+      ],
+      "bindings": [
+        {
+          "id": "os.sysctl_udp",
+          "role": "fact"
+        }
+      ]
+    },
+    {
+      "id": "network.access",
+      "parent": "network",
+      "label": "Access and encryption",
+      "summary": "Network exposure, authentication rules, encrypted sessions and local socket access; these are security risks, not throughput measurements.",
+      "evaluator": "aggregate",
+      "bindings": []
+    },
+    {
+      "id": "network.access.exposure",
+      "parent": "network.access",
+      "label": "Listeners and firewall",
+      "summary": "Listening addresses, host firewall and broad HBA networks.",
+      "evaluator": "generic",
+      "bindings": [
+        {
+          "id": "overview.listen_addresses_exposure",
+          "role": "primary",
+          "weight": 0.6
+        },
+        {
+          "id": "os.firewall_postgres_exposure",
+          "role": "primary",
+          "weight": 0.6
+        },
+        {
+          "id": "cluster_inventory.pg_hba_broad_network_ranges",
+          "role": "primary",
+          "weight": 0.6
+        },
+        {
+          "id": "os.network_addresses",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.hba_rules",
+          "role": "fact"
+        }
+      ],
+      "cap": 0.6
+    },
+    {
+      "id": "network.access.tls",
+      "parent": "network.access",
+      "label": "TLS and GSS encryption",
+      "summary": "Server TLS configuration, HBA enforcement, weak ciphers, remote unencrypted sessions and key permissions.",
+      "evaluator": "generic",
+      "bindings": [
+        {
+          "id": "overview.tls_server_configuration",
+          "role": "primary",
+          "weight": 0.6
+        },
+        {
+          "id": "overview.weak_tls_ciphers",
+          "role": "primary",
+          "weight": 0.6
+        },
+        {
+          "id": "cluster_inventory.pg_hba_tls_enforcement",
+          "role": "primary",
+          "weight": 0.6
+        },
+        {
+          "id": "users_roles.connection_security",
+          "role": "primary",
+          "weight": 0.6
+        },
+        {
+          "id": "os.tls_key_file_permissions",
+          "role": "support",
+          "weight": 0.6
+        }
+      ],
+      "cap": 0.6
+    },
+    {
+      "id": "network.access.auth",
+      "parent": "network.access",
+      "label": "Authentication and HBA",
+      "summary": "Authentication failures and permissive access rules; not evidence of transport saturation.",
+      "evaluator": "generic",
+      "bindings": [
+        {
+          "id": "server_log.authentication_failures",
+          "role": "primary",
+          "weight": 0.6
+        },
+        {
+          "id": "cluster_inventory.pg_hba_insecure_auth_methods",
+          "role": "primary",
+          "weight": 1
+        },
+        {
+          "id": "cluster_inventory.pg_hba_generic_database_or_user",
+          "role": "primary",
+          "weight": 0.6
+        },
+        {
+          "id": "cluster_inventory.remote_superuser_access",
+          "role": "primary",
+          "weight": 1
+        },
+        {
+          "id": "users_roles.hba_rules",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.ident_mappings",
+          "role": "fact"
+        }
+      ],
+      "cap": 0.6
+    },
+    {
+      "id": "network.access.sockets",
+      "parent": "network.access",
+      "label": "Unix socket access",
+      "summary": "Local socket permissions are separate from TCP interfaces and host traffic.",
+      "evaluator": "generic",
+      "bindings": [
+        {
+          "id": "cluster_inventory.unix_socket_permissions",
+          "role": "primary",
+          "weight": 0.6
+        },
+        {
+          "id": "overview.pg_settings",
+          "role": "fact"
+        },
+        {
+          "id": "users_roles.connection_security",
+          "role": "fact"
+        }
+      ],
+      "cap": 0.6
     },
     {
       "id": "database_health",
@@ -2492,11 +3228,6 @@
           "id": "replication.publication_tables_replica_identity",
           "role": "support",
           "weight": 0.6
-        },
-        {
-          "id": "indexes.foreign_keys_without_index",
-          "role": "support",
-          "weight": 0.3
         }
       ]
     },
@@ -2655,7 +3386,7 @@
       "id": "health.connections",
       "parent": "database_health",
       "label": "Connection exhaustion",
-      "summary": "Used connections against max_connections, idle in transaction, session failures.",
+      "summary": "Connection usage against limits, refused connections in the log, sessions ended fatally or abandoned.",
       "evaluator": "connections",
       "bindings": [
         {
@@ -2672,6 +3403,10 @@
         },
         {
           "id": "snapshot_delta_workload.database_session_outcomes_delta",
+          "role": "support"
+        },
+        {
+          "id": "server_log.system_incidents",
           "role": "support"
         },
         {
@@ -2871,7 +3606,8 @@
           "id": "object_workload.function_workload",
           "role": "support"
         }
-      ]
+      ],
+      "cap": 0.3
     },
     {
       "id": "health.maintenance",
@@ -3601,6 +4337,31 @@
       "from": "disk.space",
       "to": "health.replication",
       "label": "inactive slots retain WAL"
+    },
+    {
+      "from": "network.traffic.packets",
+      "to": "cpu.system_time",
+      "label": "packet processing can consume kernel CPU"
+    },
+    {
+      "from": "network.interfaces.drops",
+      "to": "network.clients.write",
+      "label": "interface drops can delay client sends"
+    },
+    {
+      "from": "network.clients.churn",
+      "to": "cpu.session_churn",
+      "label": "reconnects create authentication and backend work"
+    },
+    {
+      "from": "network.replication.send",
+      "to": "health.replication",
+      "label": "send backlog can contribute to replication lag"
+    },
+    {
+      "from": "network.access.tls",
+      "to": "security.network",
+      "label": "shared transport encryption evidence"
     }
   ]
 }
