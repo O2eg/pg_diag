@@ -569,6 +569,22 @@
         {
           "id": "snapshot_charts_os.os_cpu_utilization",
           "role": "primary"
+        },
+        {
+          "id": "snapshot_charts_os.os_disk_read_throughput",
+          "role": "fact"
+        },
+        {
+          "id": "snapshot_charts_os.os_disk_write_throughput",
+          "role": "fact"
+        },
+        {
+          "id": "snapshot_delta_workload.postgresql_io_delta",
+          "role": "fact"
+        },
+        {
+          "id": "wal_io_checkpoints.pg_stat_io",
+          "role": "fact"
         }
       ]
     },
@@ -1209,6 +1225,10 @@
         {
           "id": "storage_vacuum.unlogged_tables",
           "role": "fact"
+        },
+        {
+          "id": "overview.pg_settings",
+          "role": "fact"
         }
       ],
       "pressure": "cpu_iowait"
@@ -1253,6 +1273,10 @@
         {
           "id": "snapshot_charts_os.os_memory_pressure",
           "role": "primary"
+        },
+        {
+          "id": "os.total_ram",
+          "role": "fact"
         }
       ],
       "pressure": "cpu_iowait"
@@ -1279,7 +1303,20 @@
       "label": "RAM",
       "summary": "Memory pressure, cache sizing and page cache efficiency.",
       "evaluator": "aggregate",
-      "bindings": []
+      "bindings": [
+        {
+          "id": "os.memory_info",
+          "role": "fact"
+        },
+        {
+          "id": "os.total_ram",
+          "role": "fact"
+        },
+        {
+          "id": "snapshot_charts_os.os_memory_pressure",
+          "role": "fact"
+        }
+      ]
     },
     {
       "id": "ram.pressure",
@@ -1344,7 +1381,8 @@
           "id": "snapshot_delta_workload.sql_temp_io_delta",
           "role": "support"
         }
-      ]
+      ],
+      "pressure": "ram"
     },
     {
       "id": "ram.shared_buffers",
@@ -1665,7 +1703,24 @@
       "label": "Disk",
       "summary": "Device latency, read pressure, write pressure and capacity, with evidence-linked contributors below each symptom.",
       "evaluator": "aggregate",
-      "bindings": []
+      "bindings": [
+        {
+          "id": "snapshot_charts_os.os_disk_read_throughput",
+          "role": "fact"
+        },
+        {
+          "id": "snapshot_charts_os.os_disk_write_throughput",
+          "role": "fact"
+        },
+        {
+          "id": "snapshot_delta_workload.postgresql_io_delta",
+          "role": "fact"
+        },
+        {
+          "id": "wal_io_checkpoints.pg_stat_io",
+          "role": "fact"
+        }
+      ]
     },
     {
       "id": "disk.saturation",
@@ -1839,7 +1894,8 @@
           "id": "snapshot_charts_db.tables_top_index_block_read_rate",
           "role": "support"
         }
-      ]
+      ],
+      "pressure": "disk"
     },
     {
       "id": "disk.read.queries.scans",
@@ -2021,7 +2077,8 @@
           "id": "server_log.autovacuum_runs",
           "role": "support"
         }
-      ]
+      ],
+      "pressure": "disk"
     },
     {
       "id": "disk.read.backup",
@@ -2185,7 +2242,8 @@
           "id": "overview.durability_safety_settings",
           "role": "fact"
         }
-      ]
+      ],
+      "pressure": "disk"
     },
     {
       "id": "disk.write.temp_files",
@@ -2222,7 +2280,8 @@
           "id": "server_log.query_resource_events",
           "role": "support"
         }
-      ]
+      ],
+      "pressure": "disk"
     },
     {
       "id": "disk.write.data",
@@ -2267,7 +2326,8 @@
           "id": "snapshot_charts_db.restartpoint_events",
           "role": "support"
         }
-      ]
+      ],
+      "pressure": "disk"
     },
     {
       "id": "disk.write.backend_writes",
@@ -2300,7 +2360,8 @@
           "id": "snapshot_delta_workload.background_writer_delta",
           "role": "support"
         }
-      ]
+      ],
+      "pressure": "disk"
     },
     {
       "id": "disk.write.dml",
@@ -2348,8 +2409,13 @@
         {
           "id": "storage_vacuum.unlogged_tables",
           "role": "fact"
+        },
+        {
+          "id": "overview.pg_settings",
+          "role": "fact"
         }
-      ]
+      ],
+      "pressure": "disk"
     },
     {
       "id": "disk.write.autovacuum",
@@ -2374,7 +2440,8 @@
           "id": "server_log.autovacuum_runs",
           "role": "support"
         }
-      ]
+      ],
+      "pressure": "disk"
     },
     {
       "id": "disk.space",
@@ -2480,7 +2547,10 @@
           "id": "os.network_addresses",
           "role": "fact"
         }
-      ]
+      ],
+      "params": {
+        "metric": "snapshot_charts_os.os_network_receive"
+      }
     },
     {
       "id": "network.traffic.transmit",
@@ -2505,7 +2575,10 @@
           "id": "os.network_addresses",
           "role": "fact"
         }
-      ]
+      ],
+      "params": {
+        "metric": "snapshot_charts_os.os_network_transmit"
+      }
     },
     {
       "id": "network.traffic.packets",
@@ -2563,7 +2636,10 @@
           "id": "os.network_addresses",
           "role": "fact"
         }
-      ]
+      ],
+      "params": {
+        "event": "errors"
+      }
     },
     {
       "id": "network.interfaces.drops",
@@ -2596,7 +2672,10 @@
           "id": "os.sysctl_udp",
           "role": "fact"
         }
-      ]
+      ],
+      "params": {
+        "event": "drops"
+      }
     },
     {
       "id": "network.interfaces.inventory",
@@ -2657,7 +2736,10 @@
           "id": "activity_locks.pg_wait_sampling_capabilities",
           "role": "fact"
         }
-      ]
+      ],
+      "params": {
+        "waitEvent": "ClientWrite"
+      }
     },
     {
       "id": "network.clients.read",
@@ -2682,7 +2764,10 @@
           "id": "backend_os.backend_activity",
           "role": "support"
         }
-      ]
+      ],
+      "params": {
+        "waitEvent": "ClientRead"
+      }
     },
     {
       "id": "network.clients.capacity",
@@ -2714,6 +2799,10 @@
         {
           "id": "overview.pg_settings",
           "role": "fact"
+        },
+        {
+          "id": "snapshot_delta_workload.database_session_outcomes_delta",
+          "role": "support"
         }
       ]
     },
@@ -2920,6 +3009,10 @@
         {
           "id": "replication.replication_roles",
           "role": "fact"
+        },
+        {
+          "id": "os.lshw_network",
+          "role": "fact"
         }
       ]
     },
@@ -2962,7 +3055,10 @@
           "id": "overview.pg_settings",
           "role": "fact"
         }
-      ]
+      ],
+      "params": {
+        "protocol": "tcp"
+      }
     },
     {
       "id": "network.protocol.udp",
@@ -2978,7 +3074,10 @@
           "id": "os.sysctl_udp",
           "role": "fact"
         }
-      ]
+      ],
+      "params": {
+        "protocol": "udp"
+      }
     },
     {
       "id": "network.access",
@@ -3296,6 +3395,10 @@
           "id": "server_log.maintenance_events",
           "role": "support",
           "weight": 0.6
+        },
+        {
+          "id": "indexes.large_indexes",
+          "role": "fact"
         }
       ]
     },

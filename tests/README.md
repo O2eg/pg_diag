@@ -54,7 +54,7 @@ The main unit-test groups are:
   calculations from snapshots.
 - `test_diagnostic_graph.py` - diagnostic graph contract: `graph.json` tree and
   bindings against the catalog, evaluator names, HTML embedding, and the node
-  test suite in `tests/js/` (`node --test tests/js`; skipped without `node`).
+  test suite in `tests/js/` (`node --test tests/js/*.test.js`; skipped without `node`).
   The JS regressions cover critical-child propagation, overlapping log/deadlock
   counts, mixed log event types, idle standby replay age, I/O wait versus CPU
   work, one-point event charts, and explanations reused across graph branches.
@@ -268,3 +268,16 @@ consistent deadlock/SyncRep scores, and block-size-aware I/O calculations.
 `test_metric_engine.py` also checks missing interface partitions through the
 Linux provider; `test_server_log_items.py` checks incident signatures and checkpoint
 cap/RLE metadata at collection time.
+
+`tests/js/diagnostic_graph_architecture.test.js` audits actual source dependencies,
+failed-source isolation for every rule, timestamp alignment and missing-value
+policies, explicit rule parameters, single pressure/cap application, graph rename
+and traversal invariance, and CommonJS/browser asset parity. The data/rules/engine
+modules are inlined in dependency order by the existing HTML renderer.
+
+`test_diagnostic_graph.py` also builds real catalog metrics, applies presentation
+normalization, and evaluates the resulting charts in Node: one-interval deadlock
+counts and changing top-N wait groups must retain their diagnostic evidence.
+The pytest wrapper passes explicit test file paths for compatibility with Node
+18 and 22. Architecture tests also cover event metadata, writer-pressure counts,
+and wait-profile shares with unequal sample counts.

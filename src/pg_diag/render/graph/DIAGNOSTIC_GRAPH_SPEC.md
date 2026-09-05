@@ -18,17 +18,24 @@ computed here from the item data.
 | File | Purpose |
 | --- | --- |
 | `graph.json` | Declarative graph: nodes, parent links, cause links, item bindings, requirements. Data only. Validated by `tests/unit/test_diagnostic_graph.py` against `content/report.yaml`. |
-| `pg-diag-graph.js` | Engine (UMD, global `PgDiagGraph`, also `require`-able in node): artifact accessors, fact extractors, node evaluators, traversal, coverage and hints. No DOM access. |
+| `pg-diag-graph-data.js` | Status-aware artifact access, decoding, facts, timestamp alignment, windows and unit conversion. UMD global `PgDiagGraphData`; no DOM access. |
+| `pg-diag-graph-rules.js` | Thresholds, shared calculations and one registry of raw evaluators. UMD global `PgDiagGraphRules`; depends only on data. |
+| `pg-diag-graph.js` | Public `PgDiagGraph.evaluate` API, traversal, pressure/caps, propagation, coverage and hints. UMD/CommonJS; depends on data and rules, with no DOM access. |
 | `pg-diag-graph-render.js` | Renderer (global `PgDiagGraphRender`): SVG edges and nodes, expandable inline detail cards with bound items and hints, animated tree layout. Uses the report theme through CSS variables only. |
 | `pg-diag-graph.css` | Structural styles plus the score gradient stops as `--dg-*` variables. |
 | `DIAGNOSTIC_GRAPH_SPEC.md` | This document. |
 
-The renderer inlines the three assets and the graph definition into
+The renderer inlines the assets and the graph definition into
 `templates/report.html` through `render/html.py` placeholders
 (`__PG_DIAG_GRAPH_CSS__`, `__PG_DIAG_GRAPH_DEFINITION__`, `__PG_DIAG_GRAPH_JS__`,
 `__PG_DIAG_GRAPH_RENDER_JS__`). The page script exposes
 `window.pgDiagReport.navigateToItem(itemId)` so the graph can scroll the report
 to a bound item with the same behaviour as a related-item link in an instruction.
+
+`__PG_DIAG_GRAPH_JS__` contains data, rules and engine in that order. Python
+concatenates these resources; no bundler, external script fetch or new build step
+is needed. CommonJS resolves the same dependencies with `require`. The public
+`PgDiagGraph` entry point and evaluation result retain their shape.
 
 ## 2. Graph model
 
@@ -74,6 +81,12 @@ Rules:
   Mixed log tables (`server_lifecycle`, `system_incidents`, and the compatibility
   `crash_recovery_events`) use named, event-aware evaluators instead of a blanket
   row weight; a binding may provide context without proving a fault in that branch.
+- Every read by a rule or its helpers MUST be declared in the node's bindings
+  or an ancestor's bindings. Shared resource inputs belong to grouping nodes as
+  facts; specific diagnostic sources belong to the consuming node. Ancestor
+  facts authorize reads but do not open a child's evaluation gate. Tests audit
+  actual reads through `evaluate(..., {onRead(nodeId, itemId, method)})`, including
+  empty-source fallbacks and resource-pressure calculations.
 - Every item id declared in `content/report.yaml` MUST be bound to at least one
   node, and every bound id MUST exist there. Items that exist in the catalog but
   not in a given artifact (older artifact, filtered report, one-shot mode) are
@@ -86,6 +99,11 @@ Rules:
 - `evaluator` names a function in the engine registry. Nodes without it use
   the `generic` evaluator (section 4). Roots and pure grouping nodes use
   `aggregate`.
+- `params` specifies inputs for a parameterized evaluator. Throughput uses
+  `metric`; interface counters use `event` (`errors`/`drops`); TCP/UDP settings
+  use `protocol`; client waits use `waitEvent` (`ClientRead`/`ClientWrite`).
+  Missing or invalid values produce an evaluator error. No rule infers its
+  behavior from a node id suffix; renaming nodes must preserve calculations.
 - `pressure`, when present, identifies the symptom against which a candidate
   contributor is assessed: `cpu_user`, `cpu_system`, `cpu_iowait`, `ram`, or
   `disk`. Damping is applied once, after the evaluator, not once per helper.
@@ -127,7 +145,7 @@ Resource branches follow observed symptoms, then possible contributors:
 
 1. `PgDiagGraph.evaluate(artifact, definition)` indexes `artifact.items` and
    classifies every binding: `present` (collection status `ok` and the result
-   has at least one table row, one finite chart point, or non-empty text),
+   has at least one table row, a usable chart series, or non-empty text),
    `empty` (status `ok`/`empty` without data), `skipped`, `unsupported`,
    `error`, or `absent` (not in the artifact).
 2. Leaves are evaluated first, then parents, then roots (post-order over the
@@ -150,6 +168,14 @@ Resource branches follow observed symptoms, then possible contributors:
    `server_log.*` item was collected, an absent log item is a catalog
    difference and produces no log hint.
 
+The evaluator context is created by `createAccess`: `rows`, `series` and `text`
+read only sources with status `ok`. `item` also permits status `empty` for hidden
+zero metadata. Failed, skipped, unsupported and unknown-status payloads cannot
+contribute even if retained in the artifact. Raw decoders remain public for
+inspection; diagnostic rules use the context. Each series needs two finite
+samples, except event charts and event counter deltas which need one. Valid positive observations may
+still be used with collection warnings; hidden zeros require complete coverage.
+
 ## 4. Evaluation
 
 Scores are numbers in `[0, 1]`; `status` is `ok` (< 0.34), `warn` (< 0.67),
@@ -157,11 +183,32 @@ Scores are numbers in `[0, 1]`; `status` is `ok` (< 0.34), `warn` (< 0.67),
 
 - `scale(value, warn, crit)` maps a metric to `[0, 1]`: 0 below `warn`, 1 above
   `crit`, linear in between (reversed when `warn > crit`).
+- Rules return raw scores. The engine applies resource pressure once, then the
+  node cap, then takes the maximum with children. There are no registration-time
+  wrappers or evaluator-local damping defaults.
 - Chart statistics use finite points only: `mean`, `max`, `p95`, `last`, `n`.
   A series with fewer than 2 finite points is treated as absent.
-  Event charts (`tooltip_kind = log_event` or `query_event`) are an exception:
-  one finite point is a real event and counts as present, including when it
-  represents many occurrences in one minute.
+  Event charts (`tooltip_kind = log_event` or `query_event`) and event counter
+  deltas are exceptions: one finite point is already measured evidence,
+  including many deadlocks or writer-pressure events in a single interval.
+  Counter deltas with unit `count` are identified by `semantic_role`; older
+  artifacts may identify event counts by quantity or an event-specific unit.
+  A count-valued gauge such as sessions still requires two finite samples.
+- `alignSeries` matches equivalent UTC instants, not array positions. All
+  internal sums explicitly choose `missing: "strict"` for components of a total,
+  or `missing: "observed"` for independent events and sparse top-N wait profiles. Strict sums retain gaps as
+  unknown; ordinary time-series statistics still require two comparable points
+  after alignment. Duplicate timestamps are ambiguous and remain unknown.
+  The public `sumSeries` helper retains index fallback for legacy value-only
+  arrays; artifact chart series always use timestamps.
+- Wait-profile LWLock/Buffer/IPC counts are evaluated independently of the
+  availability of a total. Their share uses sums over the observed window, not
+  means of series with different sample counts, and describes the observed
+  top-N session samples rather than all backend activity.
+- Window and unit helpers live in the data module: actual delta duration precedes
+  runtime fallback, log wall-clock durations do not use the browser timezone,
+  relation blocks use `block_size`, and I/O operations use byte counters or
+  `op_bytes`.
 - Table cells are decoded by column `encoding`: `decimal_string` → number
   (`Number()`; values above 2^53 lose precision, which is acceptable for
   scoring), `json_number` as is, `json_boolean` as is, others as text.
@@ -257,9 +304,11 @@ Scores are numbers in `[0, 1]`; `status` is `ok` (< 0.34), `warn` (< 0.67),
 - Deadlock charts and endpoint deltas observe the same counter. Use their
   maximum as the window observation, never their sum; keep the separate log
   window labelled and do not add it to snapshot counts.
-- Shared evaluator caches include explanations, facts and evidence alongside
-  the value and replay them into each consuming node. Repeated bloat and
-  resource-pressure evidence must not depend on root traversal order.
+- Shared diagnostic calculations run in each consuming node's context, keeping
+  reasons, facts and dependency reads together. Raw artifact decoding is cached
+  by result identity; artifacts are treated as immutable during evaluation.
+  No node-scoped evidence or pressure score is cached across nodes, so traversal
+  order cannot change the result.
 - Fact extractors read inventory items: CPU count from `os.cpu_info`, RAM from
   `os.memory_info`/`os.total_ram`, disk media from `os.lshw_disk` (NVMe / SSD /
   rotational), build flags from `overview.pg_config` (`--enable-cassert`,
@@ -388,7 +437,7 @@ and runbook sections 3.6, 4.5 and 6.
   without host items), post-order/max propagation, hint generation, log-source
   fallback and overlap, typed log signals, idle versus lagging standby, CPU
   component separation, I/O-wait-specific contributors, missing pressure,
-  separate swap/available-memory signals, and cached explanations in repeated
+  separate swap/available-memory signals, and complete explanations in repeated
   branches. `diagnostic_graph_render.test.js` tests sibling alignment, subtree
   bounds, wrapped label separation, full-height inline cards and obstacle-free
   cause routes with cards open.
@@ -402,6 +451,12 @@ and runbook sections 3.6, 4.5 and 6.
   and inline card placement/scale checks. Animation tests inspect intermediate
   positions, open/close symmetry, anchor preservation, rapid interruptions,
   reduced motion, complete card content and cleanup during re-render.
+
+`tests/js/diagnostic_graph_architecture.test.js` checks the single registry and
+explicit parameters, real dependency reads, failed-payload isolation across all
+rules, sample eligibility, timestamp/missing-value policies, source windows,
+pressure/cap/child ordering, renamed/reordered graph equivalence and browser UMD
+versus CommonJS parity. Existing metric regression and renderer tests remain.
 
 ## 7. Change policy
 

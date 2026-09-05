@@ -1331,7 +1331,9 @@ animates to make room for their full content, with the clicked node anchored
 and zoom unchanged; click the node again to close. Reduced-motion preferences
 are respected. The module lives in
 `src/pg_diag/render/graph/` (`graph.json` is the declarative graph,
-`pg-diag-graph.js` the evaluation engine, `pg-diag-graph-render.js` the
+`pg-diag-graph-data.js` handles data access and time-series helpers,
+`pg-diag-graph-rules.js` contains the evaluation rules,
+`pg-diag-graph.js` traverses the graph and combines scores, `pg-diag-graph-render.js` is the
 renderer) and is specified in `DIAGNOSTIC_GRAPH_SPEC.md` next to it.
 
 Repeated table samples store their column schema once in `snapshot_schemas` and

@@ -56,7 +56,10 @@ def render_html(artifact: dict[str, Any], *, validate: bool = True) -> str:
         "__PG_DIAG_GRAPH_DEFINITION__": _inline_script(
             _read_render_resource("graph", "graph.json").strip()
         ),
-        "__PG_DIAG_GRAPH_JS__": _inline_script(_read_render_resource("graph", "pg-diag-graph.js")),
+        "__PG_DIAG_GRAPH_JS__": _inline_script("\n".join(
+            _read_render_resource("graph", name)
+            for name in ("pg-diag-graph-data.js", "pg-diag-graph-rules.js", "pg-diag-graph.js")
+        )),
         "__PG_DIAG_GRAPH_RENDER_JS__": _inline_script(
             _read_render_resource("graph", "pg-diag-graph-render.js")
         ),

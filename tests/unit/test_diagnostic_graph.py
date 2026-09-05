@@ -12,7 +12,11 @@ from pathlib import Path
 import pytest
 import yaml
 
+from pg_diag.content_loader import load_content
+from pg_diag.metric_engine import build_chart_result
+from pg_diag.presentation import apply_presentation_contract
 from pg_diag.render.html import render_html
+from pg_diag.versioning import select_query_variant
 
 ROOT = Path(__file__).resolve().parents[2]
 GRAPH_DIR = ROOT / "src" / "pg_diag" / "render" / "graph"
@@ -46,13 +50,8 @@ def _catalog_item_ids() -> set[str]:
 
 
 def _engine_evaluator_names() -> set[str]:
-    source = (GRAPH_DIR / "pg-diag-graph.js").read_text(encoding="utf-8")
-    names = set(re.findall(r"^    ([a-z_]+)\(ctx\) \{", source, re.M))
-    names.update(re.findall(r"evaluators\.([a-z_]+) = ", source))
-    names.update({"aggregate", "generic"})
-    # names assigned in the registry loop from causeEvaluators
-    names.update(name for name in re.findall(r"^    ([a-z_]+)\(ctx\) \{", source, re.M))
-    return names
+    source = (GRAPH_DIR / "pg-diag-graph-rules.js").read_text(encoding="utf-8")
+    return set(re.findall(r"^    ([a-z_]+)\((?:ctx)?\) \{", source, re.M))
 
 
 def test_graph_definition_is_a_tree_with_six_roots() -> None:
@@ -153,6 +152,11 @@ def test_report_html_embeds_the_graph_module() -> None:
     ):
         assert marker in html, marker
     assert "__PG_DIAG_GRAPH" not in html
+    assert (
+        html.index("root.PgDiagGraphData = factory")
+        < html.index("root.PgDiagGraphRules = factory")
+        < html.index("root.PgDiagGraph = factory")
+    )
 
     class StylesParser(HTMLParser):
         def __init__(self) -> None:
@@ -186,8 +190,12 @@ def test_report_html_embeds_the_graph_module() -> None:
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_node_test_suite_passes() -> None:
+    # Node 22 treats a positional directory as a module, unlike Node 18.
+    # Expand the files here so the same invocation works on both versions.
+    test_files = sorted((ROOT / "tests" / "js").rglob("*.test.js"))
+    assert test_files, "no JavaScript tests found"
     result = subprocess.run(
-        ["node", "--test", str(ROOT / "tests" / "js")],
+        ["node", "--test", *(str(path) for path in test_files)],
         capture_output=True,
         text=True,
         cwd=ROOT,
@@ -195,3 +203,105 @@ def test_node_test_suite_passes() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout[-4000:] + result.stderr[-4000:]
+
+
+def _collected_metric(content_path: Path, metric_id: str, samples: list[dict]) -> dict:
+    content = load_content(content_path)
+    metric = content.metrics[metric_id]
+    query = content.queries[metric["source_query"]]
+    selected = select_query_variant(query["title"], query, 180000)
+    result = build_chart_result(metric, samples, selected.variant["semantic_columns"])
+    item = {
+        "collection_status": "ok",
+        "source_kind": "metric",
+        "source_metadata": {"metric_id": metric_id},
+        "result": result,
+    }
+    apply_presentation_contract(content, {"items": {"test.metric": item}})
+    return item
+
+
+def _evaluate_graph(artifact: dict) -> dict:
+    result = subprocess.run(
+        ["node", "-e", """
+const fs = require('node:fs');
+const G = require('./src/pg_diag/render/graph/pg-diag-graph.js');
+const definition = require('./src/pg_diag/render/graph/graph.json');
+console.log(JSON.stringify(G.evaluate(JSON.parse(fs.readFileSync(0, 'utf8')), definition).nodes));
+"""],
+        input=json.dumps(artifact),
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+        timeout=30,
+        check=True,
+    )
+    nodes = json.loads(result.stdout)
+    assert not {node_id: node["error"] for node_id, node in nodes.items() if node["error"]}
+    return nodes
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_graph_counts_deadlocks_from_one_collected_interval(content_path: Path) -> None:
+    samples = [
+        {
+            "timestamp": f"2026-09-05T00:00:{index * 30:02d}Z",
+            "rows": [{"datname": "test", "deadlocks": index * 100}],
+        }
+        for index in range(2)
+    ]
+    item = _collected_metric(content_path, "database.deadlocks", samples)
+    source = "snapshot_charts_db.database_deadlocks"
+    artifact = {
+        "runtime": {
+            "mode": "snapshots",
+            "snapshot_window_started_at": samples[0]["timestamp"],
+            "snapshot_window_finished_at": samples[-1]["timestamp"],
+        },
+        "items": {source: item},
+    }
+    nodes = _evaluate_graph(artifact)
+    assert nodes["health.locks"]["ownScore"] == 1
+    assert nodes["database_health"]["status"] == "crit"
+    assert source in nodes["health.locks"]["evidence"]
+    assert any("100 deadlock(s)" in reason for reason in nodes["health.locks"]["reasons"])
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_graph_preserves_waits_when_collected_top_n_members_change(content_path: Path) -> None:
+    samples = []
+    for index in range(6):
+        waiting = index < 3
+        samples.append({
+            "timestamp": f"2026-09-05T00:00:{index * 5:02d}Z",
+            "rows": [{
+                "datname": "test",
+                "wait_event_type": "LWLock" if waiting else "Not waiting",
+                "wait_event": "BufferContent" if waiting else "Active without wait event",
+                "query_id": "1" if waiting else "2",
+                "sessions": 30 if waiting else 1,
+            }],
+        })
+    profile = _collected_metric(content_path, "activity.wait_sample_profile", samples)
+    source = "activity_locks.wait_event_sample_profile"
+    nodes = _evaluate_graph({"items": {
+        source: profile,
+        "activity_locks.wait_events": {
+            "collection_status": "ok",
+            "result": {
+                "kind": "table",
+                "columns": [{"name": "wait_event_type"}, {"name": "sessions"}],
+                "rows": [["Not waiting", 1]],
+            },
+        },
+        "snapshot_charts_os.os_cpu_utilization": {
+            "collection_status": "ok",
+            "result": {"kind": "chart", "series": [{
+                "name": "system",
+                "points": [{"t": sample["timestamp"], "value": 50} for sample in samples],
+            }]},
+        },
+    }})
+    assert nodes["cpu.contention"]["ownScore"] == 1
+    assert source in nodes["cpu.contention"]["evidence"]
+    assert any("p95 30.0 sessions" in reason for reason in nodes["cpu.contention"]["reasons"])
