@@ -255,6 +255,7 @@
   }
 
   function fitView(state) {
+    state.centerCardId = null;
     const {width, height} = viewportSize(state);
     if (!width || !height || !state.bounds) return;
     const scale = Math.max(MIN_ZOOM, Math.min(1, (width - 48) / state.bounds.width, (height - 96) / state.bounds.height));
@@ -264,6 +265,7 @@
   }
 
   function zoomAt(state, target, point) {
+    state.centerCardId = null;
     const scale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, target));
     const {width, height} = viewportSize(state);
     const anchor = point || {x: width / 2, y: height / 2};
@@ -353,6 +355,7 @@
       const dy = event.clientY - drag.y;
       if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 5) return;
       if (!drag.moved) {
+        state.centerCardId = null;
         drag.moved = true;
         svg.setPointerCapture(event.pointerId);
         state.canvas.classList.add("dg-grabbing");
@@ -395,6 +398,7 @@
       else if (event.key === "-") zoomAt(state, state.view.scale / 1.4);
       else if (event.key === "0" || event.key === "Home") fitView(state);
       else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+        state.centerCardId = null;
         state.view.x += event.key === "ArrowLeft" ? 50 : event.key === "ArrowRight" ? -50 : 0;
         state.view.y += event.key === "ArrowUp" ? 50 : event.key === "ArrowDown" ? -50 : 0;
         state.autoFit = false;
@@ -740,6 +744,14 @@
       cardsGroup.appendChild(card.element);
       connectors.push({id, element: svgEl("path", {class: "dg-edge dg-detail-connector"}, edges)});
     }
+    const centerId = state.centerCardId;
+    const centered = positions[centerId], origin = starts[centerId];
+    const viewport = viewportSize(state);
+    const pan = centered && centered.cardHeight ? {
+      x: viewport.width / 2 - state.view.x - origin.x * state.view.scale,
+      y: viewport.height / 2 - state.view.y - (origin.y + centered.cardOffset + centered.cardHeight / 2) * state.view.scale
+    } : null;
+    let panProgress = 0;
     const paint = (progress) => {
       const framePositions = {}, opacity = {};
       for (const id of ids) {
@@ -752,13 +764,20 @@
         nodeElements[id].setAttribute("transform", "translate(" + p.x + "," + p.y + ")");
         nodeElements[id].style.opacity = opacity[id];
       }
-      // Hold the clicked node in screen space without changing zoom. Incremental
-      // adjustments also compose with wheel zoom and drag during the animation.
-      const previous = state.displayPositions && state.displayPositions[state.selected];
+      // Compensate for the selected node's layout movement before the card pan.
+      // Incremental offsets preserve manual zoom and drag during the animation.
+      const previous = (state.displayPositions && state.displayPositions[state.selected]) || (pan ? origin : null);
       const current = framePositions[state.selected];
       if (!state.autoFit && previous && current) {
         state.view.x += (previous.x - current.x) * state.view.scale;
         state.view.y += (previous.y - current.y) * state.view.scale;
+      }
+      // Use the same eased progress as the card, without a second animation.
+      // Manual pan/zoom cancels this extra movement while relayout continues.
+      if (pan && state.centerCardId === centerId) {
+        state.view.x += pan.x * (progress - panProgress);
+        state.view.y += pan.y * (progress - panProgress);
+        panProgress = progress;
       }
       state.displayPositions = framePositions;
       state.displayOpacity = opacity;
@@ -807,6 +826,7 @@
       }
       for (const connector of connectors) if (!state.cards.has(connector.id)) connector.element.remove();
       state.displayPositions = positions;
+      if (state.centerCardId === centerId) state.centerCardId = null;
       state.frame = null;
       svg.dataset.animating = "false";
     };
@@ -844,6 +864,7 @@
     if (!state.multipleDetails) state.openDetails.clear();
     if (closing) state.openDetails.delete(nodeId);
     else state.openDetails.add(nodeId);
+    state.centerCardId = closing ? null : nodeId;
     state.autoFit = false;
     drawGraph(state);
     if (focused) {
@@ -853,6 +874,7 @@
   }
 
   function setAllExpanded(state, expanded) {
+    state.centerCardId = null;
     if (expanded && state.evaluation.order.every(id => !state.evaluation.nodes[id].children.length || state.expanded.has(id))) {
       state.multipleDetails = true;
       state.openDetails = new Set(state.evaluation.order);
@@ -882,6 +904,7 @@
     close.setAttribute("aria-label", "Close node details");
     close.addEventListener("click", () => {
       if (state.multipleDetails) {
+        state.centerCardId = null;
         state.openDetails.delete(nodeId);
         state.selected = nodeId;
         state.autoFit = false;
@@ -973,22 +996,9 @@
     const node = state.evaluation.nodes[nodeId];
     const button = el("button", "dg-node-link", parent, node ? node.label : nodeId);
     button.type = "button";
-    button.addEventListener("click", () => {
-      let cursor = node ? node.parent : null;
-      while (cursor) {
-        state.expanded.add(cursor);
-        cursor = state.evaluation.nodes[cursor].parent;
-      }
-      selectNode(state, nodeId, false);
-      const position = state.displayPositions[nodeId] || state.positions[nodeId];
-      if (position) {
-        const size = viewportSize(state);
-        state.view.x = size.width / 2 - position.x * state.view.scale;
-        state.view.y = size.height / 2 - position.y * state.view.scale;
-        state.autoFit = false;
-        applyView(state);
-      }
-    });
+    // Selection opens hidden ancestors and animates the card into view.
+    // A second viewport adjustment here would invalidate that animation's pan.
+    button.addEventListener("click", () => selectNode(state, nodeId, false));
     return button;
   }
 
@@ -1043,6 +1053,7 @@
       evaluation,
       expanded: initialExpanded(evaluation),
       selected: null,
+      centerCardId: null,
       openDetails: new Set(),
       multipleDetails: false,
       cards: new Map(),

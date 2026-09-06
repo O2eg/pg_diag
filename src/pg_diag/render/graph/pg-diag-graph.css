@@ -228,7 +228,7 @@ html[data-theme="light"] .dg {
   stroke-width: 1.2;
   stroke-dasharray: 5 4;
   opacity: 0.35;
-  vector-effect: non-scaling-stroke;
+  /* Scale the stroke, dashes and stroke-relative arrowhead with the scene. */
   pointer-events: none;
 }
 
@@ -338,7 +338,13 @@ html[data-theme="light"] .dg {
 }
 
 .dg-panel-close {
-  margin-left: auto;
+  position: absolute;
+  top: 0;
+  right: 0;
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  padding: 0;
   border: 1px solid var(--dg-border);
   border-radius: 5px;
   background: transparent;
@@ -363,10 +369,13 @@ html[data-theme="light"] .dg {
 }
 
 .dg-panel-head {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  min-height: 24px;
+  padding-right: 32px;
 }
 
 .dg-panel-title {

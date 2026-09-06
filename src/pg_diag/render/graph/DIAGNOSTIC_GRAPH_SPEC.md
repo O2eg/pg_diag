@@ -512,7 +512,11 @@ and runbook sections 3.6, 4.5 and 6.
   and card reveal over 300 ms. Subtree spans reserve the card width; only the
   node's descendants move below its full height. Other branches keep their
   vertical spacing, so a card never stretches the children of a nearby node.
-  The clicked circle stays anchored in screen space and the zoom is unchanged.
+  Opening a card smoothly centres the card in the canvas using the same animation
+  progress, while preserving zoom. Closing preserves the selected circle's screen
+  position. Manual pan, zoom or Fit cancels automatic centring. Card links in
+  Related checks, Possible causes and Possible effects use this same selection
+  and animation path, including destinations hidden under collapsed ancestors.
   Interruptions start from the current interpolated positions, not the previous
   destination. Closing cards cannot receive clicks. `prefers-reduced-motion`
   disables animation; re-render/destroy cancels frames and disconnects card
@@ -550,7 +554,7 @@ and runbook sections 3.6, 4.5 and 6.
   Normal and wide viewports must also pass zoom/pan, drag-versus-click, fit,
   contained node labels, selected-only cause links, non-percentage statuses
   and inline card placement/scale checks. Animation tests inspect intermediate
-  positions, open/close symmetry, anchor preservation, rapid interruptions,
+  positions, open/close symmetry, card centring, rapid interruptions,
   reduced motion, complete card content and cleanup during re-render.
 
 `tests/js/diagnostic_graph_architecture.test.js` checks the evaluator registries and

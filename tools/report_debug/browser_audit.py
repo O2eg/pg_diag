@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 from common import BUNDLE, GRAPH, inputs, sha256, write_json, check_output
+from browser_interactions import check_node_links
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("reports", nargs="+", help="HTML files or quoted glob patterns")
@@ -28,10 +29,19 @@ parser.add_argument(
     "--all-details", action="store_true", help="Also exercise two-step Expand all and simultaneous cards"
 )
 parser.add_argument(
-    "--facts", action="store_true", help="Check fact-table borders, padding and overflow in all cards and both themes"
+    "--facts", action="store_true", help="Check fact-table formatting and fixed close-button placement in all cards and both themes"
 )
 parser.add_argument(
     "--explain-button", action="store_true", help="Check the header shortcut with native clicks and active filters in both themes"
+)
+parser.add_argument(
+    "--arrow-zoom", action="store_true", help="Measure painted cause-arrow heads and stroke widths at 0.25x, 0.5x, 1x and 2x zoom"
+)
+parser.add_argument(
+    "--center-cards", action="store_true", help="Check that opening cards centres them without changing zoom; screenshots keep this view"
+)
+parser.add_argument(
+    "--node-links", action="store_true", help="Click Related checks and cause/effect links in both directions, with and without animation"
 )
 parser.add_argument("--node", action="append", help="Limit link checks to selected node IDs")
 parser.add_argument(
@@ -137,6 +147,13 @@ with sync_playwright() as playwright:
             }""")
             # Close any modal before graph checks; the browser APIs below inspect SVG directly.
             page.keyboard.press("Escape")
+            if args.arrow_zoom:
+                page.add_script_tag(content=Path(__file__).with_name("browser_routes.js").read_text())
+                result["arrow_zoom"] = page.evaluate("""async () => {
+                  auditController.expandAll();
+                  auditController.select(pgDiagReport.diagnosticGraph.links.find(link => link.kind !== 'related').from);
+                  return await inspectArrowScaling();
+                }""")
             if args.explain_button:
                 result["explain_button"] = []
                 button = page.locator("#explainAvailable")
@@ -204,7 +221,22 @@ with sync_playwright() as playwright:
                           }
                         }
                       }
-                      return {tables: tables.length, cells, problems};
+                      const headers = document.querySelectorAll('#diagnosticGraph .dg-detail .dg-panel-head');
+                      for (const head of headers) {
+                        const button = head.querySelector('.dg-panel-close');
+                        const box = button.getBoundingClientRect(), bounds = head.getBoundingClientRect();
+                        const scale = bounds.width / head.offsetWidth;
+                        const fail = kind => problems.push({node: head.closest('.dg-detail').dataset.nodeId, kind});
+                        if (Math.abs(box.top - bounds.top) > scale || Math.abs(box.right - bounds.right) > scale)
+                          fail('close-button-not-in-corner');
+                        for (const sibling of head.children) {
+                          if (sibling === button) continue;
+                          const other = sibling.getBoundingClientRect();
+                          if (other.left < box.right && other.right > box.left && other.top < box.bottom && other.bottom > box.top)
+                            fail('close-button-overlaps-heading');
+                        }
+                      }
+                      return {tables: tables.length, cells, headers: headers.length, problems};
                     }""")
                     result["fact_tables"].append({"theme": theme, **entry})
                     # Isolate the existing card at its actual width for a readable CSS screenshot.
@@ -225,13 +257,13 @@ with sync_playwright() as playwright:
                             finally:
                                 page.evaluate("document.getElementById('audit-card-preview').remove()")
                 print("Checked fact tables in both themes", flush=True)
-            if args.links or args.edges or args.all_details:
+            if args.links or args.edges or args.all_details or args.center_cards:
                 page.add_script_tag(
                     content=(Path(__file__).with_name("browser_routes.js")).read_text()
                 )
                 page.evaluate("edges => window.auditEdges = edges", args.edges or args.all_details)
                 selected = page.evaluate(
-                    "pgDiagReport.diagnosticGraph.order" if args.edges or args.all_details else
+                    "pgDiagReport.diagnosticGraph.order" if args.edges or args.all_details or args.center_cards else
                     "[...new Set(pgDiagReport.diagnosticGraph.links.flatMap(link => [link.from, link.to]))]"
                 )
                 if args.node:
@@ -245,26 +277,37 @@ with sync_playwright() as playwright:
                         for mode in (["branches", "all", "cards"] if args.all_details else ["branches", "all"]):
                             for card in [True, False]:
                                 entry = page.evaluate(
-                                    """({id, mode, card}) => {
+                                    """({id, mode, card, center}) => {
                                   auditController.collapseAll();
                                   if (mode !== 'branches') auditController.expandAll();
                                   if (mode === 'cards') auditController.expandAll();
+                                  const scale = auditController.state.view.scale;
                                   auditController.select(id);
                                   if (!card) document.querySelector(`.dg-detail[data-node-id="${id}"] .dg-panel-close`).click();
                                   const result = inspectGraphLinks({edges: auditEdges});
                                   const expected = mode === 'cards' ? pgDiagReport.diagnosticGraph.order.length - (card ? 0 : 1) : (card ? 1 : 0);
                                   result.cards = document.querySelectorAll('#diagnosticGraph .dg-detail').length;
                                   if (result.cards !== expected) result.problems.push({kind: 'card-count', expected, actual: result.cards});
+                                  if (center && card) {
+                                    const box = document.querySelector(`.dg-detail[data-node-id="${id}"] .dg-panel`).getBoundingClientRect();
+                                    const canvas = document.querySelector('#diagnosticGraph .dg-svg').getBoundingClientRect();
+                                    result.cardCenter = {dx: box.x + box.width / 2 - canvas.x - canvas.width / 2,
+                                      dy: box.y + box.height / 2 - canvas.y - canvas.height / 2};
+                                    if (Math.abs(result.cardCenter.dx) > 1 || Math.abs(result.cardCenter.dy) > 1)
+                                      result.problems.push({kind: 'card-not-centred', ...result.cardCenter});
+                                    if (auditController.state.view.scale !== scale) result.problems.push({kind: 'zoom-changed-on-open'});
+                                  }
                                   return result;
                                 }""",
-                                    {"id": node_id, "mode": mode, "card": card},
+                                    {"id": node_id, "mode": mode, "card": card, "center": args.center_cards},
                                 )
                                 result["link_cases"].append(
                                     {"theme": theme, "mode": mode, "card": card, **entry}
                                 )
                                 if args.screenshots and theme == "dark" and mode == "branches" and card:
                                     args.screenshots.mkdir(parents=True, exist_ok=True)
-                                    page.evaluate("auditController.fit()")
+                                    if not args.center_cards:
+                                        page.evaluate("auditController.fit()")
                                     screenshot = args.screenshots / (path.stem + "-" + node_id + ".png")
                                     page.locator("#diagnosticGraph .dg-canvas").screenshot(path=str(screenshot))
                         print(f"{theme}: checked links for {node_id}", flush=True)
@@ -313,11 +356,21 @@ with sync_playwright() as playwright:
                         result["link_cases"].extend(
                             {"mode": "bulk-animation", **entry} for entry in samples
                         )
+            if args.node_links:
+                result["node_links"] = []
+                for theme in ["light", "dark"]:
+                    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+                    for motion in ["no-preference", "reduce"]:
+                        entries = check_node_links(page, args.node, motion=motion)
+                        result["node_links"].extend({"theme": theme, **entry} for entry in entries)
+                        print(f"{theme}, {motion}: checked {len(entries)} card-to-card links", flush=True)
             result["passed"] = (
                 not result["bad_navigation"]
                 and not result.get("json_mismatches")
                 and not result["coverage"]["unboundItems"]
                 and not result["errors"]
+                and not result.get("arrow_zoom", {}).get("problems")
+                and all(not entry["problems"] for entry in result.get("node_links", []))
                 and all(not entry["problems"] for entry in result.get("fact_tables", []))
                 and all(not entry["problems"] for entry in result["link_cases"])
                 and all(plan["rows"] > 0 and not plan["error"] for plan in result["plans"].values())
@@ -337,6 +390,10 @@ with sync_playwright() as playwright:
                         "link_cases": len(result["link_cases"]),
                         "link_problems": sum(
                             bool(entry["problems"]) for entry in result["link_cases"]
+                        ),
+                        "node_link_cases": len(result.get("node_links", [])),
+                        "node_link_problems": sum(
+                            bool(entry["problems"]) for entry in result.get("node_links", [])
                         ),
                         "errors": result["errors"],
                     }

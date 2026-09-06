@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import runpy
 from pathlib import Path
 
 import pytest
@@ -62,6 +63,56 @@ def _artifact() -> dict:
         "snapshots": [],
         "diagnostics": [],
     }
+
+
+@pytest.mark.parametrize("theme", ["dark", "light"])
+@pytest.mark.parametrize("reduced_motion", ["no-preference", "reduce"])
+def test_card_links_centre_target_without_jumping(tmp_path: Path, theme: str, reduced_motion: str) -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    helpers = Path(__file__).resolve().parents[2] / "tools/report_debug/browser_interactions.py"
+    check_links = runpy.run_path(str(helpers))["check_node_links"]
+    report_path = tmp_path / "report.html"
+    report_path.write_text(render_html(_artifact(), validate=False), encoding="utf-8")
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1600, "height": 1000})
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.goto(report_path.as_uri(), wait_until="load")
+        page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+        # Related checks, causes, and their reverse links, including a hidden
+        # destination in another root and a card taller than the viewport.
+        entries = check_links(
+            page, ["cpu.session_churn", "health.connections", "disk.space", "health.replication"],
+            motion=reduced_motion,
+        )
+        assert entries
+        assert not [entry for entry in entries if entry["problems"]]
+        assert not errors
+        browser.close()
+
+
+@pytest.mark.parametrize("theme", ["dark", "light"])
+def test_cause_arrow_and_dashed_stroke_scale_with_canvas(tmp_path: Path, theme: str) -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    report_path = tmp_path / "report.html"
+    report_path.write_text(render_html(_artifact(), validate=False), encoding="utf-8")
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1600, "height": 1000}, reduced_motion="reduce")
+        page.goto(report_path.as_uri(), wait_until="load")
+        page.evaluate("""theme => {
+          document.documentElement.dataset.theme = theme;
+          const controller = PgDiagGraphRender.render(document.getElementById('diagnosticGraph'),
+            pgDiagReport.diagnosticGraph, {collapsed: false});
+          controller.expandAll();
+          controller.select(pgDiagReport.diagnosticGraph.links.find(link => link.kind !== 'related').from);
+        }""", theme)
+        page.add_script_tag(path=str(Path(__file__).resolve().parents[2] / "tools/report_debug/browser_routes.js"))
+        result = page.evaluate("inspectArrowScaling()")
+        assert len(result["samples"]) == 4
+        assert not result["problems"], result
+        browser.close()
 
 
 @pytest.mark.parametrize("theme", ["dark", "light"])
@@ -487,12 +538,18 @@ def test_inline_details_animate_and_handle_interruption(
                 const selected = graph.querySelector('.dg-node[data-node-id="cpu"]');
                 const box = selected.querySelector('circle').getBoundingClientRect();
                 const card = graph.querySelector('.dg-detail');
+                const cardBox = card && card.getBoundingClientRect();
+                const canvas = graph.querySelector('.dg-svg').getBoundingClientRect();
                 return {
                   peerY: peer.transform.baseVal.consolidate().matrix.f,
                   healthY: graph.querySelector('.dg-node[data-node-id="database_health"]').transform.baseVal.consolidate().matrix.f,
                   securityY: graph.querySelector('.dg-node[data-node-id="database_security"]').transform.baseVal.consolidate().matrix.f,
                   selectedX: box.x + box.width / 2,
                   selectedY: box.y + box.height / 2,
+                  cardX: cardBox ? cardBox.x + cardBox.width / 2 : null,
+                  cardY: cardBox ? cardBox.y + cardBox.height / 2 : null,
+                  canvasX: canvas.x + canvas.width / 2,
+                  canvasY: canvas.y + canvas.height / 2,
                   height: card ? +card.getAttribute('height') : 0,
                   scale: graph.querySelector('.dg-scene').transform.baseVal.consolidate().matrix.a,
                 };
@@ -525,18 +582,20 @@ def test_inline_details_animate_and_handle_interruption(
         for phase in ["middle", "open", "closing", "closed"]:
             assert samples[phase]["peerY"] == pytest.approx(samples["before"]["peerY"])
             assert samples[phase]["scale"] == samples["before"]["scale"]
-            assert samples[phase]["selectedX"] == pytest.approx(
-                samples["before"]["selectedX"], abs=1
-            )
-            assert samples[phase]["selectedY"] == pytest.approx(
-                samples["before"]["selectedY"], abs=1
-            )
+        for axis in ["X", "Y"]:
+            assert samples["open"]["card" + axis] == pytest.approx(samples["open"]["canvas" + axis], abs=1)
+            for phase in ["closing", "closed"]:
+                assert samples[phase]["selected" + axis] == pytest.approx(samples["open"]["selected" + axis], abs=1)
         if reduced_motion == "no-preference":
             assert samples["opening"] == "true"
             assert 0 < samples["middle"]["height"] < samples["open"]["height"]
             assert 0 < samples["closing"]["height"] < samples["open"]["height"]
             for field in ["healthY", "securityY"]:
                 assert samples["before"][field] < samples["middle"][field] < samples["open"][field]
+            for field in ["selectedX", "selectedY"]:
+                distance = abs(samples["open"][field] - samples["before"][field])
+                if distance > 1:
+                    assert 0 < abs(samples["middle"][field] - samples["before"][field]) < distance
         else:
             assert samples["opening"] == "false"
 
@@ -560,6 +619,12 @@ def test_inline_details_animate_and_handle_interruption(
         assert page.locator("#diagnosticGraph .dg-panel").evaluate(
             "p => !p.inert && p.scrollHeight <= p.offsetHeight + 1"
         )
+        assert page.locator("#diagnosticGraph .dg-panel").evaluate("""panel => {
+          const card = panel.getBoundingClientRect();
+          const canvas = document.querySelector('#diagnosticGraph .dg-svg').getBoundingClientRect();
+          return Math.abs(card.x + card.width / 2 - canvas.x - canvas.width / 2) < 1
+            && Math.abs(card.y + card.height / 2 - canvas.y - canvas.height / 2) < 1;
+        }""")
         # A card is truly in scene coordinates, not an unscaled DOM overlay.
         size_before = page.locator("#diagnosticGraph .dg-panel").bounding_box()
         page.get_by_role("button", name="Zoom in", exact=True).click()
@@ -579,5 +644,27 @@ def test_inline_details_animate_and_handle_interruption(
         page.wait_for_timeout(350)
         assert page.locator("#diagnosticGraph .dg-detail").count() == 0
         assert page.locator("#diagnosticGraph .dg-measurer").count() == 1
+        # A link can open a node whose ancestors were collapsed; reduced motion
+        # reaches its final position without an intermediate frame.
+        scale = page.evaluate("""() => {
+          const controller = PgDiagGraphRender.render(document.querySelector('#diagnosticGraph'),
+            pgDiagReport.diagnosticGraph, {collapsed: false});
+          const scale = controller.state.view.scale;
+          controller.select('disk.space');
+          return scale;
+        }""")
+        page.locator('#diagnosticGraph').get_by_role('button', name='Full screen', exact=True).click()
+        page.wait_for_selector('#diagnosticGraph .dg-svg[data-animating="false"]')
+        centred = page.locator('#diagnosticGraph .dg-panel').evaluate("""panel => {
+          const box = panel.getBoundingClientRect();
+          const svg = document.querySelector('#diagnosticGraph .dg-svg');
+          const canvas = svg.getBoundingClientRect();
+          return {dx: box.x + box.width / 2 - canvas.x - canvas.width / 2,
+            dy: box.y + box.height / 2 - canvas.y - canvas.height / 2,
+            scale: svg.querySelector('.dg-scene').transform.baseVal.consolidate().matrix.a};
+        }""")
+        assert centred['dx'] == pytest.approx(0, abs=1)
+        assert centred['dy'] == pytest.approx(0, abs=1)
+        assert centred['scale'] == pytest.approx(scale)
         assert errors == []
         browser.close()

@@ -1314,9 +1314,10 @@ The canvas toolbar contains **Expand all**, **Collapse all**, zoom controls,
 node's card. In this mode cards stay open independently, and each close button
 closes only its own card. **Collapse all** closes all cards and restores the six roots.
 Full screen fills the page viewport; **Exit full screen** or Escape returns to the report. Opening a report item
-also exits full screen. Drag to pan and scroll to zoom. Layout changes animate
-without stretching unrelated sibling branches, and respect reduced-motion
-preferences. Both report themes are supported.
+also exits full screen. Drag to pan and scroll to zoom. Opening a node smoothly
+centres its card in the canvas without changing zoom. Layout changes animate
+without stretching unrelated sibling branches and respect reduced-motion
+preferences. Manual pan or zoom cancels automatic centring. Both report themes are supported.
 Branches share unused horizontal space beside deeper descendants. Solid tree
 connections follow the gaps between levels with rounded bends and avoid unrelated
 circles and detail cards.
