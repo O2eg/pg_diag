@@ -108,7 +108,7 @@
     maintenanceAgeSec: [3600, 14400] // health: long maintenance
   };
 
-  const SEVERITY_WEIGHT = {high: 1.0, critical: 1.0, medium: 0.6, moderate: 0.6, low: 0.3, info: 0.15, ok: 0, none: 0};
+  const SEVERITY_WEIGHT = {high: 1.0, critical: 1.0, medium: 0.6, moderate: 0.6, low: 0.5, info: 0, ok: 0, none: 0};
   const XID_LIMIT = 2 ** 31;
 
   function seriesByPrefix(ctx, itemId, prefix) {
@@ -198,25 +198,34 @@
     const roles = (options && options.roles) || ["primary", "support"];
     let best = null;
     for (const binding of ctx.node.bindings) {
-      if (!roles.includes(binding.role) || binding.role === "fact") continue;
+      if (!roles.includes(binding.role)) continue;
       if (options && options.excludeItems && options.excludeItems.includes(binding.id)) continue;
       if (options && options.weightedOnly && typeof binding.weight !== "number") continue;
       const item = ctx.item(binding.id);
-      if (ctx.presence(binding.id) !== "present") continue;
+      if (!["present", "empty"].includes(ctx.presence(binding.id))) continue;
       const rows = ctx.rows(binding.id);
-      if (!rows.length) continue;
       let severity = null;
       if (hasColumn(item, "risk_level")) {
+        if (!rows.length) {
+          best = maxScore(best, 0);
+          ctx.reason(ctx.title(binding.id) + ": no risk findings returned", binding.id);
+        }
         for (const row of rows) {
-          const level = String(row.risk_level || "").toLowerCase();
+          if (binding.id === "replication.replication_capacity" && row.resource === "wal_level" && ctx.runtime.in_recovery === true) {
+            ctx.missing("Local standby wal_level does not establish the upstream primary's logical WAL availability. Check wal_level on the primary; copied publications alone do not prove a standby replication fault.");
+            continue;
+          }
+          const level = String(row.risk_level || "").trim().toLowerCase();
           const weight = SEVERITY_WEIGHT[level];
           if (weight !== undefined && (severity === null || weight > severity)) severity = weight;
+          if (weight === undefined) ctx.missing(ctx.title(binding.id) + ": " + (row.risk_reason || "Unknown or missing risk level; an approved baseline or an explicit risk assessment is required."));
+          else if (weight > 0 && row.risk_reason) ctx.reason(ctx.title(binding.id) + ": " + level + " — " + truncate(row.risk_reason, 220), binding.id);
         }
-        if (severity === null) severity = 0;
       } else if (typeof binding.weight === "number") {
-        // A weight of 1 marks findings that are critical on their own (one leaked secret
-        // is enough); lighter weights grow with the number of rows.
-        severity = binding.weight >= 1 ? 1 : binding.weight * (0.6 + 0.4 * Math.min(1, rows.length / 10));
+        // Explicit weights identify findings-only queries. Even one finding warns;
+        // inventory without a risk level or a weight cannot establish an assessment.
+        severity = rows.length ? (binding.weight >= 0.67 ? 1 : Math.max(0.5, binding.weight)) : 0;
+        if (!rows.length) ctx.reason(ctx.title(binding.id) + ": no findings returned", binding.id);
       } else if (options && options.rowsAreFindings) {
         severity = 0.6 * (0.6 + 0.4 * Math.min(1, rows.length / 10));
       } else {
@@ -649,15 +658,7 @@
     },
 
     generic(ctx) {
-      const score = findingsScore(ctx);
-      if (score === null) {
-        const collected = ctx.node.bindings.filter((b) => b.role !== "fact" && ["present", "empty"].includes(ctx.presence(b.id)));
-        if (collected.length) {
-          ctx.reason("No findings in " + collected.length + " collected item(s)");
-          return 0;
-        }
-      }
-      return score;
+      return findingsScore(ctx);
     },
 
     platform_facts(ctx) {
@@ -677,7 +678,8 @@
         const total = sumBy(volume, "database_size_bytes");
         ctx.fact("Databases", volume.length + ", " + fmtBytes(total));
       }
-      return ctx.anyCollected() ? 0 : null;
+      ctx.missing("Platform inventory describes the host and databases; it contains no health criterion. Inspect the resource, configuration and incident branches.");
+      return null;
     },
 
     build_facts(ctx) {
@@ -687,7 +689,8 @@
       if (cores) ctx.fact("CPU cores", String(cores));
       if (model) ctx.fact("CPU model", model);
       if (!config.configure && !ctx.rows("overview.pg_config").length) {
-        return cores || model ? 0 : null;
+        ctx.missing("CPU inventory cannot establish build safety; collect pg_config build flags.");
+        return null;
       }
       let score = 0;
       if (config.cassert) {
@@ -1169,7 +1172,7 @@
         }
       }
       if (rates.length) ctx.reason("Host traffic is not PostgreSQL-only. Virtual and physical interfaces can observe the same packets; their rates are not summed.");
-      if (rates.length && score === null) ctx.reason("No matching current link speed: throughput is shown as a fact, not a saturation or health verdict.");
+      if (rates.length && score === null) ctx.missing("No matching current link speed: throughput is shown as a fact, not a saturation or health verdict.");
       return score;
     },
 
@@ -1220,7 +1223,7 @@
           for (const key of ["driver", "speed", "duplex", "link"]) if (config[key] !== undefined) ctx.fact(name + " " + key, config[key]);
         }
       }
-      ctx.reason("Inventory is context, not evidence of a healthy or faulty path. Unused/down interfaces and missing link details can be intentional.");
+      ctx.missing("Inventory is context, not evidence of a healthy or faulty path. Unused/down interfaces and missing link details can be intentional.");
       return null;
     },
 
@@ -1236,7 +1239,7 @@
         if (setting) ctx.fact(name, setting.raw);
       }
       if (ctx.presence(id) === "present") ctx.reason("Collected " + (udp ? "UDP" : "TCP") + " settings are configuration facts, not RTT, retransmission or socket-queue measurements", id);
-      ctx.reason("No universal tuning verdict is assigned. Correlate settings with transport counters and application requirements.");
+      ctx.missing("No universal tuning verdict is assigned. Correlate settings with transport counters and application requirements.");
       return null;
     },
 
@@ -1267,6 +1270,7 @@
         if (write) score = maxScore(score, scalePair(share, THRESHOLDS.clientWriteSamplePct));
       }
       ctx.reason(write ? "ClientWrite may mean a slow consumer, large results or transport backpressure; it does not isolate the network." : "ClientRead is waiting for the application, often normal think time. It is not scored as a network fault.");
+      if (!write) ctx.missing("ClientRead duration has no universal fault threshold; application think time and expected request latency are required.");
       return score;
     },
 
@@ -1288,7 +1292,7 @@
       }
       const tps = seriesTotalStats(ctx, "snapshot_charts_db.database_transaction_rate");
       if (tps) ctx.fact("Transactions p95", fmtNum(tps.p95, 1) + "/s");
-      ctx.reason("Calls are cumulative, not a measured request rate or RTT. Transactions may contain multiple protocol exchanges; batching requires application evidence.");
+      ctx.missing("Calls are cumulative, not a measured request rate or RTT. Transactions may contain multiple protocol exchanges; batching requires application evidence.");
       return null;
     },
 
@@ -1341,7 +1345,15 @@
 
     network_wal_receive(ctx) {
       const id = "replication.wal_receiver";
-      let score = ctx.presence(id) === "empty" ? 0 : null;
+      let score = null;
+      if (ctx.presence(id) === "empty") {
+        const state = ctx.rows("replication.standby_recovery_state")[0];
+        const recovery = state && typeof state.in_recovery === "boolean" ? state.in_recovery : ctx.runtime.in_recovery;
+        if (recovery === false) {
+          ctx.reason("This server is a primary; a physical WAL receiver is not applicable.", id);
+          score = 0;
+        } else ctx.missing("No WAL receiver was returned. A standby may be disconnected or restoring archived WAL; receiver absence alone cannot establish a healthy stream.");
+      }
       for (const row of ctx.rows(id)) {
         if (row.status) score = maxScore(score, row.status === "streaming" ? 0 : 0.6);
         const lag = lsnGap(row.latest_end_lsn, row.written_lsn);
@@ -2174,12 +2186,13 @@
         const lagBytes = toNumber(row.current_to_replay_lag_bytes);
         const lagSec = toNumber(row.replay_lag_seconds);
         score = maxScore(score, lagBytes === null ? null : scalePair(lagBytes, THRESHOLDS.replayLagBytes), lagSec === null ? null : scalePair(lagSec, THRESHOLDS.replayLagSec));
-        if (String(row.state) !== "streaming") score = maxScore(score, 0.6);
+        if (row.state && row.state !== "streaming") score = maxScore(score, 0.6);
+        if (!row.state || lagBytes === null && lagSec === null) ctx.missing("Sender state and a valid lag measurement are required.");
         ctx.reason("Standby " + (row.application_name || row.client_addr) + ": " + row.state + ", replay lag " + fmtBytes(lagBytes) + (lagSec !== null ? " / " + fmtSeconds(lagSec) : ""), "replication.physical_replication");
       }
       const receiver = ctx.rows("replication.wal_receiver");
       for (const row of receiver) {
-        if (String(row.status) !== "streaming") {
+        if (row.status && row.status !== "streaming") {
           score = maxScore(score, 0.6);
           ctx.reason("WAL receiver status " + row.status, "replication.wal_receiver");
         }
@@ -2248,12 +2261,22 @@
           ctx.reason("Replay age is informational without matching samples of unapplied WAL; an idle primary also makes it grow", "snapshot_charts_db.standby_replay_delay");
         }
       }
-      score = maxScore(score, findingsScore(ctx, {roles: ["support"], weightedOnly: true}));
-      if (score === null && ctx.anyCollected()) {
-        if (delay || (standby.length && standby[0].in_recovery === true)) return null;
-        if (!senders.length && !receiver.length && !slots.length) ctx.reason("No physical replication configured");
-        return 0;
+      score = maxScore(score, evaluators.replication_events(ctx), findingsScore(ctx, {roles: ["support"], weightedOnly: true, excludeItems: ["server_log.replication_events"]}));
+      return score;
+    },
+
+    replication_events(ctx) {
+      const id = "server_log.replication_events";
+      if (!["present", "empty"].includes(ctx.presence(id))) return null;
+      let score = 0;
+      for (const row of ctx.rows(id)) {
+        const severity = String(row.severity || "").toUpperCase();
+        const level = ["PANIC", "FATAL", "ERROR"].includes(severity) ? 1 : severity === "WARNING" ? 0.5 : 0;
+        if (!["PANIC", "FATAL", "ERROR", "WARNING", "LOG", "INFO", "NOTICE", "DEBUG", "DEBUG1", "DEBUG2", "DEBUG3", "DEBUG4", "DEBUG5"].includes(severity)) ctx.missing("Replication event severity is missing or unrecognized.");
+        score = maxScore(score, level);
+        if (level) ctx.reason((row.event_type || "Replication event") + ": " + severity + ", " + (toNumber(row.occurrences) ?? 1) + " occurrence(s); " + truncate(row.message, 180), id);
       }
+      ctx.reason("Logged WARNING events warn; ERROR/FATAL/PANIC events are critical. Informational replication messages are not failures.", id);
       return score;
     },
 
@@ -2390,5 +2413,5 @@
     }
   };
 
-  return {THRESHOLDS, evaluators, pressureOf};
+  return {THRESHOLDS, evaluators, pressureOf, findingsScore};
 });

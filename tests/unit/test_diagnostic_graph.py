@@ -86,6 +86,7 @@ def test_graph_definition_is_a_tree_with_six_roots() -> None:
     for link in graph["links"]:
         assert link["from"] in nodes and link["to"] in nodes, f"dangling link {link}"
         assert link["from"] != link["to"]
+        assert link.get("kind", "cause") in {"cause", "related"}
 
 
 def test_every_catalog_item_is_bound_and_every_binding_exists() -> None:
@@ -115,8 +116,10 @@ def test_large_binding_lists_have_complete_semantic_groups() -> None:
             assert group["label"].strip()
             assert group["evaluator"] in evaluators
             assert 1 <= len(group["bindings"]) <= 6, (node["id"], group["id"])
+            assert len(group["bindings"]) == len(set(group["bindings"])), (
+                node["id"], group["id"], "duplicate item within one card"
+            )
             grouped.extend(group["bindings"])
-        assert len(grouped) == len(set(grouped)), f"{node['id']}: repeated grouped item"
         assert set(grouped) == bindings, f"{node['id']}: groups must cover exactly the rule's inputs"
 
 

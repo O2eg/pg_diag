@@ -134,10 +134,15 @@
       const reasons = [];
       const facts = {};
       const evidence = [];
+      const limits = [];
+      const readSources = new Set();
       const ctx = {
         node,
         runtime,
-        ...createAccess(items, opts.onRead ? (itemId, method) => opts.onRead(nodeId, itemId, method) : null),
+        ...createAccess(items, (itemId, method) => {
+          readSources.add(itemId);
+          if (opts.onRead) opts.onRead(nodeId, itemId, method);
+        }),
         title: (itemId) => (items[itemId] && items[itemId].title) || itemId,
         // Evidence pool: scored bindings, or every binding for facts-only nodes.
         anyPresent: () => evidencePool(node).some((binding) => presenceOf(binding.id) === "present"),
@@ -149,6 +154,7 @@
         fact: (name, value) => {
           if (value !== null && value !== undefined && value !== "") facts[name] = String(value);
         },
+        missing: text => { if (text && !limits.includes(text)) limits.push(text); },
         logWindowMinutes: () => logWindowMinutes(runtime)
       };
       ctx.facts = makeFacts(ctx);
@@ -167,6 +173,8 @@
         if (collected) {
           try {
             let value = evaluator(ctx);
+            for (const limit of Data.assessmentLimits(ctx, evidencePool(node).filter(b => readSources.has(b.id)))) ctx.missing(limit);
+            if (limits.length && statusOf(value) === STATUS.ok) value = null;
             if (node.pressure) value = dampByPressure(ctx, value, node.pressure);
             // A declarative cap bounds nodes whose findings are real but are not a
             // failure of this root (configuration advice, duplicated security checks).
@@ -213,7 +221,7 @@
         bindings,
         present: bindings.filter((binding) => binding.presence === "present").length,
         scoredBindings: bindings.filter((binding) => binding.role !== "fact").length,
-        hints: buildHints(node, runtime, presenceOf, itemOf, logCollected),
+        hints: [...limits, ...buildHints(node, runtime, presenceOf, itemOf, logCollected)],
         causes: [],
         causedBy: []
       };
@@ -239,7 +247,8 @@
         const id = node.id + ".sources." + group.id;
         if (results[id] || byId[id]) throw new Error("Duplicate source group " + id);
         for (const binding of bindings) {
-          if (grouped.has(binding.id)) throw new Error("Duplicate grouped binding " + binding.id);
+          // A context chart can support several directions. Each direction
+          // still evaluates only its own declared inputs; coverage uses IDs.
           grouped.add(binding.id);
         }
         const present = bindings.filter(binding => binding.presence === "present").length;
@@ -259,8 +268,8 @@
     }
     for (const link of definition.links || []) {
       if (results[link.from] && results[link.to]) {
-        results[link.from].causes.push({to: link.to, label: link.label || ""});
-        results[link.to].causedBy.push({from: link.from, label: link.label || ""});
+        results[link.from].causes.push({to: link.to, label: link.label || "", kind: link.kind || "cause"});
+        results[link.to].causedBy.push({from: link.from, label: link.label || "", kind: link.kind || "cause"});
       }
     }
 
@@ -277,10 +286,17 @@
         const result = results[child];
         // A healthy sub-check cannot fill a missing parent assessment. Real
         // findings still propagate even when another required source is absent.
-        return result.kind === "sources" && node.ownScore === null && result.status === STATUS.ok ? null : result.score;
+        return node.ownScore === null && result.status === STATUS.ok &&
+          (result.kind === "sources" || node.evaluator !== "aggregate") ? null : result.score;
       }));
       node.score = maxScore(node.ownScore, node.childScore);
       node.status = statusOf(node.score);
+      if (node.status === STATUS.noData && !node.hints.length) {
+        const bindings = node.inputBindings || node.bindings;
+        node.hints.push(node.evaluator === "aggregate" ? "None of the child directions has enough evidence for an assessment." :
+          bindings.some(b => ["present", "empty"].includes(b.presence)) ? "Collected sources do not provide the valid measurements or applicable criteria required for this assessment." :
+          "No usable sources were collected for this assessment; inspect the report item collection statuses.");
+      }
     }
 
     const statusCounts = {ok: 0, warn: 0, crit: 0, no_data: 0};

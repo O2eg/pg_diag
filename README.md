@@ -1302,51 +1302,78 @@ permissions, collection mode, and host permissions.
 
 ### Diagnostic Graph
 
-The HTML report opens with a diagnostic graph: six roots (`cpu`, `ram`,
-`disk`, `network`, `database_health`, `database_security`), each with a cause tree
-underneath, drawn as a top-down tree with siblings side by side on a zoomable,
-pannable canvas. Root names sit inside enlarged circles. Drag to pan, scroll
-to zoom, or use the in-canvas minus/plus, Fit and 1:1 controls. Every node is bound to the report
-items that carry its evidence (every catalog item is bound to at least one
-node), and its color is computed in the browser from the raw item data: green
-to red by score, grey when the report has no data for it. Resource causes such
-as sequential scans or checkpoint bursts are weighted by the pressure of their
-resource. CPU separates user work, system work, I/O wait and hypervisor steal;
-I/O-wait contributors use I/O-wait pressure, not user CPU. RAM separates
-available memory/OOM, swap usage and cache misses. Disk separates device
-latency, reads, writes and free space, with the relevant causes underneath.
-Network covers per-interface traffic, errors/drops, client connections and
-waits, WAL transport, TCP/UDP configuration, listeners, authentication and
-encryption. Every Network-tagged item is bound under this root. New snapshots
-collect RX/TX error and drop rates from `/proc/net/dev`; older reports show
-missing data instead of a healthy verdict. Traffic without a matching current
-link speed, ClientRead and inventory remain informational. Replication replay
-lag and query timeouts alone do not establish a network problem.
-The final branch score is the maximum of its own evidence and its children;
-a critical child always lights the path to its root. I/O wait is not counted
-as CPU work, and replay age alone does not make an idle, caught-up standby
-unhealthy. Log evidence is classified by event type; overlapping error and
-deadlock sources are not added together. Scores are internal color heuristics,
-not displayed percentages. Labels use OK / Warning / Critical / No data,
-including for security risks. Cause arrows appear only for the selected node
-and run through clear lanes between levels.
-Clicking a node unfolds a details card directly underneath it inside the canvas, showing why it has its
-color, the facts behind it, hints about missing data (for example "run snapshots mode" or "use local or remote
-collection mode"), related causes across the graph, and the bound items; clicking
-an item scrolls the report to it. Cards scale and pan with the graph. The layout
-animates to make room for their full content, with the clicked node anchored
-and zoom unchanged; click the node again to close. Reduced-motion preferences
-are respected. The module lives in
-`src/pg_diag/render/graph/` (`graph.json` is the declarative graph,
-`pg-diag-graph-data.js` handles data access and time-series helpers,
-`pg-diag-graph-rules.js` contains the evaluation rules,
-`pg-diag-graph.js` traverses the graph and combines scores, `pg-diag-graph-render.js` is the
-renderer) and is specified in `DIAGNOSTIC_GRAPH_SPEC.md` next to it.
+The HTML report opens with six collapsed roots in Fit view: CPU, RAM, Disk and
+Network in the upper row, with Database health and Database security below.
+Root colors already include findings in hidden branches. Click a root or node
+to reveal its directions and detail card. Labels and collapsed-child counters
+sit inside the circles; root captions are larger than child captions.
+
+The canvas toolbar contains **Expand all**, **Collapse all**, zoom controls,
+**Fit**, **1:1**, and **Full screen**. Full screen fills the page viewport;
+**Exit full screen** or Escape returns to the report. Opening a report item
+also exits full screen. Drag to pan and scroll to zoom. Layout changes animate
+without stretching unrelated sibling branches, and respect reduced-motion
+preferences. Both report themes are supported.
+
+Each color has a diagnostic meaning:
+
+- **Green / OK**: the assessed measurements or completed checks did not reveal
+  warning conditions. Data presence alone does not establish OK.
+- **Yellow / Warning**, **red / Critical**: measured values or explicit findings
+  justify the severity. Cards show the evidence, values, units and criteria.
+- **Grey / Not assessed or No data**: a required measurement, complete window,
+  applicable criterion or approved baseline is unavailable. **Assessment limits**
+  explains why. Inventories and activity counts without a health criterion
+  remain reference information.
+
+Large evidence lists are split into named diagnostic directions with at most
+six report-item links per card. Each direction assesses its own inputs; it
+does not inherit a sibling's findings. Relevant context can appear in several
+directions: connection incident and limit cards include session-count charts.
+Every catalog item is bound to the
+graph, including empty, failed and unsupported items. Clicking a link opens the
+corresponding report item. Children are shown on the canvas, not repeated as a
+list in the card. Dashed arrows point from a symptom to a possible cause to
+investigate; they do not prove causation. Shared-evidence links have no arrow.
+Both are shown only for the selected node. Cards distinguish **Possible causes**,
+**Possible effects** and **Related checks**. During animation, a link is hidden
+while a moving node or closing card obstructs its route.
+
+For checks of already built reports, see the reusable
+[report debugging tools](tools/report_debug/README.md): item navigation, graph
+routes, saved-report comparison, metric/log replay and graph-only HTML refresh.
+
+The graph evaluates raw item data rather than copying the report item's
+summary severity. It distinguishes missing samples from measured zeros and
+current-window deltas from cumulative statistics. Incomplete log windows,
+truncated results and unknown risk levels cannot prove a healthy check;
+observed findings remain visible. The warning/critical boundaries share one
+scale across original nodes and the new directions. Resource-contribution
+rules additionally account for resource pressure, so their contextual
+assessment can differ from an independent source direction. The card explains
+when a branch's final color comes from its children. A healthy child cannot
+replace missing measurements in a parent that requires its own assessment.
+
+CPU separates user work, system work, I/O wait and hypervisor steal. RAM
+separates available memory/OOM, swap occupancy and cache misses. Disk covers
+latency, reads, writes and free space. Network covers interface traffic and
+errors/drops, client waits and connections, replication transport, settings
+and access/encryption. I/O wait is not CPU execution; ClientRead is not itself
+a network fault; replay age without unapplied WAL does not establish lag.
+Rate thresholds are diagnostic heuristics, not universal capacity limits.
+
+The module lives in `src/pg_diag/render/graph/`: `graph.json` declares the tree,
+`pg-diag-graph-data.js` provides data access and shared calculations,
+`pg-diag-graph-rules.js` contains the original rules,
+`pg-diag-graph-groups.js` assesses the named directions,
+`pg-diag-graph.js` combines evidence and coverage, and
+`pg-diag-graph-render.js` renders the graph. The normative contract is
+[DIAGNOSTIC_GRAPH_SPEC.md](src/pg_diag/render/graph/DIAGNOSTIC_GRAPH_SPEC.md).
 
 Repeated table samples store their column schema once in `snapshot_schemas` and
 keep only status, rows, and an optional failure reason in each snapshot point.
 Raw snapshot points are not duplicated into the self-contained HTML after
-derived metric items have been built. Reports use artifact schema version 4.
+derived metric items have been built. Reports use artifact schema version 5.
 The renderer accepts that version only. Normal artifacts contain the complete
 unified content document and source provenance. Artifacts produced with
 `--strip-meta` use the schema's reduced metadata form: the presentation unit

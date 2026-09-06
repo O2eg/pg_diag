@@ -8,7 +8,7 @@
 })(typeof self !== "undefined" ? self : this, function (Data, Rules) {
   "use strict";
   const {toNumber, isFiniteNumber, maxScore, statusOf, fmtBytes, fmtNum, fmtPct,
-    seriesStats, sumSeries, sumBy, maxBy, hasColumn, observedZeros} = Data;
+    seriesStats, sumSeries, sumBy, maxBy, observedZeros} = Data;
   const T = Rules.THRESHOLDS;
   const collected = (ctx, id) => ["present", "empty"].includes(ctx.presence(id));
   const numeric = value => { const n = toNumber(value); return n !== null && n >= 0 ? n : null; };
@@ -19,8 +19,7 @@
     if (!isFiniteNumber(value)) return null;
     if (value < 0) { ctx.missing(label + " is negative; a reset or invalid interval cannot establish a healthy measurement."); return null; }
     const reverse = pair[0] > pair[1];
-    const reached = threshold => reverse ? value <= threshold : value >= threshold;
-    const score = reached(pair[1]) ? 1 : reached(pair[0]) ? 0.5 : 0;
+    const score = Data.scalePair(value, pair);
     ctx.fact(label, format(value, unit));
     ctx.reason(label + ": " + format(value, unit) + "; warning " + (reverse ? "≤ " : "≥ ") + format(pair[0], unit) + ", critical " + (reverse ? "≤ " : "≥ ") + format(pair[1], unit), id);
     return score;
@@ -40,13 +39,19 @@
     return metric(ctx, label + " p95", stats.p95, pair, unit, id);
   }
   function rowMetric(ctx, id, column, label, pair, unit) {
+    if (ctx.rows(id).some(row => toNumber(row[column]) < 0)) ctx.missing(label + ": negative values indicate a counter reset or invalid interval.");
     return metric(ctx, label, maxBy(ctx.rows(id), column).value, pair, unit, id);
   }
   function countCheck(ctx, id, label, columns, score = 0.5) {
     const rows = ctx.rows(id);
+    if (rows.some(row => columns.some(c => toNumber(row[c]) < 0))) {
+      ctx.missing(label + ": negative counters indicate a reset or invalid interval.");
+      return null;
+    }
     const values = columns.map(c => sumBy(rows, c)).filter(isFiniteNumber);
     if (!values.length) {
-      if (ctx.presence(id) !== "empty") return null;
+      // No matched endpoint rows is not an observed zero in a delta window.
+      if (ctx.presence(id) !== "empty" || id.startsWith("snapshot_")) return null;
       ctx.reason(label + ": no matching events collected", id);
       return 0;
     }
@@ -62,36 +67,7 @@
     return score;
   }
   function findings(ctx) {
-    let score = null;
-    const levels = {critical: 1, high: 1, medium: 0.5, moderate: 0.5, low: 0.5, info: 0, ok: 0, none: 0};
-    for (const b of ctx.node.bindings) {
-      const item = ctx.item(b.id);
-      if (!item) continue;
-      const rows = ctx.rows(b.id);
-      if (hasColumn(item, "risk_level")) {
-        if (ctx.presence(b.id) === "empty") {
-          ctx.reason(ctx.title(b.id) + ": no risk findings returned", b.id);
-          score = maxScore(score, 0);
-        }
-        for (const row of rows) {
-          const level = String(row.risk_level || "").trim().toLowerCase();
-          if (!(level in levels)) {
-            ctx.missing(ctx.title(b.id) + ": " + (level === "unknown" ? row.risk_reason || "The report cannot judge this configuration without an approved baseline." : "Unrecognized risk level: " + (level || "missing")));
-            continue;
-          }
-          score = maxScore(score, levels[level]);
-          if (levels[level] > 0) ctx.reason(ctx.title(b.id) + ": " + level + (row.risk_reason ? " — " + Data.truncate(row.risk_reason, 220) : ""), b.id);
-        }
-        if (rows.length) ctx.fact(ctx.title(b.id) + " assessed rows", String(rows.length));
-      } else if (isFiniteNumber(b.weight) && collected(ctx, b.id)) {
-        // An explicit binding weight marks a findings-only query, never an inventory.
-        const severity = b.weight >= 0.67 ? 1 : 0.5;
-        score = maxScore(score, rows.length ? severity : 0);
-        ctx.reason(ctx.title(b.id) + ": " + rows.length + " findings; " + (severity === 1 ? "critical" : "warning") + " if any", b.id);
-      }
-    }
-    if (score !== null) ctx.reason("Reported risk levels: low/medium → Warning; high/critical → Critical; ok/info → OK.");
-    return score;
+    return Rules.findingsScore(ctx, {roles: ["primary", "support", "fact"]});
   }
 
   const evaluators = {
@@ -258,7 +234,11 @@
       return score;
     },
     temp_statements(ctx) { return rowMetric(ctx, "snapshot_delta_workload.sql_temp_io_delta", "temp_io_bytes_per_sec", "Largest statement temporary I/O", T.tempBytesPerSec, "B/s"); },
-    temp_database(ctx) { return chartMetric(ctx, "snapshot_charts_db.database_temp_bytes_rate", "Temporary file generation", T.tempBytesPerSec, "B/s"); },
+    temp_database(ctx) {
+      const rate = chartMetric(ctx, "snapshot_charts_db.database_temp_bytes_rate", "Temporary file generation", T.tempBytesPerSec, "B/s");
+      if (rate !== null) return rate;
+      return metric(ctx, "Temporary file generation in delta window", sumBy(ctx.rows("snapshot_delta_workload.database_workload_delta"), "temp_bytes_per_sec"), T.tempBytesPerSec, "B/s", "snapshot_delta_workload.database_workload_delta");
+    },
     checkpoint_activity(ctx) { return legacy(ctx, "checkpoints", "Requested checkpoint share is checked in the observed window; explicit/manual checkpoints in logs are excluded from WAL-pressure evidence."); },
     checkpoint_timing(ctx) {
       const id = "snapshot_charts_db.checkpoint_write_sync_time_delta";
@@ -267,8 +247,12 @@
       if (stats) ctx.fact("Checkpoint sync time per interval p95", format(stats.p95, "ms"));
       const deltaId = "snapshot_delta_workload.checkpointer_delta", row = ctx.rows(deltaId)[0];
       if (row) {
-        const done = numeric(row.checkpoints_done_delta), sync = numeric(row.sync_time_ms_delta);
-        if (done > 0 && sync !== null) return metric(ctx, "Mean sync time per completed checkpoint in window", sync / done / 1000, T.checkpointSyncSec, "s", deltaId);
+        const checkpoints = numeric(row.checkpoints_done_delta), restartpoints = numeric(row.restartpoints_done_delta);
+        // pg_stat_checkpointer sync_time includes both checkpoints and restartpoints.
+        // Missing completion counters (older servers) cannot be replaced by request counts.
+        const done = checkpoints !== null && restartpoints !== null ? checkpoints + restartpoints : null;
+        const sync = numeric(row.sync_time_ms_delta);
+        if (done > 0 && sync !== null) return metric(ctx, "Mean sync time per completed checkpoint/restartpoint in window", sync / done / 1000, T.checkpointSyncSec, "s", deltaId);
         if (done === 0 && sync === 0) { ctx.reason("No checkpoint completed and no sync time accumulated in the measured window.", deltaId); return 0; }
       }
       ctx.missing("The sync-time chart alone has no per-checkpoint denominator. Collect a valid checkpointer delta or inspect individual sync durations in checkpoint logs.");
@@ -350,43 +334,50 @@
         }
         if (row.active === false) score = maxScore(score, metric(ctx, "Inactive slot " + row.slot_name + " retained WAL", numeric(row.retained_wal_bytes), T.retainedWalBytes, "B", id));
       }
-      return maxScore(score, evaluators.replication_capacity(ctx), findings(ctx));
+      return maxScore(score, evaluators.replication_capacity(ctx));
     },
     replication_sync(ctx) { return legacy(ctx, "network_sync"); },
-    replication_capacity(ctx) { return rowMetric(ctx, "replication.replication_capacity", "utilization_pct", "Highest replication resource usage", T.capacityPct, "%"); },
+    replication_capacity(ctx) { return maxScore(rowMetric(ctx, "replication.replication_capacity", "utilization_pct", "Highest replication resource usage", T.capacityPct, "%"), findings(ctx)); },
     replication_logical(ctx) {
-      let score = countCheck(ctx, "snapshot_delta_workload.subscription_errors_conflicts_delta", "Logical replication errors/conflicts in window", ["apply_error_count_delta", "sync_error_count_delta", "conflict_count_delta"]);
+      let score = null;
+      const deltaId = "snapshot_delta_workload.subscription_errors_conflicts_delta";
+      // Conflicts can also be apply errors. Report each counter independently, never sum them.
+      const windowRows = ctx.rows(deltaId);
+      const hasWindow = windowRows.some(r => ["apply_error_count_delta", "sync_error_count_delta", "conflict_count_delta"].some(c => numeric(r[c]) !== null));
       const id = "replication.subscription_workers";
-      for (const row of ctx.rows(id)) {
+      const rows = ctx.rows(id);
+      for (const row of rows) {
         if (row.subenabled === true && typeof row.worker_running === "boolean") {
           const failed = !row.worker_running;
           score = maxScore(score, failed ? 0.5 : 0);
           ctx.reason("Subscription " + row.subname + ": enabled worker " + (failed ? "not running (warning)" : "running"), id);
         }
       }
-      if (score === null) score = countCheck(ctx, id, "Cumulative logical replication errors since reset", ["apply_error_count", "sync_error_count", "conflict_count"]);
-      return score;
-    },
-    recovery_conflicts(ctx) { return countCheck(ctx, "snapshot_delta_workload.standby_recovery_conflicts_delta", "Recovery conflicts in window", ["conflicts_total_delta"]); },
-    replication_events(ctx) {
-      const id = "server_log.replication_events";
-      if (!collected(ctx, id)) return null;
-      let score = 0;
-      for (const row of ctx.rows(id)) {
-        const severity = String(row.severity || "").toUpperCase();
-        const level = ["PANIC", "FATAL", "ERROR"].includes(severity) ? 1 : severity === "WARNING" ? 0.5 : 0;
-        score = maxScore(score, level);
-        if (level) ctx.reason((row.event_type || "Replication event") + ": " + severity + ", " + (numeric(row.occurrences) ?? 1) + " occurrence(s); " + Data.truncate(row.message, 180), id);
+      const counterId = hasWindow ? deltaId : id;
+      for (const [column, label] of [["apply_error_count", "Apply errors"], ["sync_error_count", "Synchronization errors"], ["conflict_count", "Logical conflicts"]]) {
+        score = maxScore(score, countCheck(ctx, counterId, label + (hasWindow ? " in window" : " since statistics reset"), [column + (hasWindow ? "_delta" : "")]));
       }
-      ctx.reason("Logged WARNING events warn; ERROR/FATAL/PANIC events are critical. Informational replication messages are not failures.");
-      return score;
-    }
+      ctx.reason("Apply errors and conflict counters overlap and are not added. Cumulative counters describe history since reset, not necessarily a current failure.");
+      return maxScore(score, Rules.findingsScore(ctx, {roles: ["primary", "support", "fact"], excludeItems: [id]}));
+    },
+    recovery_conflicts(ctx) {
+      const delta = countCheck(ctx, "snapshot_delta_workload.standby_recovery_conflicts_delta", "Recovery conflicts in window", ["conflicts_total_delta"]);
+      if (delta !== null) return delta;
+      ctx.reason("Without a valid delta, recovery-conflict counters describe history since statistics reset, not events in the report window.");
+      return countCheck(ctx, "replication.standby_conflicts", "Recovery conflicts since statistics reset", ["conflicts_total"]);
+    },
+    replication_events(ctx) { return legacy(ctx, "replication_events"); }
+
   };
 
   function evaluate(items, runtime, group, bindings, onRead) {
     const reasons = [], facts = {}, evidence = [], missing = [];
     const ids = new Set(bindings.map(b => b.id));
-    const access = Data.createAccess(Object.fromEntries([...ids].map(id => [id, items[id]])), onRead);
+    const readSources = new Set();
+    const access = Data.createAccess(Object.fromEntries([...ids].map(id => [id, items[id]])), (id, method) => {
+      readSources.add(id);
+      if (onRead) onRead(id, method);
+    });
     const ctx = {runtime, group, node: {bindings}, ...access,
       title: id => items[id] ? items[id].title || id : id,
       anyPresent: () => bindings.some(b => ctx.presence(b.id) === "present"),
@@ -406,11 +397,12 @@
     try {
       if (typeof evaluators[group.evaluator] !== "function") throw new Error("Unknown direction evaluator " + group.evaluator);
       score = evaluators[group.evaluator](ctx);
+      for (const limit of Data.assessmentLimits(ctx, bindings.filter(b => readSources.has(b.id)))) ctx.missing(limit);
       if (!isFiniteNumber(score)) score = null;
     } catch (caught) { error = String(caught.message || caught); }
     const unavailable = bindings.filter(b => !collected(ctx, b.id));
     if (!ctx.anyCollected()) ctx.missing("No usable sources collected for this direction. " + unavailable.map(b => ctx.title(b.id) + ": " + ctx.presence(b.id)).join("; "));
-    if (score === null && !missing.length) ctx.missing("Collected sources lack the measurements required by this direction's rule (valid numeric values, observation window or applicable objects).");
+    if (score === null && !missing.length) ctx.missing(group.unassessed_reason || "Collected sources lack the measurements required by this direction's rule (valid numeric values, observation window or applicable objects).");
     if (missing.length && score !== null && statusOf(score) === "ok") score = null;
     if (score !== null) reasons.unshift(statusOf(score) === "ok" ? "No warning conditions found in the assessed measurements." : "This direction has its own findings; the color is based on the evidence below.");
     return {score, reasons, facts, evidence, error, hints: missing};

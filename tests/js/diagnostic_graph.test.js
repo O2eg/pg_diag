@@ -102,7 +102,8 @@ test("facts read cores, memory, media, build flags and process tree from item sh
   assert.equal(build.facts["CPU cores"], "16");
   assert.match(build.reasons[0], /enable-cassert/);
   const platform = ev.nodes["health.platform"];
-  assert.equal(platform.status, "ok");
+  assert.equal(platform.status, "no_data");
+  assert.match(platform.hints.join(" "), /inventory/);
   assert.match(platform.reasons[0], /3 PostgreSQL processes: 1 client backends, 1 autovacuum workers/);
 });
 
@@ -129,7 +130,7 @@ test("user CPU uses its own counters; causes are damped by user pressure", () =>
   ev = G.evaluate(busy, definition);
   assert.equal(ev.nodes["cpu.utilization"].status, "crit");
   assert.equal(ev.nodes["cpu"].status, "crit");
-  assert.equal(ev.nodes["cpu.seq_scans"].status, "crit", "the same seq scans become a bottleneck under CPU pressure");
+  assert.equal(ev.nodes["cpu.seq_scans"].status, "warn", "900M tuples remain below the 1G critical threshold even with CPU pressure");
 });
 
 test("roots take the worst child and retain missing own evidence", () => {
@@ -211,7 +212,7 @@ test("a one-point termination event chart is evidence and affects log errors", (
   item.result.chart.tooltip_kind = "log_event";
   const ev = G.evaluate(artifact([item], {log_depth_time_min: 15}), definition);
   assert.equal(G.itemPresence(item), "present");
-  const expected = G.THRESHOLDS.terminationLogScore + G.scale(500 / 15, ...G.THRESHOLDS.terminationsPerMinute) * 0.3;
+  const expected = G.THRESHOLDS.terminationLogScore + (0.34 + 0.32 * G.scale(500 / 15, ...G.THRESHOLDS.terminationsPerMinute)) * 0.3;
   assert.ok(Math.abs(ev.nodes["health.errors"].score - expected) < 1e-9, "terminations warn and grow with their rate");
   assert.equal(ev.nodes["health.errors"].status, "warn");
   assert.equal(ev.nodes["health.errors"].facts["Query terminations"], "500");
@@ -346,7 +347,7 @@ test("I/O wait colors I/O contributors independently of idle user CPU", () => {
     assert.equal(ev.nodes["cpu.seq_scans"].status, "ok");
     assert.equal(ev.nodes["cpu.iowait"].ownStatus, "crit");
     const contributor = ev.nodes["cpu.iowait.read.queries.scans"];
-    assert.equal(contributor.status, "crit");
+    assert.equal(contributor.status, "warn", "900M tuples are below the declared 1G critical threshold");
     assert.match(contributor.reasons.join(" "), /public\.big/);
     assert.ok(contributor.bindings.some(binding => binding.id === "object_workload.table_workload"));
     assert.equal(ev.nodes["disk.saturation"].status, "no_data", "I/O wait does not prove device saturation");
@@ -490,7 +491,7 @@ test("lab snapshots fixture evaluates every node without errors and with data", 
   assert.equal(ev.order.filter(id => ev.nodes[id].kind !== "sources").length, definition.nodes.length);
   for (const nodeId of ev.order) assert.equal(ev.nodes[nodeId].error, null, nodeId);
   assert.equal(ev.coverage.rootsWithData, 6);
-  assert.deepEqual(ev.order.filter(id => ev.nodes[id].kind !== "sources" && !id.startsWith("network") && ev.nodes[id].status === "no_data"), ["cpu.steal"], "legacy fixture has no measured zero metadata for steal");
+  assert.deepEqual(ev.order.filter(id => ev.nodes[id].kind !== "sources" && !id.startsWith("network") && ev.nodes[id].status === "no_data"), ["cpu.steal", "health.platform"], "legacy steal zeros are unavailable; inventory is not an assessment");
   assert.equal(ev.nodes["cpu.steal"].status, "no_data");
   assert.equal(ev.nodes["network.interfaces.errors"].status, "no_data", "old fixture has no interface error chart");
   assert.equal(ev.nodes["network.traffic.receive"].status, "no_data", "throughput without matching link speed is a fact, not a verdict");

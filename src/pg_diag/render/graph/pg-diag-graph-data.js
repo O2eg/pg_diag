@@ -49,7 +49,13 @@
   }
 
   function scalePair(value, pair) {
-    return scale(value, pair[0], pair[1]);
+    if (!isFiniteNumber(value)) return null;
+    const reached = threshold => pair[0] > pair[1] ? value <= threshold : value >= threshold;
+    if (reached(pair[1])) return 1;
+    if (!reached(pair[0])) return 0;
+    // Keep the whole interval [warning, critical) yellow. Linear 0..1 made
+    // the declared warning boundary green and turned measurements red too early.
+    return 0.34 + 0.32 * scale(value, pair[0], pair[1]);
   }
 
   function maxScore(...values) {
@@ -501,6 +507,33 @@
       (!Number.isInteger(result.sample_count) || zero.sample_count === result.sample_count));
   }
 
+  // Collection succeeded does not mean that the evidence window or row set is complete.
+  // Keep positive findings usable, but callers must not turn a limited check into OK.
+  function assessmentLimits(ctx, bindings) {
+    const limits = [];
+    for (const binding of bindings) {
+      const item = ctx.item(binding.id);
+      if (!item) continue;
+      const result = resultOf(item) || {};
+      const details = [];
+      if (!resultOf(item)) details.push("the collected item has no result payload");
+      if (binding.id.startsWith("server_log.") && binding.id !== "server_log.log_files_overview") {
+        const log = ctx.runtime.log_collection || {}, coverage = log.coverage || {};
+        if (coverage.window_truncated === true || coverage.ranking_complete === false ||
+            coverage.locale_supported === false || (coverage.truncation_reasons || []).length ||
+            ["dropped_lines", "files_unreadable", "files_vanished"].some(k => toNumber(coverage[k]) > 0)) {
+          details.push("the log window is incomplete" + ((coverage.truncation_reasons || []).length ? " (" + coverage.truncation_reasons.join(", ") + ")" : ""));
+        }
+      }
+      if (toNumber(result.omitted_series_count) > 0 || result.result_truncated === true ||
+          tableRows(item).some(row => row.count_complete === false || Object.entries(row).some(([key, value]) => value === true && /(?:^|_)truncated$/.test(key)))) details.push("the returned observations are truncated");
+      if (result.message_pattern_coverage && result.message_pattern_coverage !== "full") details.push("message classification coverage is " + result.message_pattern_coverage);
+      if ((item.diagnostics || []).some(d => ["warning", "error"].includes(d.level))) details.push("the collector reported incomplete or degraded evidence");
+      if (details.length) limits.push(ctx.title(binding.id) + ": " + details.join("; ") + ". Observed findings remain valid; absence of a problem is not established.");
+    }
+    return limits;
+  }
+
   function timestamp(value, offsetSeconds) {
     const text = String(value || "").replace(" UTC", "Z").replace(" ", "T");
     if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(text)) return Date.parse(text);
@@ -637,7 +670,7 @@
     fmtBytes, fmtSeconds, truncate, sumBy, maxBy,
     topRows, seriesStats, sumSeries, decodeCell, resultOf,
     tableRows, hasColumn, chartSeries, textOf, itemPresence,
-    classifyProcess, settingValue, makeFacts, observedZeros, timestamp,
+    classifyProcess, settingValue, makeFacts, observedZeros, assessmentLimits, timestamp,
     relationBlockSize, formatBlocks, ioOperationBytes, lsnGap, createAccess,
     minimumSamples, alignSeries, windowSeconds, logWindowMinutes
   };

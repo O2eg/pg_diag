@@ -3586,6 +3586,10 @@
         {
           "id": "snapshot_delta_workload.database_session_outcomes_delta",
           "role": "support"
+        },
+        {
+          "id": "snapshot_charts_db.database_backends",
+          "role": "support"
         }
       ],
       "binding_groups": [
@@ -3594,7 +3598,9 @@
           "label": "Connection capacity and limits",
           "bindings": [
             "activity_locks.connection_pressure",
-            "overview.pg_settings"
+            "overview.pg_settings",
+            "snapshot_charts_db.activity_sessions_by_state",
+            "snapshot_charts_db.database_backends"
           ],
           "evaluator": "connection_limits"
         },
@@ -3604,7 +3610,8 @@
           "bindings": [
             "users_roles.session_usage",
             "activity_locks.session_states",
-            "snapshot_charts_db.activity_sessions_by_state"
+            "snapshot_charts_db.activity_sessions_by_state",
+            "snapshot_charts_db.database_backends"
           ],
           "evaluator": "sessions"
         },
@@ -3613,7 +3620,9 @@
           "label": "Connection outcomes and incidents",
           "bindings": [
             "server_log.system_incidents",
-            "snapshot_delta_workload.database_session_outcomes_delta"
+            "snapshot_delta_workload.database_session_outcomes_delta",
+            "snapshot_charts_db.activity_sessions_by_state",
+            "snapshot_charts_db.database_backends"
           ],
           "evaluator": "connection_outcomes"
         }
@@ -4490,6 +4499,10 @@
         {
           "id": "cluster_inventory.login_roles_without_connection_limit",
           "role": "fact"
+        },
+        {
+          "id": "snapshot_charts_db.activity_sessions_by_state",
+          "role": "support"
         }
       ],
       "binding_groups": [
@@ -4498,7 +4511,9 @@
           "label": "Connection capacity and limits",
           "bindings": [
             "activity_locks.connection_pressure",
-            "cluster_inventory.login_roles_without_connection_limit"
+            "cluster_inventory.login_roles_without_connection_limit",
+            "snapshot_charts_db.activity_sessions_by_state",
+            "snapshot_charts_db.database_backends"
           ],
           "evaluator": "connection_limits"
         },
@@ -4508,7 +4523,8 @@
           "bindings": [
             "activity_locks.session_states",
             "users_roles.session_usage",
-            "snapshot_charts_db.database_backends"
+            "snapshot_charts_db.database_backends",
+            "snapshot_charts_db.activity_sessions_by_state"
           ],
           "evaluator": "sessions"
         },
@@ -4517,7 +4533,9 @@
           "label": "Connection outcomes and incidents",
           "bindings": [
             "snapshot_delta_workload.database_session_outcomes_delta",
-            "server_log.system_incidents"
+            "server_log.system_incidents",
+            "snapshot_charts_db.activity_sessions_by_state",
+            "snapshot_charts_db.database_backends"
           ],
           "evaluator": "connection_outcomes"
         }
@@ -5165,7 +5183,8 @@
             "os.sysctl_tcp",
             "os.sysctl_udp"
           ],
-          "evaluator": "findings"
+          "evaluator": "reference",
+          "unassessed_reason": "TCP/UDP settings are configuration reference data. A security verdict requires an approved transport policy or measured exposure; parameter values alone are insufficient."
         }
       ]
     },
@@ -5285,7 +5304,7 @@
             "users_roles.role_database_settings",
             "users_roles.session_usage"
           ],
-          "evaluator": "findings"
+          "evaluator": "sessions"
         },
         {
           "id": "cluster",
@@ -5305,7 +5324,8 @@
           "bindings": [
             "users_roles.roles_inventory"
           ],
-          "evaluator": "findings"
+          "evaluator": "reference",
+          "unassessed_reason": "Role inventory lists identities and attributes; inspect Administrative roles and privileges or Role limits for assessed risks."
         }
       ]
     },
@@ -5563,7 +5583,8 @@
             "users_roles.publication_ownership",
             "users_roles.subscription_ownership"
           ],
-          "evaluator": "findings"
+          "evaluator": "findings",
+          "unassessed_reason": "Ownership and ACL inventories require the intended owner and privilege baseline; their presence alone is not a security finding."
         },
         {
           "id": "roles",
@@ -5836,8 +5857,8 @@
       "label": "autovacuum lag creates bloat"
     },
     {
-      "from": "disk.write.checkpoints",
-      "to": "disk.write.wal",
+      "from": "disk.write.wal",
+      "to": "disk.write.checkpoints",
       "label": "checkpoint frequency sets FPI volume"
     },
     {
@@ -5858,7 +5879,8 @@
     {
       "from": "cpu.session_churn",
       "to": "health.connections",
-      "label": "connection pressure"
+      "label": "connection pressure",
+      "kind": "related"
     },
     {
       "from": "cpu.contention",
@@ -5881,8 +5903,8 @@
       "label": "horizon blocks cleanup"
     },
     {
-      "from": "ram.pressure",
-      "to": "health.crashes",
+      "from": "health.crashes",
+      "to": "ram.pressure",
       "label": "OOM kills trigger crash recovery"
     },
     {
@@ -5896,29 +5918,31 @@
       "label": "inactive slots retain WAL"
     },
     {
-      "from": "network.traffic.packets",
-      "to": "cpu.system_time",
+      "from": "cpu.system_time",
+      "to": "network.traffic.packets",
       "label": "packet processing can consume kernel CPU"
     },
     {
-      "from": "network.interfaces.drops",
-      "to": "network.clients.write",
+      "from": "network.clients.write",
+      "to": "network.interfaces.drops",
       "label": "interface drops can delay client sends"
     },
     {
       "from": "network.clients.churn",
       "to": "cpu.session_churn",
-      "label": "reconnects create authentication and backend work"
+      "label": "reconnects create authentication and backend work",
+      "kind": "related"
     },
     {
-      "from": "network.replication.send",
-      "to": "health.replication",
+      "from": "health.replication",
+      "to": "network.replication.send",
       "label": "send backlog can contribute to replication lag"
     },
     {
       "from": "network.access.tls",
       "to": "security.network",
-      "label": "shared transport encryption evidence"
+      "label": "shared transport encryption evidence",
+      "kind": "related"
     }
   ]
 }

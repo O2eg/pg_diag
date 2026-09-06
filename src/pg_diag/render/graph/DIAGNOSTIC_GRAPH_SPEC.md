@@ -71,7 +71,9 @@ Rules:
 - `id` is unique; dots separate the path but carry no semantics for the engine.
 - Every non-root node has exactly one `parent`; the parent graph MUST be a tree
   with the six roots as its only sources. `links` are additional directed cause
-  edges between any two nodes and MUST NOT create a parent cycle (they are not
+  edges from a symptom to a possible cause to investigate. A link with
+  `kind: "related"` denotes shared evidence/checks, not causality, and has no
+  arrow. Links MUST NOT create a parent cycle (they are not
   part of the tree and never propagate scores).
 - `bindings[]` lists the report items that carry the evidence for the node. One
   item MAY be bound to several nodes (bloat is a disk cause and a health
@@ -84,7 +86,10 @@ Rules:
   row weight; a binding may provide context without proving a fault in that branch.
 - Nodes with more than six input bindings declare `binding_groups`: named
   directions with stable local IDs and lists of 1–6 bound item IDs. The groups
-  must partition the complete input pool without duplicates or omissions.
+  must cover the complete input pool without omissions. A context item may
+  appear in several directions (e.g. connection charts in limits and incidents),
+  but each card lists an item only once and retains the six-item limit.
+  Coverage counts distinct item IDs; shared context does not copy scores.
   Evaluation adds child nodes `<node>.sources.<group>` to the returned tree;
   the parent retains its full evaluator input pool in `inputBindings`, while
   `bindings` contains only the items displayed directly in its card. Parent
@@ -94,7 +99,9 @@ Rules:
   `kind: sources` identifies these generated directions structurally, not a
   special color. They use the same green/yellow/red/grey palette and are counted
   in diagnostic coverage. Their findings propagate to ancestors; a healthy
-  sub-check alone cannot fill a missing parent assessment.
+  sub-check alone cannot fill a missing parent assessment. This also applies
+  through intermediate diagnostic nodes: healthy checkpoint evidence cannot
+  certify CPU when CPU measurements are absent.
   Green requires actual assessed measurements or a completed findings check,
   not merely a populated item. Unknown risk levels and missing required metrics
   remain grey, with the reason in `hints` (Assessment limits in the card).
@@ -212,8 +219,12 @@ still be used with collection warnings; hidden zeros require complete coverage.
 Scores are numbers in `[0, 1]`; `status` is `ok` (< 0.34), `warn` (< 0.67),
 `crit` (≥ 0.67), or `no_data`. Helpers:
 
-- `scale(value, warn, crit)` maps a metric to `[0, 1]`: 0 below `warn`, 1 above
-  `crit`, linear in between (reversed when `warn > crit`).
+- `scale(value, warn, crit)` remains the linear interpolation primitive.
+  Diagnostic thresholds use `scalePair`: 0 below warning, 0.34–0.66 from the
+  warning boundary up to (but excluding) the critical boundary, and 1 at or
+  beyond critical. Reversed pairs apply the same logic to decreasing values.
+  Original rules and direction metrics share this scale; pressure and explicit
+  contribution weights can subsequently reduce a contextual score.
 - Rules return raw scores. The engine applies resource pressure once, then the
   node cap, then takes the maximum with children. There are no registration-time
   wrappers or evaluator-local damping defaults.
@@ -243,13 +254,30 @@ Scores are numbers in `[0, 1]`; `status` is `ok` (< 0.34), `warn` (< 0.67),
 - Table cells are decoded by column `encoding`: `decimal_string` → number
   (`Number()`; values above 2^53 lose precision, which is acceptable for
   scoring), `json_number` as is, `json_boolean` as is, others as text.
-- `generic`: for each `primary`/`support` binding with rows, the severity is the
-  worst `risk_level` cell in the rows (`high` 1.0, `medium` 0.6, `low` 0.3,
-  `ok`/`unknown` 0) when the table has that column, otherwise `binding.weight`
-  scaled by the row count (weight ≥ 1 is critical on its own; lighter weights
-  use `weight × (0.6 + 0.4 × min(1, rows / 10))`). Bindings with neither a
-  weight nor a `risk_level` column are context and never score. The node score
-  is the maximum. Bindings with role `fact` are ignored.
+- `generic` and direction findings share `findingsScore`. A `risk_level`
+  of high/critical is 1, medium/moderate 0.6, low 0.5, ok/info/none 0.
+  Unknown or missing levels remain unassessed and explain the missing baseline.
+  An explicit binding weight marks a findings-only query: any returned finding
+  warns (at least 0.5), or is critical for weights >= 0.67. An empty completed
+  findings check scores zero; inventory rows without a risk criterion never do.
+  Original generic rules ignore fact bindings; directions may assess explicit
+  risk levels on their own fact sources, but cannot infer risk from row presence.
+- Explicit incomplete log coverage, omitted/truncated observations, partial
+  message classification and collector warnings add assessment limits. They
+  prevent a healthy raw assessment; observed warnings/critical evidence remain
+  usable. Historical artifacts lacking coverage metadata do not prove universal
+  completeness: green describes only their assessed observations/checks.
+  Log-file size inventory is independent of log-window scan limits.
+- Empty delta tables do not prove zero events. Logical apply-error and conflict
+  counters are displayed separately because they overlap. A valid window delta
+  takes precedence over cumulative counters; fallback totals explicitly describe
+  history since reset. Table synchronization findings are evaluated alongside
+  worker state. Informational replication log messages are not weighted failures.
+- Checkpointer sync time includes checkpoints and restartpoints. Its mean uses
+  the sum of both completed-operation counters; scheduled/requested counts cannot
+  replace missing completions. Recovery-conflict cumulative counters can support
+  a historical assessment when no valid delta exists. Temporary-file generation
+  can use an explicit bytes/s database delta when its chart is unavailable.
 - Named evaluators implement the runbook rules (CPU busy share and load per
   core, system share, disk latency by media type, cache hit ratio, checkpoint
   requested/timed ratio, backend writes share, connection usage, lock wait
@@ -413,7 +441,11 @@ and runbook sections 3.6, 4.5 and 6.
   clipped at the circles. There are no list-style elbows or column boxes.
 - Cause links are shown only for the selected node, as dashed arrows routed
   through level gutters and clear vertical lanes with rounded corners. They
-  must not cross unrelated nodes or labels.
+  must not cross unrelated nodes, labels or open/closing cards. Every segment
+  is checked during animation; an obstructed link is hidden until its route
+  is clear. Settled links remain visible whenever both endpoints are visible.
+  Cards separate outgoing possible causes, incoming possible effects, and
+  undirected related checks. These are investigative hypotheses, not findings.
 - Node: a circle filled with the score gradient (green → yellow → red), grey
   when `no_data`, dashed stroke when the node is missing data because of the
   run or collection mode. All names wrap inside their circles, up to 50
@@ -432,7 +464,7 @@ and runbook sections 3.6, 4.5 and 6.
   adding source groups does not enlarge the diagnostic circles.
   No computed score percentages are displayed anywhere (circles, tooltips,
   panel). Measured values in reasons/facts retain their units.
-  Status labels are OK / Warning / Critical / No data; security and health
+  Status labels are OK / Warning / Critical / Not assessed / No data; security and health
   findings must never be labelled "Bottleneck".
 - Canvas: fixed-height viewport with drag-to-pan, wheel zoom anchored at the
   pointer, and in-canvas Expand all, Collapse all, minus/plus, Fit and 1:1 controls.
@@ -518,8 +550,10 @@ versus CommonJS parity. Existing metric regression and renderer tests remain.
 
 `tests/js/diagnostic_graph_groups.test.js` checks direction input isolation,
 parent own-assessment preservation, finding propagation, item reachability,
-actual WAL thresholds, hidden zero series, invalid intervals, connection refusals,
-unknown security baselines and missing durability/replication measurements.
+actual WAL/connection thresholds, hidden zero series, invalid intervals, connection
+refusals, unknown security baselines, partial log windows, result truncation,
+checkpoint/restartpoint denominators, logical counter overlap and synchronization,
+receiver-role context and missing durability/replication measurements.
 
 ## 7. Change policy
 

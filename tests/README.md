@@ -2,6 +2,11 @@
 
 This directory contains unit and integration tests for `pg_diag`.
 
+For existing JSON/HTML files, use the reusable
+[report debugging tools](../tools/report_debug/README.md). They include actual
+graph-to-item clicks, exhaustive cause-route checks, animated SVG inspection,
+metric and log replay, and updates to only the graph assets of one saved HTML.
+
 ## Layout
 
 - `conftest.py` - shared pytest fixtures for the repository root and bundled

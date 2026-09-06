@@ -69,7 +69,7 @@
   }
 
   function nodeStatusLabel(node) {
-    return node.kind === "sources" && node.status === "no_data" && node.present ? "Not assessed" : statusLabel(node.status);
+    return node.status === "no_data" && (node.present || (node.inputBindings || []).some(b => b.presence === "present")) ? "Not assessed" : statusLabel(node.status);
   }
 
   function truncateLabel(text, maxChars) {
@@ -460,6 +460,25 @@
     return path + " L" + end.x + "," + end.y;
   }
 
+  // During a transition, the retiring card and moving subtrees can occupy
+  // a gutter which is clear in the final layout. Do not paint a cause through
+  // them. Check every segment, including the horizontal approach to a node.
+  function causeRouteClear(points, from, to, positions) {
+    const crosses = (a, b, box) => a.x === b.x
+      ? a.x > box.left && a.x < box.right && Math.max(a.y, b.y) > box.top && Math.min(a.y, b.y) < box.bottom
+      : a.y > box.top && a.y < box.bottom && Math.max(a.x, b.x) > box.left && Math.min(a.x, b.x) < box.right;
+    const boxes = [];
+    for (const p of Object.values(positions)) {
+      if (p !== from && p !== to) boxes.push(nodeBounds({...p, cardHeight: 0}));
+      if (p.cardHeight > 0 && p.cardWidth > 0) boxes.push({
+        left: p.x - p.cardWidth / 2 - 8, right: p.x + p.cardWidth / 2 + 8,
+        top: p.y + p.cardOffset - 8, bottom: p.y + p.cardOffset + p.cardHeight + 8
+      });
+    }
+    return points.every((point, index) => Number.isFinite(point.x) && Number.isFinite(point.y)
+      && (!index || !boxes.some(box => crosses(points[index - 1], point, box))));
+  }
+
   function ensureCard(state, nodeId) {
     if (!nodeId) return null;
     if (state.cards.has(nodeId)) return state.cards.get(nodeId);
@@ -536,9 +555,10 @@
       if (!positions[link.from] || !positions[link.to]) continue;
       const active = state.selected === link.from || state.selected === link.to;
       if (!active) continue;
-      const path = svgEl("path", {class: "dg-link dg-link-active", "marker-end": "url(#dg-arrow)", "data-from": link.from, "data-to": link.to}, links);
+      const related = link.kind === "related";
+      const path = svgEl("path", {class: "dg-link dg-link-active", "marker-end": related ? null : "url(#dg-arrow)", "data-from": link.from, "data-to": link.to, "data-kind": related ? "related" : "cause"}, links);
       linkElements.push({element: path, from: link.from, to: link.to, lane: lane++});
-      svgEl("title", {}, path).textContent = link.from + " → " + link.to + (link.label ? ": " + link.label : "");
+      svgEl("title", {}, path).textContent = evaluation.nodes[link.from].label + (related ? " ↔ " : " → possible cause: ") + evaluation.nodes[link.to].label + (link.label ? ": " + link.label : "");
     }
 
     for (const nodeId of ids) {
@@ -625,7 +645,8 @@
       for (const link of linkElements) {
         const route = causeRoute(framePositions[link.from], framePositions[link.to], framePositions, link.lane);
         link.element.setAttribute("d", roundedPath(route));
-        link.element.style.opacity = Math.min(opacity[link.from], opacity[link.to]);
+        const clear = causeRouteClear(route, framePositions[link.from], framePositions[link.to], framePositions);
+        link.element.style.opacity = clear ? Math.min(opacity[link.from], opacity[link.to]) : 0;
       }
       for (const [id, card] of state.cards) {
         const p = framePositions[id];
@@ -752,24 +773,24 @@
       }
     }
     if (node.hints.length) {
-      el("h4", "dg-panel-h", panel, node.kind === "sources" ? "Assessment limits" : "Missing data");
+      el("h4", "dg-panel-h", panel, "Assessment limits");
       const list = el("ul", "dg-hints", panel);
       for (const hint of node.hints) el("li", null, list, hint);
     }
-    if (node.causes.length || node.causedBy.length) {
-      el("h4", "dg-panel-h", panel, "Related causes");
+    const related = node.causes.concat(node.causedBy).filter(link => link.kind === "related");
+    for (const [heading, arrow, links] of [
+      ["Possible causes", "→ ", node.causes.filter(link => link.kind !== "related")],
+      ["Possible effects", "← ", node.causedBy.filter(link => link.kind !== "related")],
+      ["Related checks", "↔ ", related]
+    ]) {
+      if (!links.length) continue;
+      el("h4", "dg-panel-h", panel, heading);
       const list = el("ul", "dg-causes", panel);
-      for (const cause of node.causes) {
+      for (const link of links) {
         const item = el("li", null, list);
-        item.appendChild(document.createTextNode("→ "));
-        nodeButton(state, item, cause.to);
-        if (cause.label) item.appendChild(document.createTextNode(" — " + cause.label));
-      }
-      for (const cause of node.causedBy) {
-        const item = el("li", null, list);
-        item.appendChild(document.createTextNode("← "));
-        nodeButton(state, item, cause.from);
-        if (cause.label) item.appendChild(document.createTextNode(" — " + cause.label));
+        item.appendChild(document.createTextNode(arrow));
+        nodeButton(state, item, link.to || link.from);
+        if (link.label) item.appendChild(document.createTextNode(" — " + link.label));
       }
     }
     if (node.bindings.length) el("h4", "dg-panel-h", panel, "Report items (" + node.present + " of " + node.bindings.length + " with data)");
@@ -862,7 +883,7 @@
     }
     const entry = el("span", "dg-legend-entry", legend);
     el("span", "dg-legend-link", entry);
-    entry.appendChild(document.createTextNode("cause links — shown for the selected node"));
+    entry.appendChild(document.createTextNode("arrows → possible causes; lines without arrows: related checks — selected node only"));
     const badgeEntry = el("span", "dg-legend-entry", legend);
     el("span", "badge neutral dg-legend-badge", badgeEntry, "+3");
     badgeEntry.appendChild(document.createTextNode("collapsed children — click a node for details; click again to close"));
@@ -917,5 +938,5 @@
     return controller;
   }
 
-  return {render, scoreColor, layout, initialExpanded, truncateLabel, labelLines, nodeBounds, causeRoute, roundedPath, LAYOUT, DETAIL_WIDTH, MOTION_MS};
+  return {render, scoreColor, layout, initialExpanded, truncateLabel, labelLines, nodeBounds, causeRoute, causeRouteClear, roundedPath, LAYOUT, DETAIL_WIDTH, MOTION_MS};
 });

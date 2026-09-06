@@ -165,3 +165,56 @@ test("animation frames use cached geometry instead of forcing size measurements"
   assert.ok(paint.includes("framePositions"));
   assert.doesNotMatch(paint, /offsetHeight|offsetWidth|getBoundingClientRect/);
 });
+
+test("cause gutters remain visible in mixed layouts and with tall cards", () => {
+  const {audit} = require("../../tools/report_debug/check_routes.cjs");
+  const result = audit(G.evaluate(fixture, definition));
+  assert.ok(result.routes >= definition.links.length * 200);
+  assert.deepEqual(result.failures, []);
+});
+
+test("retiring cards cannot be crossed by horizontal cause segments", () => {
+  const position = (x, y, extra) => ({x, y, radius: 20, labelWidth: 40, cardHeight: 0, ...extra});
+  const from = position(100, 100), to = position(500, 500);
+  const positions = {from, to, trunk: position(136, 300, {radius: 70, labelWidth: 140}),
+    retiring: position(300, -100, {cardOffset: 30, cardHeight: 400, cardWidth: 100})};
+  const route = R.causeRoute(from, to, positions, 0);
+  assert.equal(R.causeRouteClear(route, from, to, positions), false);
+  positions.retiring.cardHeight = 0;
+  assert.equal(R.causeRouteClear(R.causeRoute(from, to, positions, 0), from, to, positions), true);
+});
+
+test("cross-links point to possible causes and shared evidence has no cause direction", () => {
+  const evaluation = G.evaluate(fixture, definition);
+  for (const [symptom, cause] of [
+    ["disk.read", "ram.cache_efficiency"], ["disk.space", "health.replication"],
+    ["disk.write.wal", "disk.write.checkpoints"], ["health.crashes", "ram.pressure"],
+    ["cpu.system_time", "network.traffic.packets"], ["network.clients.write", "network.interfaces.drops"],
+    ["health.replication", "network.replication.send"]
+  ]) {
+    assert.ok(evaluation.nodes[symptom].causes.some(link => link.to === cause && link.kind === "cause"));
+    assert.ok(evaluation.nodes[cause].causedBy.some(link => link.from === symptom && link.kind === "cause"));
+  }
+  for (const link of definition.links.filter(link => link.kind === "related")) {
+    assert.ok(evaluation.nodes[link.from].causes.some(item => item.to === link.to && item.kind === "related"));
+    assert.ok(evaluation.nodes[link.to].causedBy.some(item => item.from === link.from && item.kind === "related"));
+  }
+  assert.equal(definition.links.filter(link => link.kind === "related").length, 3);
+});
+
+test("visible cause combinations respect shared ancestor expansion", () => {
+  const {visibleCombinations} = require('../../tools/report_debug/check_routes.cjs');
+  const evaluation = G.evaluate(fixture, definition);
+  for (const causeOnly of [true, false]) {
+    const result = visibleCombinations(evaluation, causeOnly);
+    assert.equal(result.distinctSetsIncludingEmpty, causeOnly ? 35 : 39);
+    assert.equal(result.maxVisible, 3);
+    for (const example of result.cases) {
+      const {positions} = R.layout(evaluation, new Set(example.expanded));
+      assert.ok(positions[example.selected]);
+      const visible = evaluation.links.filter(link => (!causeOnly || link.kind !== 'related') &&
+        [link.from, link.to].includes(example.selected) && positions[link.from] && positions[link.to]);
+      assert.deepEqual(visible, example.links);
+    }
+  }
+});

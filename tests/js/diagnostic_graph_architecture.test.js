@@ -184,7 +184,7 @@ test("sparse wait profiles use observed counts and preserve the absolute LWLock 
     {t: "2026-09-05T00:00:01Z", value: 10}
   );
   const changed = G.evaluate({items: copy(items)}, definition).nodes["cpu.contention"];
-  assert.equal(changed.ownScore, 0);
+  assert.equal(changed.ownStatus, "warn", "5 waiting sessions and 20% reach the declared warning boundaries");
   assert.ok(changed.reasons.some(reason => reason.includes("20 % of observed top-N")));
 });
 
