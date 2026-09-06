@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pg-diag"
-version = "0.14.0"
+version = "0.15.0"
 description = "PostgreSQL diagnostics with host metrics and portable JSON/HTML reports"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -82,6 +82,8 @@ pg_diag = [
   "schema/*.json",
   "render/templates/*.html",
   "render/vendor/*.css",
+  "render/vendor/*.html",
+  "render/configurator/*.js",
   "render/vendor/*.js",
   "render/vendor/*.txt",
   "render/graph/*.css",

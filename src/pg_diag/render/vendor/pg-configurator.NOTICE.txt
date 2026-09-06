@@ -1,0 +1,40 @@
+pg_configurator 0.11.0
+Revision: 43dd95ff8ef8780d9205b900b6a4465a8ba65f7a
+Source: https://github.com/O2eg/pg_configurator
+License: MIT
+Rebuild: python tools/vendor_configurator.py /path/to/pg_configurator
+SHA-256 of upstream build inputs (including any local edits):
+5e9b3f562239d5bf41469bac7f99d017c217e4460a43d18b0e00d8f6e4e78081  web/build.py
+cc51e15ab7ee8f36e2429aca2c0c5f9e0c533fc21de044ad2c0451d36c27d726  web/configurator.template.html
+6c5ae904e37a9f21f58348fe2767c951706d6e32d4c0d2b539e37342676581f7  web/src/field-help.js
+0bccd4349e543a031349d22be80a2d2ae2aa9723ab00694c340cee2644ff6088  web/src/units.js
+24eb031b8fb3b512793cef2391dfbdb3e752c96b64d16ccd08d1210334ce3a1e  web/src/rule-eval.js
+ce031622ce96c2d192cab513b6d8c90f8ebfb7f45f29b2153d8b87aa78bad96b  web/src/configurator.js
+62798cdf23ae72dc97e8b23cac21b2807a0a7a569cb89cb745d8d60215572a63  web/src/make-conf.js
+b98c9cd760dd0435af328e25acd77b3330e87cf7d293b53256441213f9346d9a  web/src/config-diff.js
+d1ea4f25e3e6e0c5c2bb322f5d79fb061e6abb76ea1e91e216577e0fb07396c7  web/src/render.js
+2bffbb20daf95ed633e3d1b8f356ee0fb68477ac2a195816db5a4f6ca1271ba5  web/data/rules.json
+a5d3093c53ccb34d35e5d133476ff90f2ec1cc7b86d5a0c1823adac02b66fb71  web/data/pg_settings.json
+b820dafef5e95e813bbfe971d2010311f3cb4fee36ee4f153989bbcc3509275d  web/data/input-schema.json
+fc3e6f9698be3d5ab40a4446312815ced6f3d36b859f7130e84d66528d56596c  web/css/pgc-theme.css
+849c00e3b0b67f285f8bec0f1d49d55f9d4736247983ffa6eb0d10360333e09d  web/css/pgc.css
+
+pg-configurator copyright and provenance notice
+
+This repository contains work originally developed by Oleg Gurov and Tantor
+Labs. The original copyright notices are retained in LICENSE. The project is
+distributed under the MIT License; publishing it from the O2eg repository does
+not remove or transfer those historical notices.
+
+The bundled pg_settings_history CSV files are generated PostgreSQL server
+configuration snapshots. No third-party workload datasets or binary assets are
+distributed by this package.
+
+The web page favicon is the PostgreSQL elephant, taken from the project's
+three-colour logo published at https://wiki.postgresql.org/wiki/Logo and
+embedded as an inline SVG.
+
+PostgreSQL and the elephant logo are trademarks of the PostgreSQL Community
+Association of Canada. They are used here to identify the software this tool
+configures, not to suggest endorsement by or affiliation with the PostgreSQL
+project. See https://www.postgresql.org/about/policies/trademarks/.

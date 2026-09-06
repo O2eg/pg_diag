@@ -26,6 +26,12 @@ def render_html(artifact: dict[str, Any], *, validate: bool = True) -> str:
     title = html.escape(artifact["report"]["title"])
     replacements = {
         "__TITLE__": title,
+        "__PG_DIAG_CONFIGURATOR_PAGE__": _safe_json_payload(
+            _read_render_resource("vendor", "pg-configurator.html")
+        ),
+        "__PG_DIAG_CONFIGURATOR_JS__": _inline_script("\n".join(
+            _read_render_resource("configurator", name) for name in ("inputs.js", "modal.js")
+        )),
         "__PAYLOAD__": payload,
         "__ECHARTS_JS__": _inline_script(_read_render_resource("vendor", "echarts-6.1.0.min.js")),
         "__HIGHLIGHT_JS__": _inline_script(
@@ -82,7 +88,7 @@ def render_from_json(
     write_text_secure(html_path, html_text)
 
 
-def _safe_json_payload(artifact: dict[str, Any]) -> str:
+def _safe_json_payload(artifact: Any) -> str:
     payload = json.dumps(artifact, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
     return (
         payload.replace("&", "\\u0026")
@@ -123,6 +129,9 @@ def _third_party_licenses() -> str:
         + _read_render_resource("vendor", "echarts-6.1.0.LICENSE-d3.txt"),
         "highlight.js 11.11.1 - BSD-3-Clause license\n\n"
         + _read_render_resource("vendor", "highlight-11.11.1.LICENSE.txt"),
+        "pg_configurator - MIT license\n\n"
+        + _read_render_resource("vendor", "pg-configurator.LICENSE.txt"),
+        _read_render_resource("vendor", "pg-configurator.NOTICE.txt"),
         "pg-explain-viewer 0.7.2 - MIT license\n\n"
         + _read_render_resource("vendor", "pg-explain-viewer-0.7.2.LICENSE.txt"),
     ]

@@ -38,6 +38,7 @@ def _column(name: str, value_kind: str, encoding: str, **extra) -> dict:
 def _without_vendor_bundles(html: str) -> str:
     blocks = [
         ('<script id="pg-diag-third-party-licenses"', "</script>"),
+        ('<script id="pg-diag-configurator-page"', "</script>"),
         ('<style id="highlight-theme"', "</style>"),
         ('<style id="pg-explain-viewer-theme"', "</style>"),
         ('<style id="pg-explain-viewer-styles"', "</style>"),
@@ -307,7 +308,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "findSectionElement(targetId)" in html
     assert "findItemElement(targetId)" in html
     assert "resetReportFilters()" in html
-    assert 'target.scrollIntoView({behavior: scrollBehavior(), block: "start"})' in html
+    assert "animatePageScroll(window.scrollY + target.getBoundingClientRect().top)" in html
     assert "left: 0;" in html
     assert "top: 0;" in html
     assert "bottom: 0;" in html
@@ -515,7 +516,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "overscroll-behavior: none;" in html
     assert "overscroll-behavior: contain;" in html
     assert (
-        'const REPORT_MODAL_IDS = ["sourceModal", "metaModal", "instructionModal", "planViewerModal"]'
+        'const REPORT_MODAL_IDS = ["sourceModal", "metaModal", "instructionModal", "planViewerModal", "configuratorModal"]'
         in html
     )
     assert "syncReportModalScrollLock()" in html

@@ -247,6 +247,11 @@ __ECHARTS_JS__
       margin-top: 0;
     }
 
+    .header-summary-actions {display: flex; flex-wrap: wrap; align-items: center; gap: 12px;}
+    .source-dialog.configurator-dialog {width: min(1700px, 100%); height: calc(100dvh - 48px); max-height: calc(100dvh - 48px); grid-template-rows: auto auto minmax(0, 1fr);}
+    #configuratorFrame {grid-row: 3; width: 100%; height: 100%; border: 0; min-height: 0; background: var(--panel);}
+    #configuratorStatus {margin: 0; padding: 8px 14px; color: var(--muted);}
+
     .explain-available {
       min-height: 58px;
       padding: 12px 24px;
@@ -2399,7 +2404,10 @@ __ECHARTS_JS__
           <div id="statusSummary" class="summary-bar"></div>
           <div id="severitySummary" class="summary-bar"></div>
         </div>
+        <div class="header-summary-actions">
         <button id="explainAvailable" type="button" class="explain-available" hidden>Explain available</button>
+        <button id="showConfigurator" type="button" class="explain-available" hidden>Show configurator</button>
+        </div>
       </div>
       <label class="theme-toggle header-theme-toggle" title="Switch report theme">
         <span>Dark</span>
@@ -2518,6 +2526,18 @@ __ECHARTS_JS__
       </div>
     </div>
   </div>
+  <div id="configuratorModal" class="source-modal" role="dialog" aria-modal="true" aria-labelledby="configuratorModalTitle" hidden>
+    <div class="source-dialog configurator-dialog">
+      <div class="source-dialog-header">
+        <h2 id="configuratorModalTitle" class="source-dialog-title">PostgreSQL configurator · current and proposed settings</h2>
+        <div class="source-dialog-actions"><button id="closeConfigurator" type="button" class="btn">Close</button></div>
+      </div>
+      <p id="configuratorStatus" role="status">Loading configurator…</p>
+      <iframe id="configuratorFrame" title="PostgreSQL configuration comparison" sandbox="allow-scripts allow-downloads"></iframe>
+    </div>
+  </div>
+  <script id="pg-diag-configurator-page" type="application/json">__PG_DIAG_CONFIGURATOR_PAGE__</script>
+  <script id="pg-diag-configurator-library">__PG_DIAG_CONFIGURATOR_JS__</script>
   <div class="page-scroll-controls" aria-label="Page scroll controls">
     <button id="scrollToTop" type="button" class="scroll-jump scroll-up" aria-label="Scroll to top" title="Scroll to top"></button>
     <button id="scrollToBottom" type="button" class="scroll-jump scroll-down" aria-label="Scroll to bottom" title="Scroll to bottom"></button>
@@ -2634,12 +2654,15 @@ __PG_DIAG_GRAPH_RENDER_JS__
     const SEVERITY_LEVEL_RANK = {high: 4, medium: 3, ok: 2, unknown: 1};
     const CELL_COLLAPSED_LINE_LIMIT = 6;
     const DETAILS_ANIMATION_MS = 300;
+    const PAGE_SCROLL_SPEED = 2;
     const CHART_QUERY_LABEL_MAX_CHARS = 80;
-    const REPORT_MODAL_IDS = ["sourceModal", "metaModal", "instructionModal", "planViewerModal"];
+    const REPORT_MODAL_IDS = ["sourceModal", "metaModal", "instructionModal", "planViewerModal", "configuratorModal"];
     let currentSourceText = "";
     let currentMetaItem = null;
     let currentPlanViewer = null;
     let scrollControlsRaf = 0;
+    let pageScrollRaf = 0;
+    let reportNavigationTimer = 0;
     let chartResizeRaf = 0;
     const chartResizeScopes = new Set();
     let cachedReportCollator = null;
@@ -2658,6 +2681,7 @@ __PG_DIAG_GRAPH_RENDER_JS__
     bindMetaModalControls();
     bindInstructionModalControls();
     bindPlanViewerModalControls();
+    window.PgDiagConfigurator.mount({artifact, showModal: showReportModal, hideModal: hideReportModal});
     bindChartExportMenuControls();
     bindTableExportMenuControls();
     bindPageScrollControls();
@@ -2983,6 +3007,7 @@ __PG_DIAG_GRAPH_RENDER_JS__
       if (!target) {
         return;
       }
+      cancelPageScroll();
       if (target.classList.contains("hidden") || target.closest(".hidden")) {
         resetReportFilters();
         target = targetKind === "section" ? findSectionElement(targetId) : findItemElement(targetId);
@@ -2999,8 +3024,9 @@ __PG_DIAG_GRAPH_RENDER_JS__
       } else {
         setDetailsOpen(target, true, true);
       }
-      window.setTimeout(() => {
-        target.scrollIntoView({behavior: scrollBehavior(), block: "start"});
+      reportNavigationTimer = window.setTimeout(() => {
+        reportNavigationTimer = 0;
+        animatePageScroll(window.scrollY + target.getBoundingClientRect().top);
         const summary = directSummary(target);
         if (summary && typeof summary.focus === "function") {
           summary.focus({preventScroll: true});
@@ -7759,10 +7785,18 @@ __PG_DIAG_GRAPH_RENDER_JS__
       const topButton = document.getElementById("scrollToTop");
       const bottomButton = document.getElementById("scrollToBottom");
       topButton.addEventListener("click", () => {
-        window.scrollTo({top: 0, behavior: scrollBehavior()});
+        animatePageScroll(0);
       });
       bottomButton.addEventListener("click", () => {
-        window.scrollTo({top: document.documentElement.scrollHeight, behavior: scrollBehavior()});
+        animatePageScroll(document.documentElement.scrollHeight);
+      });
+      for (const eventName of ["wheel", "touchstart", "pointerdown"]) {
+        window.addEventListener(eventName, cancelPageScroll, {passive: true});
+      }
+      window.addEventListener("keydown", (event) => {
+        if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " ", "Escape"].includes(event.key)) {
+          cancelPageScroll();
+        }
       });
       window.addEventListener("scroll", requestPageScrollControlsUpdate, {passive: true});
       window.addEventListener("resize", () => {
@@ -7776,8 +7810,34 @@ __PG_DIAG_GRAPH_RENDER_JS__
       requestPageScrollControlsUpdate();
     }
 
-    function scrollBehavior() {
-      return shouldReduceMotion() ? "auto" : "smooth";
+    function cancelPageScroll() {
+      window.cancelAnimationFrame(pageScrollRaf);
+      window.clearTimeout(reportNavigationTimer);
+      pageScrollRaf = 0;
+      reportNavigationTimer = 0;
+    }
+
+    function animatePageScroll(requestedTop) {
+      cancelPageScroll();
+      const startTop = window.scrollY;
+      const maxTop = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      const targetTop = Math.min(maxTop, Math.max(0, requestedTop));
+      const distance = targetTop - startTop;
+      if (shouldReduceMotion() || Math.abs(distance) < 1) {
+        window.scrollTo({top: targetTop, behavior: "instant"});
+        return;
+      }
+      // Approximate the previous browser's distance-based pacing, then speed it
+      // up globally. Native smooth scrolling does not expose a duration control.
+      const duration = Math.min(1500, Math.sqrt(Math.abs(distance)) * 17) / PAGE_SCROLL_SPEED;
+      const started = performance.now();
+      const step = (now) => {
+        const progress = Math.min(1, (now - started) / duration);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        window.scrollTo({top: startTop + distance * eased, behavior: "instant"});
+        pageScrollRaf = progress < 1 ? window.requestAnimationFrame(step) : 0;
+      };
+      pageScrollRaf = window.requestAnimationFrame(step);
     }
 
     function requestPageScrollControlsUpdate() {

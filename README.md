@@ -1325,6 +1325,47 @@ The bundled content pack includes sections for:
 Availability depends on PostgreSQL version, installed extensions, database
 permissions, collection mode, and host permissions.
 
+### Embedded PostgreSQL Configurator
+
+**Show configurator** appears beside **Explain available** when the report
+contains usable CPU and RAM capacity, an identifiable storage class, a supported
+PostgreSQL version/platform, and current `overview.pg_settings` data. It opens an
+offline dialog running the bundled pg_configurator 0.11.0 web implementation,
+initially on **Diff**. All collected running settings, including extension
+parameters, are prefilled as CSV with their original PostgreSQL units. The diff
+compares calculated settings after unit conversion; settings outside the engine's
+scope remain in the input. Pending restart values do not replace running values.
+
+The JavaScript adapter uses online logical CPUs, total memory, and explicit
+process/container limits when present. It prefers the device backing
+`data_directory`; a uniform disk inventory is an explicitly labelled fallback.
+It also uses collected database sizes, connection/autovacuum capacity, replication
+capability and topology, WAL segment size and the largest measured interval WAL
+rate. A slot and its active sender are counted as one replica. Cumulative counters
+and CPU/disk utilization are not treated as capacity or benchmark scores.
+
+**Inputs from report** lists each selected value, its source, and assumptions.
+Workload duty, memory shares and future retention requirements remain editable in
+**Main**. The initial WAL allowance is 25% of free WAL-filesystem space, capped
+at 32 GiB; collected WAL symlinks are resolved to the appropriate mount. Confirm
+competing space requirements. Missing
+container limits are prominently disclosed: host-visible CPU/RAM must not be
+mistaken for the container allocation. **Reset to report inputs** restores the
+initial calculation inputs. Closing and reopening retains edits.
+Size fields use compact IEC notation such as `62.22Gi`; calculations retain the
+exact collected byte values. Diff values use PostgreSQL size/time suffixes, with
+disabled or automatic values such as `-1` displayed without units.
+
+The page and its rules are embedded in the report and loaded into a sandboxed
+iframe only when opened; no network connection or database change is made.
+The embedded page follows the report theme and hides its own theme switch via
+the `data-pc-embedded` flag.
+To update the pinned copy from a reviewed checkout, run
+`python tools/vendor_configurator.py /path/to/pg_configurator`. The vendor notice
+records its source revision and file hashes. Adapter regression tests run in the
+normal Node suite; browser coverage is in
+`tests/browser/test_configurator_browser.py`.
+
 ### Diagnostic Graph
 
 The HTML report opens with six collapsed roots in Fit view: CPU, RAM, Disk and
@@ -1562,7 +1603,7 @@ python -m ruff check pg_diag tests
 The `pg_diag` source code is distributed under the
 [MIT License](https://github.com/O2eg/pg_diag/blob/main/LICENSE). Self-contained
 HTML reports bundle Apache ECharts under Apache-2.0, highlight.js plus the
-ECharts d3 components under BSD-3-Clause, and `pg-explain-viewer` under MIT.
+ECharts d3 components under BSD-3-Clause, and `pg-explain-viewer` / `pg_configurator` under MIT.
 Their complete license and notice
 files are listed in
 [THIRD_PARTY_LICENSES.txt](https://github.com/O2eg/pg_diag/blob/main/src/pg_diag/render/vendor/THIRD_PARTY_LICENSES.txt)

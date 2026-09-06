@@ -21,3 +21,11 @@ License: MIT
 The four JavaScript modules and two CSS stylesheets are vendored from the
 tagged revision. The complete MIT license is distributed beside this file and
 embedded into every HTML report.
+
+pg_configurator 0.11.0
+Source: https://github.com/O2eg/pg_configurator
+License: MIT
+The offline web calculation and UI are bundled unchanged; the page entry point
+accepts report inputs before mounting. Rebuild instructions, source hashes,
+copyright and logo provenance are in pg-configurator.NOTICE.txt. The full MIT
+license is distributed in pg-configurator.LICENSE.txt and embedded in reports.
