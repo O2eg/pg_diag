@@ -377,6 +377,31 @@ Typical use cases:
 - A human and an LLM can review the same run: HTML provides the visual report,
   while JSON preserves the exact structured evidence used by automation.
 
+### Graph-based LLM audits
+
+Use [the performance master prompt](diag_promt.md) for bottlenecks and operational
+health, or [the security master prompt](security_promt.md) for access control and
+security posture. Both first run the same analysis engine as Diagnostic graph;
+the LLM then enriches its findings from the original items, SQL, plans, DDL and
+compatible observation windows. The document connects causes, mechanisms,
+symptoms and impact to evidence, alternatives, actions and acceptance criteria.
+It is written in the language of the user's request unless another is specified.
+
+From a trusted checkout, prepare one context per distinct capture:
+
+```bash
+node tools/report_debug/prepare_audit.cjs /path/to/performance-context.json /path/to/report.json performance
+node tools/report_debug/prepare_audit.cjs /path/to/security-context.json /path/to/report.json security
+```
+
+Outputs must be new files. HTML-only input is also supported: only its embedded
+artifact JSON is parsed, never its scripts. Provide the selected prompt, context
+and original report to the LLM; a system with shell access can run the command
+itself. The context records source/engine hashes, own and propagated assessments,
+candidate cause links, actual rule reads and item pointers. It is not a raw-data
+replacement or a completed audit. No database connection, browser or LLM API is
+needed to prepare it. See [tool details](tools/report_debug/README.md#preparing-context-for-master-prompts).
+
 For scheduled lightweight collection, combine `--tags` or `--item-id` with
 JSON-only output and optionally `--strip-meta`:
 
@@ -1442,6 +1467,9 @@ apply settings. The packaged JSON Schema is
 `pg_diag/schema/configuration-facts-v1.schema.json`.
 
 ## Development
+
+Keep all project Markdown files in English. Audits generated with the master
+prompts follow the requesting user's language unless another language is specified.
 
 Run the test suite:
 

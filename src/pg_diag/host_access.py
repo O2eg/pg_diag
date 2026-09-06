@@ -17,6 +17,7 @@ from .ssh_transport import SshCommandResult, SshTransport
 
 
 DEFAULT_FILE_LIMIT = 4 * 1024 * 1024
+LOCAL_READ_CHUNK_SIZE = 64 * 1024
 SFTP_READ_CHUNK_SIZE = 64 * 1024
 
 
@@ -146,11 +147,19 @@ class LocalHostAccess(HostAccess):
 
     async def read_bytes(self, path: str | Path, *, limit: int = DEFAULT_FILE_LIMIT) -> bytes:
         def read() -> bytes:
+            value = bytearray()
             with Path(path).open("rb") as stream:
-                value = stream.read(limit + 1)
+                # procfs sysctl handlers can reject a multi-megabyte read with
+                # ENOMEM even for tiny values. Their stat size is often zero,
+                # so read bounded chunks to EOF and retain the overflow check.
+                while len(value) <= limit:
+                    chunk = stream.read1(min(LOCAL_READ_CHUNK_SIZE, limit + 1 - len(value)))
+                    if not chunk:
+                        break
+                    value.extend(chunk)
             if len(value) > limit:
                 raise OSError(f"host file exceeds the {limit}-byte read limit: {path}")
-            return value
+            return bytes(value)
 
         return await asyncio.to_thread(read)
 
