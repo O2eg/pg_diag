@@ -13,6 +13,7 @@ parser.add_argument("report", type=Path)
 parser.add_argument("--output", type=Path, required=True)
 parser.add_argument("--expected-items", type=int)
 parser.add_argument("--node", help="Check links specifically from this node's card")
+parser.add_argument("--icons", action="store_true", help="Check type icons against report headings and their right-hand placement")
 parser.add_argument(
     "--item", action="append", help="Limit actual clicks to these item IDs (repeatable)."
 )
@@ -172,6 +173,23 @@ with sync_playwright() as playwright:
             + "]"
         )
         assert button.count() == 1 and button.is_enabled()
+        icon = None
+        if args.icons:
+            icon = button.evaluate("""button => {
+              const source = document.getElementById('item-' + button.dataset.itemId)
+                .querySelector(':scope > summary .data-type-icons');
+              const copy = button.querySelector(':scope > .data-type-icons');
+              if (!source || !copy) return {passed: false, reason: 'Missing item icon'};
+              const box = button.getBoundingClientRect(), image = copy.getBoundingClientRect();
+              const text = Array.from(button.querySelectorAll('.dg-item-title, .dg-item-id, .dg-item-meta'));
+              const identical = copy.outerHTML === source.outerHTML;
+              const right = text.every(part => part.getBoundingClientRect().right <= image.left + 0.5)
+                && image.right <= box.right + 0.5;
+              const centred = Math.abs(image.top + image.height / 2 - box.top - box.height / 2) <= 1;
+              return {passed: identical && right && centred, identical, right, centred,
+                label: copy.querySelector('.data-type-icon')?.getAttribute('aria-label')};
+            }""")
+            assert icon["passed"], (item_id, icon)
         button.click()
         page.wait_for_function(
             """id => {
@@ -206,6 +224,7 @@ with sync_playwright() as playwright:
             "presence": binding["presence"],
             "collection_status": binding.get("collection_status"),
             "passed": True,
+            **({"icon": icon} if args.icons else {}),
             **checked,
         }
 

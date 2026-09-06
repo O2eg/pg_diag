@@ -132,6 +132,63 @@ def _artifact() -> dict:
     }
 
 
+def test_explain_available_button_ignores_axis_points_and_opens_filtered_item(tmp_path: Path) -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    item_id = "server_log.auto_explain_plans"
+    cases = [
+        ("missing", None, False),
+        ("no-result", None, False),
+        ("empty", [], False),
+        ("axis-only", [{"t": "2026-07-15T10:00:00Z", "value": 0}], False),
+        ("null-only", [{"t": "2026-07-15T10:00:00Z", "value": None}], False),
+        ("plan", [{"t": "2026-07-15T10:00:00Z", "value": 25}], True),
+        ("zero-duration-plan", [{"t": "2026-07-15T10:00:00Z", "value": 0,
+                                  "tooltip": {"duration_ms": 0}}], True),
+    ]
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1440, "height": 1000}, reduced_motion="reduce")
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        for name, points, available in cases:
+            artifact = _artifact()
+            if name != "missing":
+                item = dict(artifact["items"]["charts.line"], item_id=item_id,
+                            section_id="server_log", item_key="auto_explain_plans",
+                            title="Auto explain plans", state="collapsed")
+                item["result"] = None if points is None else {
+                    "kind": "chart", "chart": {"kind": "stacked_column", "x_type": "datetime"},
+                    "series": [{"name": "Rank 1", "points": points}],
+                }
+                artifact["items"][item_id] = item
+                artifact["sections"].append({"section_id": "server_log", "title": "Server log",
+                                             "state": "collapsed", "items": [item_id]})
+            report = tmp_path / (name + ".html")
+            report.write_text(render_html(artifact, validate=False), encoding="utf-8")
+            page.goto(report.as_uri(), wait_until="load")
+            button = page.locator("#explainAvailable")
+            assert button.is_visible() is available, name
+            if not available:
+                continue
+            target = page.locator(f'details.item[data-item-id="{item_id}"]')
+            for theme, width in [("dark", 1440), ("light", 390)]:
+                page.set_viewport_size({"width": width, "height": 1000})
+                page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+                page.locator("#itemSearch").fill("no-matching-explain-item")
+                page.wait_for_function("id => findItemElement(id).classList.contains('hidden')", arg=item_id)
+                button.click()
+                page.wait_for_function("""id => {
+                  const item = findItemElement(id);
+                  return item.open && item.closest('details.section').open
+                    && !item.closest('.hidden') && document.activeElement === directSummary(item);
+                }""", arg=item_id)
+                assert page.locator("#itemSearch").input_value() == ""
+                summary_box = target.locator(":scope > summary").bounding_box()
+                assert summary_box and 0 <= summary_box["y"] < 1000
+        assert not errors
+        browser.close()
+
+
 def test_self_contained_echarts_report_in_browser(tmp_path: Path) -> None:
     sync_api = pytest.importorskip("playwright.sync_api")
     report_path = tmp_path / "report.html"

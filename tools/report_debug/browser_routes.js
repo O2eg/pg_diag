@@ -1,5 +1,5 @@
 /* Read the rendered SVG, including the rounded curves and arrow endpoints. */
-function inspectGraphLinks() {
+function inspectGraphLinks(options = {}) {
   const graph = document.querySelector("#diagnosticGraph"), ev = pgDiagReport.diagnosticGraph;
   const nodes = new Map(Array.from(graph.querySelectorAll(".dg-node"), element => {
     const circle = element.querySelector(".dg-circle"), m = element.transform.baseVal.consolidate().matrix;
@@ -10,6 +10,9 @@ function inspectGraphLinks() {
   const paths = Array.from(graph.querySelectorAll(".dg-link"));
   const problems = [];
   if (paths.length !== expected.length) problems.push({kind: "link-count", expected: expected.length, actual: paths.length});
+  const treePaths = options.edges ? Array.from(graph.querySelectorAll('.dg-edge[data-from]')) : [];
+  const treeExpected = options.edges ? [...nodes.keys()].filter(id => nodes.has(ev.nodes[id].parent)) : [];
+  if (treePaths.length !== treeExpected.length) problems.push({kind: 'edge-count', expected: treeExpected.length, actual: treePaths.length});
   const cards = Array.from(graph.querySelectorAll(".dg-detail"), element => {
     const clip = element.firstElementChild.style.clipPath.match(/inset\(\s*0(?:px)?\s+([\d.]+)px/);
     const inset = clip ? +clip[1] : 0;
@@ -17,15 +20,16 @@ function inspectGraphLinks() {
       y: +element.getAttribute("y"), w: +element.getAttribute("width") - inset * 2,
       h: +element.getAttribute("height"), opacity: +getComputedStyle(element).opacity};
   });
-  for (const element of paths) {
+  for (const element of [...paths, ...treePaths]) {
     const link = {from: element.dataset.from, to: element.dataset.to};
-    if (!expected.some(candidate => candidate.from === link.from && candidate.to === link.to)) problems.push({...link, kind: "unexpected-link"});
+    const treeEdge = element.classList.contains('dg-edge');
+    if (treeEdge ? ev.nodes[link.to].parent !== link.from : !expected.some(candidate => candidate.from === link.from && candidate.to === link.to)) problems.push({...link, kind: "unexpected-link"});
     const kind = expected.find(candidate => candidate.from === link.from && candidate.to === link.to)?.kind || 'cause';
     const marker = element.getAttribute('marker-end');
-    if ((kind === 'related') === Boolean(marker)) problems.push({...link, kind: 'arrow-kind'});
+    if (treeEdge ? Boolean(marker) : (kind === 'related') === Boolean(marker)) problems.push({...link, kind: 'arrow-kind'});
     const d = element.getAttribute("d"), style = getComputedStyle(element);
     if (!d || /NaN|undefined|Infinity/.test(d)) {problems.push({...link, kind: "invalid-path"}); continue;}
-    if (style.stroke === "none" || style.strokeDasharray === "none") problems.push({...link, kind: "invisible-or-solid"});
+    if (style.stroke === "none" || (treeEdge ? style.strokeDasharray !== 'none' : style.strokeDasharray === 'none')) problems.push({...link, kind: "line-style"});
     if (+style.opacity < 0.05) {
       if (graph.querySelector('.dg-svg').dataset.animating === 'false') problems.push({...link, kind: 'hidden-settled-link'});
       continue;
@@ -33,8 +37,11 @@ function inspectGraphLinks() {
     const length = element.getTotalLength();
     const start = element.getPointAtLength(0), end = element.getPointAtLength(length);
     const from = nodes.get(link.from), to = nodes.get(link.to);
-    if (Math.abs(Math.hypot(start.x - from.x, start.y - from.y) - from.r) > 1) problems.push({...link, kind: "start-port"});
-    if (Math.abs(Math.hypot(end.x - to.x, end.y - to.y) - to.r - 6) > 1) problems.push({...link, kind: "end-port"});
+    const sourceCard = treeEdge && cards.find(card => card.id === link.from && card.h > 0);
+    const startError = sourceCard ? Math.hypot(start.x - from.x, start.y - sourceCard.y - sourceCard.h)
+      : Math.abs(Math.hypot(start.x - from.x, start.y - from.y) - from.r);
+    if (startError > 1) problems.push({...link, kind: "start-port"});
+    if (Math.abs(Math.hypot(end.x - to.x, end.y - to.y) - to.r - (treeEdge ? 0 : 6)) > 1) problems.push({...link, kind: "end-port"});
     const crossed = new Set();
     for (let distance = 3; distance < length; distance += 6) {
       const p = element.getPointAtLength(distance);
@@ -47,5 +54,5 @@ function inspectGraphLinks() {
     }
     for (const obstacle of crossed) problems.push({...link, kind: "intersection", obstacle});
   }
-  return {selected, links: paths.length, problems};
+  return {selected, links: paths.length, edges: treePaths.length, problems};
 }

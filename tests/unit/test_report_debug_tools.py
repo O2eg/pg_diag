@@ -61,6 +61,24 @@ def test_browser_audit_rejects_output_overwriting_companion_json(tmp_path):
     assert companion.read_text() == "original JSON"
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_template_patch_preserves_payload_and_rejects_ambiguous_changes(newline):
+    sys.path.insert(0, str(TOOLS))
+    try:
+        from common import apply_template_changes
+    finally:
+        sys.path.pop(0)
+    before = '<header>\n  old button\n</header>\n'
+    after = before.replace('old button', 'new button')
+    payload = '<script id="pg-diag-artifact">{"literal":"old button"}</script>'
+    saved = before.replace('\n', newline) + payload
+    assert apply_template_changes(saved, before, after) == after.replace('\n', newline) + payload
+    with pytest.raises(ValueError, match="exactly one match"):
+        apply_template_changes(saved + saved, before, after)
+    with pytest.raises(ValueError, match="render placeholder"):
+        apply_template_changes('__PAYLOAD__', '__PAYLOAD__', 'changed')
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is unavailable")
 def test_route_debugger_cannot_overwrite_input(tmp_path):
     source = tmp_path / "report.json"

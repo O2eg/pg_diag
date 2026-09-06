@@ -13,23 +13,63 @@ function intersects(a, b, box) {
     : a.y > box.top && a.y < box.bottom && Math.max(a.x, b.x) > box.left && Math.min(a.x, b.x) < box.right;
 }
 
-function checkRoute(route, positions, link) {
+const boundsCache = new WeakMap();
+function checkRoute(route, positions, link, treeEdge = false) {
   const problems = [];
   if (route.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return ["non-finite route"];
+  let boxes = boundsCache.get(positions);
+  if (!boxes) {
+    boxes = Object.entries(positions).flatMap(([id, p]) => {
+      const result = [{id, card: false, ...R.nodeBounds({...p, cardHeight: 0})}];
+      if (p.cardHeight) result.push({id, card: true,
+        left: p.x - p.cardWidth / 2, right: p.x + p.cardWidth / 2,
+        top: p.y + p.cardOffset, bottom: p.y + p.cardOffset + p.cardHeight});
+      return result;
+    });
+    boundsCache.set(positions, boxes);
+  }
   for (let index = 1; index < route.length; index++) {
     const a = route[index - 1], b = route[index];
     if (a.x !== b.x && a.y !== b.y) problems.push("non-orthogonal segment");
-    for (const [id, p] of Object.entries(positions)) {
-      const box = R.nodeBounds({...p, cardHeight: 0});
+    for (const box of boxes) {
       // Endpoint ports touch the circle's bounding square by design.
-      if (![link.from, link.to].includes(id) && intersects(a, b, box)) problems.push("node:" + id);
-      if (p.cardHeight && intersects(a, b, {
-        left: p.x - p.cardWidth / 2, right: p.x + p.cardWidth / 2,
-        top: p.y + p.cardOffset, bottom: p.y + p.cardOffset + p.cardHeight
-      })) problems.push("card:" + id);
+      if (box.card ? treeEdge && box.id === link.from : [link.from, link.to].includes(box.id)) continue;
+      if (intersects(a, b, box)) problems.push((box.card ? 'card:' : 'node:') + box.id);
     }
   }
   return [...new Set(problems)];
+}
+
+function auditTree(evaluation) {
+  const failures = []; let routes = 0, cases = 0;
+  const scenarios = [new Set(evaluation.roots), new Set(evaluation.order)];
+  for (let seed = 1; seed <= 12; seed++) {
+    let value = seed;
+    scenarios.push(new Set(evaluation.order.filter(() => {
+      value = (Math.imul(value, 1664525) + 1013904223) >>> 0;
+      return value / 4294967296 < 0.75;
+    })));
+  }
+  for (const [scenario, expanded] of scenarios.entries()) {
+    const baseline = R.layout(evaluation, expanded);
+    const details = [null, ...Object.keys(baseline.positions).flatMap(id =>
+      [460, 1200, 2400].map(height => ({id, height, width: R.DETAIL_WIDTH})))];
+    for (const detail of details) {
+      cases++;
+      const {positions} = detail ? R.layout(evaluation, expanded, detail) : baseline;
+      const obstacles = R.routingObstacles(positions);
+      for (const [id, to] of Object.entries(positions)) {
+        const parent = evaluation.nodes[id].parent, from = positions[parent];
+        if (!from) continue;
+        const link = {from: parent, to: id}, route = R.treeRoute(from, to);
+        const problems = checkRoute(route, positions, link, true);
+        if (!R.causeRouteClear(route, from, to, positions, true, obstacles)) problems.push('hidden-settled-edge');
+        routes++;
+        if (problems.length) failures.push({scenario, detail, link, problems, route});
+      }
+    }
+  }
+  return {cases, routes, failures, passed: !failures.length};
 }
 
 function visibleCombinations(evaluation, causeOnly = false) {
@@ -91,7 +131,8 @@ function audit(evaluation) {
       }
     }
   }
-  return {links: evaluation.links.length, routes, failures, passed: !failures.length,
+  const tree = auditTree(evaluation);
+  return {links: evaluation.links.length, routes, failures, tree, passed: !failures.length && tree.passed,
     combinations: {causes: visibleCombinations(evaluation, true), all: visibleCombinations(evaluation)}};
 }
 
@@ -105,7 +146,8 @@ if (require.main === module) {
   const artifact = JSON.parse(fs.readFileSync(input, "utf8"));
   const result = audit(G.evaluate(artifact, definition));
   fs.writeFileSync(output, JSON.stringify(result, null, 2) + "\n", {mode: 0o600});
-  console.log(JSON.stringify({links: result.links, routes: result.routes, failures: result.failures.length}));
+  console.log(JSON.stringify({links: result.links, routes: result.routes, failures: result.failures.length,
+    treeCases: result.tree.cases, treeRoutes: result.tree.routes, treeFailures: result.tree.failures.length}));
   process.exitCode = result.passed ? 0 : 1;
 }
-module.exports = {audit, checkRoute, intersects, visibleCombinations};
+module.exports = {audit, auditTree, checkRoute, intersects, visibleCombinations};

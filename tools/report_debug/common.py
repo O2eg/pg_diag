@@ -1,6 +1,7 @@
 """Small shared helpers for offline report checks; never connect to PostgreSQL."""
 
 import glob
+import difflib
 import hashlib
 import json
 import re
@@ -115,4 +116,22 @@ def refresh(text):
         stripped.append(value)
     if stripped[0] != stripped[1]:
         raise ValueError("Non-graph HTML changed")
+    return text
+
+
+def apply_template_changes(text, before, after):
+    """Apply literal template hunks, preserving embedded payloads and other assets."""
+    previous = before.splitlines(keepends=True)
+    current = after.splitlines(keepends=True)
+    groups = difflib.SequenceMatcher(a=previous, b=current, autojunk=False).get_grouped_opcodes(3)
+    for group in groups:
+        old = "".join(previous[group[0][1]:group[-1][2]])
+        new = "".join(current[group[0][3]:group[-1][4]])
+        if re.search(r"__[A-Z][A-Z0-9_]+__", old + new):
+            raise ValueError("Template change overlaps a render placeholder; use a narrower patch")
+        if text.count(old) == 0 and "\r\n" in text:
+            old, new = old.replace("\n", "\r\n"), new.replace("\n", "\r\n")
+        if text.count(old) != 1:
+            raise ValueError("Expected exactly one match for a template change; report may use another template version")
+        text = text.replace(old, new, 1)
     return text

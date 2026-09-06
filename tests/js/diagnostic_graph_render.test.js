@@ -171,6 +171,28 @@ test("cause gutters remain visible in mixed layouts and with tall cards", () => 
   const result = audit(G.evaluate(fixture, definition));
   assert.ok(result.routes >= definition.links.length * 200);
   assert.deepEqual(result.failures, []);
+  assert.ok(result.tree.routes > 60000);
+  assert.deepEqual(result.tree.failures, []);
+});
+
+test("compact branches reuse empty space beside descendants without crossing nodes", () => {
+  const ev = G.evaluate(fixture, definition);
+  const expanded = new Set(['network', 'network.clients', 'network.clients.capacity']);
+  const {positions} = R.layout(ev, expanded,
+    {id: 'network.clients.capacity.sources.sessions', width: R.DETAIL_WIDTH, height: 430});
+  const network = Object.entries(positions).filter(([id]) => id === 'network' || id.startsWith('network.'));
+  const boxes = network.map(([, p]) => R.nodeBounds(p));
+  assert.ok(Math.max(...boxes.map(b => b.right)) - Math.min(...boxes.map(b => b.left)) < 1500,
+    'the expanded centre must not reserve its full width between the side nodes');
+  for (const [id, p] of network) {
+    const parent = positions[ev.nodes[id].parent];
+    if (!parent) continue;
+    const bottom = parent.y + (parent.cardHeight ? parent.cardOffset + parent.cardHeight : parent.radius);
+    assert.ok(p.y - p.radius - bottom >= 100, 'vertical space for a clear connecting gutter');
+    const route = R.treeRoute(parent, p);
+    assert.ok(R.causeRouteClear(route, parent, p, positions, true));
+    if (parent.x !== p.x) assert.match(R.roundedPath(route), / Q/, 'rounded bends');
+  }
 });
 
 test("retiring cards cannot be crossed by horizontal cause segments", () => {
@@ -178,10 +200,19 @@ test("retiring cards cannot be crossed by horizontal cause segments", () => {
   const from = position(100, 100), to = position(500, 500);
   const positions = {from, to, trunk: position(136, 300, {radius: 70, labelWidth: 140}),
     retiring: position(300, -100, {cardOffset: 30, cardHeight: 400, cardWidth: 100})};
-  const route = R.causeRoute(from, to, positions, 0);
+  const route = R.causeRoute(from, to, positions, 0, false);
   assert.equal(R.causeRouteClear(route, from, to, positions), false);
   positions.retiring.cardHeight = 0;
   assert.equal(R.causeRouteClear(R.causeRoute(from, to, positions, 0), from, to, positions), true);
+});
+
+test("collapsing tree edges disappear before turning back through their parent card", () => {
+  const from = {x: 100, y: 100, radius: 50, labelWidth: 100, cardOffset: 72, cardWidth: 520, cardHeight: 300};
+  const to = {x: 150, y: 600, radius: 30, labelWidth: 60, cardHeight: 0};
+  const positions = {from, to};
+  assert.ok(R.causeRouteClear(R.treeRoute(from, to), from, to, positions, true));
+  to.y = 300;
+  assert.equal(R.causeRouteClear(R.treeRoute(from, to), from, to, positions, true), false);
 });
 
 test("cross-links point to possible causes and shared evidence has no cause direction", () => {
@@ -200,6 +231,34 @@ test("cross-links point to possible causes and shared evidence has no cause dire
     assert.ok(evaluation.nodes[link.to].causedBy.some(item => item.from === link.from && item.kind === "related"));
   }
   assert.equal(definition.links.filter(link => link.kind === "related").length, 3);
+});
+
+test("all cards of different heights fit without overlapping nodes or blocking settled routes", () => {
+  const ev = G.evaluate(fixture, definition);
+  for (const step of [0, 137, 337]) {
+    const details = new Map(ev.order.map((id, i) => [id, {id, width: R.DETAIL_WIDTH, height: 200 + i % 7 * step}]));
+    const {positions, width, height} = R.layout(ev, new Set(ev.order), details);
+    const obstacles = R.routingObstacles(positions);
+    for (const [id, p] of Object.entries(positions)) {
+      assert.equal(p.cardHeight, details.get(id).height);
+      const box = R.nodeBounds(p);
+      assert.ok(box.left >= 0 && box.right <= width && box.top >= 0 && box.bottom <= height);
+      for (const [otherId, other] of Object.entries(positions)) {
+        if (id === otherId) continue;
+        const b = R.nodeBounds(other);
+        assert.ok(box.right <= b.left || box.left >= b.right || box.bottom <= b.top || box.top >= b.bottom,
+          id + ' overlaps ' + otherId);
+      }
+      const from = positions[ev.nodes[id].parent];
+      if (from) assert.ok(R.causeRouteClear(R.treeRoute(from, p), from, p, positions, true, obstacles), id);
+    }
+    for (const link of ev.links) {
+      const from = positions[link.from], to = positions[link.to];
+      const route = R.causeRoute(from, to, positions, 0);
+      assert.ok(R.causeRouteClear(route, from, to, positions), link.from + ' -> ' + link.to);
+      assert.doesNotMatch(R.roundedPath(route), /NaN|undefined|Infinity/);
+    }
+  }
 });
 
 test("visible cause combinations respect shared ancestor expansion", () => {

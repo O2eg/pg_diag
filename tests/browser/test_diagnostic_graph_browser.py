@@ -243,11 +243,39 @@ def test_diagnostic_graph_renders_and_navigates(
         )
         expanded_count = page.locator("#diagnosticGraph .dg-node").count()
         assert expanded_count == page.evaluate("pgDiagReport.diagnosticGraph.order.length")
+        assert graph.locator('.dg-detail').count() <= 1, 'first step reveals the tree'
         graph.locator(".dg-zoom").get_by_role("button", name="Expand all", exact=True).click()
         settle()
         assert page.locator("#diagnosticGraph .dg-node").count() == expanded_count
-        page.click('#diagnosticGraph .dg-node[data-node-id="ram.work_mem"]')
+        assert graph.locator('.dg-detail').count() == expanded_count
+        assert graph.locator('.dg-node[aria-expanded="true"]').count() == expanded_count
+        assert graph.locator('.dg-detail .dg-panel').evaluate_all('cards => cards.every(card => !card.inert)')
+        assert graph.get_by_role('button', name='Expand all', exact=True).is_disabled()
+        assert graph.locator('.dg-detail').evaluate_all("""cards => {
+          const canvas = document.querySelector('#diagnosticGraph .dg-svg').getBoundingClientRect();
+          return cards.every(card => {
+            const box = card.getBoundingClientRect();
+            return box.left >= canvas.left && box.right <= canvas.right && box.top >= canvas.top && box.bottom <= canvas.bottom;
+          });
+        }""")
+        # Closing one card keeps the expanded tree and all other cards intact.
+        close_card = graph.locator('.dg-detail[data-node-id="ram.work_mem"] .dg-panel-close')
+        close_card.scroll_into_view_if_needed()
+        box = close_card.bounding_box()
+        assert box is not None
+        # Fit is an overview of hundreds of cards; zoom at the target control.
+        page.mouse.move(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
+        for _ in range(4):
+            page.mouse.wheel(0, -500)
+        page.wait_for_function("document.querySelector('.dg-detail[data-node-id=\"ram.work_mem\"] .dg-panel-close').getBoundingClientRect().width > 8")
+        close_card.click()
         settle()
+        assert graph.locator('.dg-detail').count() == expanded_count - 1
+        assert graph.locator('.dg-node').count() == expanded_count
+        assert graph.get_by_role('button', name='Expand all', exact=True).is_enabled()
+        graph.get_by_role('button', name='Expand all', exact=True).click()
+        settle()
+        assert graph.locator('.dg-detail').count() == expanded_count
         graph.locator(".dg-zoom").get_by_role("button", name="Collapse all", exact=True).click()
         settle()
         assert page.locator("#diagnosticGraph .dg-node").count() == 6

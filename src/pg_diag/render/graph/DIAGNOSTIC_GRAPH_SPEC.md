@@ -436,9 +436,15 @@ and runbook sections 3.6, 4.5 and 6.
   descendants and detail cards. Each branch has independent vertical spacing;
   expanding the upper trees moves the lower row through the existing animation.
   Children of one parent share a row, siblings sit side by side, and parents are centred
-  above their first/last child. Subtree spans reserve
-  space for the circles and their cards. Parent→child edges are straight solid segments
-  clipped at the circles. There are no list-style elbows or column boxes.
+  above their first/last child. Neighbouring branches are packed by their occupied
+  vertical contours, including circles, cards and connecting gutters, so an expanded
+  central branch does not push its leaf siblings beyond its entire subtree width.
+  Parent→child edges are solid vertical/horizontal paths with rounded bends in the
+  gutter between levels, leaving the bottom of the parent circle (or its open card)
+  and entering the top of the child. They must avoid unrelated nodes and cards.
+  Circles have at least 104 graph units of vertical clearance; siblings retain a
+  24-unit horizontal contour gap. Obstructed edges are hidden during transitions
+  and all visible parent/child pairs are connected once the layout settles.
 - Cause links are shown only for the selected node, as dashed arrows routed
   through level gutters and clear vertical lanes with rounded corners. They
   must not cross unrelated nodes, labels or open/closing cards. Every segment
@@ -468,7 +474,9 @@ and runbook sections 3.6, 4.5 and 6.
   findings must never be labelled "Bottleneck".
 - Canvas: fixed-height viewport with drag-to-pan, wheel zoom anchored at the
   pointer, and in-canvas Expand all, Collapse all, minus/plus, Fit and 1:1 controls.
-  Expand all reveals every branch; Collapse all closes cards and returns to
+  Expand all first reveals every branch. When the entire tree is already
+  expanded, the next press opens cards for all nodes, including the roots;
+  the button is disabled while every card is open. Collapse all closes cards and returns to
   the six roots. Both actions use the existing animation and refit the graph.
   These controls share the zoom/full-screen toolbar, including in full screen.
   Button zoom anchors
@@ -492,7 +500,10 @@ and runbook sections 3.6, 4.5 and 6.
   scroll area. Children appear as connected nodes on the canvas and are not
   repeated as a list in the card. The card has a fixed width in graph coordinates and its actual
   HTML height is measured before layout. A second click (including on a leaf)
-  closes the card; selecting another node replaces it. There is no separate
+  closes the card; selecting another node replaces it in ordinary single-card
+  mode. After the second Expand all step, cards stay open independently; a card's
+  close button closes only that card and preserves its expanded descendants.
+  Collapse all restores ordinary single-card mode. There is no separate
   details panel below the canvas.
   If children raise the score above the node's own score, the panel states
   that explicitly without a numeric score. Hidden warnings still contribute

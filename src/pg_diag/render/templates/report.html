@@ -231,6 +231,43 @@ __ECHARTS_JS__
       stroke-linejoin: round;
     }
 
+    .header-summary {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 16px 24px;
+      margin-top: 14px;
+    }
+
+    .header-summary-counts {
+      min-width: 0;
+    }
+
+    .header-summary-counts .summary-bar:first-child {
+      margin-top: 0;
+    }
+
+    .explain-available {
+      min-height: 58px;
+      padding: 12px 24px;
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      background: var(--accent);
+      color: var(--accent-contrast);
+      font-size: 18px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .explain-available:hover {
+      background: color-mix(in srgb, var(--accent) 85%, white);
+    }
+
+    .explain-available:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+    }
+
     .summary-bar {
       display: flex;
       flex-wrap: wrap;
@@ -2357,8 +2394,13 @@ __ECHARTS_JS__
       </div>
       <div id="runtime" class="runtime"></div>
       <div id="runtimeDetails" class="runtime"></div>
-      <div id="statusSummary" class="summary-bar"></div>
-      <div id="severitySummary" class="summary-bar"></div>
+      <div class="header-summary">
+        <div class="header-summary-counts">
+          <div id="statusSummary" class="summary-bar"></div>
+          <div id="severitySummary" class="summary-bar"></div>
+        </div>
+        <button id="explainAvailable" type="button" class="explain-available" hidden>Explain available</button>
+      </div>
       <label class="theme-toggle header-theme-toggle" title="Switch report theme">
         <span>Dark</span>
         <input id="themeToggle" type="checkbox">
@@ -2682,6 +2724,17 @@ __PG_DIAG_GRAPH_RENDER_JS__
         statusSummary.appendChild(badge);
       }
       renderSeveritySummary();
+      const explainId = "server_log.auto_explain_plans";
+      const explainItem = items[explainId];
+      const explainResult = explainItem && explainItem.result;
+      const explainButton = document.getElementById("explainAvailable");
+      explainButton.hidden = !(explainItem && isVisibleItem(explainItem)
+        && explainResult && explainResult.kind === "chart"
+        && (explainResult.series || []).some((series) => (series.points || []).some((point) =>
+          // Zero boundary points establish the time axis even when no plans were collected.
+          numericValue(point.value) > 0 || numericValue((point.tooltip || {}).duration_ms) !== null
+          || Boolean(point.viewer && (point.viewer.plan_ref || point.viewer.plan_text)))));
+      explainButton.onclick = () => navigateToReportNode("item", explainId);
     }
 
     function renderSeveritySummary() {

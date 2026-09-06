@@ -19,8 +19,9 @@
   const LAYOUT = {
     siblingGap: 24,
     treeGap: 64,
-    rootRowGap: 96,
-    levelHeight: 156,
+    rootRowGap: 128,
+    levelHeight: 208,
+    levelGap: 104,
     rootRadius: 120,
     radius: 72,
     radiusStep: 12,
@@ -32,7 +33,7 @@
     labelLineHeight: 18
   };
   const STORAGE_KEY = "pg-diag-graph-collapsed";
-  const MIN_ZOOM = 0.05;
+  const MIN_ZOOM = 0.01;
   const MAX_ZOOM = 4;
   const DETAIL_WIDTH = 520;
   const MOTION_MS = 300;
@@ -143,11 +144,24 @@
     return new Set();
   }
 
-  // Each subtree owns a horizontal span. Children share a row, and their
-  // parent is centred over the first and last child (not a depth-first list).
-  // Health and security form a second row below the resource trees, including
-  // their visible descendants and open detail cards.
+  // Pack the occupied contours, not full-height rectangular subtree spans.
+  // Include connecting gutters so a neighbour cannot move into an edge.
+  function contourShift(left, right, gap) {
+    let shift = 0;
+    for (const a of left) for (const b of right) {
+      if (a.top <= b.bottom && a.bottom >= b.top) shift = Math.max(shift, a.right + gap - b.left);
+    }
+    return shift;
+  }
+
+  function moveBoxes(boxes, x, y) {
+    return boxes.map(b => ({left: b.left + x, right: b.right + x, top: b.top + y, bottom: b.bottom + y}));
+  }
+
+  // Children share a row; cards move only their own descendants. Health and
+  // security stay below all visible resource trees and their detail cards.
   function layout(evaluation, expanded, detail) {
+    const details = detail instanceof Map ? detail : new Map(detail ? [[detail.id, detail]] : []);
     const nodes = evaluation.nodes;
     const positions = {};
     const spans = {};
@@ -162,35 +176,44 @@
       const radius = depth === 0 ? rootRadius : (rootRadius - depth * LAYOUT.radiusStep) / 1.5;
       const labelWidth = radius * 2;
       const labelBottom = radius + 4;
-      const cardHeight = detail && detail.id === id ? detail.height : 0;
-      const cardWidth = cardHeight ? detail.width : 0;
+      const card = details.get(id);
+      const cardHeight = card ? card.height : 0;
+      const cardWidth = cardHeight ? card.width : 0;
       const cardOffset = labelBottom + 18;
-      const ownWidth = Math.max(labelWidth, cardWidth);
       const children = childrenOf(id);
-      let cursor = 0;
+      const bottom = cardHeight ? cardOffset + cardHeight : labelBottom;
+      children.forEach(child => measure(child, depth + 1));
+      const childRadius = children.length ? spans[children[0]].radius : 0;
+      const childY = Math.max(LAYOUT.levelHeight, bottom + childRadius + LAYOUT.levelGap);
+      let contour = [];
       const offsets = [];
       for (const child of children) {
-        measure(child, depth + 1);
-        offsets.push(cursor);
-        cursor += spans[child].width + LAYOUT.siblingGap;
+        const boxes = moveBoxes(spans[child].contour, 0, childY);
+        const x = contourShift(contour, boxes, LAYOUT.siblingGap);
+        offsets.push(x);
+        contour.push(...moveBoxes(boxes, x, 0));
       }
-      const childrenWidth = Math.max(0, cursor - LAYOUT.siblingGap);
-      const anchor = children.length ? (spans[children[0]].anchor + offsets[offsets.length - 1] + spans[children[children.length - 1]].anchor) / 2 : ownWidth / 2;
-      // Reserve both sides of the parent/card even with asymmetric children.
-      const left = Math.min(0, anchor - ownWidth / 2);
-      const right = Math.max(childrenWidth, anchor + ownWidth / 2);
-      spans[id] = {width: right - left, anchor: anchor - left, offsets: offsets.map(x => x - left), lines, radius, labelWidth, labelBottom, cardHeight, cardWidth, cardOffset};
-      return spans[id].width;
+      const centre = children.length ? (offsets[0] + offsets[offsets.length - 1]) / 2 : 0;
+      contour = moveBoxes(contour, -centre, 0);
+      const span = {offsets: offsets.map(x => x - centre), childY, lines, radius, labelWidth, cardHeight, cardWidth, cardOffset};
+      const parent = {x: 0, y: 0, ...span};
+      contour.push(nodeBounds(parent));
+      for (const x of span.offsets) {
+        const route = treeRoute(parent, {x, y: childY, radius: childRadius});
+        for (let i = 1; i < route.length; i++) {
+          const a = route[i - 1], b = route[i];
+          contour.push({left: Math.min(a.x, b.x) - 8, right: Math.max(a.x, b.x) + 8,
+            top: Math.min(a.y, b.y) - 8, bottom: Math.max(a.y, b.y) + 8});
+        }
+      }
+      spans[id] = {...span, contour};
     };
-    const place = (id, depth, left, y) => {
+    const place = (id, depth, x, y) => {
       const span = spans[id];
       const children = childrenOf(id);
-      const bottom = span.cardHeight ? span.cardOffset + span.cardHeight : span.labelBottom;
-      const childRadius = children.length ? spans[children[0]].radius : 0;
-      const childY = y + Math.max(LAYOUT.levelHeight, bottom + childRadius + 56);
-      children.forEach((child, index) => place(child, depth + 1, left + span.offsets[index], childY));
+      children.forEach((child, index) => place(child, depth + 1, x + span.offsets[index], y + span.childY));
       const {radius, labelWidth, cardHeight, cardWidth, cardOffset, lines} = span;
-      positions[id] = {x: left + span.anchor, y, depth, radius, lines, labelWidth, cardHeight, cardWidth, cardOffset};
+      positions[id] = {x, y, depth, radius, lines, labelWidth, cardHeight, cardWidth, cardOffset};
       maxBottom = Math.max(maxBottom, nodeBounds(positions[id]).bottom);
     };
     const lowerRoots = new Set(["database_health", "database_security"]);
@@ -203,12 +226,15 @@
     for (const roots of rootRows) {
       if (!roots.length) continue;
       for (const id of roots) measure(id, 0);
-      let left = LAYOUT.marginX;
+      const contour = [], offsets = [];
       for (const id of roots) {
-        place(id, 0, left, top + rootRadius);
-        left += spans[id].width + LAYOUT.treeGap;
+        const x = contourShift(contour, spans[id].contour, LAYOUT.treeGap);
+        offsets.push(x);
+        contour.push(...moveBoxes(spans[id].contour, x, 0));
       }
-      width = Math.max(width, left - LAYOUT.treeGap + LAYOUT.marginX);
+      const left = Math.min(...contour.map(b => b.left));
+      roots.forEach((id, index) => place(id, 0, offsets[index] - left + LAYOUT.marginX, top + rootRadius));
+      width = Math.max(width, Math.max(...contour.map(b => b.right)) - left + LAYOUT.marginX * 2);
       top = maxBottom + LAYOUT.rootRowGap;
     }
     return {positions, width, height: maxBottom + LAYOUT.marginBottom};
@@ -297,7 +323,7 @@
       if (handler) control.addEventListener("click", handler);
       return control;
     };
-    button("Expand all", "Expand all", () => setAllExpanded(state, true));
+    state.expandAllButton = button("Expand all", "Expand all", () => setAllExpanded(state, true));
     button("Collapse all", "Collapse all", () => setAllExpanded(state, false));
     state.zoomOut = button("−", "Zoom out", () => zoomAt(state, state.view.scale / 1.4));
     state.zoomValue = el("output", "dg-zoom-value", controls);
@@ -395,12 +421,13 @@
   }
   // ------------------------------------------------------------ drawing
 
-  function edgePath(from, to) {
-    if (from.cardHeight) from = {...from, y: from.y + from.cardOffset + from.cardHeight, radius: 0};
-    const distance = Math.hypot(to.x - from.x, to.y - from.y) || 1;
-    const ux = (to.x - from.x) / distance;
-    const uy = (to.y - from.y) / distance;
-    return "M" + (from.x + ux * from.radius) + "," + (from.y + uy * from.radius) + " L" + (to.x - ux * to.radius) + "," + (to.y - uy * to.radius);
+  function treeRoute(from, to) {
+    const start = {x: from.x, y: from.y + (from.cardHeight ? from.cardOffset + from.cardHeight : from.radius)};
+    const end = {x: to.x, y: to.y - to.radius};
+    if (start.x === end.x) return [start, end];
+    const gutter = (start.y + end.y) / 2;
+    return [start, {x: start.x, y: gutter}, {x: end.x, y: gutter}, end]
+      .filter((p, i, points) => !i || p.x !== points[i - 1].x || p.y !== points[i - 1].y);
   }
 
   function nodeBounds(position) {
@@ -412,7 +439,7 @@
 
   // Route causes through level gutters and a free vertical lane. Only links
   // involving the selection are drawn, so unrelated branches stay legible.
-  function causeRoute(from, to, positions, lane) {
+  function causeRoute(from, to, positions, lane, allowDetour = true) {
     const offset = 28 + Math.min(lane || 0, 3) * 4;
     const side = to.x >= from.x ? 1 : -1;
     const exitX = from.x + side * (from.labelWidth / 2 + 16);
@@ -442,7 +469,81 @@
       }
       compact.push(point);
     }
+    if (allowDetour && !causeRouteClear(compact, from, to, positions)) {
+      return causeDetour(from, to, positions) || compact;
+    }
     return compact;
+  }
+
+  // Several open cards can cut across the old level gutters. Search their
+  // rectilinear visibility grid only when the short gutter route is blocked.
+  // The extra clearance also keeps rounded corners outside the obstacles.
+  function causeDetour(from, to, positions) {
+    const side = to.x >= from.x ? 1 : -1;
+    const start = {x: from.x + side * (from.radius + 16), y: from.y};
+    const end = {x: to.x, y: to.y - to.radius - 28};
+    const boxes = routingObstacles(positions).map(b => ({left: b.left - 8, right: b.right + 8,
+      top: b.top - 8, bottom: b.bottom + 8}));
+    const xs = [...new Set([start.x, end.x, ...boxes.flatMap(b => [b.left, b.right])])].sort((a, b) => a - b);
+    const ys = [...new Set([start.y, end.y, ...boxes.flatMap(b => [b.top, b.bottom])])].sort((a, b) => a - b);
+    const width = xs.length, size = width * ys.length;
+    const startId = ys.indexOf(start.y) * width + xs.indexOf(start.x);
+    const endId = ys.indexOf(end.y) * width + xs.indexOf(end.x);
+    const distance = new Float64Array(size).fill(Infinity), previous = new Int32Array(size).fill(-1);
+    const heap = [];
+    const push = entry => {
+      let i = heap.length;
+      heap.push(entry);
+      while (i && heap[(i - 1) >> 1].priority > entry.priority) {
+        heap[i] = heap[(i - 1) >> 1]; i = (i - 1) >> 1;
+      }
+      heap[i] = entry;
+    };
+    const pop = () => {
+      const first = heap[0], last = heap.pop();
+      if (heap.length) {
+        let i = 0;
+        while (i * 2 + 1 < heap.length) {
+          let child = i * 2 + 1;
+          if (child + 1 < heap.length && heap[child + 1].priority < heap[child].priority) child++;
+          if (heap[child].priority >= last.priority) break;
+          heap[i] = heap[child]; i = child;
+        }
+        heap[i] = last;
+      }
+      return first;
+    };
+    distance[startId] = 0;
+    push({id: startId, distance: 0, priority: 0});
+    while (heap.length) {
+      const current = pop(), id = current.id;
+      if (current.distance !== distance[id]) continue;
+      if (id === endId) break;
+      const ix = id % width, iy = Math.floor(id / width), x = xs[ix], y = ys[iy];
+      const neighbours = [];
+      if (ix) neighbours.push(id - 1);
+      if (ix + 1 < width) neighbours.push(id + 1);
+      if (iy) neighbours.push(id - width);
+      if (iy + 1 < ys.length) neighbours.push(id + width);
+      for (const next of neighbours) {
+        const nx = xs[next % width], ny = ys[Math.floor(next / width)];
+        const candidate = current.distance + Math.abs(nx - x) + Math.abs(ny - y);
+        if (candidate >= distance[next]) continue;
+        if (boxes.some(b => x === nx
+          ? x > b.left && x < b.right && Math.max(y, ny) > b.top && Math.min(y, ny) < b.bottom
+          : y > b.top && y < b.bottom && Math.max(x, nx) > b.left && Math.min(x, nx) < b.right)) continue;
+        distance[next] = candidate; previous[next] = id;
+        push({id: next, distance: candidate, priority: candidate + Math.abs(nx - end.x) + Math.abs(ny - end.y)});
+      }
+    }
+    if (!Number.isFinite(distance[endId])) return null;
+    const route = [];
+    for (let id = endId; id !== -1; id = previous[id]) route.push({x: xs[id % width], y: ys[Math.floor(id / width)]});
+    route.reverse();
+    route.unshift({x: from.x + side * from.radius, y: from.y});
+    route.push({x: to.x, y: to.y - to.radius - 6});
+    return route.filter((p, i) => !i || i === route.length - 1 ||
+      !((route[i - 1].x === p.x && p.x === route[i + 1].x) || (route[i - 1].y === p.y && p.y === route[i + 1].y)));
   }
 
   function roundedPath(points) {
@@ -463,20 +564,30 @@
   // During a transition, the retiring card and moving subtrees can occupy
   // a gutter which is clear in the final layout. Do not paint a cause through
   // them. Check every segment, including the horizontal approach to a node.
-  function causeRouteClear(points, from, to, positions) {
+  function routingObstacles(positions) {
+    const boxes = [];
+    for (const p of Object.values(positions)) {
+      boxes.push({...nodeBounds({...p, cardHeight: 0}), position: p, card: false});
+      if (p.cardHeight > 0 && p.cardWidth > 0) boxes.push({
+        left: p.x - p.cardWidth / 2 - 8, right: p.x + p.cardWidth / 2 + 8,
+        top: p.y + p.cardOffset - 8, bottom: p.y + p.cardOffset + p.cardHeight + 8,
+        position: p, card: true
+      });
+    }
+    return boxes;
+  }
+
+  function causeRouteClear(points, from, to, positions, treeEdge, obstacles) {
+    // A disappearing child can retract above the bottom of its parent's
+    // closing card. Never draw the upward remainder back through that card.
+    if (treeEdge && points[points.length - 1].y < points[0].y) return false;
     const crosses = (a, b, box) => a.x === b.x
       ? a.x > box.left && a.x < box.right && Math.max(a.y, b.y) > box.top && Math.min(a.y, b.y) < box.bottom
       : a.y > box.top && a.y < box.bottom && Math.max(a.x, b.x) > box.left && Math.min(a.x, b.x) < box.right;
-    const boxes = [];
-    for (const p of Object.values(positions)) {
-      if (p !== from && p !== to) boxes.push(nodeBounds({...p, cardHeight: 0}));
-      if (p.cardHeight > 0 && p.cardWidth > 0) boxes.push({
-        left: p.x - p.cardWidth / 2 - 8, right: p.x + p.cardWidth / 2 + 8,
-        top: p.y + p.cardOffset - 8, bottom: p.y + p.cardOffset + p.cardHeight + 8
-      });
-    }
+    const boxes = obstacles || routingObstacles(positions);
     return points.every((point, index) => Number.isFinite(point.x) && Number.isFinite(point.y)
-      && (!index || !boxes.some(box => crosses(points[index - 1], point, box))));
+      && (!index || !boxes.some(box => (box.card ? !(treeEdge && box.position === from)
+        : box.position !== from && box.position !== to) && crosses(points[index - 1], point, box))));
   }
 
   function ensureCard(state, nodeId) {
@@ -492,7 +603,7 @@
     if (typeof ResizeObserver !== "undefined") {
       card.observer = new ResizeObserver(() => {
         const height = panel.offsetHeight;
-        if (state.detailsId === nodeId && height > 0 && height !== card.height) {
+        if (state.openDetails.has(nodeId) && height > 0 && height !== card.height) {
           card.height = height;
           drawGraph(state);
         }
@@ -517,8 +628,21 @@
     state.frame = null;
     const before = state.displayPositions || {};
     const beforeOpacity = state.displayOpacity || {};
-    const detail = ensureCard(state, state.detailsId);
-    const target = layout(evaluation, expanded, detail);
+    const visible = new Set();
+    const visit = id => {
+      visible.add(id);
+      if (expanded.has(id)) evaluation.nodes[id].children.forEach(visit);
+    };
+    evaluation.roots.forEach(visit);
+    const details = new Map();
+    for (const id of state.openDetails) {
+      if (visible.has(id)) details.set(id, ensureCard(state, id));
+      else state.openDetails.delete(id);
+    }
+    const target = layout(evaluation, expanded, details);
+    const treeExpanded = evaluation.order.every(id => !evaluation.nodes[id].children.length || expanded.has(id));
+    state.expandAllButton.title = treeExpanded ? "Expand all node details" : "Expand all branches";
+    state.expandAllButton.disabled = treeExpanded && evaluation.order.every(id => state.openDetails.has(id));
     const positions = target.positions;
     state.positions = positions;
     state.bounds = {width: target.width, height: target.height};
@@ -576,7 +700,7 @@
       }
       const fill = scoreColor(node.score);
       const isRoot = position.depth === 0;
-      group.setAttribute("aria-expanded", String(state.detailsId === nodeId));
+      group.setAttribute("aria-expanded", String(state.openDetails.has(nodeId)));
       if (node.children.length) group.setAttribute("data-children-expanded", String(expanded.has(nodeId)));
       svgEl("circle", {class: "dg-hit", r: position.radius + 4}, group);
       const circle = svgEl("circle", {r: position.radius, class: "dg-circle"}, group);
@@ -611,8 +735,8 @@
     // Measure outside animation frames; resize also handles initially hidden SVGs.
     fitNodeLabels(state);
     for (const [id, card] of state.cards) {
-      card.panel.inert = state.detailsId !== id;
-      card.element.dataset.closing = String(state.detailsId !== id);
+      card.panel.inert = !details.has(id);
+      card.element.dataset.closing = String(!details.has(id));
       cardsGroup.appendChild(card.element);
       connectors.push({id, element: svgEl("path", {class: "dg-edge dg-detail-connector"}, edges)});
     }
@@ -638,14 +762,18 @@
       }
       state.displayPositions = framePositions;
       state.displayOpacity = opacity;
+      const obstacles = routingObstacles(framePositions);
       for (const edge of edgeElements) {
-        edge.element.setAttribute("d", edgePath(framePositions[edge.from], framePositions[edge.to]));
-        edge.element.style.opacity = Math.min(opacity[edge.from], opacity[edge.to]);
+        const from = framePositions[edge.from], to = framePositions[edge.to];
+        const route = treeRoute(from, to);
+        edge.element.setAttribute("d", roundedPath(route));
+        edge.element.style.opacity = causeRouteClear(route, from, to, framePositions, true, obstacles)
+          ? Math.min(opacity[edge.from], opacity[edge.to]) : 0;
       }
       for (const link of linkElements) {
-        const route = causeRoute(framePositions[link.from], framePositions[link.to], framePositions, link.lane);
+        const route = causeRoute(framePositions[link.from], framePositions[link.to], framePositions, link.lane, progress === 1);
         link.element.setAttribute("d", roundedPath(route));
-        const clear = causeRouteClear(route, framePositions[link.from], framePositions[link.to], framePositions);
+        const clear = causeRouteClear(route, framePositions[link.from], framePositions[link.to], framePositions, false, obstacles);
         link.element.style.opacity = clear ? Math.min(opacity[link.from], opacity[link.to]) : 0;
       }
       for (const [id, card] of state.cards) {
@@ -672,7 +800,7 @@
       for (const id of ids) if (!positions[id]) nodeElements[id].remove();
       for (const edge of edgeElements) if (!positions[edge.to]) edge.element.remove();
       for (const [id, card] of state.cards) {
-        if (state.detailsId === id) continue;
+        if (details.has(id)) continue;
         if (card.observer) card.observer.disconnect();
         card.element.remove();
         state.cards.delete(id);
@@ -707,13 +835,15 @@
       state.expanded.add(ancestor);
       ancestor = state.evaluation.nodes[ancestor].parent;
     }
-    const closing = toggle && state.detailsId === nodeId;
+    const closing = toggle && state.openDetails.has(nodeId);
     if (node.children.length && toggle) {
       if (closing) state.expanded.delete(nodeId);
       else state.expanded.add(nodeId);
     }
     state.selected = nodeId;
-    state.detailsId = closing ? null : nodeId;
+    if (!state.multipleDetails) state.openDetails.clear();
+    if (closing) state.openDetails.delete(nodeId);
+    else state.openDetails.add(nodeId);
     state.autoFit = false;
     drawGraph(state);
     if (focused) {
@@ -723,10 +853,15 @@
   }
 
   function setAllExpanded(state, expanded) {
+    if (expanded && state.evaluation.order.every(id => !state.evaluation.nodes[id].children.length || state.expanded.has(id))) {
+      state.multipleDetails = true;
+      state.openDetails = new Set(state.evaluation.order);
+    }
     state.expanded = expanded ? new Set(state.evaluation.order) : initialExpanded();
     if (!expanded) {
       state.selected = null;
-      state.detailsId = null;
+      state.openDetails.clear();
+      state.multipleDetails = false;
     }
     drawGraph(state);
     fitView(state);
@@ -746,7 +881,12 @@
     close.type = "button";
     close.setAttribute("aria-label", "Close node details");
     close.addEventListener("click", () => {
-      selectNode(state, nodeId, true);
+      if (state.multipleDetails) {
+        state.openDetails.delete(nodeId);
+        state.selected = nodeId;
+        state.autoFit = false;
+        drawGraph(state);
+      } else selectNode(state, nodeId, true);
       state.svg.querySelector(".dg-node-selected").focus({preventScroll: true});
     });
     if (node.summary) el("p", "dg-panel-summary", panel, node.summary);
@@ -811,6 +951,10 @@
         if (binding.kind === "chart") meta.push("chart");
         if (binding.collection_status && binding.collection_status !== "ok") meta.push(binding.collection_status);
         el("span", "dg-item-meta", chip, meta.join(" · "));
+        // Reuse the report's icon and type fallback for empty/failed items too.
+        const icons = document.getElementById("item-" + binding.id)
+          ?.querySelector(":scope > summary .data-type-icons");
+        if (icons) chip.appendChild(icons.cloneNode(true));
         if (presence === "absent") {
           chip.disabled = true;
           chip.title = "This item is not part of the current report";
@@ -899,7 +1043,8 @@
       evaluation,
       expanded: initialExpanded(evaluation),
       selected: null,
-      detailsId: null,
+      openDetails: new Set(),
+      multipleDetails: false,
       cards: new Map(),
       view: {x: 0, y: 0, scale: 1},
       autoFit: true,
@@ -938,5 +1083,5 @@
     return controller;
   }
 
-  return {render, scoreColor, layout, initialExpanded, truncateLabel, labelLines, nodeBounds, causeRoute, causeRouteClear, roundedPath, LAYOUT, DETAIL_WIDTH, MOTION_MS};
+  return {render, scoreColor, layout, initialExpanded, truncateLabel, labelLines, nodeBounds, treeRoute, causeRoute, causeRouteClear, routingObstacles, roundedPath, LAYOUT, DETAIL_WIDTH, MOTION_MS};
 });
