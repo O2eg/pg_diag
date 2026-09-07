@@ -3,10 +3,14 @@ FROM postgres:${PG_IMAGE_TAG}
 
 ARG PG_MAJOR
 
-# Bullseye LTS ended on 2026-08-31; PG10 needs its frozen security index.
-# Relax only that index's expiry check, retaining signature verification.
+# Keep PG10's legacy packages and their indexes together after Bullseye LTS.
+# Snapshot expiry is expected; APT signature verification remains enabled.
 RUN if [ "$PG_MAJOR" = "10" ]; then \
-        sed -i '/^deb .* bullseye-security /s/^deb /deb [check-valid-until=no] /' /etc/apt/sources.list; \
+        printf '%s\n' \
+            'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20260901T000000Z/ bullseye main' \
+            'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20260901T000000Z/ bullseye-updates main' \
+            'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/20260901T000000Z/ bullseye-security main' \
+            > /etc/apt/sources.list; \
     fi \
     && apt-get update \
     && apt-get install -y --no-install-recommends \

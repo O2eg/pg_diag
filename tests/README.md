@@ -165,10 +165,12 @@ utilities, and the matching `postgresql-<major>-pg-wait-sampling` package. Set
 The PostgreSQL 10 image intentionally retains Bullseye's legacy
 `lshw 02.18.x` and `sysstat/iostat 12.5.x`; the test asserts those package
 generations so compatibility is not accidentally proved with newer binaries.
-Bullseye LTS ended on 2026-08-31. For the PostgreSQL 10 test image only, the
-frozen `bullseye-security` source uses `check-valid-until=no`; APT signature
-verification remains enabled. Other package sources and PostgreSQL majors
-retain their normal expiry checks.
+Bullseye LTS ended on 2026-08-31. The PostgreSQL 10 test image pins its Debian
+repositories (`bullseye`, `bullseye-updates`, and `bullseye-security`) to the
+`20260901T000000Z` snapshot on `snapshot.debian.org`, keeping indexes and package
+files consistent when live mirrors remove old packages. These snapshot sources
+use `check-valid-until=no`; APT signature verification remains enabled. The PGDG
+source and PostgreSQL 11-18 images retain their existing repository configuration.
 
 For every PostgreSQL major, one module-scoped container is prepared and reused
 by both report tests. Preparation is mandatory and verifies all of the
