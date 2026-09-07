@@ -521,3 +521,281 @@ def test_phase_truncated_window_makes_counts_lower_bounds(tmp_path, content_path
     assert item.collection_status == "ok"
     assert item.result["rows"]
     assert "lower bounds" in item.issues["summary"]["description"]
+
+
+# --- logs mode: directory discovery without a database ------------------------
+
+
+def _directory_run(collection_mode: str = "local", items=("server_log.error_chronology",)):
+    return SimpleNamespace(
+        conn=None,
+        plan=SimpleNamespace(
+            items=[SimpleNamespace(item_id=item_id, status="planned") for item_id in items]
+        ),
+        artifact={
+            "runtime": {
+                "mode": "logs",
+                "database_connected": False,
+                "collection_mode": collection_mode,
+            }
+        },
+    )
+
+
+def _write_logs_directory(tmp_path, now: datetime) -> None:
+    old = "".join(
+        _record(now - timedelta(hours=3) + timedelta(seconds=i), "ERROR", f"old {i}")
+        for i in range(200)
+    )
+    (tmp_path / "postgresql-2026-08-31_070000.csv").write_text(old)
+    body = "".join(
+        _record(now - timedelta(minutes=30) + timedelta(seconds=i), "LOG", "noise")
+        for i in range(120)
+    )
+    body += _record(now - timedelta(minutes=2), "ERROR", "unique one")
+    body += "".join(_record(now - timedelta(minutes=1), "ERROR", "flood 42") for _ in range(300))
+    body += _record(now - timedelta(seconds=30), "ERROR", "unique two")
+    body += _record(now, "WARNING", "last record")
+    (tmp_path / "postgresql-2026-08-31_100000.csv").write_text(body)
+
+
+def test_phase_directory_local_anchors_window_at_newest_record(tmp_path) -> None:
+    now = datetime(2026, 8, 31, 10, 30)
+    _write_logs_directory(tmp_path, now)
+    run = _directory_run()
+
+    window = asyncio.run(
+        collect_report_server_log(run, depth_minutes=10, log_directory=str(tmp_path))
+    )
+
+    marker = run.artifact["runtime"]["log_collection"]
+    assert marker["status"] == "collected", marker
+    assert marker["source"]["kind"] == "directory"
+    assert marker["source"]["csv_format"]["columns"] == 26
+    assert marker["source"]["log_directory"] == str(tmp_path)
+    _validate_json_data(marker, "$", set())
+    assert window is not None
+    assert [record.repeat_count for record in window.records] == [1, 300, 1]
+    assert window.records[1].message == "flood 42"
+    coverage = marker["coverage"]
+    assert coverage["requested_from"] == "2026-08-31 10:20:00"
+    assert coverage["requested_to"] == "2026-08-31 10:30:00.000"
+    assert coverage["files_seen"] == 1  # the old file lies outside the window
+    assert coverage["ranking_complete"] is True
+    assert coverage["locale_supported"] is True
+    inventory = run.server_log.inventory
+    assert inventory["settings"]["log_directory"] == str(tmp_path)
+    assert [row["in_window"] for row in inventory["files"]] == [True, False]
+    assert inventory["files"][0]["is_newest"] is True
+    assert all(row["is_current"] is False for row in inventory["files"])  # active file unknown
+    assert inventory["settings"]["block_size"] is None
+    assert marker["source"]["anchor_verified"] is True
+    assert run.server_log.mode == "logs"
+
+
+def test_phase_directory_remote_via_local_sh_matches_local(tmp_path) -> None:
+    import subprocess
+
+    class LocalShellTransport:
+        async def run_script_bytes(self, script, *, arguments=(), timeout, output_limit_bytes=None):
+            proc = subprocess.run(
+                ["/bin/sh", "-s", "--", *arguments],
+                input=script,
+                capture_output=True,
+                timeout=timeout,
+            )
+            return SimpleNamespace(
+                returncode=proc.returncode, stdout=proc.stdout, stderr=proc.stderr
+            )
+
+    now = datetime(2026, 8, 31, 10, 30)
+    _write_logs_directory(tmp_path, now)
+    local_run = _directory_run()
+    local = asyncio.run(
+        collect_report_server_log(local_run, depth_minutes=10, log_directory=str(tmp_path))
+    )
+    remote_run = _directory_run(collection_mode="remote")
+    remote_run.ssh = LocalShellTransport()
+    remote = asyncio.run(
+        collect_report_server_log(remote_run, depth_minutes=10, log_directory=str(tmp_path))
+    )
+
+    assert remote_run.artifact["runtime"]["log_collection"]["status"] == "collected"
+    assert local is not None and remote is not None
+    assert [(r.message, r.repeat_count) for r in remote.records] == [
+        (r.message, r.repeat_count) for r in local.records
+    ]
+    assert remote.coverage.requested_from == local.coverage.requested_from
+    assert remote.coverage.requested_to == local.coverage.requested_to
+    assert remote_run.server_log.inventory["source"]["csv_format"] == (
+        local_run.server_log.inventory["source"]["csv_format"]
+    )
+
+
+def test_phase_directory_parses_each_file_with_its_own_layout(tmp_path) -> None:
+    now = datetime(2026, 8, 31, 10, 30)
+    old_layout = (
+        f"{(now - timedelta(minutes=5)).strftime('%Y-%m-%d %H:%M:%S.000 UTC')},alice,appdb,42,c,"
+        "s,7,SELECT,start,3/44,778,ERROR,42601,pg12 error,,,,,,,,loc,app\n"
+    )
+    (tmp_path / "pg12.csv").write_text(old_layout)
+    (tmp_path / "pg16.csv").write_text(_record(now, "ERROR", "pg16 error"))
+    run = _directory_run()
+
+    window = asyncio.run(
+        collect_report_server_log(run, depth_minutes=10, log_directory=str(tmp_path))
+    )
+
+    assert window is not None
+    by_message = {record.message: record for record in window.records}
+    assert not by_message["pg12 error"].partial
+    assert by_message["pg12 error"].backend_type is None
+    assert by_message["pg16 error"].backend_type == "client backend"
+    assert by_message["pg16 error"].query_id == 7
+    columns = {row["name"]: row["csv_columns"] for row in run.server_log.inventory["files"]}
+    assert columns == {"pg12.csv": 23, "pg16.csv": 26}
+
+
+def test_phase_directory_unavailable_reasons(tmp_path) -> None:
+    run = _directory_run()
+    asyncio.run(
+        collect_report_server_log(run, depth_minutes=10, log_directory=str(tmp_path / "absent"))
+    )
+    marker = run.artifact["runtime"]["log_collection"]
+    assert marker["status"] == "unavailable" and "does not exist" in marker["reason"]
+
+    (tmp_path / "notes.txt").write_text("no csv here")
+    run = _directory_run()
+    asyncio.run(collect_report_server_log(run, depth_minutes=10, log_directory=str(tmp_path)))
+    marker = run.artifact["runtime"]["log_collection"]
+    assert marker["status"] == "unavailable" and "no csvlog files" in marker["reason"]
+    assert run.server_log.inventory["files"] == []
+
+    now = datetime(2026, 8, 31, 10, 30)
+    planted = list(csv.reader(io.StringIO(_record(now, "LOG", "placeholder"))))[0]
+    planted[13] = "msg\n2027-01-01 00:00:00.000 UTC,x,y,1,c,s,7,T,st,3/4,7,LOG,00000,fake\nend"
+    quoted = io.StringIO(newline="")
+    csv.writer(quoted, lineterminator="\n").writerow(planted)  # message stays one quoted field
+    (tmp_path / "planted.csv").write_text(
+        _record(now - timedelta(minutes=3), "ERROR", "real") + quoted.getvalue()
+    )
+    run = _directory_run()
+    window = asyncio.run(
+        collect_report_server_log(run, depth_minutes=10, log_directory=str(tmp_path))
+    )
+    assert window is not None and [r.message for r in window.records] == ["real"]
+    assert run.artifact["runtime"]["log_collection"]["coverage"]["requested_to"] == (
+        "2026-08-31 10:30:00.000"
+    )
+
+    run = _directory_run(collection_mode="remote-db-only")
+    asyncio.run(collect_report_server_log(run, depth_minutes=10, log_directory=str(tmp_path)))
+    assert "local or remote" in run.artifact["runtime"]["log_collection"]["reason"]
+
+    run = _directory_run(collection_mode="remote")  # no SSH transport attached
+    asyncio.run(collect_report_server_log(run, depth_minutes=10, log_directory=str(tmp_path)))
+    assert "SSH transport" in run.artifact["runtime"]["log_collection"]["reason"]
+
+
+def test_phase_directory_inventory_only_items_skip_the_scan(tmp_path) -> None:
+    now = datetime(2026, 8, 31, 10, 30)
+    _write_logs_directory(tmp_path, now)
+    run = _directory_run(items=("server_log.log_files_overview",))
+    window = asyncio.run(
+        collect_report_server_log(run, depth_minutes=10, log_directory=str(tmp_path))
+    )
+    assert window is not None and window.records == ()
+    assert run.artifact["runtime"]["log_collection"]["coverage"]["scanned_bytes"] == 0
+    assert len(run.server_log.inventory["files"]) == 2
+
+
+def test_phase_directory_dst_window_and_per_record_offsets(tmp_path) -> None:
+    def berlin(ts: datetime, zone: str, message: str) -> str:
+        fields = [
+            ts.strftime("%Y-%m-%d %H:%M:%S.000 ") + zone, "alice", "appdb", "42", "c", "s", "7",
+            "SELECT", "start", "3/44", "778", "ERROR", "42601", message,
+            *[""] * 7, "loc", "app", "client backend", "", "7",
+        ]
+        output = io.StringIO(newline="")
+        csv.writer(output, lineterminator="\n").writerow(fields)
+        return output.getvalue()
+
+    (tmp_path / "a.csv").write_text(
+        berlin(datetime(2026, 3, 29, 1, 58), "CET", "before switch")
+        + berlin(datetime(2026, 3, 29, 3, 5), "CEST", "after switch")
+    )
+    run = _directory_run()
+    window = asyncio.run(
+        collect_report_server_log(
+            run, depth_minutes=10, log_directory=str(tmp_path), log_timezone="Europe/Berlin"
+        )
+    )
+    assert window is not None
+    assert [(r.message, r.utc_offset_seconds) for r in window.records] == [
+        ("before switch", 3600),
+        ("after switch", 7200),
+    ]
+    coverage = run.artifact["runtime"]["log_collection"]["coverage"]
+    assert coverage["requested_from"] == "2026-03-29 01:55:00"
+    assert coverage["requested_to"] == "2026-03-29 03:05:00.000"
+    assert run.server_log.inventory["settings"]["log_utc_offset_seconds"] == 7200
+    assert run.server_log.inventory["settings"]["log_timezone"] == "Europe/Berlin"
+
+    naive = _directory_run()
+    asyncio.run(collect_report_server_log(naive, depth_minutes=10, log_directory=str(tmp_path)))
+    assert [r.message for r in naive.server_log_window.records] == ["after switch"]  # no zone: wall clock
+    assert naive.server_log_window.records[0].utc_offset_seconds is None
+
+
+def _berlin_record(ts: datetime, zone: str, message: str) -> str:
+    fields = [
+        ts.strftime("%Y-%m-%d %H:%M:%S.000 ") + zone, "alice", "appdb", "42", "c", "s", "7",
+        "SELECT", "start", "3/44", "778", "ERROR", "42601", message,
+        *[""] * 7, "loc", "app", "client backend", "", "7",
+    ]
+    output = io.StringIO(newline="")
+    csv.writer(output, lineterminator="\n").writerow(fields)
+    return output.getvalue()
+
+
+@pytest.mark.parametrize("layout", ["same_file", "two_files"])
+@pytest.mark.parametrize("collection_mode", ["local", "remote"])
+def test_phase_directory_fall_back_transition_keeps_both_records(tmp_path, layout, collection_mode) -> None:
+    import subprocess
+
+    class LocalShellTransport:
+        async def run_script_bytes(self, script, *, arguments=(), timeout, output_limit_bytes=None):
+            proc = subprocess.run(
+                ["/bin/sh", "-s", "--", *arguments], input=script, capture_output=True, timeout=timeout
+            )
+            return SimpleNamespace(returncode=proc.returncode, stdout=proc.stdout, stderr=proc.stderr)
+
+    before = _berlin_record(datetime(2026, 10, 25, 2, 58), "CEST", "before fall-back")
+    after = _berlin_record(datetime(2026, 10, 25, 2, 5), "CET", "after fall-back")
+    if layout == "same_file":
+        (tmp_path / "a.csv").write_text(before + after)
+    else:
+        (tmp_path / "cest.csv").write_text(before)
+        (tmp_path / "cet.csv").write_text(after)
+    run = _directory_run(collection_mode=collection_mode)
+    if collection_mode == "remote":
+        run.ssh = LocalShellTransport()
+
+    window = asyncio.run(
+        collect_report_server_log(
+            run, depth_minutes=10, log_directory=str(tmp_path), log_timezone="Europe/Berlin"
+        )
+    )
+
+    assert window is not None
+    assert [(r.message, r.utc_offset_seconds) for r in window.records] == [
+        ("before fall-back", 7200),
+        ("after fall-back", 3600),
+    ]
+    coverage = run.artifact["runtime"]["log_collection"]["coverage"]
+    assert coverage["requested_to"] == "2026-10-25 02:05:00.000"  # the absolute-newest record
+    assert coverage["requested_from"] == "2026-10-25 02:55:00"  # seven minutes earlier, still CEST
+    assert coverage["ranking_complete"] is True
+    source = run.artifact["runtime"]["log_collection"]["source"]
+    assert source["window_scan_to"] == "2026-10-25 03:05:00.000"
+    assert source["window_scan_from"] <= "2026-10-25 01:55:00"

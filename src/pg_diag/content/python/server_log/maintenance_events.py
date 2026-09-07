@@ -17,6 +17,10 @@ DURATION_SECONDS_THRESHOLD = 5.0
 PAGE_BYTES_THRESHOLD = 128 * 1_048_576
 BUFFER_BYTES_THRESHOLD = 128 * 1_048_576
 WAL_BYTES_THRESHOLD = 64 * 1_048_576
+# Without a database the block size is unknown (logs mode). Page volumes then
+# qualify against the largest block size PostgreSQL supports, so a heavy vacuum
+# is never dropped because of an assumed small block; byte columns stay null.
+MAX_BLOCK_SIZE_BYTES = 32_768
 
 _AUTO_HEAD_RE = re.compile(
     r'automatic (?P<kind>vacuum|analyze) of table "(?P<relation>[^"]+)"', re.I
@@ -112,11 +116,27 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
         "wal_bytes": WAL_BYTES_THRESHOLD,
         "errors_cancellations_lock_waits_wraparound": "always",
     }
+    diagnostics: list[dict[str, Any]] = []
+    if block_size is None:
+        diagnostics.append(
+            {
+                "level": "warning",
+                "code": "block_size_unknown",
+                "message": (
+                    "block_size is unknown without a database connection: page and "
+                    "buffer volumes qualify against the largest supported block size "
+                    f"({MAX_BLOCK_SIZE_BYTES} bytes) and byte columns are null"
+                ),
+            }
+        )
     result = table_result(rows)
     result.update(
         {
             "thresholds": thresholds,
             "block_size_bytes": block_size,
+            "block_size_assumed_upper_bound_bytes": (
+                MAX_BLOCK_SIZE_BYTES if block_size is None else None
+            ),
             "matched_event_count": matched,
             "below_threshold_event_count": below_threshold,
             "qualifying_series_count": len(events),
@@ -127,7 +147,11 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
     if not rows:
         status, severity, issues = empty_result_status(window)
         return PythonSourceResult(
-            collection_status=status, result=result, issues=issues, severity_level=severity
+            collection_status=status,
+            result=result,
+            issues=issues,
+            severity_level=severity,
+            diagnostics=diagnostics,
         )
     note = coverage_note(window)
     description = f"{len(events)} heavy/error maintenance series qualified; {len(rows)} are shown. {below_threshold} successful low-impact event(s) were intentionally filtered by documented thresholds."
@@ -144,6 +168,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
         collection_status="ok",
         result=result,
         severity_level=severity,
+        diagnostics=diagnostics,
         issues={
             "summary": {
                 "severity": severity,
@@ -157,7 +182,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
     )
 
 
-def _parse_event(record: Any, block_size: int) -> tuple[_Event | None, bool]:
+def _parse_event(record: Any, block_size: int | None) -> tuple[_Event | None, bool]:
     message = record.message_full or record.message
     head = _AUTO_HEAD_RE.search(message)
     is_autovacuum = (
@@ -191,10 +216,18 @@ def _parse_event(record: Any, block_size: int) -> tuple[_Event | None, bool]:
     # ``remain`` value is the post-vacuum relation size, not work performed;
     # treating it as traffic would flag large, mostly-skipped relations.
     processed_pages = scanned_pages
-    processed_bytes = processed_pages * block_size if processed_pages is not None else None
+    known_block = block_size is not None
+    scoring_block = block_size if block_size is not None else MAX_BLOCK_SIZE_BYTES
+    processed_bytes = (
+        processed_pages * block_size
+        if processed_pages is not None and known_block
+        else None
+    )
     buffers = _BUFFER_RE.search(message)
     buffer_blocks = (int(buffers.group(2)) + int(buffers.group(3))) if buffers else None
-    buffer_bytes = buffer_blocks * block_size if buffer_blocks is not None else None
+    buffer_bytes = buffer_blocks * block_size if buffer_blocks is not None and known_block else None
+    page_score_bytes = (processed_pages or 0) * scoring_block
+    buffer_score_bytes = (buffer_blocks or 0) * scoring_block
     wal = _WAL_RE.search(message)
     wal_bytes = int(wal.group(1)) if wal else None
     tuples = _TUPLES_RE.search(message)
@@ -209,8 +242,8 @@ def _parse_event(record: Any, block_size: int) -> tuple[_Event | None, bool]:
     wraparound = "wraparound" in lowered or "to prevent wraparound" in lowered
     scores = [
         (duration_s or 0.0) / DURATION_SECONDS_THRESHOLD,
-        (processed_bytes or 0) / PAGE_BYTES_THRESHOLD,
-        (buffer_bytes or 0) / BUFFER_BYTES_THRESHOLD,
+        page_score_bytes / PAGE_BYTES_THRESHOLD,
+        buffer_score_bytes / BUFFER_BYTES_THRESHOLD,
         (wal_bytes or 0) / WAL_BYTES_THRESHOLD,
     ]
     impact_score = max(scores)
@@ -248,11 +281,15 @@ def _float_match(pattern: re.Pattern[str], value: str) -> float | None:
     return float(match.group(1)) if match else None
 
 
-def _block_size(context: Any) -> int:
+def _block_size(context: Any) -> int | None:
+    """Server block size, or None when no database reported it (logs mode)."""
     inventory = getattr(context.server_log, "inventory", None) or {}
     settings = inventory.get("settings") or {}
+    raw = settings.get("block_size")
+    if raw is None:
+        return None
     try:
-        value = int(settings.get("block_size") or 8192)
+        value = int(raw)
     except (TypeError, ValueError):
-        value = 8192
-    return value if 1024 <= value <= 1_048_576 else 8192
+        return None
+    return value if 1024 <= value <= MAX_BLOCK_SIZE_BYTES else None

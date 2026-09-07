@@ -1231,3 +1231,46 @@ def test_checkpoint_item_carries_server_timezone_offset() -> None:
     assert result.result["log_utc_offset_seconds"] == 10800
     legacy = module.collect(_context(window))
     assert legacy.result["log_utc_offset_seconds"] is None
+
+
+def test_maintenance_events_without_block_size_qualifies_by_pages_conservatively() -> None:
+    module = _load("maintenance_events")
+    message = (
+        "automatic vacuum of table \"appdb.public.big\": index scans: 1\n"
+        "pages: 0 removed, 12000 remain, 10000 scanned (83.33% of total)\n"
+        "tuples: 5 removed, 100 remain, 0 are dead but not yet removable\n"
+        "buffer usage: 100 hits, 10 misses, 5 dirtied\n"
+        "WAL usage: 1 records, 0 full page images, 100 bytes\n"
+        "system usage: CPU: user: 0.01 s, system: 0.00 s, elapsed: 0.50 s"
+    )
+    record = _record(0, "LOG", message.split("\n")[0], sql_state="00000", message_full=message,
+                     backend_type="autovacuum worker")
+    window = _window([record])
+    known = module.collect(SimpleNamespace(server_log=SimpleNamespace(
+        window=window, marker={"status": "collected"}, inventory={"settings": {"block_size": 8192}})))
+    assert known.collection_status == "empty"  # 10000 pages * 8 KiB = 80 MiB < 128 MiB
+    assert known.diagnostics == []
+    unknown = module.collect(SimpleNamespace(server_log=SimpleNamespace(
+        window=window, marker={"status": "collected"}, inventory={"settings": {"block_size": None}})))
+    assert unknown.collection_status == "ok"  # 10000 pages * 32 KiB upper bound qualifies
+    assert [d["code"] for d in unknown.diagnostics] == ["block_size_unknown"]
+    assert unknown.result["block_size_bytes"] is None
+    assert unknown.result["block_size_assumed_upper_bound_bytes"] == 32768
+    columns = [column["name"] for column in unknown.result["columns"]]
+    row = dict(zip(columns, unknown.result["rows"][0]))
+    assert row["processed_pages"] == 10000 and row["processed_bytes"] is None
+
+
+def test_chart_items_flag_an_unresolvable_log_clock_zone() -> None:
+    settings = {"log_timezone": "MSK", "log_utc_offset_seconds": None}
+    context = SimpleNamespace(server_log=SimpleNamespace(
+        window=_window([_record(0, "ERROR", "canceling statement due to statement timeout", sql_state="57014")]),
+        marker={"status": "collected"},
+        inventory={"settings": settings, "window_from": None, "collected_to": None},
+    ))
+    result = _load("query_termination_events").collect(context)
+    assert [d["code"] for d in result.diagnostics] == ["log_timezone_unknown"]
+    result = _load("auto_explain_plans").collect(context)
+    assert [d["code"] for d in result.diagnostics] == ["log_timezone_unknown"]
+    settings["log_utc_offset_seconds"] = 10800
+    assert _load("query_termination_events").collect(context).diagnostics == []

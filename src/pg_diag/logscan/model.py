@@ -28,6 +28,16 @@ PROBE_BYTES = 16_384
 MAX_PROBE_DOUBLINGS = 6
 DEPTH_MAX_MINUTES = 1_440
 DEPTH_DEFAULT_MINUTES = 10
+# Directory discovery (logs mode): bounded per-file head/tail probes replace
+# pg_ls_logdir() and the server clock. Probes double until a complete CSV
+# record is found or MAX_PROBE_BYTES is reached; the file that anchors the
+# window is additionally verified with exact quote parity from its start,
+# bounded by VERIFY_BUDGET_BYTES.
+MAX_PROBE_FILES = 1_024
+HEAD_PROBE_BYTES = 4_096
+TAIL_PROBE_BYTES = 16_384
+MAX_PROBE_BYTES = 64 * 1_048_576
+VERIFY_BUDGET_BYTES = 512 * 1_048_576
 
 # --- truncation / degradation reasons (sorted tuples in artifacts) ---
 
@@ -39,6 +49,7 @@ REASON_PARSE_ERRORS = "parse_errors"
 REASON_NON_MONOTONIC = "non_monotonic_timestamps"
 REASON_CANDIDATE_LIMIT = "candidate_limit_hit"
 REASON_UNREADABLE = "files_unreadable"
+REASON_DISCOVERY_INCOMPLETE = "discovery_incomplete"
 
 
 @dataclass(frozen=True)
@@ -48,6 +59,34 @@ class LogFileInfo:
     name: str
     size: int
     modification: datetime
+
+
+@dataclass(frozen=True)
+class ProbedFile:
+    """One ``*.csv`` file discovered directly in a log directory.
+
+    ``last_ts`` is the log_time of the last complete CSV record (the file's
+    own clock, no timezone mapping), found by a quote-parity scan of the tail;
+    ``determined`` is False when the probe cap was reached before a
+    consistent parse, so the file may hold newer records than known.
+    ``columns``/``severity`` come from the first complete record and detect
+    the csvlog layout and the message locale. ``mtime`` is None when the
+    transport cannot report it.
+    """
+
+    name: str
+    size: int
+    mtime: float | None
+    last_ts: str | None
+    columns: int | None
+    severity: str | None
+    determined: bool = True
+    # A tail parse may be excluded from the window only when it is exact
+    # (started at byte 0 or verified) or trusted: parity closes, the last
+    # complete record ends at the final newline, and every record starts with
+    # a timestamp. Anything else is verified with exact parity before exclusion.
+    exact: bool = False
+    trusted: bool = False
 
 
 @dataclass(frozen=True)
@@ -140,6 +179,9 @@ class LogRecord:
     # Full sanitized csvlog message, bounded by ScanRequest.raw_record_cap.
     # Item parsers use it for metrics that may appear after LINE_CAP.
     message_full: str | None = None
+    # UTC offset of this record's wall-clock timestamp when the log clock is
+    # known; charts place records with it instead of one window-wide offset.
+    utc_offset_seconds: int | None = None
 
 
 @dataclass(frozen=True)

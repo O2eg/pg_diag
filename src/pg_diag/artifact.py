@@ -15,7 +15,12 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__, runtime_config
-from .contracts import SEVERITY_LEVELS
+from .contracts import (
+    ITEM_TYPES,
+    ITEM_TYPE_RESULT_KINDS,
+    ITEM_TYPE_TABLE,
+    SEVERITY_LEVELS,
+)
 from .content_loader import ContentPack
 from .planner import ExecutionPlan, PlannedEntry
 from .security import (
@@ -167,23 +172,59 @@ def item_from_plan(
     if source_text is not None:
         source_metadata["source_text"] = source_text
         source_metadata["source_language"] = source_language or planned.source_kind
+    item_type = getattr(planned, "item_type", None)
+    public_result = sanitize_result(result)
+    item_diagnostics = list(diagnostics or [])
+    mismatch = item_type_mismatch(item_type, collection_status, public_result)
+    if mismatch is not None:
+        item_diagnostics.append(mismatch)
     return {
         "item_id": planned.item_id,
         "section_id": getattr(planned, "section_id", None),
         "item_key": getattr(planned, "item_key", None),
         "title": planned.title,
         "source_kind": planned.source_kind,
+        "item_type": item_type,
         "targets": list(getattr(planned, "targets", ())),
         "collection_scope": planned.collection_scope,
         "collection_status": collection_status,
         "severity_level": normalized_severity_level,
         "state": getattr(planned, "state", None),
         "reason": redact_error(reason) if isinstance(reason, str) else json_safe(reason),
-        "result": sanitize_result(result),
+        "result": public_result,
         "timing_ms": json_safe(timing_ms),
         "source_metadata": source_metadata,
-        "diagnostics": sanitize_public_structure(diagnostics or []),
+        "diagnostics": sanitize_public_structure(item_diagnostics),
         "issues": normalized_issues,
+    }
+
+
+def item_type_mismatch(
+    item_type: Any,
+    collection_status: str,
+    result: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Warning when a collected result contradicts the declared item type.
+
+    The declaration drives --item-type selection; a source that returns
+    another result kind is still recorded, but the drift becomes visible.
+    Only ``delta`` may carry ``delta_window``; a point-in-time ``table`` may not.
+    """
+    if item_type not in ITEM_TYPES or collection_status not in ("ok", "empty"):
+        return None
+    kind = result.get("kind")
+    expected = ITEM_TYPE_RESULT_KINDS[item_type]
+    problem: str | None = None
+    if kind != expected:
+        problem = f"expects result kind {expected!r}, the source returned {kind!r}"
+    elif item_type == ITEM_TYPE_TABLE and "delta_window" in result:
+        problem = "is a point-in-time table, but the result carries delta_window"
+    if problem is None:
+        return None
+    return {
+        "level": "warning",
+        "code": "item_type_mismatch",
+        "message": f"declared item_type {item_type!r} {problem}",
     }
 
 

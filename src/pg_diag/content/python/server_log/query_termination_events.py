@@ -7,7 +7,12 @@ from typing import Any
 
 from pg_diag.executors.python import PythonSourceContext, PythonSourceResult
 from pg_diag.logscan.event_refs import CHART_POINT_LIMIT, ChartReferencePool
-from pg_diag.logscan.items_common import coverage_note, empty_result_status, resolve_window
+from pg_diag.logscan.items_common import (
+    coverage_note,
+    empty_result_status,
+    log_clock_offset,
+    resolve_window,
+)
 
 TOP_EVENTS_PER_MINUTE = 10
 
@@ -66,17 +71,19 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
 
     refs = ChartReferencePool()
     points_by_rank: dict[int, list[dict[str, Any]]] = defaultdict(list)
-    utc_offset = _utc_offset_seconds(context)
+    utc_offset, clock_diagnostics = log_clock_offset(context)
     for rank, minute, record, kind in selected:
         message_ref = refs.add_message(record.message)
         query_ref = refs.add_query(record.query)
         points_by_rank[rank].append(
             {
-                "t": _iso_timestamp(minute, utc_offset),
+                "t": _iso_timestamp(minute, _record_offset(record, utc_offset)),
                 "value": record.repeat_count,
                 "tooltip": {
-                    "log_time": _iso_timestamp(record.log_time, utc_offset),
-                    "last_log_time": _iso_timestamp(record.last_time, utc_offset),
+                    "log_time": _iso_timestamp(record.log_time, _record_offset(record, utc_offset)),
+                    "last_log_time": _iso_timestamp(
+                        record.last_time, _record_offset(record, utc_offset)
+                    ),
                     "event_type": kind,
                     "sql_state": record.sql_state,
                     "occurrences": record.repeat_count,
@@ -140,6 +147,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
                 collection_status="ok",
                 result=result,
                 severity_level="unknown",
+                diagnostics=clock_diagnostics,
                 issues={
                     "summary": {
                         "severity": "unknown",
@@ -159,7 +167,11 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
             )
         status, severity, issues = empty_result_status(window)
         return PythonSourceResult(
-            collection_status=status, result=result, issues=issues, severity_level=severity
+            collection_status=status,
+            result=result,
+            issues=issues,
+            severity_level=severity,
+            diagnostics=clock_diagnostics,
         )
     note = coverage_note(window)
     locale_note = None
@@ -191,6 +203,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
         collection_status="ok",
         result=result,
         severity_level=severity,
+        diagnostics=clock_diagnostics,
         issues={
             "summary": {
                 "severity": severity,
@@ -227,14 +240,10 @@ def _floor_minute(value: datetime) -> datetime:
     return value.replace(second=0, microsecond=0)
 
 
-def _utc_offset_seconds(context: Any) -> int:
-    inventory = getattr(context.server_log, "inventory", None) or {}
-    settings = inventory.get("settings") or {}
-    try:
-        offset = int(settings.get("log_utc_offset_seconds") or 0)
-    except (TypeError, ValueError):
-        return 0
-    return max(-86_399, min(86_399, offset))
+def _record_offset(record: Any, window_offset: int) -> int:
+    """The record's own UTC offset when the log clock is known (DST-aware)."""
+    offset = getattr(record, "utc_offset_seconds", None)
+    return window_offset if offset is None else int(offset)
 
 
 def _iso_timestamp(value: datetime, utc_offset_seconds: int) -> str:

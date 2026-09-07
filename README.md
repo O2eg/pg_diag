@@ -49,13 +49,14 @@ in core dispatch, validation, or metric rendering.
 - [Run repeated snapshots](#run-repeated-snapshots)
 - [Select report items](#select-report-items)
 - [Collect server logs](#collect-server-logs)
+- [Analyze log files without a database](#analyze-log-files-without-a-database)
 - [Collection timing and metric evaluation](#collection-timing-and-metric-evaluation)
 - [Output files and exit status](#output-files-and-exit-status)
 
 ## Features
 
 - PostgreSQL version-aware SQL variants for PostgreSQL 10-18.
-- One-shot and repeated snapshots report modes.
+- One-shot, repeated snapshots, and log-file (`logs`) report modes.
 - Local, SSH remote, and remote DB-only collection modes.
 - Read-only SQL execution.
 - OS sections and OS charts from the collector host or an SSH target.
@@ -504,6 +505,7 @@ by default).
 | --- | --- | --- | --- | --- |
 | `one-shot` | `remote-db-only` | Point-in-time diagnostic report | Executes applicable `query`, `script`, and `python` items with `once`; does not execute or include `metric` items because no interval data exists | `runtime.mode` is `one-shot`; the public `snapshots` array is empty |
 | `snapshots` | `local` | Interval diagnostic report | Executes visible once-items, collects required repeated/end-point sources, then evaluates derived metrics | `runtime.mode` is `snapshots`; when the selected plan requires repeated SQL sampling, the artifact contains samples plus derived rates, deltas, tables, and charts |
+| `logs` | `local` | `server_log` section from csvlog files in `--log-dir`, no database | Discovers `*.csv` files in the directory, anchors the window at the newest record, then executes only `server_log` `python` items with `once`; every other item is omitted without execution | `runtime.mode` is `logs`; `runtime.database_connected` is `false`, `runtime.server_version_num` is `null`, `runtime.log_collection.source` records the directory and the detected csvlog layout |
 
 ### Filtered Source Targets
 
@@ -632,6 +634,8 @@ Best fit: production VM reachable only through SSH or a bastion-style endpoint
 | `snapshots` | `remote-db-only` | Report `query` and DB-only `python` run with `once`; SQL metric source jobs run with `every_snapshot` or `window_endpoints`; DB-backed `metric` items are calculated; host sources and metrics are omitted without execution | PostgreSQL rates, deltas, tables, and charts without host metrics |
 | `snapshots` | `local` | Report `query`, `script`, and `python` run with `once`; SQL and local sampler jobs run with `every_snapshot` or `window_endpoints`; DB- and host-backed `metric` items are calculated | PostgreSQL and collector-host rates, deltas, tables, charts, and backend `/proc` endpoints |
 | `snapshots` | `remote` | Report `query` runs with `once`; `script` runs on the SSH target; `python` evaluates locally with SSH-host evidence; SQL and SSH-host sampler jobs run with `every_snapshot` or `window_endpoints`; DB- and host-backed `metric` items are calculated | PostgreSQL and SSH-target rates, deltas, tables, charts, and backend `/proc` endpoints |
+| `logs` | `local` | csvlog files are read from `--log-dir` on the collector; only `server_log` `python` items run with `once`; nothing else executes | Server-log report from local or copied log files without PostgreSQL |
+| `logs` | `remote` | An ephemeral shell probe and the log harvester read `--log-dir` on the SSH target; only `server_log` `python` items run with `once`; no database tunnel is opened | Server-log report from a remote host without PostgreSQL credentials |
 
 `snapshots --duration-seconds 30 --interval-seconds 5` schedules seven sample
 points at 0, 5, 10, 15, 20, 25, and 30 seconds. One-time items and final
@@ -986,14 +990,14 @@ pg-diag snapshots \
 
 ## Select Report Items
 
-Both report commands support mutually exclusive exact-ID and tag filters. The
+All report commands (`one-shot`, `snapshots`, `logs`) support mutually exclusive exact-ID and tag filters. The
 informational list options validate content and exit without requiring database
 or SSH arguments.
 
 List item IDs together with their tags and source-metadata descriptions:
 
 ```bash
-pg-diag one-shot --item-id-list
+pg-diag one-shot --list-item-ids
 ```
 
 The existing catalog-oriented command remains available:
@@ -1053,9 +1057,55 @@ pg-diag one-shot \
 
 `--item-id` and `--tags` cannot be used together. Unknown tags and every
 unknown ID in an item array are reported before SSH or PostgreSQL is opened.
-When either filter is used for collection, every selected visible item and its
+When any filter is used for collection, every selected visible item and its
 containing section start expanded in the generated HTML report. Without a
 filter, item and section expansion follows the states declared in `report.yaml`.
+
+### Filter By Item Type
+
+`--item-type` keeps only items of the requested presentation types. Values are
+case-insensitive, comma-separated, and use OR semantics inside the option; the
+filter combines with `--item-id` or `--tags` by intersection, so
+`--tags Locks --item-type table` collects the lock tables and nothing else.
+
+| Type | Meaning | Available in |
+| --- | --- | --- |
+| `table` | Point-in-time table: SQL rows, `table_json` scripts, Python records | `one-shot`, `snapshots`, `logs` |
+| `text` | Plain text: `plain_text` scripts | `one-shot`, `snapshots` |
+| `chart` | Time-series and event charts from metrics and log items | metric charts in `snapshots`; the two `server_log` charts in `one-shot`/`snapshots` with `--log-depth-time-min` and in `logs` |
+| `delta` | Table computed over the observation window from its start and end points | `snapshots` |
+
+`--list-item-ids` prints the type of every item in its `TYPE` column, and each
+artifact item records it as `item_type`. A selection that matches no item, or
+only items that cannot execute in the chosen command and collection mode (for
+example `--item-type delta` in `one-shot`), is rejected before SSH or
+PostgreSQL is opened.
+
+```bash
+# lock tables only
+pg-diag one-shot \
+  --dsn "postgresql://app@127.0.0.1:5432/appdb" \
+  --collection-mode remote-db-only \
+  --tags Locks --item-type table \
+  --out reports/lock_tables
+
+# every chart and delta table over a two-minute window
+pg-diag snapshots \
+  --dsn "postgresql://app@127.0.0.1:5432/appdb" \
+  --collection-mode local \
+  --item-type chart,delta \
+  --duration-seconds 120 --interval-seconds 10 \
+  --out reports/window_charts
+
+# host text items only, no database connection
+pg-diag one-shot --collection-mode local --tags Kernel --item-type text
+```
+
+Content authors declare the type with `item_type` in the source manifest when
+the default derived from the source (SQL and Python are `table`, scripts follow
+`output`, metrics are `chart` or `delta`) does not apply; a collected result
+that contradicts the declaration is recorded with an `item_type_mismatch`
+warning diagnostic. See `content/EXTENDING.md`.
 
 Selection applies to visible report items, not directly to query, script,
 Python, metric, or sampler catalog identifiers. In `snapshots` mode:
@@ -1148,9 +1198,68 @@ whole item. Larger limits allow detailed analytical plans while keeping resource
 use bounded.
 
 The artifact records the phase outcome in `runtime.log_collection`
-(`{status, reason, coverage}`); `coverage` states the requested and actually
-covered window, scanned bytes, and truncation reasons, so an incomplete window
-is always visible instead of silently passing as healthy.
+(`{status, reason, coverage, source}`); `coverage` states the requested and
+actually covered window, scanned bytes, and truncation reasons, so an incomplete
+window is always visible instead of silently passing as healthy; `source` names
+how the files were discovered (`database` here, `directory` for `pg-diag logs`).
+
+## Analyze Log Files Without a Database
+
+`pg-diag logs` builds the `server_log` section directly from a directory of
+csvlog files. It never connects to PostgreSQL, so it works for logs copied from
+a server, for archived logs, and for a server that is down. The command keeps
+the `--collection-mode` axis of the other report commands: `local` (default)
+reads the directory on the collector machine, `remote` reads it on the SSH
+target through the same shell harvester as `--log-depth-time-min` and needs no
+database credentials.
+
+```bash
+# copied or archived logs on the workstation
+pg-diag logs \
+  --log-dir ~/incident-2026-09-05/pglog \
+  --log-depth-time-min 180 \
+  --out reports/incident_logs
+
+# the log directory of a remote server, over SSH only
+pg-diag logs \
+  --collection-mode remote \
+  --ssh-host db1.example.com \
+  --ssh-user pgdiag \
+  --ssh-key ~/.ssh/pgdiag_ed25519 \
+  --ssh-known-hosts ~/.ssh/known_hosts \
+  --log-dir /var/log/postgresql \
+  --log-depth-time-min 60 \
+  --out reports/db1_logs
+
+# only the lock and security items from the log
+pg-diag logs --log-dir /var/log/postgresql --tags Locks,Security
+```
+
+How the command differs from `--log-depth-time-min` on `one-shot`/`snapshots`:
+
+| Aspect | `one-shot`/`snapshots --log-depth-time-min` | `pg-diag logs` |
+| --- | --- | --- |
+| File discovery | `pg_ls_logdir()` through the database connection | `*.csv` entries of `--log-dir`; at most 1024 files are probed (newest by modification time first) and symlinks are refused. Modification times never stand in for record times: a truncated listing, an unreadable file, or a file whose last record could not be located within 64 MiB marks the window incomplete |
+| Record boundaries | Server-formatted window, collector parses records | CSV boundaries by quote parity, never physical lines: a date planted inside a quoted message cannot start or end a record. Tail probes are accepted only when parity closes, and the scan start chosen by binary search inside the oldest candidate is validated by record structure (falling back to the whole file); the file that anchors the window is re-checked with exact parity counted from its first byte (`source.anchor_verified`), and a file is excluded from the window only on an exact or trusted timestamp, otherwise it is verified the same way within a 512 MiB budget (`source.files_verified`; past the budget the window is incomplete) |
+| Window end | The server clock when the log phase starts | The newest complete record found in the directory, so `--log-depth-time-min` counts back from the last logged event (default 10, maximum 1440). With a known zone the newest record and the window are chosen on absolute time: across a DST transition both wall-clock scan bounds are widened, the absolute filter decides afterwards, and every record is placed by its own offset |
+| csvlog layout | Known from `server_version_num` | Detected per file from the column count of its first complete record (the head probe grows up to 64 MiB): 23 columns for PostgreSQL 10-12, 24 for 13, 26 for 14 and later; a directory that spans a major upgrade is parsed file by file |
+| Log clock zone | `log_timezone` and its UTC offset | Numeric suffixes (`+03`) and UTC resolve on their own; a bare abbreviation such as `MSK` has no known offset, chart items then carry a `log_timezone_unknown` warning and show the log clock as if UTC unless `--log-timezone Europe/Moscow` names the IANA zone, which also resolves the repeated hour of a fall-back transition through the suffix (`CEST`/`CET`) |
+| Logging settings, rotation findings, active file, block size | From the server GUCs and `pg_current_logfile()` | Unknown: `log_files_overview` lists the files without rotation findings and marks no file as current; `maintenance_events` qualifies page volumes against the largest supported block size (32 KiB) and reports `block_size_unknown` |
+| Message locale | From `lc_messages` | Detected from the severity field of the first complete record per file; a localized severity marks message-pattern items `unsupported` |
+| Message encoding | Per-database encoding map | UTF-8; undecodable bytes are replaced and the record is flagged `encoding_degraded` |
+| Other sections, DDL links | Collected as usual | Omitted; `runtime.ddl_extraction` is `unavailable` |
+
+The artifact records `runtime.mode: "logs"`, `runtime.log_directory`,
+`runtime.log_depth_time_min`, `runtime.log_timezone`, and
+`runtime.log_collection.source` with the directory, the numbers of probed,
+undetermined, and unreadable files, the discovery reasons, and the detected
+layout (`csv_format.columns`, `csv_format.label`). Coverage semantics are
+unchanged: any discovery gap (`files_unreadable`, `candidate_limit_hit` for a
+truncated listing or more than 64 candidate files, `discovery_incomplete` for a
+file whose last record could not be located or an unverified anchor) marks the
+window incomplete and turns counts into lower bounds. A missing or empty directory produces a report whose `server_log`
+items are `unsupported` with the reason in `runtime.log_collection.reason`;
+the command still exits with status 0 because the report was written.
 
 ## Collection Timing and Metric Evaluation
 

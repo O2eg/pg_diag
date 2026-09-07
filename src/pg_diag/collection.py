@@ -45,6 +45,7 @@ from .planner import (
     build_plan,
     collection_requirements,
     normalize_requested_item_ids,
+    normalize_requested_item_types,
     normalize_requested_tags,
 )
 from .presentation import apply_presentation_contract
@@ -92,6 +93,7 @@ async def start_collection(
     item_id: str | Iterable[str] | None = None,
     tags: Iterable[str] | None = None,
     progress: ProgressReporter | None = None,
+    item_type: str | Iterable[str] | None = None,
 ) -> CollectionRun:
     if collection_mode not in runtime_config.COLLECTION_MODES:
         raise ValueError(f"unsupported collection mode {collection_mode!r}")
@@ -108,12 +110,14 @@ async def start_collection(
         raise ValueError("--item-id and --tags cannot be used together")
     requested_item_ids = normalize_requested_item_ids(content, item_id)
     requested_tags = normalize_requested_tags(content, tags)
+    requested_item_types = normalize_requested_item_types(item_type)
     requirements = collection_requirements(
         content,
         mode=mode,
         collection_mode=collection_mode,
         item_id=requested_item_ids,
         tags=requested_tags,
+        item_type=requested_item_types,
     )
 
     json_path, html_path = report_output_paths(out_dir, json_out, html_out, output_formats)
@@ -189,6 +193,7 @@ async def start_collection(
             collection_mode=collection_mode,
             item_id=requested_item_ids,
             tags=requested_tags,
+            item_type=requested_item_types,
         )
         if not plan.supported_server_version:
             raise UnsupportedServerVersion(plan.reason or "Unsupported PostgreSQL server version")
@@ -449,6 +454,7 @@ def _replace_with_fallback_item(
         "item_id": parent_plan.item_id,
         "section_id": parent_plan.section_id,
         "item_key": parent_plan.item_key,
+        "item_type": primary_item.get("item_type"),
         "title": f"[Fallback] {fallback_item.get('title') or fallback_plan.title}",
         "state": parent_plan.state,
         "collection_scope": parent_plan.collection_scope,

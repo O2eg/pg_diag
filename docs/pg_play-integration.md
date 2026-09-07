@@ -30,9 +30,19 @@ Orchestrators may pass `--log-depth-time-min N` (0-1440) to the collection
 commands to enable the `server_log` section for the last `N` minutes of the
 server csvlog; pg_play forwards `spec.diagnostics.log_depth_time_min` this
 way. The log phase never fails the report: its outcome is recorded in
-`runtime.log_collection` (`{status, reason, coverage}`), and the section is
-collected only in `local` and `remote` collection modes (see
-`access-best-practices.md`, "Server log access").
+`runtime.log_collection` (`{status, reason, coverage, source}`), and the
+section is collected only in `local` and `remote` collection modes (see
+`access-best-practices.md`, "Server log access"). `source.kind` is `database`
+for these commands.
+
+The `logs` command is the third machine collection command: it takes
+`--log-dir` (and optionally `--log-timezone`, `--log-depth-time-min`,
+`--item-id`/`--tags`/`--item-type`), never connects to PostgreSQL, returns the
+same envelope and artifact descriptors as `one-shot`, and writes an artifact
+with `runtime.mode: "logs"` whose `runtime.log_collection.source.kind` is
+`directory` (with the detected `csv_format` and discovery counters). All three
+collection commands accept `--item-type table,text,chart,delta`, and every
+artifact item now carries `item_type`.
 
 `summarize` validates the artifact schema before returning deterministic
 counts, completeness, severities, collection statuses, snapshot count, and

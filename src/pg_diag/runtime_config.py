@@ -24,12 +24,17 @@ COLLECTION_MODES = (
     LOCAL_COLLECTION_MODE,
     REMOTE_COLLECTION_MODE,
 )
+# Log files are host evidence: the logs command reads them from the collector
+# machine or from the SSH target, never through a database connection.
+LOGS_COLLECTION_MODES = (LOCAL_COLLECTION_MODE, REMOTE_COLLECTION_MODE)
 
 REPORT_OUTPUT_FORMATS = ("html", "json")
 DEFAULT_REPORT_OUTPUT_FORMATS = REPORT_OUTPUT_FORMATS
 
 ONE_SHOT_MODE = "one-shot"
 SNAPSHOTS_MODE = "snapshots"
+LOGS_MODE = "logs"
+REPORT_MODES = (ONE_SHOT_MODE, SNAPSHOTS_MODE, LOGS_MODE)
 
 ONCE_COLLECTION_SCOPE = "once"
 EVERY_SNAPSHOT_COLLECTION_SCOPE = "every_snapshot"

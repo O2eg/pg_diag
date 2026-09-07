@@ -12,12 +12,22 @@ import posixpath
 import re
 import time
 from dataclasses import asdict, replace
+from datetime import timedelta
 from typing import Any
 
 from ..security import redact_error
 
 from .auto_explain import parse_auto_explain
+from .clock import LogClock, zone_suffix
 from .csvparse import parse_record, parse_timestamp
+from .directory import (
+    DirectoryUnavailable,
+    HarvesterLogDirectoryProbe,
+    LocalLogDirectoryProbe,
+    resolve_clock,
+    resolve_directory_window,
+    verify_discovery,
+)
 from .harvester import BashHarvesterSource, HarvesterUnavailableError
 from .model import (
     AUTO_EXPLAIN_RAW_RECORD_CAP,
@@ -122,8 +132,21 @@ from pg_catalog.pg_database
 """
 
 
-async def collect_report_server_log(run: Any, *, depth_minutes: int | None) -> LogWindow | None:
-    """Collect and parse the csvlog window; record runtime['log_collection']."""
+async def collect_report_server_log(
+    run: Any,
+    *,
+    depth_minutes: int | None,
+    log_directory: str | None = None,
+    log_timezone: str | None = None,
+) -> LogWindow | None:
+    """Collect and parse the csvlog window; record runtime['log_collection'].
+
+    With ``log_directory`` (logs mode) the files are discovered directly in
+    that directory and the window is anchored at the newest complete record;
+    ``log_timezone`` (IANA name) resolves the log clock when the csvlog zone
+    suffix is a bare abbreviation. Otherwise the database answers with
+    pg_ls_logdir() and its clock.
+    """
     if depth_minutes is None or depth_minutes == 0:
         _finish(
             run,
@@ -147,16 +170,31 @@ async def collect_report_server_log(run: Any, *, depth_minutes: int | None) -> L
             },
         )
         return None
+    depth = min(int(depth_minutes), DEPTH_MAX_MINUTES)
     try:
         inventory, window = await asyncio.wait_for(
-            _collect(run, depth_minutes=min(int(depth_minutes), DEPTH_MAX_MINUTES)),
+            (
+                _collect_from_directory(
+                    run,
+                    depth_minutes=depth,
+                    log_directory=log_directory,
+                    log_timezone=log_timezone,
+                )
+                if log_directory is not None
+                else _collect(run, depth_minutes=depth)
+            ),
             timeout=PHASE_WALLCLOCK_SECONDS,
         )
     except _PhaseUnavailable as exc:
         _finish(
             run,
             None,
-            {"status": exc.status, "reason": str(exc), "coverage": None},
+            {
+                "status": exc.status,
+                "reason": str(exc),
+                "coverage": None,
+                **_source_marker(exc.inventory),
+            },
             inventory=exc.inventory,
         )
         return None
@@ -187,10 +225,21 @@ async def collect_report_server_log(run: Any, *, depth_minutes: int | None) -> L
     _finish(
         run,
         window,
-        {"status": "collected", "reason": None, "coverage": coverage},
+        {
+            "status": "collected",
+            "reason": None,
+            "coverage": coverage,
+            **_source_marker(inventory),
+        },
         inventory=inventory,
     )
     return window
+
+
+def _source_marker(inventory: dict[str, Any] | None) -> dict[str, Any]:
+    """Expose where the log files came from (database discovery or a directory)."""
+    source = (inventory or {}).get("source")
+    return {"source": source} if isinstance(source, dict) else {}
 
 
 def _finish(
@@ -339,37 +388,17 @@ async def _collect(run: Any, *, depth_minutes: int) -> tuple[dict[str, Any], Log
         )
     if not candidates:
         raise _PhaseUnavailable("no csvlog files within the requested window", inventory=inventory)
+    inventory["source"] = {"kind": "database", "log_directory": log_directory}
 
-    enabled_items = _enabled_server_log_items(run)
-    clauses = clauses_for_items(enabled_items)
-    if not clauses:
-        # Only inventory-capability items are enabled: no content scan needed.
-        result = ScanResult(series=[], stats=ScanStats(files_seen=len(candidates)))
-    else:
-        source = _select_source(collection_mode, log_directory, getattr(run, "ssh", None))
-        request = ScanRequest(
-            log_directory=log_directory,
-            files=tuple(candidates),  # newest first from the SQL ordering
-            window_from_ts=window_from,
-            window_to_ts=window_to,
-            recall_clauses=clauses,
-            raw_record_cap=(
-                AUTO_EXPLAIN_RAW_RECORD_CAP
-                if "server_log.auto_explain_plans" in enabled_items
-                else RAW_RECORD_CAP
-            ),
-            deadline_monotonic=time.monotonic() + PHASE_WALLCLOCK_SECONDS * 0.9,
-        )
-        try:
-            result = await source.scan(request)
-        except HarvesterUnavailableError as exc:
-            raise _PhaseUnavailable(str(exc), inventory=inventory) from exc
-        if result.stats.files_read == 0:
-            raise _PhaseUnavailable(
-                "no candidate csvlog file could be read; check filesystem permissions "
-                "for the collector account (see docs/access-best-practices.md)",
-                inventory=inventory,
-            )
+    result = await _scan_candidates(
+        run,
+        collection_mode=collection_mode,
+        log_directory=log_directory,
+        candidates=tuple(candidates),  # newest first from the SQL ordering
+        window_from=window_from,
+        window_to=window_to,
+        inventory=inventory,
+    )
     if candidate_overflow:
         result.stats.truncation_reasons.add(REASON_CANDIDATE_LIMIT)
     encodings = await _database_encodings(run.conn)
@@ -381,7 +410,139 @@ async def _collect(run: Any, *, depth_minutes: int) -> tuple[dict[str, Any], Log
         window_to=window_to,
         locale_supported=locale_supported,
         encodings=encodings,
+        clock=_server_clock(facts),
     )
+
+
+def _server_clock(facts: Any) -> LogClock:
+    """Per-record offsets from the server's log_timezone (DST-aware when IANA)."""
+    name = str(facts.get("log_timezone") or "UTC")
+    fixed = facts.get("log_utc_offset_seconds")
+    try:
+        from zoneinfo import ZoneInfo
+
+        return LogClock(label=name, zone=ZoneInfo(name))
+    except Exception:  # noqa: BLE001 - abbreviations and unknown names fall back
+        return LogClock(label=name, fixed_offset=int(fixed) if fixed is not None else None)
+
+
+async def _collect_from_directory(
+    run: Any,
+    *,
+    depth_minutes: int,
+    log_directory: str,
+    log_timezone: str | None = None,
+) -> tuple[dict[str, Any], LogWindow]:
+    """Logs mode: discover files in ``log_directory`` without a database."""
+    collection_mode = str(run.artifact["runtime"].get("collection_mode") or "")
+    if collection_mode == "local":
+        probe = LocalLogDirectoryProbe()
+    elif collection_mode == "remote":
+        ssh = getattr(run, "ssh", None)
+        if ssh is None:
+            raise _PhaseUnavailable("remote log collection needs the SSH transport")
+        probe = HarvesterLogDirectoryProbe(ssh)
+    else:
+        raise _PhaseUnavailable(
+            "server log collection requires local or remote (SSH) collection mode"
+        )
+    try:
+        probed = await probe.probe(log_directory)
+        state = await verify_discovery(
+            probe,
+            probed,
+            log_directory=log_directory,
+            depth_minutes=depth_minutes,
+            clock_for=lambda anchor_ts: resolve_clock(anchor_ts, log_timezone),
+        )
+        discovered = resolve_directory_window(
+            probed,
+            log_directory=log_directory,
+            depth_minutes=depth_minutes,
+            state=state,
+            log_timezone=log_timezone,
+        )
+    except FileNotFoundError as exc:
+        raise _PhaseUnavailable(f"log directory does not exist: {log_directory}") from exc
+    except NotADirectoryError as exc:
+        raise _PhaseUnavailable(f"log directory is not a directory: {log_directory}") from exc
+    except PermissionError as exc:
+        raise _PhaseUnavailable(
+            f"log directory is not readable by the collector account: {log_directory}"
+        ) from exc
+    except (HarvesterUnavailableError, DirectoryUnavailable) as exc:
+        raise _PhaseUnavailable(
+            str(exc), inventory=getattr(exc, "inventory", None)
+        ) from exc
+    inventory = discovered.inventory
+    result = await _scan_candidates(
+        run,
+        collection_mode=collection_mode,
+        log_directory=log_directory,
+        candidates=discovered.candidates,
+        window_from=discovered.scan_from,  # both bounds widened across DST;
+        window_to=discovered.scan_to,  # the absolute filter below is exact
+        inventory=inventory,
+    )
+    # Discovery gaps (unreadable or undetermined files, a capped listing, an
+    # unverified anchor) forfeit completeness exactly like scan truncation.
+    result.stats.truncation_reasons.update(discovered.truncation_reasons)
+    result.stats.files_unreadable += discovered.files_unreadable
+    return inventory, _build_window(
+        result,
+        depth_minutes=depth_minutes,
+        server_version_num=discovered.csv_format.server_version_num,
+        window_from=discovered.window_from,
+        window_to=discovered.window_to,
+        locale_supported=discovered.locale_supported,
+        encodings={},  # no database: UTF-8, degraded records are flagged per row
+        file_versions=discovered.file_versions,
+        clock=discovered.clock,
+        anchor_ts=discovered.anchor_ts,
+    )
+
+
+async def _scan_candidates(
+    run: Any,
+    *,
+    collection_mode: str,
+    log_directory: str,
+    candidates: tuple[LogFileInfo, ...],
+    window_from: str,
+    window_to: str,
+    inventory: dict[str, Any],
+) -> ScanResult:
+    """Read the candidate files through the transport of the collection mode."""
+    enabled_items = _enabled_server_log_items(run)
+    clauses = clauses_for_items(enabled_items)
+    if not clauses:
+        # Only inventory-capability items are enabled: no content scan needed.
+        return ScanResult(series=[], stats=ScanStats(files_seen=len(candidates)))
+    source = _select_source(collection_mode, log_directory, getattr(run, "ssh", None))
+    request = ScanRequest(
+        log_directory=log_directory,
+        files=candidates,
+        window_from_ts=window_from,
+        window_to_ts=window_to,
+        recall_clauses=clauses,
+        raw_record_cap=(
+            AUTO_EXPLAIN_RAW_RECORD_CAP
+            if "server_log.auto_explain_plans" in enabled_items
+            else RAW_RECORD_CAP
+        ),
+        deadline_monotonic=time.monotonic() + PHASE_WALLCLOCK_SECONDS * 0.9,
+    )
+    try:
+        result = await source.scan(request)
+    except HarvesterUnavailableError as exc:
+        raise _PhaseUnavailable(str(exc), inventory=inventory) from exc
+    if result.stats.files_read == 0:
+        raise _PhaseUnavailable(
+            "no candidate csvlog file could be read; check filesystem permissions "
+            "for the collector account (see docs/access-best-practices.md)",
+            inventory=inventory,
+        )
+    return result
 
 
 def _select_source(collection_mode: str, log_directory: str, ssh: Any) -> LogScanSource:
@@ -414,16 +575,39 @@ def _build_window(
     window_to: str,
     locale_supported: bool,
     encodings: dict[str, str],
+    file_versions: dict[str, int] | None = None,
+    clock: LogClock | None = None,
+    anchor_ts: str | None = None,
 ) -> LogWindow:
     stats = result.stats
     window_from_dt = parse_timestamp(window_from)
     window_to_dt = parse_timestamp(window_to)
+    # With a known clock and an anchor record (logs mode) the window is an
+    # absolute interval: wall-clock arithmetic breaks across a DST transition.
+    anchor_abs = None
+    if clock is not None and clock.known and anchor_ts and window_to_dt is not None:
+        anchor_abs = clock.to_absolute(window_to_dt, zone_suffix(anchor_ts))
+    from_abs = anchor_abs - timedelta(minutes=depth_minutes) if anchor_abs else None
     records: list[LogRecord] = []
     parse_errors = 0
+    versions = file_versions or {}
     for series in result.series:
-        record = _record_from_series(series, server_version_num, encodings)
+        # A directory may mix layouts (logs kept across a major upgrade): the
+        # layout detected from each file's head selects its parser fork.
+        record = _record_from_series(
+            series, versions.get(series.file, server_version_num), encodings, clock
+        )
         if record is None:
             parse_errors += 1
+            continue
+        if anchor_abs is not None and from_abs is not None and clock is not None:
+            first_abs = clock.to_absolute(record.log_time, zone_suffix(series.first_ts))
+            last_abs = clock.to_absolute(record.last_time, zone_suffix(series.last_ts))
+            if first_abs is None or last_abs is None:
+                continue
+            if last_abs < from_abs or first_abs > anchor_abs:
+                continue
+            records.append(record)
             continue
         if window_from_dt is not None and record.last_time < window_from_dt:
             continue
@@ -445,7 +629,14 @@ def _build_window(
         # With any global loss every count is only a lower bound: the lost
         # region could have held more occurrences of any series.
         records = [replace(record, count_complete=False) for record in records]
-    records.sort(key=lambda record: (record.log_time, record.last_time))
+    # Order on absolute time when offsets are known: after a fall-back the
+    # wall clock runs backwards for an hour.
+    records.sort(
+        key=lambda record: (
+            record.log_time - timedelta(seconds=record.utc_offset_seconds or 0),
+            record.last_time,
+        )
+    )
     merged = list(
         merge_client_series(
             records,
@@ -481,6 +672,7 @@ def _record_from_series(
     series: RawSeries,
     server_version_num: int,
     encodings: dict[str, str],
+    clock: LogClock | None = None,
 ) -> LogRecord | None:
     parsed = parse_record(series.raw_record, server_version_num=server_version_num)
     if parsed is None or parsed.log_time is None:
@@ -508,9 +700,15 @@ def _record_from_series(
         sanitize_text(parsed.application_name)[:256] if parsed.application_name else None
     )
     last_time = parse_timestamp(series.last_ts) or parsed.log_time
+    utc_offset = (
+        clock.offset_for(parsed.log_time, zone_suffix(series.first_ts))
+        if clock is not None and clock.known
+        else None
+    )
     return LogRecord(
         log_time=parsed.log_time,
         last_time=last_time,
+        utc_offset_seconds=utc_offset,
         repeat_count=series.count,
         severity=parsed.severity or "UNKNOWN",
         sql_state=parsed.sql_state,

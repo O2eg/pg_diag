@@ -7,6 +7,22 @@ from collections.abc import Mapping
 
 COLLECTION_STATUSES = frozenset({"ok", "empty", "error", "unsupported", "skipped"})
 RESULT_KINDS = frozenset({"none", "plain_text", "table", "chart"})
+
+# Presentation types selectable with --item-type. They classify what an item
+# shows, independent of the source kind that produces it: a point-in-time
+# table, plain text, a chart, or a table computed over the observation window.
+ITEM_TYPE_TABLE = "table"
+ITEM_TYPE_TEXT = "text"
+ITEM_TYPE_CHART = "chart"
+ITEM_TYPE_DELTA = "delta"
+ITEM_TYPE_ORDER = (ITEM_TYPE_TABLE, ITEM_TYPE_TEXT, ITEM_TYPE_CHART, ITEM_TYPE_DELTA)
+ITEM_TYPES = frozenset(ITEM_TYPE_ORDER)
+ITEM_TYPE_RESULT_KINDS = {
+    ITEM_TYPE_TABLE: "table",
+    ITEM_TYPE_DELTA: "table",
+    ITEM_TYPE_CHART: "chart",
+    ITEM_TYPE_TEXT: "plain_text",
+}
 SEVERITY_LEVELS = frozenset({"high", "medium", "ok", "unknown"})
 
 SOURCE_TARGET_HOST = "host"

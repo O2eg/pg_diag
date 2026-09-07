@@ -9,6 +9,7 @@ from typing import Any
 from . import runtime_config
 from .contracts import (
     COLLECTION_STATUSES,
+    ITEM_TYPES,
     INTERVAL_COVERAGE_STATUSES,
     RESULT_KINDS,
     SEVERITY_LEVELS,
@@ -241,6 +242,10 @@ def _validate_item_payload(item_id: str, item: dict[str, Any], units: set[str]) 
                 f"Artifact item {item_id!r} field {key!r} must be a non-empty string"
             )
     _validate_targets(item.get("targets"), f"Artifact item {item_id!r} targets")
+    if item.get("item_type") is not None and not _value_in(item.get("item_type"), ITEM_TYPES):
+        raise ValidationError(
+            f"Artifact item {item_id!r} has unsupported item_type {item.get('item_type')!r}"
+        )
     if not _value_in(item.get("collection_status"), COLLECTION_STATUSES):
         raise ValidationError(
             f"Artifact item {item_id!r} has unsupported collection_status "

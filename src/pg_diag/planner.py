@@ -8,12 +8,21 @@ from typing import Any
 
 from . import runtime_config
 from .contracts import (
+    ITEM_TYPE_CHART,
+    ITEM_TYPE_DELTA,
+    ITEM_TYPE_ORDER,
+    ITEM_TYPE_TABLE,
+    ITEM_TYPE_TEXT,
+    ITEM_TYPES,
     SOURCE_TARGET_DATABASE,
     SOURCE_TARGET_HOST,
     SOURCE_TARGET_ORDER,
 )
 from .content_loader import ContentPack, iter_fallback_items, iter_report_items
 from .versioning import select_query_variant, supported_version_reason
+
+SERVER_LOG_SECTION_ID = "server_log"
+LOGS_MODE_SKIP_REASON = "logs mode collects only server_log items from csvlog files"
 
 
 @dataclass(frozen=True)
@@ -33,6 +42,7 @@ class PlannedItem:
     python_file: str | None = None
     collection_scope: str | None = None
     targets: tuple[str, ...] = ()
+    item_type: str | None = None
     source_metadata: dict[str, Any] = field(default_factory=dict)
     fallback_on: tuple[str, ...] = ()
     fallback_item: PlannedItem | None = None
@@ -44,6 +54,7 @@ class PlannedItem:
             "item_key": self.item_key,
             "title": self.title,
             "source_kind": self.source_kind,
+            "item_type": self.item_type,
             "source_id": self.source_id,
             "status": self.status,
             "state": self.state,
@@ -128,6 +139,7 @@ class ExecutionPlan:
 class CollectionRequirements:
     host_item_ids: tuple[str, ...]
     database_item_ids: tuple[str, ...]
+    selected_item_count: int | None = None  # None without --item-id/--tags/--item-type
 
     @property
     def targets(self) -> tuple[str, ...]:
@@ -156,18 +168,23 @@ def build_plan(
     collection_mode: str = runtime_config.DEFAULT_COLLECTION_MODE,
     item_id: str | Iterable[str] | None = None,
     tags: Iterable[str] | None = None,
+    item_type: str | Iterable[str] | None = None,
 ) -> ExecutionPlan:
     if item_id is not None and tags is not None:
         raise ValueError("--item-id and --tags cannot be used together")
     requested_item_ids = normalize_requested_item_ids(content, item_id)
     requested_tags = normalize_requested_tags(content, tags)
-    selected_item_ids = _selected_report_item_ids(content, requested_item_ids, requested_tags)
+    requested_item_types = normalize_requested_item_types(item_type)
+    selected_item_ids = _selected_report_item_ids(
+        content, requested_item_ids, requested_tags, requested_item_types
+    )
     requirements = collection_requirements(
         content,
         mode=mode,
         collection_mode=collection_mode,
         item_id=requested_item_ids,
         tags=requested_tags,
+        item_type=requested_item_types,
     )
     if requirements.requires_database and server_version_num is None:
         raise ValueError("server_version_num is required by the selected db target")
@@ -191,6 +208,27 @@ def build_plan(
         if selected_item_ids is not None and planned_item_id not in selected_item_ids:
             continue
         source_kind = _source_kind(item)
+        item_type_value = report_item_type(content, source_kind, item)
+        if mode == runtime_config.LOGS_MODE and not is_server_log_item(planned_item_id):
+            # No server version is known without a database: skip before any
+            # variant selection instead of planning a query that cannot run.
+            items.append(
+                PlannedItem(
+                    item_id=planned_item_id,
+                    section_id=section_id,
+                    item_key=item_key,
+                    title=_item_title(content, source_kind, item, item_key),
+                    source_kind=source_kind,
+                    source_id=item.get(source_kind),
+                    status="skipped",
+                    state=_item_state(content, item),
+                    reason=LOGS_MODE_SKIP_REASON,
+                    targets=_source_targets(content, source_kind, item),
+                    item_type=item_type_value,
+                    source_metadata=_with_item_metadata(content, planned_item_id, item),
+                )
+            )
+            continue
         if unsupported_reason:
             planned = PlannedItem(
                 item_id=planned_item_id,
@@ -255,7 +293,9 @@ def build_plan(
                 collection_mode,
                 query_usage_index,
             )
-        items.append(planned)
+        if mode == runtime_config.LOGS_MODE:
+            planned = _plan_item_for_logs_mode(planned)
+        items.append(replace(planned, item_type=item_type_value))
 
     planned_item_ids = {item.item_id for item in items}
     sections = [
@@ -310,6 +350,13 @@ def build_plan(
     )
 
 
+def _plan_item_for_logs_mode(planned: PlannedItem) -> PlannedItem:
+    """Logs mode fills server_log items from files: they are host sources."""
+    if planned.status != "planned":
+        return planned
+    return replace(planned, targets=(SOURCE_TARGET_HOST,), fallback_item=None)
+
+
 def available_report_item_ids(content: ContentPack) -> list[str]:
     """Return report item ids in their declared display order."""
     return [item_id for _section_id, _item_key, item_id, _item in iter_report_items(content)]
@@ -322,13 +369,17 @@ def collection_requirements(
     collection_mode: str,
     item_id: str | Iterable[str] | None = None,
     tags: Iterable[str] | None = None,
+    item_type: str | Iterable[str] | None = None,
 ) -> CollectionRequirements:
     """Resolve transports required by report items which execute in this run."""
     if item_id is not None and tags is not None:
         raise ValueError("--item-id and --tags cannot be used together")
     requested_item_ids = normalize_requested_item_ids(content, item_id)
     requested_tags = normalize_requested_tags(content, tags)
-    selected_item_ids = _selected_report_item_ids(content, requested_item_ids, requested_tags)
+    requested_item_types = normalize_requested_item_types(item_type)
+    selected_item_ids = _selected_report_item_ids(
+        content, requested_item_ids, requested_tags, requested_item_types
+    )
     host_item_ids: list[str] = []
     database_item_ids: list[str] = []
 
@@ -336,8 +387,12 @@ def collection_requirements(
         if selected_item_ids is not None and report_item_id not in selected_item_ids:
             continue
         source_kind = _source_kind(item)
-        targets = _source_targets(content, source_kind, item)
-        if not _item_executes_in_mode(source_kind, targets, mode, collection_mode):
+        targets = _mode_targets(
+            report_item_id, _source_targets(content, source_kind, item), mode
+        )
+        if not _item_executes_in_mode(
+            source_kind, targets, mode, collection_mode, item_id=report_item_id
+        ):
             continue
         if SOURCE_TARGET_HOST in targets:
             host_item_ids.append(report_item_id)
@@ -345,13 +400,18 @@ def collection_requirements(
             database_item_ids.append(report_item_id)
 
     # Preserve the historical contract: only an explicit item/tag filter may
-    # make a report database-free.
-    if selected_item_ids is None and not database_item_ids:
+    # make a report database-free. The logs mode never connects to PostgreSQL.
+    if (
+        selected_item_ids is None
+        and not database_item_ids
+        and mode != runtime_config.LOGS_MODE
+    ):
         database_item_ids.append("<full-report>")
 
     return CollectionRequirements(
         host_item_ids=tuple(host_item_ids),
         database_item_ids=tuple(database_item_ids),
+        selected_item_count=None if selected_item_ids is None else len(selected_item_ids),
     )
 
 
@@ -442,21 +502,95 @@ def normalize_requested_tags(
     return tuple(normalized)
 
 
+def normalize_requested_item_types(
+    item_type: str | Iterable[str] | None,
+) -> tuple[str, ...] | None:
+    """Normalize --item-type values: lowercase, deduplicated, validated."""
+    if item_type is None:
+        return None
+    values = (item_type,) if isinstance(item_type, str) else tuple(item_type)
+    normalized: list[str] = []
+    unknown: list[str] = []
+    for value in values:
+        for part in str(value).split(","):
+            key = part.strip().lower()
+            if not key:
+                continue
+            if key not in ITEM_TYPES:
+                unknown.append(part.strip())
+            elif key not in normalized:
+                normalized.append(key)
+    if unknown:
+        raise ValueError(
+            f"Unknown item type(s): {', '.join(unknown)}. "
+            f"Available types: {', '.join(ITEM_TYPE_ORDER)}"
+        )
+    if not normalized:
+        raise ValueError("--item-type requires at least one item type")
+    return tuple(normalized)
+
+
 def _selected_report_item_ids(
     content: ContentPack,
     item_ids: tuple[str, ...] | None,
     tags: tuple[str, ...] | None,
+    item_types: tuple[str, ...] | None = None,
 ) -> set[str] | None:
+    """Filters combine by intersection: ids or tags first, then item types."""
+    selected: set[str] | None = None
     if item_ids is not None:
-        return set(item_ids)
-    if tags is None:
-        return None
-    requested = set(tags)
-    return {
+        selected = set(item_ids)
+    elif tags is not None:
+        requested = set(tags)
+        selected = {
+            report_item_id
+            for _section_id, _item_key, report_item_id, item in iter_report_items(content)
+            if requested.intersection(_item_tags(item))
+        }
+    if item_types is None:
+        return selected
+    typed = {
         report_item_id
         for _section_id, _item_key, report_item_id, item in iter_report_items(content)
-        if requested.intersection(_item_tags(item))
+        if report_item_type(content, _source_kind(item), item) in item_types
     }
+    return typed if selected is None else selected.intersection(typed)
+
+
+def report_item_type(content: ContentPack, source_kind: str, item: dict[str, Any]) -> str:
+    """Presentation type of a report item: declared ``item_type`` or the default."""
+    manifest = _source_manifest(content, source_kind, item)
+    declared = manifest.get("item_type")
+    if isinstance(declared, str) and declared in ITEM_TYPES:
+        return declared
+    return default_item_type(source_kind, manifest)
+
+
+def default_item_type(source_kind: str, manifest: dict[str, Any]) -> str:
+    """Type implied by the source manifest when ``item_type`` is not declared."""
+    if source_kind == "script":
+        return ITEM_TYPE_TEXT if manifest.get("output") == "plain_text" else ITEM_TYPE_TABLE
+    if source_kind == "metric":
+        if manifest.get("chart"):
+            return ITEM_TYPE_CHART
+        if manifest.get("requires_collection") == runtime_config.WINDOW_ENDPOINTS_COLLECTION_SCOPE:
+            return ITEM_TYPE_DELTA
+        return ITEM_TYPE_TABLE
+    return ITEM_TYPE_TABLE  # SQL rows and Python records render as tables
+
+
+def _source_manifest(
+    content: ContentPack,
+    source_kind: str,
+    item: dict[str, Any],
+) -> dict[str, Any]:
+    catalogs = {
+        "query": content.queries,
+        "script": content.scripts,
+        "metric": content.metrics,
+        "python": content.pythons,
+    }
+    return catalogs[source_kind].get(item.get(source_kind)) or {}
 
 
 def _source_kind(item: dict[str, Any]) -> str:
@@ -471,14 +605,7 @@ def _source_targets(
     source_kind: str,
     item: dict[str, Any],
 ) -> tuple[str, ...]:
-    source_id = item.get(source_kind)
-    catalogs = {
-        "query": content.queries,
-        "script": content.scripts,
-        "metric": content.metrics,
-        "python": content.pythons,
-    }
-    manifest = catalogs[source_kind].get(source_id) or {}
+    manifest = _source_manifest(content, source_kind, item)
     values = manifest.get("targets")
     if not isinstance(values, list):
         if source_kind == "query":
@@ -499,12 +626,32 @@ def _source_targets(
     return tuple(target for target in SOURCE_TARGET_ORDER if target in selected)
 
 
+def is_server_log_item(item_id: str) -> bool:
+    return item_id.startswith(f"{SERVER_LOG_SECTION_ID}.")
+
+
+def _mode_targets(item_id: str, targets: tuple[str, ...], mode: str) -> tuple[str, ...]:
+    """Effective execution targets of an item in the given report mode.
+
+    In logs mode the server_log items read csvlog files from the collector
+    machine or the SSH target instead of discovering them through the
+    database, so they become host-only sources for transport resolution.
+    """
+    if mode == runtime_config.LOGS_MODE and is_server_log_item(item_id):
+        return (SOURCE_TARGET_HOST,)
+    return targets
+
+
 def _item_executes_in_mode(
     source_kind: str,
     targets: tuple[str, ...],
     mode: str,
     collection_mode: str,
+    *,
+    item_id: str | None = None,
 ) -> bool:
+    if mode == runtime_config.LOGS_MODE:
+        return item_id is not None and is_server_log_item(item_id)
     if source_kind == "metric" and mode == runtime_config.ONE_SHOT_MODE:
         return False
     if (

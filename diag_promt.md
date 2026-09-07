@@ -289,8 +289,11 @@ applies.
 
 ### Runtime fields to read first
 
-`mode` (`one-shot` or `snapshots`), `collection_mode` (`remote-db-only`,
-`local`, `remote`), `targets` (`host`, `db`), `database_connected`,
+`mode` (`one-shot`, `snapshots`, or `logs` — the last one holds only the
+`server_log` section built from csvlog files without a database); every item
+also carries `item_type` (`table`, `text`, `chart`, `delta`) naming its
+presentation, where `delta` is a table computed over the observation window,
+`collection_mode` (`remote-db-only`, `local`, `remote`), `targets` (`host`, `db`), `database_connected`,
 `server_version`, `server_version_num`, `in_recovery`, `database_role`,
 `current_database`, `database_name`, `started_at`, `finished_at`,
 `snapshot_count`, `interval_seconds`, `duration_seconds`,

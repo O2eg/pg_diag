@@ -13,9 +13,15 @@ from typing import Any
 from . import runtime_config
 from .contracts import (
     DATABASE_SCOPES,
+    ITEM_TYPES,
+    ITEM_TYPE_CHART,
+    ITEM_TYPE_DELTA,
+    ITEM_TYPE_ORDER,
+    ITEM_TYPE_TABLE,
+    ITEM_TYPE_TEXT,
+    SOURCE_TARGETS,
     SOURCE_TARGET_DATABASE,
     SOURCE_TARGET_HOST,
-    SOURCE_TARGETS,
 )
 from .content_loader import (
     ContentLoadError,
@@ -118,6 +124,7 @@ def validate_content(content: ContentPack) -> list[ValidationIssue]:
     _validate_python_sources(content, issues)
     _validate_sampler_providers(content, issues)
     _validate_metrics(content, issues)
+    _validate_item_types(content, issues)
     _validate_instructions(content, issues)
     _validate_sql_files(content, issues)
     return issues
@@ -1541,6 +1548,53 @@ def _sampler_output_registry(content: ContentPack) -> dict[str, dict[str, Any]]:
             if isinstance(output_id, str) and isinstance(output, dict):
                 registry[output_id] = output
     return registry
+
+
+def _validate_item_types(content: ContentPack, issues: list[ValidationIssue]) -> None:
+    """Declared ``item_type`` values must be known and consistent with the source."""
+    catalogs = (
+        ("query", content.queries),
+        ("script", content.scripts),
+        ("metric", content.metrics),
+        ("python", content.pythons),
+    )
+    for source_kind, catalog in catalogs:
+        for source_id, manifest in catalog.items():
+            declared = manifest.get("item_type")
+            if declared is None:
+                continue
+            location = f"{source_kind}:{source_id}"
+            if not isinstance(declared, str) or declared not in ITEM_TYPES:
+                _issue(
+                    issues,
+                    "item_type",
+                    f"item_type must be one of {', '.join(ITEM_TYPE_ORDER)}",
+                    location,
+                )
+                continue
+            allowed = _allowed_item_types(source_kind, manifest)
+            if declared not in allowed:
+                _issue(
+                    issues,
+                    "item_type",
+                    f"item_type {declared!r} contradicts the source; allowed: "
+                    + ", ".join(sorted(allowed)),
+                    location,
+                )
+
+
+def _allowed_item_types(source_kind: str, manifest: dict[str, Any]) -> set[str]:
+    if source_kind == "script":
+        if manifest.get("output") == "plain_text":
+            return {ITEM_TYPE_TEXT}
+        return {ITEM_TYPE_TABLE, ITEM_TYPE_DELTA}
+    if source_kind == "metric":
+        if manifest.get("chart"):
+            return {ITEM_TYPE_CHART}
+        return {ITEM_TYPE_TABLE, ITEM_TYPE_DELTA}
+    if source_kind == "query":
+        return {ITEM_TYPE_TABLE, ITEM_TYPE_DELTA}
+    return set(ITEM_TYPES)  # python sources build any result kind
 
 
 def _validate_metrics(content: ContentPack, issues: list[ValidationIssue]) -> None:

@@ -26,11 +26,11 @@ from .model import (
     ScanResult,
     ScanStats,
 )
+from .records import plausible_record_start, quote_state as _quote_state
 from .rle import PhysicalRle, ts_prefix
 
 _TS_COMPARE_LEN = 19  # YYYY-MM-DD HH:MM:SS
 _SERIES_WIRE_OVERHEAD = 64
-_QUOTE = 0x22
 
 
 def _timestamp_key(value: str) -> str:
@@ -101,18 +101,6 @@ class _LogicalRecordAssembler:
         self.in_quotes = _quote_state(line, self.in_quotes)
 
 
-def _quote_state(line: bytes, in_quotes: bool) -> bool:
-    index = 0
-    while index < len(line):
-        if line[index] != _QUOTE:
-            index += 1
-            continue
-        if in_quotes and index + 1 < len(line) and line[index + 1] == _QUOTE:
-            index += 2
-            continue
-        in_quotes = not in_quotes
-        index += 1
-    return in_quotes
 
 
 class LogScanSource:
@@ -180,11 +168,22 @@ def _find_window_start(
             high = mid
     start = low
     ts, aligned = _first_ts_at(handle, start, size)
-    if ts is not None and start > 0:
+    if ts is None:
+        return 0
+    # A line that merely starts with a date may sit inside a quoted multiline
+    # message; a scan started there would miss the records before it and
+    # misparse the ones after. Validate the alignment by record structure and
+    # fall back to the whole file when it does not hold (then nothing is
+    # skipped, so no coverage reason applies).
+    if aligned > 0:
+        handle.seek(aligned)
+        if not plausible_record_start(handle.read(min(PROBE_BYTES * 4, size - aligned))):
+            return 0
+    if start > 0:
         before_ts, _ = _first_ts_at(handle, max(0, start - PROBE_BYTES), size)
         if before_ts is not None and before_ts[:_TS_COMPARE_LEN] > ts[:_TS_COMPARE_LEN]:
             stats.truncation_reasons.add(REASON_NON_MONOTONIC)
-    return aligned if ts is not None else 0
+    return aligned
 
 
 class LocalLogSource(LogScanSource):

@@ -11,6 +11,7 @@ from pg_diag.logscan.event_refs import CHART_POINT_LIMIT, ChartReferencePool
 from pg_diag.logscan.items_common import (
     coverage_note,
     empty_result_status,
+    log_clock_offset,
     resolve_english_window,
 )
 
@@ -71,7 +72,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
         )[:TOP_QUERIES_PER_BUCKET]
         for bucket, bucket_records in records_by_bucket.items()
     }
-    utc_offset_seconds = _utc_offset_seconds(context)
+    utc_offset_seconds, clock_diagnostics = log_clock_offset(context)
     candidate_point_count = sum(len(bucket_records) for bucket_records in top_by_bucket.values())
     axis_points = _axis_boundary_points(buckets, utc_offset_seconds)
     event_point_limit = max(0, CHART_POINT_LIMIT - len(axis_points))
@@ -161,6 +162,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
             result=result,
             issues=issues,
             severity_level=severity,
+            diagnostics=clock_diagnostics,
         )
 
     note = coverage_note(window)
@@ -205,6 +207,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
         result=result,
         issues=issues,
         severity_level=severity,
+        diagnostics=clock_diagnostics,
     )
 
 
@@ -270,11 +273,11 @@ def _chart_point(
     plan = record.auto_explain_plan
     assert plan is not None
     point = {
-        "t": _iso_timestamp(bucket, utc_offset_seconds),
+        "t": _iso_timestamp(bucket, _record_offset(record, utc_offset_seconds)),
         "value": plan.duration_ms,
         "color": _stack_color(rank, bucket_size),
         "tooltip": {
-            "log_time": _iso_timestamp(record.log_time, utc_offset_seconds),
+            "log_time": _iso_timestamp(record.log_time, _record_offset(record, utc_offset_seconds)),
             "duration_ms": plan.duration_ms,
             "query_ref": refs.add_query(plan.query_sample),
         },
@@ -300,14 +303,10 @@ def _axis_boundary_points(buckets: list[datetime], utc_offset_seconds: int) -> l
     return result
 
 
-def _utc_offset_seconds(context) -> int:
-    inventory = getattr(context.server_log, "inventory", None) or {}
-    settings = inventory.get("settings") or {}
-    try:
-        offset = int(settings.get("log_utc_offset_seconds") or 0)
-    except (TypeError, ValueError):
-        return 0
-    return max(-86_399, min(86_399, offset))
+def _record_offset(record: Any, window_offset: int) -> int:
+    """The record's own UTC offset when the log clock is known (DST-aware)."""
+    offset = getattr(record, "utc_offset_seconds", None)
+    return window_offset if offset is None else int(offset)
 
 
 def _iso_timestamp(value: datetime, utc_offset_seconds: int) -> str:

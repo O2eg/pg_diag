@@ -466,6 +466,7 @@ python_sources:
         direction: desc
   server_log.query_termination_events:
     targets: [db]
+    item_type: chart
     title: Query Termination Events By Minute
     description: Minute chart for statement/lock timeouts, user cancellation, recovery conflict, administrative shutdown, and NOWAIT failures with deduplicated message and SQL references.
     python_file: server_log/query_termination_events.py
@@ -506,6 +507,7 @@ python_sources:
         direction: desc
   server_log.auto_explain_plans:
     targets: [db]
+    item_type: chart
     title: Top Auto Explain Queries By Minute
     description: One clock-aligned column per minute with up to ten longest queries logged by auto_explain; every stacked block is one query, exposes a sanitized 300-character query sample, and opens a bounded sanitized plan in the bundled read-only viewer.
     python_file: server_log/auto_explain_plans.py

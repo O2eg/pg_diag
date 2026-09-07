@@ -12,6 +12,11 @@ import io
 from dataclasses import dataclass
 from datetime import datetime
 
+# A single csvlog field (an auto_explain plan, a logged statement) can exceed
+# the csv module's 128 KiB default; records are already bounded by the probe
+# and raw-record caps before they reach the parser.
+csv.field_size_limit(max(csv.field_size_limit(), 64 * 1_048_576))
+
 _BASE_COLUMNS = (
     "log_time",
     "user_name",
@@ -47,6 +52,74 @@ def expected_columns(server_version_num: int) -> int:
     return 23
 
 
+# csvlog layouts by column count; the stand-in version selects the parser fork.
+_FORMAT_VERSIONS = {
+    23: (120000, "PostgreSQL 10-12 (23 columns)"),
+    24: (130000, "PostgreSQL 13 (24 columns)"),
+    26: (140000, "PostgreSQL 14+ (26 columns)"),
+}
+_ENGLISH_SEVERITIES = frozenset(
+    {
+        "DEBUG5",
+        "DEBUG4",
+        "DEBUG3",
+        "DEBUG2",
+        "DEBUG1",
+        "INFO",
+        "NOTICE",
+        "WARNING",
+        "ERROR",
+        "LOG",
+        "FATAL",
+        "PANIC",
+    }
+)
+
+
+@dataclass(frozen=True)
+class CsvFormat:
+    """csvlog layout detected from a file head without a database."""
+
+    columns: int
+    server_version_num: int
+    label: str
+    severity: str | None
+    locale_supported: bool
+
+
+def csv_format_from_columns(columns: int | None, severity: str | None) -> CsvFormat | None:
+    """csvlog layout for a column count observed on a complete record.
+
+    Column counts are fixed per major series (23 up to 12, 24 in 13, 26 from
+    14). The English-severity check feeds the locale flag: a localized
+    ``lc_messages`` renders severities such as ``ОШИБКА`` and defeats every
+    message-pattern item.
+    """
+    if columns not in _FORMAT_VERSIONS:
+        return None
+    version, label = _FORMAT_VERSIONS[columns]
+    severity = severity or None
+    return CsvFormat(
+        columns=columns,
+        server_version_num=version,
+        label=label,
+        severity=severity,
+        locale_supported=severity is None or severity in _ENGLISH_SEVERITIES,
+    )
+
+
+def first_record_fields(record: bytes) -> list[str] | None:
+    """Fields of one complete raw csvlog record, or None if it is no record."""
+    text = record.decode("utf-8", errors="replace")
+    try:
+        fields = next(csv.reader(io.StringIO(text)))
+    except (csv.Error, StopIteration):
+        return None
+    if len(fields) < 14 or parse_timestamp(fields[0]) is None:
+        return None
+    return fields
+
+
 @dataclass(frozen=True)
 class ParsedRecord:
     log_time: datetime | None
@@ -76,7 +149,10 @@ def parse_timestamp(value: str) -> datetime | None:
     """Parse a csvlog log_time; the timezone suffix is dropped (log_timezone
     is constant per server run, comparisons stay within one zone)."""
     head, _, tail = value.rpartition(" ")
-    candidate = head if head and any(ch.isalpha() for ch in tail) else value
+    # Zone suffixes are abbreviations (UTC, MSK) or numeric offsets (+03, -0530)
+    # when log_timezone has no abbreviation; a bare time never starts with +/-.
+    zone_suffix = bool(head) and (any(ch.isalpha() for ch in tail) or tail[:1] in "+-")
+    candidate = head if zone_suffix else value
     for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
         try:
             return datetime.strptime(candidate, fmt)

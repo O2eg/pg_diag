@@ -458,13 +458,22 @@ invalid values, and invalid timestamps are omitted and reported as warnings.
 
 Before collection, report commands may narrow visible items by an exact
 `--item-id` scalar/list or by a case-insensitive `--tags` scalar/list. Tag
-matching uses OR semantics. The filters are mutually exclusive. For selected
-snapshot metrics the planner adds only their declared query or sampler
-dependencies; filters never directly select hidden catalog sources.
+matching uses OR semantics. The two filters are mutually exclusive; both
+combine by intersection with `--item-type` (`table`, `text`, `chart`,
+`delta`), the presentation type each source manifest declares or derives (see
+`EXTENDING.md`). For selected snapshot metrics the planner adds only their
+declared query or sampler dependencies; filters never directly select hidden
+catalog sources.
 
-`--item-id-list` prints item IDs, tags, and source descriptions;
-`--list-tags` prints tags assigned to report items. Both list operations exit
-after content validation and do not open PostgreSQL or SSH connections.
+`--list-item-ids` prints item IDs, presentation types, tags, and source
+descriptions; `--list-tags` prints tags assigned to report items. Both list
+operations exit after content validation and do not open PostgreSQL or SSH
+connections.
+
+The third report command, `logs`, plans only the `server_log` items: they are
+treated as host sources that read csvlog files from `--log-dir` on the
+collector (`local`) or the SSH target (`remote`); every other item is skipped
+by the plan and no database connection is opened.
 
 After filtering, the planner unions the selected executable source `targets`.
 Database parameters and a PostgreSQL connection are required only when that

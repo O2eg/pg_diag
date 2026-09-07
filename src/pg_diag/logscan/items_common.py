@@ -22,6 +22,7 @@ __all__ = [
     "empty_result_status",
     "fmt_time",
     "is_recovery_end_of_wal",
+    "log_clock_offset",
     "message_contains_any",
     "resolve_english_window",
     "resolve_inventory",
@@ -123,6 +124,37 @@ def resolve_inventory(context: Any) -> tuple[dict[str, Any] | None, dict[str, An
         status = "unsupported" if marker.get("status") == "unavailable" else "error"
         return None, {"collection_status": status, "reason": marker.get("reason")}
     return inventory, None
+
+
+def log_clock_offset(context: Any) -> tuple[int, list[dict[str, Any]]]:
+    """UTC offset of the log clock plus diagnostics when it is unknown.
+
+    The database path knows ``log_timezone``; the directory path (logs mode)
+    resolves only numeric or UTC suffixes and ``--log-timezone``. A bare
+    abbreviation such as ``MSK`` has no offset: chart timestamps then show the
+    log clock as if UTC, and the item says so instead of pretending.
+    """
+    inventory = getattr(context.server_log, "inventory", None) or {}
+    settings = inventory.get("settings") or {}
+    raw = settings.get("log_utc_offset_seconds")
+    if raw is None:
+        label = settings.get("log_timezone") or "unknown"
+        return 0, [
+            {
+                "level": "warning",
+                "code": "log_timezone_unknown",
+                "message": (
+                    f"the log clock zone {label!r} has no resolvable UTC offset; chart "
+                    "timestamps show the log clock as if it were UTC. Pass "
+                    "--log-timezone <IANA zone> to pg-diag logs for correct correlation."
+                ),
+            },
+        ]
+    try:
+        offset = int(raw)
+    except (TypeError, ValueError):
+        return 0, []
+    return max(-86_399, min(86_399, offset)), []
 
 
 def severity_rank(severity: str) -> int:

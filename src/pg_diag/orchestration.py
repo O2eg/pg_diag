@@ -187,6 +187,11 @@ def capabilities() -> dict[str, Any]:
                 "machine_output": True,
                 "accepts_plan_hash": False,
             },
+            "logs": {
+                "mutates_target": False,
+                "machine_output": True,
+                "accepts_plan_hash": False,
+            },
             "validate-artifact": {
                 "mutates_target": False,
                 "machine_output": True,

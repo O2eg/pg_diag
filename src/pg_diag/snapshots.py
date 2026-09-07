@@ -67,6 +67,7 @@ async def collect_snapshots(
     strip_meta: bool = False,
     disable_ddl: bool = False,
     log_depth_time_min: int | None = None,
+    item_type: str | Iterable[str] | None = None,
 ) -> dict[str, Any]:
     window_error = runtime_config.validate_snapshots_window(duration_seconds, interval_seconds)
     if window_error:
@@ -87,6 +88,7 @@ async def collect_snapshots(
         item_id=item_id,
         tags=tags,
         progress=progress,
+        item_type=item_type,
     )
     conn = run.conn
     plan = run.plan

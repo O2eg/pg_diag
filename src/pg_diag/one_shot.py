@@ -38,6 +38,7 @@ async def collect_one_shot(
     strip_meta: bool = False,
     disable_ddl: bool = False,
     log_depth_time_min: int | None = None,
+    item_type: str | Iterable[str] | None = None,
 ) -> dict[str, Any]:
     run = await start_collection(
         content=content,
@@ -54,6 +55,7 @@ async def collect_one_shot(
         item_id=item_id,
         tags=tags,
         progress=progress,
+        item_type=item_type,
     )
     try:
         if progress is not None:

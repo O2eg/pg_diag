@@ -256,18 +256,23 @@ def test_list_tags_does_not_require_database_connection(repo_root: Path) -> None
 
 
 def test_item_id_list_includes_tags_and_metadata_description(repo_root: Path) -> None:
-    proc = run_cli(repo_root, "snapshots", "--item-id-list")
+    legacy = run_cli(repo_root, "snapshots", "--item-id-list")
+    assert legacy.returncode == 2 and "unrecognized arguments" in legacy.stderr
+    proc = run_cli(repo_root, "snapshots", "--list-item-ids")
 
     assert proc.returncode == 0, proc.stderr + proc.stdout
-    assert proc.stdout.startswith("ITEM_ID\tTAGS\tDESCRIPTION\n")
+    assert proc.stdout.startswith("ITEM_ID\tTYPE\tTAGS\tDESCRIPTION\n")
     assert (
-        "overview.pg_settings\tConfiguration\t"
+        "overview.pg_settings\ttable\tConfiguration\t"
         "Runtime settings with display-friendly values where possible."
     ) in proc.stdout
     assert (
-        "backend_os.postgres_main_process_linked_libraries\tProcesses,Configuration\t"
+        "backend_os.postgres_main_process_linked_libraries\ttable\tProcesses,Configuration\t"
         in proc.stdout
     )
+    assert "os.kernel_version\ttext\t" in proc.stdout
+    assert "server_log.auto_explain_plans\tchart\t" in proc.stdout
+    assert "snapshot_delta_workload.database_workload_delta\tdelta\t" in proc.stdout
     assert not proc.stderr
 
 
@@ -745,3 +750,330 @@ def test_one_shot_rejects_ssh_options_outside_remote_mode(repo_root: Path) -> No
 
     assert proc.returncode == 2
     assert "SSH options require --collection-mode remote" in proc.stderr
+
+
+def _write_csvlog(directory: Path, name: str, rows: list[tuple[str, str, str, str]]) -> None:
+    import csv
+    import io
+
+    output = io.StringIO(newline="")
+    writer = csv.writer(output, lineterminator="\n")
+    for stamp, severity, sql_state, message in rows:
+        writer.writerow(
+            [
+                stamp,
+                "alice",
+                "appdb",
+                "42",
+                "127.0.0.1:5000",
+                "s",
+                "7",
+                "SELECT",
+                "start",
+                "3/44",
+                "778",
+                severity,
+                sql_state,
+                message,
+                *[""] * 7,
+                "loc",
+                "app",
+                "client backend",
+                "",
+                "7",
+            ]
+        )
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / name).write_text(output.getvalue(), encoding="utf-8")
+
+
+def test_logs_cli_builds_server_log_report_from_directory(
+    repo_root: Path,
+    tmp_path: Path,
+) -> None:
+    log_dir = tmp_path / "pglog"
+    _write_csvlog(
+        log_dir,
+        "postgresql-2026-09-05_100000.csv",
+        [
+            ("2026-09-05 10:00:00.000 UTC", "LOG", "00000", "noise"),
+            ("2026-09-05 10:05:00.000 UTC", "ERROR", "42601", "syntax error at or near X"),
+            ("2026-09-05 10:05:00.000 UTC", "ERROR", "42601", "syntax error at or near X"),
+            ("2026-09-05 10:06:00.000 UTC", "FATAL", "28P01", 'password authentication failed for user "bob"'),
+            ("2026-09-05 10:09:00.000 UTC", "WARNING", "01000", "last warning"),
+        ],
+    )
+    out_dir = tmp_path / "logs-report"
+
+    proc = run_cli(
+        repo_root,
+        "--machine",
+        "logs",
+        "--log-dir",
+        str(log_dir),
+        "--log-depth-time-min",
+        "30",
+        "--out",
+        str(out_dir),
+    )
+
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    envelope = json.loads(proc.stdout)
+    assert envelope["status"] == "succeeded"
+    kinds = {item["kind"] for item in envelope["artifacts"]}
+    assert kinds == {"DiagnosticReport", "DiagnosticReportHtml"}
+    assert envelope["result"]["collection_mode"] == "local"
+    artifact = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+    runtime = artifact["runtime"]
+    assert runtime["mode"] == "logs"
+    assert runtime["targets"] == ["host"]
+    assert runtime["database_connected"] is False
+    assert runtime["server_version_num"] is None
+    assert runtime["log_directory"] == str(log_dir)
+    assert runtime["log_depth_time_min"] == 30
+    assert runtime["ddl_extraction"] == "unavailable"
+    log_collection = runtime["log_collection"]
+    assert log_collection["status"] == "collected", log_collection
+    assert log_collection["source"]["csv_format"]["columns"] == 26
+    assert log_collection["coverage"]["requested_to"] == "2026-09-05 10:09:00.000"
+    assert log_collection["coverage"]["requested_from"] == "2026-09-05 09:39:00"
+    assert [section["section_id"] for section in artifact["sections"]] == ["server_log"]
+    assert all(item_id.startswith("server_log.") for item_id in artifact["items"])
+    chronology = artifact["items"]["server_log.error_chronology"]
+    assert chronology["collection_status"] == "ok"
+    assert chronology["targets"] == ["host"]
+    columns = [column["name"] for column in chronology["result"]["columns"]]
+    repeat_index = columns.index("repeat_count")
+    assert [int(row[repeat_index]) for row in chronology["result"]["rows"]] == [1, 2]
+    assert artifact["items"]["server_log.authentication_failures"]["collection_status"] == "ok"
+    assert artifact["items"]["server_log.deadlock_events"]["collection_status"] == "empty"
+    assert "SKIP items=" in (out_dir / "report.log").read_text(encoding="utf-8")
+    assert (out_dir / "report.html").stat().st_size > 0
+
+    validate = run_cli(repo_root, "validate-artifact", str(out_dir / "report.json"))
+    assert validate.returncode == 0, validate.stderr
+
+
+def test_logs_cli_rejects_invalid_arguments_before_reading_anything(
+    repo_root: Path,
+    tmp_path: Path,
+) -> None:
+    proc = run_cli(repo_root, "logs", "--out", str(tmp_path / "x"))
+    assert proc.returncode == 2 and "--log-dir" in proc.stderr
+
+    proc = run_cli(
+        repo_root, "logs", "--log-dir", str(tmp_path), "--collection-mode", "remote-db-only"
+    )
+    assert proc.returncode == 2 and "invalid choice" in proc.stderr
+
+    proc = run_cli(repo_root, "logs", "--log-dir", str(tmp_path), "--log-depth-time-min", "0")
+    assert proc.returncode == 2 and "positive --log-depth-time-min" in proc.stderr
+
+    proc = run_cli(repo_root, "logs", "--log-dir", str(tmp_path), "--ssh-host", "db1")
+    assert proc.returncode == 2 and "SSH options require --collection-mode remote" in proc.stderr
+
+    proc = run_cli(repo_root, "logs", "--log-dir", "pglog", "--collection-mode", "remote")
+    assert proc.returncode == 2 and "absolute path" in proc.stderr
+
+    proc = run_cli(repo_root, "logs", "--log-dir", "/pglog", "--collection-mode", "remote")
+    assert proc.returncode == 2
+    assert "remote collection requires --ssh-host, --ssh-user" in proc.stderr
+
+    proc = run_cli(
+        repo_root, "logs", "--log-dir", str(tmp_path), "--item-id", "overview.pg_settings"
+    )
+    assert proc.returncode == 2 and "collects only server_log items" in proc.stderr
+    assert not (tmp_path / "report").exists()
+
+
+def test_logs_cli_reports_missing_directory_as_unavailable_section(
+    repo_root: Path,
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "logs-missing"
+    proc = run_cli(
+        repo_root,
+        "logs",
+        "--log-dir",
+        str(tmp_path / "absent"),
+        "--output-format",
+        "json",
+        "--out",
+        str(out_dir),
+    )
+    assert proc.returncode == 0, proc.stderr
+    artifact = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+    marker = artifact["runtime"]["log_collection"]
+    assert marker["status"] == "unavailable" and "does not exist" in marker["reason"]
+    statuses = {item["collection_status"] for item in artifact["items"].values()}
+    assert statuses == {"unsupported"}
+
+
+def test_capabilities_and_explain_plan_expose_logs_mode(repo_root: Path) -> None:
+    proc = run_cli(repo_root, "--component-capabilities")
+    assert proc.returncode == 0
+    assert "logs" in json.loads(proc.stdout)["commands"]
+    proc = run_cli(repo_root, "explain-plan", "--pg-version", "160000", "--run-mode", "logs")
+    assert proc.returncode == 0, proc.stderr
+    assert "mode=logs" in proc.stdout
+    planned = [line for line in proc.stdout.splitlines() if "\tplanned\t" in line]
+    assert planned and all(line.startswith("server_log.") for line in planned)
+
+
+def test_item_type_cli_parses_forms_and_rejects_unknown_values() -> None:
+    parser = build_parser()
+    assert parser.parse_args(["one-shot", "--item-type", "table"]).item_type == ("table",)
+    assert parser.parse_args(["one-shot", "--item-type=[Chart,delta]"]).item_type == (
+        "chart",
+        "delta",
+    )
+    assert parser.parse_args(["logs", "--log-dir", "/x"]).item_type is None
+    with pytest.raises(SystemExit):
+        parser.parse_args(["one-shot", "--item-type", "graph"])
+
+
+def test_item_type_filter_intersects_with_tags_and_runs_without_database(
+    repo_root: Path,
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "text-kernel"
+    proc = run_cli(
+        repo_root,
+        "one-shot",
+        "--collection-mode",
+        "local",
+        "--tags",
+        "Kernel",
+        "--item-type",
+        "text",
+        "--output-format",
+        "json",
+        "--out",
+        str(out_dir),
+    )
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    artifact = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+    items = artifact["items"]
+    assert items and all(item_id.startswith("os.") for item_id in items)
+    assert {item["item_type"] for item in items.values()} == {"text"}
+    assert {item["result"]["kind"] for item in items.values()} == {"plain_text"}
+    assert all("Kernel" in item["source_metadata"]["tags"] for item in items.values())
+    assert all(
+        diagnostic["code"] != "item_type_mismatch"
+        for item in items.values()
+        for diagnostic in item["diagnostics"]
+    )
+    assert artifact["runtime"]["database_connected"] is False
+    assert "item_types=text" in (out_dir / "report.log").read_text(encoding="utf-8")
+
+
+def test_item_type_selection_errors_are_reported_before_connecting(repo_root: Path) -> None:
+    proc = run_cli(repo_root, "one-shot", "--item-id", "overview.pg_settings", "--item-type", "text")
+    assert proc.returncode == 2
+    assert "no report items match the selection" in proc.stderr
+    assert "--item-id overview.pg_settings --item-type text" in proc.stderr
+
+    proc = run_cli(repo_root, "one-shot", "--collection-mode", "local", "--item-type", "delta")
+    assert proc.returncode == 2
+    assert "none of the 32 selected items (--item-type delta) executes in one-shot mode" in proc.stderr
+    assert "chart and delta items need snapshots" in proc.stderr
+
+    proc = run_cli(repo_root, "one-shot", "--collection-mode", "remote-db-only", "--item-type", "text")
+    assert proc.returncode == 2
+    assert "executes in one-shot mode with --collection-mode remote-db-only" in proc.stderr
+
+    proc = run_cli(repo_root, "logs", "--log-dir", "/tmp", "--item-type", "delta")
+    assert proc.returncode == 2 and "logs collects only server_log items" in proc.stderr
+
+    proc = run_cli(repo_root, "one-shot", "--item-type", "chart")
+    assert proc.returncode == 2
+    assert "server_log.auto_explain_plans" in proc.stderr  # the two python charts need the DB
+    assert "full report" not in proc.stderr
+
+
+def test_logs_cli_item_type_chart_keeps_only_python_charts(repo_root: Path, tmp_path: Path) -> None:
+    log_dir = tmp_path / "pglog"
+    _write_csvlog(
+        log_dir,
+        "postgresql-2026-09-05_100000.csv",
+        [
+            ("2026-09-05 10:05:00.000 UTC", "ERROR", "57014", "canceling statement due to statement timeout"),
+            ("2026-09-05 10:09:00.000 UTC", "WARNING", "01000", "last warning"),
+        ],
+    )
+    out_dir = tmp_path / "logs-charts"
+    proc = run_cli(
+        repo_root,
+        "logs",
+        "--log-dir",
+        str(log_dir),
+        "--item-type",
+        "chart",
+        "--output-format",
+        "json",
+        "--out",
+        str(out_dir),
+    )
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    artifact = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+    assert sorted(artifact["items"]) == [
+        "server_log.auto_explain_plans",
+        "server_log.query_termination_events",
+    ]
+    assert {item["item_type"] for item in artifact["items"].values()} == {"chart"}
+    termination = artifact["items"]["server_log.query_termination_events"]
+    assert termination["collection_status"] == "ok"
+    assert termination["result"]["kind"] == "chart"
+    assert termination["diagnostics"] == []
+
+
+def test_logs_cli_log_timezone_resolves_named_zone_and_rejects_unknown(
+    repo_root: Path,
+    tmp_path: Path,
+) -> None:
+    log_dir = tmp_path / "pglog"
+    _write_csvlog(
+        log_dir,
+        "postgresql-2026-09-05_100000.csv",
+        [
+            ("2026-09-05 10:05:00.000 MSK", "ERROR", "57014", "canceling statement due to statement timeout"),
+            ("2026-09-05 10:09:00.000 MSK", "WARNING", "01000", "last warning"),
+        ],
+    )
+    proc = run_cli(repo_root, "logs", "--log-dir", str(log_dir), "--log-timezone", "Mars/Olympus")
+    assert proc.returncode == 2 and "unknown --log-timezone" in proc.stderr
+
+    def collect(extra: list[str], out_name: str) -> dict:
+        out_dir = tmp_path / out_name
+        proc = run_cli(
+            repo_root,
+            "logs",
+            "--log-dir",
+            str(log_dir),
+            "--item-id",
+            "server_log.query_termination_events",
+            "--output-format",
+            "json",
+            "--out",
+            str(out_dir),
+            *extra,
+        )
+        assert proc.returncode == 0, proc.stderr + proc.stdout
+        return json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+
+    def first_event_time(item: dict) -> str:
+        series = next(entry for entry in item["result"]["series"] if entry["points"])
+        return series["points"][0]["tooltip"]["log_time"]
+
+    unknown = collect([], "unknown-zone")
+    item = unknown["items"]["server_log.query_termination_events"]
+    assert [d["code"] for d in item["diagnostics"]] == ["log_timezone_unknown"]
+    assert "MSK" in item["diagnostics"][0]["message"]
+    assert unknown["runtime"]["log_timezone"] is None
+    assert first_event_time(item) == "2026-09-05T10:05:00+00:00"  # log clock shown as UTC
+
+    resolved = collect(["--log-timezone", "Europe/Moscow"], "resolved-zone")
+    item = resolved["items"]["server_log.query_termination_events"]
+    assert item["diagnostics"] == []
+    assert resolved["runtime"]["log_timezone"] == "Europe/Moscow"
+    assert first_event_time(item) == "2026-09-05T10:05:00+03:00"

@@ -26,18 +26,23 @@ from .orchestration import (
     summarize_artifact,
     summarize_execution_plan,
 )
+from .contracts import ITEM_TYPE_ORDER, ITEM_TYPES
 from .planner import (
     CollectionRequirements,
     available_item_tags,
     build_plan,
     collection_requirements,
     normalize_requested_item_ids,
+    normalize_requested_item_types,
     normalize_requested_tags,
+    report_item_type,
 )
 from .progress import ProgressReporter, report_log_path
 from .render.html import render_from_json
 from .security import redact_error
 from .logscan import model as logscan_model
+from .logscan.directory import resolve_log_timezone
+from .logs import collect_logs
 from .one_shot import collect_one_shot
 from .snapshots import collect_snapshots
 from .ssh_transport import SshConfig
@@ -189,6 +194,52 @@ def build_parser() -> argparse.ArgumentParser:
     _add_report_selection_args(snapshots_parser)
     snapshots_parser.set_defaults(func=cmd_snapshots)
 
+    logs_parser = subparsers.add_parser(
+        "logs",
+        help="Build the server_log section from csvlog files without a database",
+    )
+    _add_content_arg(logs_parser)
+    _add_ssh_args(logs_parser)
+    logs_parser.add_argument("--out", default="report", help="Output directory")
+    _add_report_output_format_args(logs_parser)
+    logs_parser.add_argument(
+        "--log-dir",
+        required=True,
+        help=(
+            "Directory holding the csvlog files: on the collector in local mode, "
+            "on the SSH target in remote mode"
+        ),
+    )
+    logs_parser.add_argument(
+        "--log-depth-time-min",
+        nargs="?",
+        const=logscan_model.DEPTH_DEFAULT_MINUTES,
+        default=logscan_model.DEPTH_DEFAULT_MINUTES,
+        type=_parse_log_depth_argument,
+        metavar="MINUTES",
+        help=(
+            "Parse the last N minutes before the newest record in the log directory "
+            f"(default {logscan_model.DEPTH_DEFAULT_MINUTES}; max "
+            f"{logscan_model.DEPTH_MAX_MINUTES})"
+        ),
+    )
+    logs_parser.add_argument(
+        "--log-timezone",
+        metavar="ZONE",
+        help=(
+            "IANA time zone of the log clock (for example Europe/Moscow) when the "
+            "csvlog timestamps carry a bare abbreviation such as MSK; numeric and "
+            "UTC suffixes resolve on their own"
+        ),
+    )
+    logs_parser.add_argument(
+        "--collection-mode",
+        choices=runtime_config.LOGS_COLLECTION_MODES,
+        default=runtime_config.LOCAL_COLLECTION_MODE,
+    )
+    _add_report_selection_args(logs_parser)
+    logs_parser.set_defaults(func=cmd_logs)
+
     return parser
 
 
@@ -233,7 +284,7 @@ def cmd_summarize(args: argparse.Namespace) -> int:
     return 0
 
 
-def _add_report_output_file_args(parser: argparse.ArgumentParser) -> None:
+def _add_report_output_format_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--json-out", help="Exact report JSON output file")
     parser.add_argument("--html-out", help="Exact report HTML output file")
     parser.add_argument(
@@ -248,6 +299,10 @@ def _add_report_output_file_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Omit item source, instruction, and configuration metadata from reports",
     )
+
+
+def _add_report_output_file_args(parser: argparse.ArgumentParser) -> None:
+    _add_report_output_format_args(parser)
     parser.add_argument(
         "--disable-ddl",
         action="store_true",
@@ -289,8 +344,9 @@ def _add_report_selection_args(parser: argparse.ArgumentParser) -> None:
         help="Collect one report item or a comma-separated list of report items",
     )
     selection.add_argument(
-        "--item-id-list",
+        "--list-item-ids",
         action="store_true",
+        dest="list_item_ids",
         help="List item ids with tags and descriptions, then exit without connecting",
     )
     selection.add_argument(
@@ -304,6 +360,15 @@ def _add_report_selection_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="List tags available for --tags and exit without connecting",
     )
+    parser.add_argument(
+        "--item-type",
+        type=_parse_item_types_argument,
+        metavar="[TYPE,...]",
+        help=(
+            "Keep only items of these presentation types "
+            f"({', '.join(ITEM_TYPE_ORDER)}); combines with --item-id or --tags"
+        ),
+    )
 
 
 def _parse_tags_argument(value: str) -> tuple[str, ...]:
@@ -312,6 +377,17 @@ def _parse_tags_argument(value: str) -> tuple[str, ...]:
 
 def _parse_item_ids_argument(value: str) -> tuple[str, ...]:
     return _parse_cli_list(value, "--item-id", "report item")
+
+
+def _parse_item_types_argument(value: str) -> tuple[str, ...]:
+    entries = tuple(entry.lower() for entry in _parse_cli_list(value, "--item-type", "item type"))
+    unknown = sorted(set(entries).difference(ITEM_TYPES))
+    if unknown:
+        raise argparse.ArgumentTypeError(
+            f"--item-type supports only {', '.join(ITEM_TYPE_ORDER)}; unknown: "
+            + ", ".join(unknown)
+        )
+    return entries
 
 
 def _parse_output_formats_argument(value: str) -> tuple[str, ...]:
@@ -391,7 +467,7 @@ def _add_pg_version_arg(parser: argparse.ArgumentParser) -> None:
 def _add_mode_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--run-mode",
-        choices=[runtime_config.ONE_SHOT_MODE, runtime_config.SNAPSHOTS_MODE],
+        choices=list(runtime_config.REPORT_MODES),
         default=runtime_config.ONE_SHOT_MODE,
     )
     parser.add_argument(
@@ -541,6 +617,7 @@ def cmd_one_shot(args: argparse.Namespace) -> int:
     try:
         requested_item_ids = normalize_requested_item_ids(content, args.item_id)
         requested_tags = normalize_requested_tags(content, args.tags)
+        requested_item_types = normalize_requested_item_types(args.item_type)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
@@ -550,7 +627,12 @@ def cmd_one_shot(args: argparse.Namespace) -> int:
         collection_mode=args.collection_mode,
         item_id=requested_item_ids,
         tags=requested_tags,
+        item_type=requested_item_types,
     )
+    selection_error = _empty_selection_error(args, runtime_config.ONE_SHOT_MODE, requirements)
+    if selection_error:
+        print(f"ERROR: {selection_error}", file=sys.stderr)
+        return 2
     connection_error = _connection_args_error(args, "one-shot", requirements)
     if connection_error:
         print(f"ERROR: {connection_error}", file=sys.stderr)
@@ -569,7 +651,7 @@ def cmd_one_shot(args: argparse.Namespace) -> int:
         progress = ProgressReporter(log_path)
         progress.info(
             f"START command=one-shot collection_mode={args.collection_mode}"
-            f"{_selection_log_suffix(requested_item_ids, requested_tags)}"
+            f"{_selection_log_suffix(requested_item_ids, requested_tags, requested_item_types)}"
             f"{_strip_meta_log_suffix(args.strip_meta)} log={progress.path}"
         )
         artifact = asyncio.run(
@@ -590,6 +672,7 @@ def cmd_one_shot(args: argparse.Namespace) -> int:
                 strip_meta=args.strip_meta,
                 disable_ddl=args.disable_ddl,
                 log_depth_time_min=args.log_depth_time_min,
+                item_type=requested_item_types,
             )
         )
     except Exception as exc:
@@ -641,6 +724,7 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
     try:
         requested_item_ids = normalize_requested_item_ids(content, args.item_id)
         requested_tags = normalize_requested_tags(content, args.tags)
+        requested_item_types = normalize_requested_item_types(args.item_type)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
@@ -650,7 +734,12 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
         collection_mode=args.collection_mode,
         item_id=requested_item_ids,
         tags=requested_tags,
+        item_type=requested_item_types,
     )
+    selection_error = _empty_selection_error(args, runtime_config.SNAPSHOTS_MODE, requirements)
+    if selection_error:
+        print(f"ERROR: {selection_error}", file=sys.stderr)
+        return 2
     connection_error = _connection_args_error(args, "snapshots", requirements)
     if connection_error:
         print(f"ERROR: {connection_error}", file=sys.stderr)
@@ -669,7 +758,7 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
         progress = ProgressReporter(log_path)
         progress.info(
             f"START command=snapshots collection_mode={args.collection_mode}"
-            f"{_selection_log_suffix(requested_item_ids, requested_tags)}"
+            f"{_selection_log_suffix(requested_item_ids, requested_tags, requested_item_types)}"
             f"{_strip_meta_log_suffix(args.strip_meta)} log={progress.path}"
         )
         artifact = asyncio.run(
@@ -692,6 +781,7 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
                 strip_meta=args.strip_meta,
                 disable_ddl=args.disable_ddl,
                 log_depth_time_min=args.log_depth_time_min,
+                item_type=requested_item_types,
             )
         )
     except Exception as exc:
@@ -721,6 +811,131 @@ def cmd_snapshots(args: argparse.Namespace) -> int:
         progress.close()
 
 
+def cmd_logs(args: argparse.Namespace) -> int:
+    selection_list_result = _selection_list_result(args)
+    if selection_list_result is not None:
+        return selection_list_result
+    if args.log_depth_time_min <= 0:
+        print(
+            "ERROR: logs requires a positive --log-depth-time-min "
+            f"(1-{logscan_model.DEPTH_MAX_MINUTES})",
+            file=sys.stderr,
+        )
+        return 2
+    log_directory = _log_directory_argument(args)
+    if log_directory is None:
+        print(
+            "ERROR: --log-dir must be an absolute path on the SSH target "
+            "in remote mode",
+            file=sys.stderr,
+        )
+        return 2
+    if args.log_timezone:
+        try:
+            resolve_log_timezone(args.log_timezone)
+        except Exception:  # noqa: BLE001 - zoneinfo raises several types
+            print(f"ERROR: unknown --log-timezone {args.log_timezone!r}", file=sys.stderr)
+            return 2
+    try:
+        log_path = _validated_report_log_path(args)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    content, issues = _load_and_validate(args.content)
+    if has_errors(issues):
+        _print_validation_errors(issues)
+        return 1
+    try:
+        requested_item_ids = normalize_requested_item_ids(content, args.item_id)
+        requested_tags = normalize_requested_tags(content, args.tags)
+        requested_item_types = normalize_requested_item_types(args.item_type)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    requirements = collection_requirements(
+        content,
+        mode=runtime_config.LOGS_MODE,
+        collection_mode=args.collection_mode,
+        item_id=requested_item_ids,
+        tags=requested_tags,
+        item_type=requested_item_types,
+    )
+    selection_error = _empty_selection_error(args, runtime_config.LOGS_MODE, requirements)
+    if selection_error is None and not requirements.targets:
+        selection_error = "logs collects only server_log items: the content pack has none"
+    if selection_error:
+        print(f"ERROR: {selection_error}", file=sys.stderr)
+        return 2
+    ssh_error = _ssh_args_error(args, requirements)
+    if ssh_error:
+        print(f"ERROR: {ssh_error}", file=sys.stderr)
+        return 2
+    ssh_config = _ssh_config(args) if requirements.requires_ssh(args.collection_mode) else None
+    progress: ProgressReporter | None = None
+    try:
+        progress = ProgressReporter(log_path)
+        progress.info(
+            f"START command=logs collection_mode={args.collection_mode}"
+            f" log_dir={log_directory} log_depth_time_min={args.log_depth_time_min}"
+            f"{' log_timezone=' + args.log_timezone if args.log_timezone else ''}"
+            f"{_selection_log_suffix(requested_item_ids, requested_tags, requested_item_types)}"
+            f"{_strip_meta_log_suffix(args.strip_meta)} log={progress.path}"
+        )
+        artifact = asyncio.run(
+            collect_logs(
+                content=content,
+                out_dir=args.out,
+                log_directory=log_directory,
+                depth_minutes=args.log_depth_time_min,
+                collection_mode=args.collection_mode,
+                json_out=args.json_out,
+                html_out=args.html_out,
+                output_formats=args.output_format,
+                content_validated=True,
+                ssh_config=ssh_config,
+                item_id=requested_item_ids,
+                tags=requested_tags,
+                progress=progress,
+                strip_meta=args.strip_meta,
+                item_type=requested_item_types,
+                log_timezone=args.log_timezone,
+            )
+        )
+    except Exception as exc:
+        message = f"logs failed: {redact_error(exc)}"
+        if progress is not None:
+            progress.error(message)
+        print(f"ERROR: {message}", file=sys.stderr)
+        return 1
+    finally:
+        if progress is not None and "artifact" not in locals():
+            progress.close()
+    try:
+        json_path, html_path = report_output_paths(
+            args.out, args.json_out, args.html_out, args.output_format
+        )
+        for path in (json_path, html_path):
+            if path is not None:
+                progress.info(f"WROTE path={path}")
+        if artifact_has_errors(artifact):
+            progress.error("report was written with item collection errors")
+            progress.complete("DONE status=item_errors")
+            print("ERROR: report was written with item collection errors", file=sys.stderr)
+            return 1
+        progress.complete("DONE status=success")
+        return 0
+    finally:
+        progress.close()
+
+
+def _log_directory_argument(args: argparse.Namespace) -> str | None:
+    """Normalize --log-dir: local paths are expanded, remote paths stay POSIX."""
+    value = str(args.log_dir)
+    if args.collection_mode == runtime_config.REMOTE_COLLECTION_MODE:
+        return value if value.startswith("/") else None
+    return str(Path(value).expanduser().resolve())
+
+
 def _decode_machine_output(output: str) -> Any:
     text = output.strip()
     if not text:
@@ -743,7 +958,7 @@ def _machine_artifacts(args: argparse.Namespace) -> list[dict[str, Any]]:
             )
     elif args.command == "render":
         paths.append(("DiagnosticReportHtml", None, Path(args.out)))
-    elif args.command in {"one-shot", "snapshots"}:
+    elif args.command in {"one-shot", "snapshots", "logs"}:
         json_path, html_path = report_output_paths(
             args.out,
             args.json_out,
@@ -780,7 +995,7 @@ def _collection_machine_result(
 ) -> Any:
     if args.command == "explain-plan" and isinstance(result, dict):
         return summarize_execution_plan(result)
-    if args.command not in {"one-shot", "snapshots"}:
+    if args.command not in {"one-shot", "snapshots", "logs"}:
         return result
     payload: dict[str, Any] = {
         "outputs": artifacts,
@@ -836,7 +1051,7 @@ def _run_machine(args: argparse.Namespace) -> int:
             code = "validation_error"
             machine_exit = EXIT_CODES[code]
             status = "failed"
-        elif args.command in {"one-shot", "snapshots"} and artifacts:
+        elif args.command in {"one-shot", "snapshots", "logs"} and artifacts:
             code = "partial"
             machine_exit = EXIT_CODES[code]
             status = "partial"
@@ -899,7 +1114,7 @@ def _validated_report_log_path(args: argparse.Namespace) -> Path:
 
 
 def _selection_list_result(args: argparse.Namespace) -> int | None:
-    if not args.list_tags and not args.item_id_list:
+    if not args.list_tags and not args.list_item_ids:
         return None
     content, issues = _load_and_validate(args.content)
     if has_errors(issues):
@@ -920,13 +1135,14 @@ def _print_item_id_list(content: ContentPack) -> None:
         "metric": content.metrics,
         "python": content.pythons,
     }
-    print("ITEM_ID\tTAGS\tDESCRIPTION")
+    print("ITEM_ID\tTYPE\tTAGS\tDESCRIPTION")
     for _section_id, _item_key, item_id, item in iter_report_items(content):
         source_kind = next(
             (key for key in ("query", "script", "metric", "python") if key in item),
             "unknown",
         )
         manifest = catalogs.get(source_kind, {}).get(item.get(source_kind), {})
+        item_type = report_item_type(content, source_kind, item) if source_kind != "unknown" else ""
         description = (
             item.get("description")
             or manifest.get("description")
@@ -936,18 +1152,57 @@ def _print_item_id_list(content: ContentPack) -> None:
         )
         description = " ".join(str(description).split())
         tags = ",".join(str(tag) for tag in (item.get("tags") or []))
-        print(f"{item_id}\t{tags}\t{description}")
+        print(f"{item_id}\t{item_type}\t{tags}\t{description}")
 
 
 def _selection_log_suffix(
     item_ids: tuple[str, ...] | None,
     tags: tuple[str, ...] | None,
+    item_types: tuple[str, ...] | None = None,
 ) -> str:
+    suffix = ""
     if item_ids is not None:
-        return f" item_ids={','.join(item_ids)}"
-    if tags is not None:
-        return f" tags={','.join(tags)}"
-    return ""
+        suffix = f" item_ids={','.join(item_ids)}"
+    elif tags is not None:
+        suffix = f" tags={','.join(tags)}"
+    if item_types is not None:
+        suffix += f" item_types={','.join(item_types)}"
+    return suffix
+
+
+def _empty_selection_error(
+    args: argparse.Namespace,
+    mode: str,
+    requirements: CollectionRequirements,
+) -> str | None:
+    """Reject a selection that would produce a report without any executed item."""
+    if requirements.selected_item_count is None:
+        return None  # no filter: the full report keeps its usual behavior
+    filters = []
+    if args.item_id is not None:
+        filters.append(f"--item-id {','.join(args.item_id)}")
+    if args.tags is not None:
+        filters.append(f"--tags {','.join(args.tags)}")
+    if args.item_type is not None:
+        filters.append(f"--item-type {','.join(args.item_type)}")
+    described = " ".join(filters)
+    if requirements.selected_item_count == 0:
+        return f"no report items match the selection: {described}"
+    if requirements.targets:
+        return None
+    hints = {
+        runtime_config.ONE_SHOT_MODE: (
+            "chart and delta items need snapshots; host items need local or remote "
+            "collection"
+        ),
+        runtime_config.SNAPSHOTS_MODE: "host items need local or remote collection",
+        runtime_config.LOGS_MODE: "logs collects only server_log items (table and chart types)",
+    }
+    return (
+        f"none of the {requirements.selected_item_count} selected items ({described}) "
+        f"executes in {mode} mode with --collection-mode {args.collection_mode}: "
+        f"{hints[mode]}"
+    )
 
 
 def _strip_meta_log_suffix(enabled: bool) -> str:
@@ -964,13 +1219,20 @@ def _connection_args_error(
     ):
         selected = (
             "full report"
-            if args.item_id is None and args.tags is None
+            if requirements.selected_item_count is None
             else _format_required_item_ids(requirements.database_item_ids)
         )
         return (
             f"{command} selected items require database connection "
             f"(--dsn or --host/--database/--user): {selected}"
         )
+    return _ssh_args_error(args, requirements)
+
+
+def _ssh_args_error(
+    args: argparse.Namespace,
+    requirements: CollectionRequirements,
+) -> str | None:
     if args.collection_mode != runtime_config.REMOTE_COLLECTION_MODE:
         supplied = any(
             getattr(args, name, None)
@@ -1087,6 +1349,7 @@ def _print_plan(plan: dict[str, Any]) -> None:
         bits = [
             item["item_id"],
             item["source_kind"],
+            item.get("item_type") or "",
             ",".join(item.get("targets") or []),
             item["status"],
             item.get("source_id") or "",

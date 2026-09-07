@@ -245,6 +245,24 @@ ts_lt() {
   [ "$(printf '%s\n%s\n' "$1" "$2" | sort | head -n 1)" = "$1" ]
 }
 
+plausible_start() {
+  # $1 path, $2 offset: the bytes at offset start a record and every complete
+  # record in the next 64 KiB is stamped (a position inside a quoted multiline
+  # message would yield unstamped continuation "records").
+  tail -c +"$(($2 + 1))" "$1" 2>/dev/null | head -c 65536 | awk '
+    BEGIN { q = 0; ok = 1; any = 0; open = 0 }
+    { if (!q) { open = 1; stamped = ($0 ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] /) ? 1 : 0 }
+      len = length($0)
+      for (i = 1; i <= len; i++) {
+        ch = substr($0, i, 1)
+        if (ch != "\"") continue
+        if (q && substr($0, i + 1, 1) == "\"") { i++; continue }
+        q = !q
+      }
+      if (!q && open) { any = 1; if (!stamped) ok = 0; open = 0 } }
+    END { print (any && ok) ? 1 : 0 }'
+}
+
 find_start() {
   f=$1; size=$2; lo=0; hi=$size
   while [ $((hi - lo)) -gt 16384 ]; do
@@ -255,7 +273,10 @@ find_start() {
     if ts_lt "$stamp" "$(printf '%.19s' "$WFROM")"; then lo=$mid; else hi=$mid; fi
   done
   res=$(probe_ts "$f" "$lo")
-  if [ -n "$res" ]; then printf '%s\n' "$(printf '%s' "$res" | cut -f2)"; else printf '0\n'; fi
+  if [ -z "$res" ]; then printf '0\n'; return 0; fi
+  start=$(printf '%s' "$res" | cut -f2)
+  if [ "$start" -gt 0 ] && [ "$(plausible_start "$f" "$start")" != 1 ]; then start=0; fi
+  printf '%s\n' "$start"
 }
 
 scan_file() {

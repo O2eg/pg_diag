@@ -113,6 +113,7 @@ field_reference:
     queries/*/lock_timeout_ms: Optional positive lock-wait timeout in milliseconds applied only inside this query transaction.
     queries/*/optional: Whether unsupported or unavailable query prerequisites are non-fatal.
     queries/*/result_shape: Expected public result shape.
+    queries/*/item_type: Optional presentation type (table, text, chart, delta) selected by --item-type; SQL sources default to table.
     queries/*/database_scope: Whether the query covers all databases or only the connected database.
     queries/*/display: Table presentation hints owned by the query manifest.
     queries/*/display/default_sort: Initial table sort applied by the renderer.
@@ -148,6 +149,7 @@ field_reference:
     scripts/*/description: Maintainer-facing description of collected host data.
     scripts/*/script_file: Script path relative to the content scripts directory.
     scripts/*/output: Declared parser used to convert script stdout into plain text or a generic JSON table.
+    scripts/*/item_type: Optional presentation type (table, text, chart, delta) selected by --item-type; defaults to text for plain_text output and table otherwise.
     scripts/*/local_only: Whether the script must run on the database host.
     scripts/*/timeout_ms: Optional per-source override of the report shell timeout in milliseconds; the maximum is 1000.
     scripts/*/remote_db_only_behavior: Behavior when the script is unavailable in remote DB-only mode.
@@ -162,6 +164,7 @@ field_reference:
     python_sources/*/python_file: Python module path relative to the content Python directory.
     python_sources/*/function: Trusted callable invoked from the Python module.
     python_sources/*/local_only: Whether the Python source must run on the database host.
+    python_sources/*/item_type: Optional presentation type (table, text, chart, delta) selected by --item-type; defaults to table, so chart and text sources must declare it.
     python_sources/*/timeout_ms: Python source timeout in milliseconds; local-only sources are capped at 30000.
     python_sources/*/display: Optional presentation settings for a Python-source result.
     python_sources/*/display/default_sort: Initial table sort applied by the report renderer.
@@ -191,6 +194,7 @@ field_reference:
     metrics/*/requires_collection: Required snapshot collection frequency.
     metrics/*/database_scope: Database scope inherited from the metric source.
     metrics/*/result: Derived result kind when the metric produces a table.
+    metrics/*/item_type: Optional presentation type (table, text, chart, delta) selected by --item-type; defaults to chart for chart metrics and delta for window tables.
     metrics/*/partition_by: Semantic dimensions separating chart series.
     metrics/*/partition_by[]: One semantic dimension in the chart-series identity.
     metrics/*/epoch_refs: Semantic reset markers that must stay equal across adjacent chart samples.

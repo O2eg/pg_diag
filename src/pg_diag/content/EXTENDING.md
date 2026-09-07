@@ -587,6 +587,22 @@ Use `targets: [db]` for database-only Python, `targets: [host]` for host-only
 Python, and `targets: [host, db]` when both `ctx.conn` and `ctx.host` are
 required. Set `local_only: true` exactly when `targets` contains `host`.
 
+Every source manifest may declare `item_type`, the presentation type that
+`--item-type` selects and that the artifact records per item: `table` for a
+point-in-time table, `text` for plain text, `chart` for a chart, and `delta`
+for a table computed over the observation window (metric delta tables carry
+`delta_window`; sampler-backed endpoint tables may not, so `delta` is a
+declaration about the observation window, not about that field). Defaults
+follow the source: SQL sources are `table`, scripts
+follow `output` (`plain_text` is `text`), metrics are `chart` when they define
+`chart` and `delta` when they derive a table from `window_endpoints`, and
+Python sources are `table`. Declare `item_type: chart` or `item_type: text`
+for Python sources returning those kinds, and `delta` when a query or Python
+table compares two observation points. `pg-diag validate` rejects a
+declaration that contradicts the source (a `plain_text` script cannot be a
+`table`), and a collected result that contradicts the declaration is recorded
+with an `item_type_mismatch` warning diagnostic.
+
 Local-only Python sources are not executed and are omitted from JSON/HTML in
 `remote-db-only` collection mode; their item ids and skip reasons remain in
 stdout and `report.log`. Use `local_only: true` when the function reads host

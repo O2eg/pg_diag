@@ -15,6 +15,7 @@ import yaml
 
 import pg_diag.collection as collection_module
 from pg_diag import runtime_config
+from pg_diag.contracts import ITEM_TYPES
 from pg_diag._content_state import _rebase
 from pg_diag.artifact import (
     apply_database_scope_presentation,
@@ -1385,3 +1386,120 @@ def test_checksum_tracks_configured_sql_root(content_path: Path, tmp_path: Path)
     after = load_content(copied).checksum
 
     assert before != after
+
+
+def test_logs_mode_plans_only_server_log_items_as_host_sources(content_path: Path) -> None:
+    content = load_content(content_path)
+
+    requirements = collection_requirements(
+        content,
+        mode=runtime_config.LOGS_MODE,
+        collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
+    )
+    assert requirements.targets == ("host",)
+    assert not requirements.requires_database
+    assert all(item_id.startswith("server_log.") for item_id in requirements.host_item_ids)
+    assert requirements.requires_ssh(runtime_config.REMOTE_COLLECTION_MODE)
+    assert not requirements.requires_ssh(runtime_config.LOCAL_COLLECTION_MODE)
+
+    plan = build_plan(content, None, mode=runtime_config.LOGS_MODE, collection_mode="local")
+    planned = [item for item in plan.items if item.status == "planned"]
+    skipped = [item for item in plan.items if item.status == "skipped"]
+    assert planned and all(item.item_id.startswith("server_log.") for item in planned)
+    assert all(item.targets == ("host",) for item in planned)
+    assert all(item.source_kind == "python" for item in planned)
+    assert len(planned) + len(skipped) == len(plan.items)
+    assert all("logs mode" in (item.reason or "") for item in skipped)
+    assert not plan.source_jobs
+    assert plan.server_version_num is None and plan.supported_server_version
+
+    filtered = collection_requirements(
+        content,
+        mode=runtime_config.LOGS_MODE,
+        collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
+        item_id="overview.pg_settings",
+    )
+    assert filtered.targets == ()
+
+
+def test_item_types_classify_every_report_item(content_path: Path) -> None:
+    from collections import Counter
+
+    from pg_diag.planner import _source_kind, available_report_item_ids, report_item_type
+
+    content = load_content(content_path)
+    counts = Counter()
+    by_source = Counter()
+    for _section_id, _item_key, _item_id, item in iter_report_items(content):
+        source_kind = _source_kind(item)
+        item_type = report_item_type(content, source_kind, item)
+        counts[item_type] += 1
+        by_source[(source_kind, item_type)] += 1
+    assert set(counts) == {"table", "text", "chart", "delta"}
+    assert sum(counts.values()) == len(available_report_item_ids(content))
+    assert by_source[("script", "text")] == 10
+    assert by_source[("python", "chart")] == 2  # declared in python.yaml
+    assert by_source[("metric", "delta")] == 32
+    assert by_source[("metric", "chart")] + by_source[("python", "chart")] == counts["chart"]
+    assert not any(kind == "query" and item_type != "table" for kind, item_type in by_source)
+
+    plan = build_plan(content, 180000, mode=runtime_config.SNAPSHOTS_MODE)
+    planned_types = Counter(item.item_type for item in plan.items)
+    assert planned_types == counts
+    assert all(item.item_type in ITEM_TYPES for item in plan.items)
+
+
+def test_item_type_filter_intersects_with_tags_and_ids(content_path: Path) -> None:
+    content = load_content(content_path)
+
+    text_kernel = build_plan(
+        content,
+        180000,
+        collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
+        tags=("Kernel",),
+        item_type="TEXT",
+    )
+    assert text_kernel.items
+    assert all(item.item_type == "text" for item in text_kernel.items)
+    assert all("Kernel" in item.source_metadata["tags"] for item in text_kernel.items)
+    assert all(item.state == "expanded" for item in text_kernel.items)
+
+    requirements = collection_requirements(
+        content,
+        mode=runtime_config.ONE_SHOT_MODE,
+        collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
+        tags=("Kernel",),
+        item_type=("text",),
+    )
+    assert requirements.targets == ("host",)
+    assert requirements.selected_item_count == len(text_kernel.items)
+
+    charts_in_one_shot = collection_requirements(
+        content,
+        mode=runtime_config.ONE_SHOT_MODE,
+        collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
+        item_type="delta",
+    )
+    assert charts_in_one_shot.selected_item_count == 32
+    assert charts_in_one_shot.targets == ()
+
+    mismatch = collection_requirements(
+        content,
+        mode=runtime_config.ONE_SHOT_MODE,
+        collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
+        item_id="overview.pg_settings",
+        item_type=("chart",),
+    )
+    assert mismatch.selected_item_count == 0 and mismatch.targets == ()
+
+    unfiltered = collection_requirements(
+        content,
+        mode=runtime_config.ONE_SHOT_MODE,
+        collection_mode=runtime_config.LOCAL_COLLECTION_MODE,
+    )
+    assert unfiltered.selected_item_count is None
+
+    with pytest.raises(ValueError, match="Unknown item type"):
+        build_plan(content, 180000, item_type="graph")
+    with pytest.raises(ValueError, match="at least one item type"):
+        build_plan(content, 180000, item_type=" , ")
