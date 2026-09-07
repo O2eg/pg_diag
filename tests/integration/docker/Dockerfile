@@ -3,7 +3,12 @@ FROM postgres:${PG_IMAGE_TAG}
 
 ARG PG_MAJOR
 
-RUN apt-get update \
+# Bullseye LTS ended on 2026-08-31; PG10 needs its frozen security index.
+# Relax only that index's expiry check, retaining signature verification.
+RUN if [ "$PG_MAJOR" = "10" ]; then \
+        sed -i '/^deb .* bullseye-security /s/^deb /deb [check-valid-until=no] /' /etc/apt/sources.list; \
+    fi \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         iproute2 \
         lshw \
