@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from hashlib import sha256
 import json
@@ -136,6 +137,23 @@ def wait_for_tcp(host: str, port: int) -> None:
             last_error = exc
             time.sleep(0.25)
     raise AssertionError(f"TCP endpoint {host}:{port} did not become ready: {last_error}")
+
+
+def start_ssh(container_name: str, host: str) -> None:
+    run(["docker", "exec", container_name, "install", "-d", "-m", "0755", "/run/sshd"])
+    # -A creates missing keys only; pinned host keys survive a container restart.
+    run(["docker", "exec", container_name, "ssh-keygen", "-A"])
+    run(["docker", "exec", container_name, "/usr/sbin/sshd", "-t"])
+    run(["docker", "exec", container_name, "/usr/sbin/sshd"])
+    wait_for_tcp(host, 22)
+
+
+def restart_postgres(cluster: PreparedPostgres) -> None:
+    run(["docker", "restart", cluster.container_name])
+    wait_for_postgres(cluster.container_name)
+    # The postgres image entrypoint starts PostgreSQL only. sshd was launched
+    # through docker exec, so it must be restored before reusing this fixture.
+    start_ssh(cluster.container_name, cluster.host)
 
 
 def build_integration_image(major: int) -> str:
@@ -275,9 +293,7 @@ def prepare_ssh(
             "/root/.ssh/authorized_keys",
         ]
     )
-    run(["docker", "exec", container_name, "ssh-keygen", "-A"])
-    run(["docker", "exec", container_name, "/usr/sbin/sshd", "-t"])
-    run(["docker", "exec", container_name, "/usr/sbin/sshd"])
+    start_ssh(container_name, host)
 
     host_key = run(
         [
@@ -292,7 +308,6 @@ def prepare_ssh(
     known_hosts = ssh_directory / "known_hosts"
     known_hosts.write_text(f"{host} {host_key[0]} {host_key[1]}\n", encoding="utf-8")
     known_hosts.chmod(0o600)
-    wait_for_tcp(host, 22)
     return private_key, known_hosts
 
 
@@ -614,14 +629,30 @@ def test_table_scan_delta_keeps_tables_without_indexes(prepared_postgres: Prepar
     assert values["seq_scans_per_sec"] == 0.3
 
 
+def test_container_restart_preserves_ssh_identity(prepared_postgres: PreparedPostgres) -> None:
+    async def check_ssh() -> None:
+        async with asyncssh.connect(
+            prepared_postgres.host,
+            username=prepared_postgres.ssh_user,
+            client_keys=[str(prepared_postgres.ssh_key)],
+            known_hosts=str(prepared_postgres.ssh_known_hosts),
+            connect_timeout=10,
+        ) as connection:
+            await connection.run("pg_isready -U postgres -d postgres", check=True)
+
+    asyncio.run(check_ssh())
+    restart_postgres(prepared_postgres)
+    # Reconnect using the original client key and pinned server identity.
+    asyncio.run(check_ssh())
+
+
 def test_logical_slot_delta_excludes_lost_slots(prepared_postgres: PreparedPostgres) -> None:
     if prepared_postgres.major < 14:
         pytest.skip("logical slot statistics require PostgreSQL 14+")
     name = prepared_postgres.container_name
     psql(name, "alter system set wal_level = logical")
     psql(name, "alter system set max_slot_wal_keep_size = 0")
-    run(["docker", "restart", name])
-    wait_for_postgres(name)
+    restart_postgres(prepared_postgres)
     try:
         psql(name, "select pg_create_logical_replication_slot('diag_lost_review', 'test_decoding')")
         query = (CONTENT_PATH / "queries/metrics/logical_decoding_slot_delta.sql").read_text().rstrip(";\n")
@@ -638,8 +669,7 @@ def test_logical_slot_delta_excludes_lost_slots(prepared_postgres: PreparedPostg
         psql(name, "select pg_drop_replication_slot(slot_name) from pg_replication_slots where slot_name = 'diag_lost_review'")
         psql(name, "alter system reset max_slot_wal_keep_size")
         psql(name, "alter system reset wal_level")
-        run(["docker", "restart", name])
-        wait_for_postgres(name)
+        restart_postgres(prepared_postgres)
 
 
 def test_remote_one_shot_runs_all_applicable_items(
