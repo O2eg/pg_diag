@@ -67,9 +67,11 @@ is the initial neighborhood; `evaluation.links` retains all links for further in
 they do not establish that every consulted item supports a finding. Raw rows,
 plans, instructions, SQL, DDL and snapshots remain in the original report. The
 LLM reads them during enrichment instead of relying only on rounded `facts` and
-`reasons`. When context is limited, the prompts require batch processing with
-every candidate accounted for. Project Markdown documentation is in English;
-generated audits use the user's language unless another is specified.
+`reasons`. The prompts treat the context as a reasoning skeleton only: the
+resulting documents (a detailed audit and a short summary) describe the
+database, host, statements and settings, never the graph nodes. Project Markdown
+documentation is in English; generated audits use the user's language unless
+another is specified.
 
 Preparation checks the artifact version and basic structure. Use
 `pg-diag validate-artifact` for full schema validation. Exit code 0 means successful

@@ -382,11 +382,16 @@ Typical use cases:
 
 Use [the performance master prompt](diag_promt.md) for bottlenecks and operational
 health, or [the security master prompt](security_promt.md) for access control and
-security posture. Both first run the same analysis engine as Diagnostic graph;
-the LLM then enriches its findings from the original items, SQL, plans, DDL and
-compatible observation windows. The document connects causes, mechanisms,
-symptoms and impact to evidence, alternatives, actions and acceptance criteria.
-It is written in the language of the user's request unless another is specified.
+security posture. Both first run the same analysis engine as Diagnostic graph and
+use the evaluated graph only as a reasoning skeleton: a work queue of findings,
+computed facts, cause links to test and pointers to evidence. The LLM then tests
+hypotheses against the original items, SQL, plans, DDL and compatible observation
+windows, reviews the PostgreSQL, kernel and hardware configuration, and writes two
+documents: a detailed audit (each problem with its cause, impact, evidence and
+actions by owner — what to change in settings, statements, schema and on the
+host) and a summary that is five to ten times shorter. Neither document describes
+the graph itself. They are written in the language of the user's request unless
+another is specified.
 
 From a trusted checkout, prepare one context per distinct capture:
 
