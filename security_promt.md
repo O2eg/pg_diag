@@ -7,7 +7,8 @@ posture of a PostgreSQL system:
 - a **detailed audit** — which principals can reach what, through which
   path, what protects the system today, what is exposed, and exactly what to
   change in `pg_hba.conf`, roles, grants, settings and host files;
-- a **summary** — the same conclusions and changes, five to ten times shorter.
+- a **summary** — the same conclusions and changes, using 10–30 % of the
+  detailed audit's word count.
 
 The primary objective is to use all available relevant evidence to find and
 prioritise practical ways to improve database security: protect confidentiality,
@@ -140,8 +141,8 @@ claims to verify.
   Include the configuration review, verification and unresolved questions
   where they affect a decision. Use only as much space as the evidence requires.
 - `SUMMARY_OUTPUT_PATH`: a standalone operational brief with the main
-  conclusions and actions in priority order. Its word count must be 10–20 %
-  of the detailed file's word count (5–10× shorter). Count whitespace-separated
+  conclusions and actions in priority order. Its word count must be 10–30 %
+  of the detailed file's word count. Count whitespace-separated
   words across each whole Markdown file, including headings and code, using
   the same method for both. There is no minimum word count or screen target;
   shorten the summary instead of padding the detailed audit to meet the ratio.
@@ -588,7 +589,7 @@ the detailed audit, and every action is supported there. Preserve scope,
 confidence, dependencies and service/rollback conditions: configured rights
 must not become confirmed intrusion, and a conditional restriction must remain
 conditional. The summary must be actionable without opening the detailed file
-for these conditions. Measure both word counts and enforce the 10–20 % ratio
+for these conditions. Measure both word counts and enforce the 10–30 % ratio
 from Deliverables.
 
 ### 6.3 Style and final check
@@ -620,7 +621,7 @@ from Deliverables.
 - Conclusions and actions address database security and its operational
   dependencies within this task; both documents are complete on their own.
 - Both files are in `OUTPUT_LANGUAGE`, standalone and saved to distinct paths;
-  measured summary word count is 10–20 % of detailed word count. Shortening
+  measured summary word count is 10–30 % of detailed word count. Shortening
   preserved the urgency, uncertainty and conditions of every included action.
 
 Write both files. If this system cannot write files, return both documents in
