@@ -6,6 +6,7 @@ This instruction belongs to report item `wal_io_checkpoints.checkpointer`. The i
 - PostgreSQL 17+ cumulative checkpoint/restartpoint requests, completed restartpoints, write/sync time, buffers written, and reset age.
 - PostgreSQL 18 adds completed checkpoint count, completion percentage, and SLRU buffers written.
 - PostgreSQL 10-16 checkpoint counters are reported in the Background Writer item instead.
+- PostgreSQL 18: `performed_share_pct` is `num_done / (num_timed + num_requested)`, the share of checkpoint triggers that were actually performed; idle servers skip timed checkpoints, so a low value is normal on a quiet system and unrelated to `checkpoint_completion_target`. `write_time_ms` and `sync_time_ms` are cumulative milliseconds.
 
 ## What to watch
 - Requested checkpoints increasing faster than timed checkpoints, high write/sync time deltas, or restartpoints repeatedly requested but not completed.

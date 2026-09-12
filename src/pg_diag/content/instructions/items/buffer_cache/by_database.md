@@ -14,6 +14,7 @@ This instruction belongs to report item `buffer_cache.by_database`.
 
 ## Automatic evaluation
 - No severity is assigned. Occupancy is not workload rate.
+- Every database in `pg_database` is listed at every snapshot (both the SQL source and the pg_buffercache batch executor), so a database without cached blocks is a zero point, not a gap in the chart. At most 100 rows per snapshot: with more databases the zero rows are dropped first.
 
 ## Related report items
 - [buffer_cache.utilization](#item-buffer_cache.utilization) — Include unused buffers omitted from database attribution.

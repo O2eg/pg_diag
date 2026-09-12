@@ -25,6 +25,7 @@ This instruction belongs to report item `snapshot_charts_db.indexes_top_tuple_re
 ## Automatic evaluation
 - `idx_tup_read` counts index entries returned, not heap or disk blocks.
 - Stable index OIDs prevent name reuse from merging counters; changing Top-N membership remains expected.
+- Members are chosen per interval, so the legend is the union of every interval's Top 10 and can hold many series with a single point on quiet intervals; use the legend filter and read the columns interval by interval.
 
 ## Related report items
 - [snapshot_charts_db.indexes_top_tuple_fetch_rate](#item-snapshot_charts_db.indexes_top_tuple_fetch_rate) — Compare index entries read with heap tuples fetched.

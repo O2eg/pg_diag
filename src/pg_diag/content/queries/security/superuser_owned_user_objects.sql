@@ -18,7 +18,7 @@ with relation_objects as (
     join pg_roles r on r.oid = c.relowner
     where c.relkind in ('r', 'p', 'S', 'v', 'm', 'f')
       and n.nspname not in ('pg_catalog', 'information_schema')
-      and n.nspname not like 'pg_toast%'
+      and n.nspname !~ '^pg_(toast|temp)'
       and not exists (
           select 1
           from pg_depend d
@@ -38,7 +38,7 @@ function_objects as (
     join pg_namespace n on n.oid = p.pronamespace
     join pg_roles r on r.oid = p.proowner
     where n.nspname not in ('pg_catalog', 'information_schema')
-      and n.nspname not like 'pg_toast%'
+      and n.nspname !~ '^pg_(toast|temp)'
       and not exists (
           select 1
           from pg_depend d

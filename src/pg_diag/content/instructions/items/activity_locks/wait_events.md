@@ -16,6 +16,7 @@ This instruction belongs to report item `activity_locks.wait_events`. The item i
 - No severity is assigned from a single wait sample because transient waits are normal and thresholds are workload-specific.
 - Accurate cross-user query and wait details normally require `pg_read_all_stats` or `pg_monitor`.
 - The SQL limit bounds collector memory; groups outside the current top 100 are not represented.
+- Only session work is counted: client backends, autovacuum workers, parallel workers and logical replication workers. Walsenders and other server processes are always `active` and are excluded.
 
 ## Common fault causes
 - Lock contention, storage latency, or WAL flush pressure.

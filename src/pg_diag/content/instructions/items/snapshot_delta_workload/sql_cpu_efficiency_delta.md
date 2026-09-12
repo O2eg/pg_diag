@@ -19,6 +19,7 @@ This instruction belongs to report item `snapshot_delta_workload.sql_cpu_efficie
 ## Interval coverage
 - CPU, calls, elapsed time, identity, and the `pg_stat_kcache.stats_since` epoch must be comparable at both endpoints.
 - Entry/candidate churn is omitted; ratios use only deltas from the same accepted interval.
+- PostgreSQL 14+: the `pg_stat_kcache` entry is joined to the `pg_stat_statements` row with the same `toplevel` flag, so a statement executed both directly and from a function keeps one identity per nesting level; earlier versions have no `toplevel` column and use the plain identity join.
 
 ## Common fault causes
 - CPU-heavy plans, JIT, expression evaluation, sorting, hashing, or compression.

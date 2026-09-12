@@ -20,6 +20,7 @@ This instruction belongs to report item `cluster_inventory.pending_restart_setti
 ## Automatic evaluation
 - This is operational evidence, not an automatic severity: a pending restart may be planned.
 - Values are server-scoped and include source file/line when visible.
+- `pending_restart_kind = auto_computed_artifact` marks a setting whose file value equals `boot_val` (the "auto" sentinel such as `-1`) **and** whose running value the server itself computed at startup (`pg_settings.source = override`; `io_max_concurrency` on PostgreSQL 18 is the common case). Every reload compares the file value with the computed one and raises the flag again; a restart recomputes the same value and does not clear it, so this row needs no action. A file value that merely returns a setting to its default while the running value came from the command line or an earlier file is a real `configuration_change` and still needs the restart. The diagnostic graph scores only `configuration_change` rows.
 
 ## Related report items
 - [overview.pg_settings](#item-overview.pg_settings) — Compare pending values with active PostgreSQL settings.

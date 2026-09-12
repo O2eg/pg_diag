@@ -29,6 +29,7 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_index_blo
 ## Automatic evaluation
 - This chart ranks physical index-block read counter deltas by stable relation OID.
 - It aggregates all indexes of a table; use index-level and SQL evidence for attribution.
+- Members are chosen per interval, so the legend is the union of every interval's Top 10 and can hold many series with a single point on quiet intervals; use the legend filter and read the columns interval by interval.
 
 ## Related report items
 - [object_workload.index_workload](#item-object_workload.index_workload) — Inspect index usage for affected tables.

@@ -25,6 +25,7 @@ This item summarizes a bounded sample of explicit object privileges by grantee r
 - Relations are selected before ACL expansion; stored relations are prioritized by `relpages`, functions by `pg_stat_user_functions.calls`, and named non-storage objects by stable name order.
 - At most 1,000 expanded ACL rows are taken from each of the relation, function, and schema pools.
 - `candidate_sample_truncated`, `acl_expansion_truncated`, and `result_truncated` identify incomplete coverage. A `[coverage]` row remains visible when truncation produces no ordinary role row.
+- System schemas are excluded by the reserved prefix: `pg_catalog`, `information_schema`, `pg_toast*` and the per-backend temporary schemas `pg_temp_N` / `pg_toast_temp_N`; user schemas cannot start with `pg_`.
 
 ## Related report items
 - [cluster_inventory.predefined_admin_role_membership](#item-cluster_inventory.predefined_admin_role_membership) — Review predefined administrative inheritance.

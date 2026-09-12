@@ -19,7 +19,7 @@ evaluated as (
     s.pgaudit_log,
     s.pgaudit_log_source,
     'pgaudit' = any(
-      regexp_split_to_array(lower(coalesce(s.shared_preload_libraries, '')), '\\s*,\\s*')
+      regexp_split_to_array(btrim(lower(coalesce(s.shared_preload_libraries, ''))), '\s*,\s*')
     ) as pgaudit_preloaded,
     e.pgaudit_extension_created
   from settings s

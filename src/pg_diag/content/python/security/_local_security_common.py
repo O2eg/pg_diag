@@ -459,9 +459,19 @@ def _dedupe_paths(paths: list[Path]) -> list[Path]:
 
 
 def _paths_from_command(command: str) -> list[Path]:
+    """Absolute archive destinations named by archive_command.
+
+    Only tokens that embed the WAL file placeholder ``%f`` (or ``%p`` used as a
+    destination) describe where WAL is written. Other absolute paths in the
+    command (flag files tested with ``test -f``, helper binaries, log files)
+    are not archive locations and must not become "sensitive roots".
+    """
     paths: list[Path] = []
     for match in re.finditer(r"(?<![%\w])/(?:[^\s'\";|&<>]+)", command or ""):
-        token = match.group(0).replace("%p", "").replace("%f", "")
+        raw = match.group(0)
+        if "%f" not in raw and "%p" not in raw:
+            continue
+        token = raw.replace("%p", "").replace("%f", "")
         token = token.rstrip(")")
         if token:
             paths.append(Path(token))
@@ -874,6 +884,25 @@ async def _host_tree_entries(
     }
 
 
+def _is_world_writable_finding(mode: int, kind: str) -> bool:
+    """World-writable regular files and directories are findings.
+
+    ``find -printf '%m'`` reports the mode of the symlink itself (0777 on Linux),
+    so symlinks are judged by their target through the surrounding tree walk,
+    not here. Sockets and FIFOs are created world-writable by design
+    (``unix_socket_permissions`` covers PostgreSQL sockets), and a sticky
+    directory (``/tmp``-style ``1777``) does not let other users modify or
+    remove foreign entries.
+    """
+    if not mode & 0o002:
+        return False
+    if kind in {"l", "s", "p"}:
+        return False
+    if kind == "d" and mode & 0o1000:
+        return False
+    return True
+
+
 async def _host_world_writable_tree_findings(
     ctx: PythonSourceContext,
     root: Path,
@@ -893,8 +922,8 @@ async def _host_world_writable_tree_findings(
             "risk_level": "high",
             "risk_reason": "Path under a PostgreSQL-sensitive tree is world-writable",
         }
-        for mode, _kind, path, _target in entries
-        if mode & 0o002
+        for mode, kind, path, _target in entries
+        if _is_world_writable_finding(mode, kind)
     ]
     if len(rows) > max_rows:
         rows = rows[:max_rows]

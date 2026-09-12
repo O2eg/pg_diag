@@ -37,6 +37,12 @@ scripts:
     script_file: os/huge_page_pools.sh
     output: table_json
 
+  os.cgroup_limits:
+    title: Container And cgroup Limits
+    description: CPU quota, cpuset, memory and pid limits of the PostgreSQL postmaster's cgroup (ancestors included), with host capacity for comparison; one row per postmaster cgroup.
+    script_file: os/cgroup_limits.sh
+    output: table_json
+
   os.total_ram:
     title: Total RAM Capacity
     description: Exact total host RAM bytes from /proc/meminfo.

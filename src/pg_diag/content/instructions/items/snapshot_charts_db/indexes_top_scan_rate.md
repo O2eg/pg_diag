@@ -29,6 +29,7 @@ This instruction belongs to report item `snapshot_charts_db.indexes_top_scan_rat
 ## Automatic evaluation
 - This chart ranks scan deltas for stable index OIDs present in both adjacent bounded samples.
 - High usage is not a fault and is evidence against removal during the observed workload.
+- Members are chosen per interval, so the legend is the union of every interval's Top 10 and can hold many series with a single point on quiet intervals; use the legend filter and read the columns interval by interval.
 
 ## Related report items
 - [object_workload.index_workload](#item-object_workload.index_workload) — Compare rate with cumulative index scans.

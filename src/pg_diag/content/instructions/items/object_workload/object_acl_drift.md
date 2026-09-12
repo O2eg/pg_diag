@@ -26,6 +26,7 @@ This item finds same-kind objects in one schema with inconsistent ACL signatures
 - ACL normalization is limited by a conservative 3,000-row expansion budget derived from ACL-array cardinality and the maximum privileges per object kind. Independent budgets reserve up to 1,500 expanded privilege rows for stored relations, 1,000 for named non-storage relations, and 500 for functions, so one branch cannot displace every candidate from another. `acl_expansion_truncated` identifies objects omitted to keep expansion bounded.
 - At most 3,000 schema/kind drift groups are returned. `candidate_sample_truncated` identifies a reached relation or function root limit; because extension ownership is checked after root selection, extension-owned roots can consume part of a truncated sample. `result_truncated` identifies output truncation.
 - A `[coverage]` row remains visible when truncation produces no drift group, so `empty` is clean only when all three coverage flags are false.
+- Objects without an explicit ACL share the constant `default` signature and are always included without consuming the ACL expansion budget; only explicit ACLs are expanded, so `acl_expansion_truncated` refers to explicit grants alone.
 
 ## Related report items
 - [object_workload.direct_user_grants](#item-object_workload.direct_user_grants) — Identify direct grants contributing to ACL drift.

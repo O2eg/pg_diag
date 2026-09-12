@@ -37,8 +37,12 @@ queries:
       default: once
       supports: [once]
     variants:
-      - id: statements_pgss_capabilities_pg10_plus
+      - id: statements_pgss_capabilities_pg10_pg13
         min_pg_version: 100000
+        max_pg_version: 139999
+        sql_file: statements/pg_stat_statements_capabilities_pg10_pg13.sql
+      - id: statements_pgss_capabilities_pg14_plus
+        min_pg_version: 140000
         sql_file: statements/pg_stat_statements_capabilities.sql
 
   statements.top_by_total_time:

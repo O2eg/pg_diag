@@ -16,6 +16,7 @@ This instruction belongs to report item `activity_locks.pg_wait_sampling_profile
 - No severity is assigned because counts depend on the extension's sampling interval, uptime, and last profile reset.
 - `sample_share_pct` uses the full profile total before the output is limited to 100 rows.
 - Missing optional relation is `unsupported`; an empty result means the visible profile currently has no samples.
+- `Activity` events (main loops of idle background processes such as the autovacuum launcher, walwriter and I/O workers) are excluded from the ranking and from the `sample_share_pct` denominator; `activity_samples_excluded` reports how many samples they held.
 
 ## Common fault causes
 - Workload contention or latency represented by the dominant event.

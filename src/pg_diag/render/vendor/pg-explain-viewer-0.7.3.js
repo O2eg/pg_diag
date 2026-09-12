@@ -1874,6 +1874,41 @@
     // e.g. TABLE_WRITTEN is about the write cost, not the node's whole self time
     // `over` replaces the static wording where the observed numbers allow a
     // sharper statement (a concrete work_mem value, a measured cause)
+    // System catalogs: DDL on pg_catalog is refused unless allow_system_table_mods
+    // is on, syscache/relcache lookups use only the built-in catalog indexes,
+    // and pg_upgrade / pg_dump drop user indexes on catalogs. A scan of one
+    // therefore never gets a CREATE INDEX candidate, and the bloat hint points
+    // at catalog-appropriate tooling. The schema comes from a qualified
+    // relation reference (EXPLAIN VERBOSE text, JSON/YAML "Schema"); a bare
+    // name is recognized only when it is an actual catalog table name.
+    const SYSTEM_SCHEMAS = new Set(['pg_catalog', 'information_schema', 'pg_toast']);
+    const SYSTEM_CATALOGS = new Set(('pg_aggregate pg_am pg_amop pg_amproc pg_attrdef pg_attribute '
+      + 'pg_auth_members pg_authid pg_cast pg_class pg_collation pg_constraint pg_conversion '
+      + 'pg_database pg_db_role_setting pg_default_acl pg_depend pg_description pg_enum '
+      + 'pg_event_trigger pg_extension pg_foreign_data_wrapper pg_foreign_server pg_foreign_table '
+      + 'pg_index pg_inherits pg_init_privs pg_language pg_largeobject pg_largeobject_metadata '
+      + 'pg_namespace pg_opclass pg_operator pg_opfamily pg_parameter_acl pg_partitioned_table '
+      + 'pg_policy pg_proc pg_publication pg_publication_namespace pg_publication_rel pg_range '
+      + 'pg_replication_origin pg_rewrite pg_seclabel pg_sequence pg_shdepend pg_shdescription '
+      + 'pg_shseclabel pg_statistic pg_statistic_ext pg_statistic_ext_data pg_subscription '
+      + 'pg_subscription_rel pg_tablespace pg_transform pg_trigger pg_ts_config pg_ts_config_map '
+      + 'pg_ts_dict pg_ts_parser pg_ts_template pg_type pg_user_mapping').split(' '));
+    const isSystemRelation = n => {
+      const ref = n.relationRef || n.relation;
+      if (!ref || !/Scan/.test(n.nodeType)) return false;
+      const m = /^("(?:[^"]|"")+"|[^".]+)\.("(?:[^"]|"")+"|[^".]+)$/.exec(ref);
+      if (m) return SYSTEM_SCHEMAS.has(unquote(m[1]));
+      return SYSTEM_CATALOGS.has(unquote(ref));
+    };
+    const SYSTEM_INDEX_HYP = 'The relation is a system catalog: an index cannot be added to it '
+      + '(DDL on pg_catalog is refused unless allow_system_table_mods is on, and catalog cache '
+      + 'lookups would ignore it anyway). What drives this scan is the catalog size — object '
+      + 'count and catalog bloat — and the shape of the query; no DDL candidate is offered.';
+    const SYSTEM_BLOAT_NEXT = 'For a system catalog check dead tuples in pg_stat_sys_tables '
+      + '(pg_class, pg_attribute, pg_depend after heavy DDL or temp-table churn). Plain VACUUM '
+      + 'handles it — autovacuum processes catalogs — and reducing the churn keeps it from '
+      + 'returning. VACUUM FULL on a catalog locks the whole cluster, and pg_repack cannot process '
+      + 'system catalogs.';
     const add = (code, heads, idxSpec, impactMs, over) => {
       if (localOnly && !LOCAL_CODES.has(code)) return;
       const meta = ADVICE_META[code];
@@ -1883,6 +1918,12 @@
         nodes: heads.map(h => ({ id: h.n.id, ext: h.ext || null })),
       };
       if (over) Object.assign(entry, over);
+      const sys = heads.map(h => h.n).find(isSystemRelation);
+      if (sys) {
+        entry.systemRelation = sys.relation;
+        if (idxSpec) { idxSpec = null; entry.hyp = SYSTEM_INDEX_HYP; }
+        if (code === 'SEQSCAN_BUFFERS' || code === 'INDEX_BUFFERS') entry.next = SYSTEM_BLOAT_NEXT;
+      }
       if (impactMs != null) entry.impactMs = impactMs;
       if (idxSpec && Expr) {
         try {

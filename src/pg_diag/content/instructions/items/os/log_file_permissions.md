@@ -14,6 +14,7 @@ It is backed by local Python source `security.log_file_permissions`.
 ## Automatic evaluation
 - Direct world exposure is `high`; other broad permissions and missing path evidence are `medium`.
 - Incomplete enumeration produces an explicit coverage warning. With `logging_collector=off`, this filesystem check is `skipped/unknown`; external/journald controls must be reviewed separately.
+- Files are matched against `log_filename` (with `.csv`/`.json` accepted for csvlog and jsonlog). Files that do not match belong to another program sharing the directory, are reported as `other_file_in_log_directory` and are capped at `medium` because they do not contain PostgreSQL SQL text.
 
 ## Common fault causes
 - Permissive `log_file_mode`, logrotate ownership drift, shared log directories, or logs mounted from another namespace.

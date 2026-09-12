@@ -30,6 +30,7 @@ This instruction belongs to report item `backend_os.backend_proc_io`. The item i
 - This item is informational; expected throughput depends on workload and storage.
 - Rates remain null unless `/proc/<pid>/io` was readable at both endpoints; `io_access=false` is not converted into zero activity.
 - PID reuse is rejected by matching process start time.
+- `io_access` is true only when `/proc/<pid>/io` was actually read. Inside a container, root without `CAP_SYS_PTRACE` cannot read the counters of another user's processes; the sampler then reports `io_access = false`, null rates and the `backend_process_io_unreadable` diagnostic instead of zeros.
 
 ## Related report items
 - [backend_os.backend_activity](#item-backend_os.backend_activity) — Map sampled PIDs to database, user, state, and query.

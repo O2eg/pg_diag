@@ -8,7 +8,7 @@ This instruction belongs to report item `overview.weak_tls_ciphers`. The item is
 - Risk level for each class.
 
 ## What to watch
-- Explicit weak/anonymous/export classes and `3DES` tokens are `high`; `MEDIUM` is `medium`.
+- Explicit weak/anonymous/export classes and bare `3DES` tokens are `high`; `MEDIUM` is `medium`.
 - An empty result means no recognized positive weak token was found in the configured expression.
 - It does not prove the fully expanded OpenSSL cipher set is strong.
 
@@ -23,6 +23,8 @@ This instruction belongs to report item `overview.weak_tls_ciphers`. The item is
 
 ## Automatic evaluation
 - Recognized weak tokens receive the severity described in What to watch; effective OpenSSL expansion is not evaluated automatically.
+- Tokens starting with `+` only reorder ciphers that other tokens already selected (PostgreSQL's default `HIGH:MEDIUM:+3DES:!aNULL` uses `+3DES` to demote 3DES below AES128) and `@` tokens control ordering; neither adds a cipher class, so they are not findings. 3DES itself is judged through the `MEDIUM` class.
+- When `ssl = off` the cipher policy is not in effect: rows keep their class but `risk_level` is `unknown`, and the `ssl` column shows the server setting.
 
 ## Related report items
 - [overview.tls_server_configuration](#item-overview.tls_server_configuration) — Confirm the overall server TLS posture.

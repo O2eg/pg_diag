@@ -21,6 +21,7 @@ This instruction belongs to report item `snapshot_charts_db.indexes_top_reads_pe
 ## Automatic evaluation
 - This chart is informational; the ratio does not measure cache misses, bloat, or physical read amplification.
 - Very small scan deltas can create unstable ratios, so confirm scan volume and representative plans.
+- Members are chosen per interval, so the legend is the union of every interval's Top 10 and can hold many series with a single point on quiet intervals; use the legend filter and read the columns interval by interval.
 
 ## Related report items
 - [snapshot_charts_db.indexes_top_scan_rate](#item-snapshot_charts_db.indexes_top_scan_rate) — Check whether the ratio is supported by meaningful scan volume.

@@ -6,10 +6,9 @@ with schema_roots_bounded as (
     n.nspacl
   from pg_catalog.pg_namespace n
   where n.nspname <> 'public'
-    and n.nspname not in ('pg_catalog', 'information_schema', 'pg_toast')
-    and n.nspname not like 'pg_%'
-    and n.nspname not like 'pg_temp_%'
-    and n.nspname not like 'pg_toast_temp_%'
+    and n.nspname <> 'information_schema'
+    -- schema names starting with pg_ are reserved for PostgreSQL (pg_catalog, pg_toast, pg_temp_N)
+    and n.nspname !~ '^pg_'
   order by n.nspname, n.oid
   limit 10001
 ),

@@ -19,6 +19,7 @@ This instruction belongs to report item `overview.database_stats`. The item is b
 - One or more cumulative deadlocks in a database produce `medium`.
 - Rollback ratio, cache-hit ratio, temporary activity, and I/O totals are not automatically classified because safe thresholds depend on reset age and workload.
 - The summary is based on cumulative counters, not on activity confined to the snapshots window.
+- `stats_window_start` and `stats_window_source` give a lower bound of the counter window: the counters have accumulated at least since that moment. It is the latest of the postmaster start, `pg_stat_database.stats_reset` (exact when set; on PostgreSQL 15+ it stays NULL until `pg_stat_reset()` is called) and the shared statistics reset time (`pg_stat_bgwriter.stats_reset`). A shared reset after the postmaster started is either a crash recovery, which discards every counter, or a targeted `pg_stat_reset_shared()`, which leaves per-object counters older, so the later time never overstates the window; statistics also survive clean restarts, so the true window may be longer than shown. An object created after `stats_window_start` has accumulated only since its creation, which the catalog does not record.
 
 ## Common fault causes
 - Application errors or retry loops.

@@ -4,7 +4,7 @@ with stored_relation_roots_bounded as (
     join pg_namespace n on n.oid = c.relnamespace
     where c.relkind in ('r', 'm')
       and n.nspname not in ('pg_catalog', 'information_schema')
-      and n.nspname not like 'pg_toast%'
+      and n.nspname !~ '^pg_(toast|temp)'
     order by c.relpages desc, n.nspname, c.relname, c.oid
     limit 10001
 ),
@@ -17,7 +17,7 @@ named_relation_roots_bounded as (
     join pg_namespace n on n.oid = c.relnamespace
     where c.relkind in ('p', 'S', 'v', 'f')
       and n.nspname not in ('pg_catalog', 'information_schema')
-      and n.nspname not like 'pg_toast%'
+      and n.nspname !~ '^pg_(toast|temp)'
     order by n.nspname, c.relname, c.oid
     limit 10001
 ),
@@ -45,7 +45,7 @@ function_roots_bounded as (
     join pg_namespace n on n.oid = p.pronamespace
     left join pg_stat_user_functions stats on stats.funcid = p.oid
     where n.nspname not in ('pg_catalog', 'information_schema')
-      and n.nspname not like 'pg_toast%'
+      and n.nspname !~ '^pg_(toast|temp)'
     order by coalesce(stats.calls, 0) desc, n.nspname, p.proname, p.oid
     limit 1001
 ),

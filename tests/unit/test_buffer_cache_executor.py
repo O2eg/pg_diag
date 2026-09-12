@@ -25,7 +25,7 @@ def _payload() -> BufferCachePayload:
     return BufferCachePayload(
         snapshot_time=SNAPSHOT_TIME,
         current_database_oid=42,
-        database_names={7: "other_db", 42: "app_db"},
+        database_names={7: "other_db", 42: "app_db", 9: "uncached_db"},
         aggregates=[
             AggregateRow(None, None, None, None, False, None, False, 5),
             AggregateRow(0, 42, 100, 0, False, 5, False, 10),
@@ -82,6 +82,8 @@ def test_builds_database_and_relation_results_with_existing_semantics() -> None:
         [SNAPSHOT_TIME, "app_db", 26],
         [SNAPSHOT_TIME, "other_db", 6],
         [SNAPSHOT_TIME, "shared catalogs", 2],
+        # a database without cached blocks is a zero row, not a gap
+        [SNAPSHOT_TIME, "uncached_db", 0],
     ]
 
     _columns, rows = build_result("buffer_cache.top_relations", payload)
@@ -140,6 +142,13 @@ class FakeConnection:
     def transaction(self, *, readonly: bool):
         assert readonly is True
         return FakeSavepoint(self)
+
+    async def execute(self, sql: str, *_args):
+        if self.transaction_failed:
+            raise RuntimeError("current transaction is aborted")
+        # transaction-local work_mem for the aggregate; not part of the fetch call order
+        assert "pg_diag:buffer_cache:work_mem" in sql, sql
+        self.work_mem_calls = getattr(self, "work_mem_calls", 0) + 1
 
     async def fetch(self, sql: str, *_args):
         if self.transaction_failed:

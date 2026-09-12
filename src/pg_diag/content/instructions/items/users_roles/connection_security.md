@@ -6,6 +6,7 @@ This instruction belongs to report item `users_roles.connection_security`. The i
 - Current client sessions per role split into TLS sessions, GSSAPI-encrypted sessions (PostgreSQL 12 and newer), local socket sessions, loopback TCP sessions, and unencrypted remote TCP sessions.
 - Negotiated TLS versions and ciphers plus the smallest cipher key size per role.
 - `encryption_unknown_session_count` counts sessions whose TLS state is hidden from the collector role.
+- pg_diag's own session carries `application_name = pg_diag`; it is counted like any other session of the collector role.
 
 ## What to watch
 - Any role with `remote_unencrypted_session_count` above zero; credentials and data cross the network in clear text.

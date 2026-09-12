@@ -19,6 +19,7 @@ This instruction belongs to report item `snapshot_charts_db.replication_sender_l
 ## Automatic evaluation
 - Charts are informational and assign no severity; lag thresholds depend on the workload and the recovery policy.
 - Up to 50 senders are sampled per snapshot; a sender whose lag stayed at zero for the whole window is omitted from the chart, so an empty chart with connected standbys means they kept up at every sample.
+- Logical subscribers are labelled `[logical]` in the sender name. An idle logical sender reports no time lag at all; its series stays empty on purpose, because an unreported value is unknown, not zero.
 
 ## Related report items
 - [replication.physical_replication](#item-replication.physical_replication) — Inspect the sender state at collection time.

@@ -327,12 +327,27 @@
       let score = null;
       const memory = ctx.facts.memory();
       if (memory.total) {
-        ctx.fact("RAM", fmtBytes(memory.total));
+        // host scope: MemAvailable against host RAM (both from /proc/meminfo)
+        ctx.fact("RAM", fmtBytes(memory.total) + (memory.cgroupLimit ? " (host)" : ""));
         if (memory.available !== null) {
           const availPct = (memory.available / memory.total) * 100;
           score = maxScore(score, scalePair(availPct, THRESHOLDS.memAvailablePct));
-          ctx.reason("MemAvailable " + fmtBytes(memory.available) + " (" + fmtPct(availPct, 0) + " of RAM) at collection time", "os.memory_info");
+          ctx.reason("MemAvailable " + fmtBytes(memory.available) + " (" + fmtPct(availPct, 0) + " of host RAM) at collection time", "os.memory_info");
         }
+      }
+      if (memory.cgroupLimit) {
+        // cgroup scope: the group's own occupancy against its own limit; host MemAvailable
+        // says nothing about headroom inside the limit
+        ctx.fact("cgroup memory limit", fmtBytes(memory.cgroupLimit));
+        if (memory.cgroupCurrent !== null) {
+          const headroomPct = Math.max(0, ((memory.cgroupLimit - memory.cgroupCurrent) / memory.cgroupLimit) * 100);
+          score = maxScore(score, scalePair(headroomPct, THRESHOLDS.memAvailablePct));
+          ctx.reason("cgroup memory.current " + fmtBytes(memory.cgroupCurrent) + " of the " + fmtBytes(memory.cgroupLimit) + " limit (" + fmtPct(headroomPct, 0) + " headroom; memory.current includes reclaimable page cache) at collection time", "os.cgroup_limits");
+        } else {
+          ctx.reason("cgroup memory limit " + fmtBytes(memory.cgroupLimit) + " without a current-usage reading: host MemAvailable does not describe headroom inside the limit", "os.cgroup_limits");
+        }
+      } else if (memory.cgroupAmbiguous) {
+        ctx.reason("Several PostgreSQL postmasters run in different cgroups; no container limit is applied because the report cannot tell which one is this database", "os.cgroup_limits");
       }
       const used = seriesNamed(ctx, "snapshot_charts_os.os_memory_pressure", "RAM used");
       if (used) {
@@ -1104,10 +1119,10 @@
         if (maxConn && maxConn.value !== null) {
           const budget = workMem.value * maxConn.value * 2;
           ctx.fact("work_mem x max_connections x 2", fmtBytes(budget));
-          if (memory.total) {
-            const ratio = budget / memory.total;
+          if (memory.usableTotal) {
+            const ratio = budget / memory.usableTotal;
             score = maxScore(score, scalePair(ratio, THRESHOLDS.workMemRatio));
-            ctx.reason("work_mem " + fmtBytes(workMem.value) + " x " + maxConn.value + " connections x 2 nodes = " + fmtBytes(budget) + " (" + fmtPct(ratio * 100, 0) + " of RAM)", "overview.pg_settings");
+            ctx.reason("work_mem " + fmtBytes(workMem.value) + " x " + maxConn.value + " connections x 2 nodes = " + fmtBytes(budget) + " (" + fmtPct(ratio * 100, 0) + (memory.usableTotal === memory.cgroupLimit ? " of the cgroup memory limit)" : " of RAM)"), "overview.pg_settings");
           }
         }
         if (hashMult && hashMult.value !== null) ctx.fact("hash_mem_multiplier", String(hashMult.raw));
@@ -1389,13 +1404,13 @@
       let score = null;
       if (sb && sb.value !== null) {
         ctx.fact("shared_buffers", fmtBytes(sb.value));
-        if (memory.total) {
-          const pct = (sb.value / memory.total) * 100;
+        if (memory.usableTotal) {
+          const pct = (sb.value / memory.usableTotal) * 100;
           score = maxScore(score, scalePair(pct, THRESHOLDS.sharedBuffersPct));
           if (pct < THRESHOLDS.sharedBuffersSmallPct) {
             score = maxScore(score, 0.3);
           }
-          ctx.reason("shared_buffers is " + fmtPct(pct, 0) + " of RAM (25 % is the usual start, 60-80 % starves the page cache)", "overview.pg_settings");
+          ctx.reason("shared_buffers is " + fmtPct(pct, 0) + (memory.usableTotal === memory.cgroupLimit ? " of the cgroup memory limit" : " of RAM") + " (25 % is the usual start, 60-80 % starves the page cache)", "overview.pg_settings");
         }
       }
       const used = seriesNamed(ctx, "buffer_cache.utilization", "used");
@@ -1638,7 +1653,10 @@
       const requestedShare = (req, timed, source, period, confidence) => {
         if (req + timed <= 0) return;
         const share = req / (req + timed);
-        score = maxScore(score, scalePair(share, THRESHOLDS.requestedCheckpointShare) * confidence);
+        const raw = scalePair(share, THRESHOLDS.requestedCheckpointShare);
+        // Below full confidence the pattern is unproven: the evidence stays advisory
+        // (never warn) and the reason says "too few to judge".
+        score = maxScore(score, confidence < 1 ? Math.min(raw * confidence, 0.3) : raw);
         ctx.reason(fmtNum(req, 0) + " requested and " + fmtNum(timed, 0) + " timed checkpoints " + period + " (requested share " + fmtPct(share * 100, 0) + (confidence < 1 ? ", too few to judge" : "") + ")", source);
       };
       if (logKnown) {
@@ -2319,7 +2337,7 @@
     configuration(ctx) {
       // Configuration file entries the server cannot apply are a misconfiguration to
       // fix, not a database failure: they warn, whatever the item's own risk level.
-      let score = findingsScore(ctx, {excludeItems: ["cluster_inventory.configuration_file_errors"]});
+      let score = findingsScore(ctx, {excludeItems: ["cluster_inventory.configuration_file_errors", "cluster_inventory.pending_restart_settings"]});
       const eol = ctx.rows("overview.version_eol_status");
       if (eol.length) {
         const days = toNumber(eol[0].days_to_eol);
@@ -2329,7 +2347,10 @@
           ctx.fact("Days to EOL", fmtNum(days, 0));
         }
       }
-      for (const row of ctx.rows("overview.durability_safety_settings")) {
+      const durability = ctx.rows("overview.durability_safety_settings");
+      // All three settings inspected and none unsafe is a completed check (0), not "no data".
+      if (["fsync", "full_page_writes", "synchronous_commit"].every((name) => durability.some((row) => String(row.setting_name) === name))) score = maxScore(score, 0);
+      for (const row of durability) {
         const name = String(row.setting_name);
         const value = String(row.current_value).toLowerCase();
         ctx.fact(name, value);
@@ -2344,11 +2365,30 @@
           ctx.reason("synchronous_commit = off cluster-wide: the last commits are lost on a crash", "overview.durability_safety_settings");
         }
       }
-      const pending = ctx.rows("cluster_inventory.pending_restart_settings");
+      // A file value equal to boot_val that the server overrode with a computed value ("auto",
+      // usually -1) is re-flagged by every reload and changed by no restart: not actionable.
+      // Collected (even empty) pending-restart and file-error checks that found nothing score zero.
+      for (const itemId of ["cluster_inventory.pending_restart_settings", "cluster_inventory.configuration_file_errors"]) {
+        if (["present", "empty"].includes(ctx.presence(itemId))) score = maxScore(score, 0);
+      }
+      const pendingRows = ctx.rows("cluster_inventory.pending_restart_settings");
+      const pending = pendingRows.filter((row) => row.pending_restart_kind !== "auto_computed_artifact");
+      const artifacts = pendingRows.length - pending.length;
       if (pending.length) {
+        score = maxScore(score, 0.5);
         ctx.reason(pending.length + " setting(s) wait for a restart: " + pending.slice(0, 4).map((row) => row.name).join(", "), "cluster_inventory.pending_restart_settings");
       }
-      const errors = ctx.rows("cluster_inventory.configuration_file_errors").filter((row) => row.error);
+      if (artifacts) {
+        ctx.reason(artifacts + " pending_restart flag(s) are reload artifacts of auto-computed settings and need no restart", "cluster_inventory.pending_restart_settings");
+      }
+      // pg_file_settings also reports the "auto" sentinel of such a server-computed setting as
+      // "could not be applied": the same reload artifact, never a misconfiguration.
+      const artifactNames = new Set(pendingRows.filter((row) => row.pending_restart_kind === "auto_computed_artifact").map((row) => String(row.name)));
+      const fileErrors = ctx.rows("cluster_inventory.configuration_file_errors").filter((row) => row.error);
+      const errors = fileErrors.filter((row) => row.auto_computed_artifact !== true && !artifactNames.has(String(row.setting_name)));
+      if (fileErrors.length > errors.length) {
+        ctx.reason((fileErrors.length - errors.length) + " configuration file entr(ies) keep the auto value of a server-computed setting and are reported as not applied after every reload; no action is needed", "cluster_inventory.configuration_file_errors");
+      }
       if (errors.length) {
         score = maxScore(score, 0.6);
         ctx.reason(errors.length + " configuration entr(ies) the server cannot apply: " + errors.slice(0, 3).map((row) => row.setting_name + " = " + row.file_value + " (" + truncate(row.error, 60) + ")").join(", "), "cluster_inventory.configuration_file_errors");

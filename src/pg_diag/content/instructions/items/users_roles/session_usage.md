@@ -6,6 +6,7 @@ This instruction belongs to report item `users_roles.session_usage`. The item is
 - Current client sessions per role from `pg_stat_activity`: total, active, idle, and idle-in-transaction counts, the per-role `connection_limit`, and `limit_utilization_pct`.
 - Distinct databases and client addresses, local socket sessions, application names, and the oldest session and longest transaction ages.
 - `state_hidden_count` counts sessions whose state is hidden from the collector role.
+- pg_diag connects with `application_name = pg_diag`, so its own session is identifiable in `application_names`.
 
 ## What to watch
 - Roles close to their connection limit; new connections will fail with "too many connections for role".

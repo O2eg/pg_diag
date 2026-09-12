@@ -1,9 +1,9 @@
 queries:
   replication.physical_replication:
-    title: Physical Replication Senders
+    title: WAL Senders (Physical And Logical)
     group: Replication
     main_view: pg_stat_replication
-    description: WAL sender LSN positions and reply lag.
+    description: WAL sender LSN positions and reply lag; sender_kind separates physical standbys from logical subscribers.
     source: postgresai
     display:
       default_sort:
@@ -23,6 +23,7 @@ queries:
         semantic_columns:
           dimensions:
             application_name: application_name
+            sender_kind: sender_kind
           gauges:
             current_to_replay_lag_bytes: current_to_replay_lag_bytes
             replay_lag_seconds: replay_lag_seconds
@@ -32,6 +33,7 @@ queries:
         semantic_columns:
           dimensions:
             application_name: application_name
+            sender_kind: sender_kind
           gauges:
             current_to_replay_lag_bytes: current_to_replay_lag_bytes
             replay_lag_seconds: replay_lag_seconds

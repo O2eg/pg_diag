@@ -22,6 +22,7 @@ This instruction belongs to report item `object_workload.function_workload`. The
 - This item is informational because function cost is workload-specific.
 - Counters are cumulative from `stats_reset`; an empty result is expected when `track_functions=none`.
 - Overloaded functions are distinguished by OID and identity arguments, and output is limited to 100 rows.
+- `stats_window_start` and `stats_window_source` give a lower bound of the counter window: the counters have accumulated at least since that moment. It is the latest of the postmaster start, `pg_stat_database.stats_reset` (exact when set; on PostgreSQL 15+ it stays NULL until `pg_stat_reset()` is called) and the shared statistics reset time (`pg_stat_bgwriter.stats_reset`). A shared reset after the postmaster started is either a crash recovery, which discards every counter, or a targeted `pg_stat_reset_shared()`, which leaves per-object counters older, so the later time never overstates the window; statistics also survive clean restarts, so the true window may be longer than shown. An object created after `stats_window_start` has accumulated only since its creation, which the catalog does not record.
 
 ## Related report items
 - [snapshot_delta_workload.function_time_delta](#item-snapshot_delta_workload.function_time_delta) — Measure function activity during the capture window.

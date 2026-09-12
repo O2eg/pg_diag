@@ -19,6 +19,7 @@ This instruction belongs to report item `snapshot_charts_db.indexes_top_reads_pe
 
 ## Automatic evaluation
 - This chart is informational because several efficient plan types naturally raise the ratio.
+- Members are chosen per interval, so the legend is the union of every interval's Top 10 and can hold many series with a single point on quiet intervals; use the legend filter and read the columns interval by interval.
 
 ## Related report items
 - [snapshot_charts_db.indexes_top_tuple_read_rate](#item-snapshot_charts_db.indexes_top_tuple_read_rate) — Inspect index entries returned.

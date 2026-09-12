@@ -5,7 +5,7 @@ This instruction belongs to report item `snapshot_delta_workload.sql_page_faults
 ## What this item shows
 - Minor/major execution page-fault deltas, faults per second, and faults per call for each SQL identity.
 - `/s` means faults per wall-clock second; per-call fields divide interval fault deltas by the interval call delta.
-- Rows sort by major faults first; up to 50 are retained from an independent 250-entry candidate set and `query_id` is clickable.
+- Rows sort by total page faults (major faults are usually zero, which would leave the order undefined); up to 50 are retained from an independent 250-entry candidate set and `query_id` is clickable.
 
 ## What to watch
 - Any sustained major-fault rate because it can require storage access and cause sharp latency.
@@ -19,6 +19,7 @@ This instruction belongs to report item `snapshot_delta_workload.sql_page_faults
 ## Interval coverage
 - The same query identity and unchanged `pg_stat_kcache.stats_since` are required at both endpoints.
 - Candidate churn, reset/decrease, and native-null counters are omitted and reflected in coverage rather than converted to zero.
+- PostgreSQL 14+: the `pg_stat_kcache` entry is joined to the `pg_stat_statements` row with the same `toplevel` flag, so a statement executed both directly and from a function keeps one identity per nesting level; earlier versions have no `toplevel` column and use the plain identity join.
 
 ## Common fault causes
 - Memory pressure, swap-backed pages, cold executable/library mappings, or working-set churn.

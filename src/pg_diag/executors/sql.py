@@ -29,6 +29,7 @@ INTERNAL_EVALUATION_PREFIX = "pg_diag_internal_"
 SEVERITY_LEVEL_RANK = {"ok": 0, "unknown": 1, "medium": 2, "high": 3}
 READ_ONLY_SERVER_SETTING = "default_transaction_read_only"
 READ_ONLY_SERVER_VALUE = "on"
+COLLECTOR_APPLICATION_NAME = "pg_diag"
 
 
 def _load_asyncpg():
@@ -333,6 +334,8 @@ def runtime_guard_server_settings(content: ContentPack) -> dict[str, str]:
         "lock_timeout": str(policy.get("default_lock_timeout_ms", 750)),
         "idle_in_transaction_session_timeout": "10000",
         "search_path": "pg_catalog, public",
+        # Lets activity, session and log items recognize the collector's own sessions.
+        "application_name": COLLECTOR_APPLICATION_NAME,
     }
 
 

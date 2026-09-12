@@ -4,18 +4,28 @@ with profile as (
     event_type,
     event,
     queryid,
-    "count"::int8 as samples,
-    sum("count"::numeric) over () as total_samples
+    "count"::int8 as samples
   from pg_wait_sampling_profile
+),
+totals as (
+  select
+    sum(samples) filter (where event_type is distinct from 'Activity') as total_samples,
+    sum(samples) filter (where event_type = 'Activity') as activity_samples
+  from profile
 )
 select
-  pid,
-  event_type as wait_event_type,
-  event as wait_event,
-  queryid::text as query_id,
+  p.pid,
+  p.event_type as wait_event_type,
+  p.event as wait_event,
+  p.queryid::text as query_id,
   ''::text as query,
-  samples,
-  (samples::numeric * 100 / nullif(total_samples, 0)) as sample_share_pct
-from profile
-order by samples desc nulls last, event_type, event
+  p.samples,
+  (p.samples::numeric * 100 / nullif(t.total_samples, 0)) as sample_share_pct,
+  coalesce(t.activity_samples, 0)::int8 as activity_samples_excluded
+from profile p
+cross join totals t
+-- Activity events are the main loops of idle background processes (autovacuum launcher,
+-- walwriter, io workers, ...); they dominate raw sample counts without describing waits.
+where p.event_type is distinct from 'Activity'
+order by p.samples desc nulls last, p.event_type, p.event
 limit 100

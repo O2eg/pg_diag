@@ -16,6 +16,8 @@ select
 from pg_stat_kcache() k
 join pg_stat_statements s
   on s.dbid = k.dbid and s.userid = k.userid and s.queryid = k.queryid
+  -- one pg_stat_statements row per nesting level: match the kcache top flag
+  and s.toplevel = k.top
 join pg_database d on d.oid = k.dbid
 left join pg_roles r on r.oid = k.userid
 where d.datname = current_database() and k.top is true

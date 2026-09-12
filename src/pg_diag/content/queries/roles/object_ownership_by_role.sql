@@ -5,7 +5,7 @@ with storage_relation_roots_bounded as (
   where c.relkind in ('r', 'm')
     and greatest(coalesce(c.relpages, 0), 0) > 0
     and n.nspname not in ('pg_catalog', 'information_schema')
-    and n.nspname not like 'pg_toast%'
+    and n.nspname !~ '^pg_(toast|temp)'
   order by c.relpages desc, n.nspname, c.relname, c.oid
   limit 10001
 ),
@@ -21,7 +21,7 @@ named_relation_roots_bounded as (
       or (c.relkind in ('r', 'm') and greatest(coalesce(c.relpages, 0), 0) = 0)
     )
     and n.nspname not in ('pg_catalog', 'information_schema')
-    and n.nspname not like 'pg_toast%'
+    and n.nspname !~ '^pg_(toast|temp)'
   order by n.nspname, c.relname, c.oid
   limit 10001
 ),
@@ -34,7 +34,7 @@ function_roots_bounded as (
   join pg_catalog.pg_namespace n on n.oid = p.pronamespace
   left join pg_catalog.pg_stat_user_functions s on s.funcid = p.oid
   where n.nspname not in ('pg_catalog', 'information_schema')
-    and n.nspname not like 'pg_toast%'
+    and n.nspname !~ '^pg_(toast|temp)'
   order by coalesce(s.calls, 0) desc, n.nspname, p.proname, p.oid
   limit 1001
 ),
@@ -45,7 +45,7 @@ schema_roots_bounded as (
   select n.oid, n.nspowner
   from pg_catalog.pg_namespace n
   where n.nspname not in ('pg_catalog', 'information_schema')
-    and n.nspname not like 'pg_toast%'
+    and n.nspname !~ '^pg_(toast|temp)'
   order by n.nspname, n.oid
   limit 10001
 ),

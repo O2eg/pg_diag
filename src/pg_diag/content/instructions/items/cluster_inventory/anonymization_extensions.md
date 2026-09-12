@@ -21,6 +21,7 @@ This item reports missing anonymization extension installation or preload config
 
 - Severity is `unknown`: an anonymization extension is one possible control, not a universal requirement.
 - Preload matching uses exact comma-separated library names rather than substring matching.
+- The `session_preload_libraries` list is split on commas with surrounding whitespace and lower-cased, so a preloaded extension is recognized in a list of several libraries.
 
 ## Related report items
 - [cluster_inventory.extensions](#item-cluster_inventory.extensions) — Review installation and availability details.

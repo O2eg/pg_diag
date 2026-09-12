@@ -26,6 +26,7 @@ This item shows schema owner, grantee, `USAGE`, `CREATE`, and sampled object cou
 - Stored-object counts come from at most 10,000 non-empty relations prioritized by `relpages`; named objects use a separate 10,000-row alphabetical pool, and functions use the top 1,000 by calls.
 - `sampled_*_count` columns are prioritization evidence, not complete schema totals.
 - `candidate_sample_truncated`, `acl_expansion_truncated`, and `result_truncated` identify incomplete coverage. A `[coverage]` row prevents an exceeded limit from being rendered as a clean `empty` result.
+- System schemas are excluded by the reserved prefix: `pg_catalog`, `information_schema`, `pg_toast*` and the per-backend temporary schemas `pg_temp_N` / `pg_toast_temp_N`; user schemas cannot start with `pg_`.
 
 ## Related report items
 - [cluster_inventory.public_schema_privileges](#item-cluster_inventory.public_schema_privileges) — Review exposure through the public schema.

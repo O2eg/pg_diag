@@ -19,6 +19,7 @@ This instruction belongs to report item `users_roles.object_ownership_by_role`. 
 ## Automatic evaluation
 - This item is an inventory and assigns no risk to individual owners.
 - Stored relations are sampled by descending `relpages` (10,000), other relations by name (10,000), functions by call count (1,000), and schemas by name (10,000); `candidate_sample_truncated` and `result_truncated` mark partial coverage and set the item severity to `unknown`.
+- System schemas are excluded by the reserved prefix: `pg_catalog`, `information_schema`, `pg_toast*` and the per-backend temporary schemas `pg_temp_N` / `pg_toast_temp_N`; user schemas cannot start with `pg_`.
 
 ## Related report items
 - [object_workload.superuser_owned_user_objects](#item-object_workload.superuser_owned_user_objects) — Review specific objects owned by superusers.

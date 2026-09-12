@@ -8,6 +8,8 @@ This instruction belongs to report item `server_log.query_resource_events`. The 
 - Only completed `statement` and `execute` duration records count as slow statements; auto_explain plans, parse/bind timings, and bare `log_duration` records do not add executions.
 - A missing or zero query ID falls back to sanitized SQL identity. If both query ID and SQL are unavailable, a group contains unattributed message-pattern evidence within its database/application; it does not identify a specific query.
 - At most 100 groups ranked by temporary bytes and duration; `omitted_aggregate_count` explicitly reports discarded lower-impact groups.
+- `collector_generated = true` marks groups produced by pg_diag's own sampling queries (`/* pg_diag:` marker or `application_name = pg_diag`); they are listed last, excluded from the summary counts and ignored by the diagnostic graph.
+- Groups are keyed by event type, query identity, application and database; the same query from two databases is two groups. Temporary-file records written while a backend exits carry no database: they join the database group with the same identity only when exactly one exists (`database_partial = true` on that group); with several candidate databases they stay a separate group with an empty `database_name` and `database_partial = true`, so the ambiguity remains visible.
 
 ## What to watch
 - Large/repeated temporary files, rising total spill volume, or one query dominating total duration.

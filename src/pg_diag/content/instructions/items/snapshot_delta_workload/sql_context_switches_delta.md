@@ -19,6 +19,7 @@ This instruction belongs to report item `snapshot_delta_workload.sql_context_swi
 ## Interval coverage
 - Both endpoints must contain the same query identity with an unchanged `pg_stat_kcache.stats_since` epoch.
 - Missing/native-null counters do not become zeros; invalid and unmatched intervals are summarized separately.
+- PostgreSQL 14+: the `pg_stat_kcache` entry is joined to the `pg_stat_statements` row with the same `toplevel` flag, so a statement executed both directly and from a function keeps one identity per nesting level; earlier versions have no `toplevel` column and use the plain identity join.
 
 ## Common fault causes
 - CPU oversubscription, restrictive cgroup quotas, or many runnable PostgreSQL processes.

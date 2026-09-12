@@ -11,6 +11,14 @@ function table(rows, columns, status = "ok") {
 function chart(values, extra = {}) {
   return {collection_status: "ok", result: {kind: "chart", series: [{name: "WAL", points: values.map((value, i) => ({t: `2026-09-06T00:00:0${i}Z`, value}))}], ...extra}};
 }
+// Directions are damped by the parent's resource pressure (spec §2/§4). Boundary tests
+// therefore evaluate them under a saturated resource: disk await 30-40 ms, I/O wait 40 %.
+const SATURATED = {
+  "snapshot_charts_os.os_disk_latency": {collection_status: "ok", result: {kind: "chart", series: [{name: "await (nvme0n1)", points: [30, 35, 40].map((value, i) => ({t: `2026-09-06T00:00:0${i}Z`, value}))}]}},
+  "snapshot_charts_os.os_cpu_utilization": {collection_status: "ok", result: {kind: "chart", series: [["user", 10], ["system", 3], ["iowait", 40], ["idle", 47]].map(([name, value]) => ({name, points: [0, 1, 2].map(i => ({t: `2026-09-06T00:00:0${i}Z`, value}))}))}}
+};
+const IDLE_DISK = {"snapshot_charts_os.os_disk_latency": {collection_status: "ok", result: {kind: "chart", series: [{name: "await (nvme0n1)", points: [0.4, 0.5, 0.4].map((value, i) => ({t: `2026-09-06T00:00:0${i}Z`, value}))}]}}};
+const saturated = items => ({...SATURATED, ...items});
 function direction(items, parent, name) { return G.evaluate({items}, definition).nodes[parent + ".sources." + name]; }
 
 test("directions preserve parent input assessments and every bound report item", () => {
@@ -80,7 +88,7 @@ test("connection incident and limit cards retain context charts without scoring 
 test("WAL generation colors use the stated boundaries and carry measured facts", () => {
   const id = "snapshot_charts_db.wal_growth_rate";
   for (const [mib, status] of [[0, "ok"], [1.3, "ok"], [49.9, "ok"], [50, "warn"], [199.9, "warn"], [200, "crit"]]) {
-    const node = direction({[id]: chart([mib * 1024 ** 2, mib * 1024 ** 2])}, "disk.write.wal", "activity");
+    const node = direction(saturated({[id]: chart([mib * 1024 ** 2, mib * 1024 ** 2])}), "disk.write.wal", "activity");
     assert.equal(node.status, status, String(mib));
     assert.match(node.reasons.join(" "), /warning ≥ 50.0 MiB\/s, critical ≥ 200.0 MiB\/s/);
     assert.ok(node.facts["WAL generation p95"]);
@@ -115,7 +123,7 @@ test("WAL generation, statements and durability have independent colors and evid
       {setting_name: "fsync", current_value: "off"}, {setting_name: "full_page_writes", current_value: "on"},
       {setting_name: "synchronous_commit", current_value: "on"}])
   };
-  const ev = G.evaluate({items}, definition);
+  const ev = G.evaluate({items: saturated(items)}, definition);
   const base = "disk.write.wal";
   assert.equal(ev.nodes[base + ".sources.activity"].status, "ok");
   assert.equal(ev.nodes[base + ".sources.statements"].status, "ok");
@@ -123,6 +131,16 @@ test("WAL generation, statements and durability have independent colors and evid
   assert.equal(ev.nodes[base].status, "crit");
   assert.equal(ev.nodes.disk.status, "crit");
   assert.ok(ev.nodes[base + ".sources.activity"].reasons.every(r => !r.includes("fsync")));
+  // Without disk pressure the same unsafe setting is not a disk bottleneck: the direction
+  // keeps the finding as explained evidence, while database health still reports it critical.
+  const idle = G.evaluate({items: {...items, ...IDLE_DISK}}, definition);
+  assert.equal(idle.nodes[base + ".sources.durability"].status, "ok");
+  assert.match(idle.nodes[base + ".sources.durability"].reasons[0], /kept as evidence.*disk pressure is low/);
+  assert.equal(G.evaluate({items}, definition).nodes[base + ".sources.durability"].status, "warn", "unknown pressure halves the contribution");
+  assert.match(idle.nodes[base + ".sources.durability"].reasons.join(" "), /fsync = off/);
+  assert.equal(idle.nodes["health.crashes.sources.durability"].status, "crit");
+  assert.equal(idle.nodes.database_health.status, "crit");
+  assert.notEqual(idle.nodes.disk.status, "crit");
 });
 
 test("connections distinguish current capacity from past refusals and unrelated incidents", () => {
@@ -160,7 +178,7 @@ test("failed retained data and inventory alone do not become healthy directions"
 
 test("missing durability settings cannot produce OK, but a confirmed unsafe setting stays critical", () => {
   for (const value of ["on", "off"]) {
-    const node = direction({"overview.durability_safety_settings": table([{setting_name: "fsync", current_value: value}])}, "disk.write.wal", "durability");
+    const node = direction(saturated({"overview.durability_safety_settings": table([{setting_name: "fsync", current_value: value}])}), "disk.write.wal", "durability");
     assert.equal(node.status, value === "on" ? "no_data" : "crit");
     assert.ok(node.hints.length);
   }
@@ -272,7 +290,7 @@ test("standby restartpoints contribute to the checkpoint sync-time denominator",
       checkpoints_done_delta: checkpoints, restartpoints_done_delta: restartpoints, sync_time_ms_delta: sync
     }])};
     for (const parent of ["disk.write.checkpoints", "cpu.iowait.write.data.checkpoints"]) {
-      const node = direction(items, parent, "timing");
+      const node = direction(saturated(items), parent, "timing");
       assert.equal(node.status, expected);
       if (expected !== "no_data") assert.match(node.reasons.join(" "), /per completed checkpoint\/restartpoint/);
     }
@@ -316,7 +334,7 @@ test("recovery conflicts use cumulative counters only with an explicit historica
 
 test("temporary file rate can use a valid database delta without a chart", () => {
   const item = table([{datname: "a", temp_bytes_per_sec: 3 * 1024 ** 2}, {datname: "b", temp_bytes_per_sec: 3 * 1024 ** 2}]);
-  const node = direction({"snapshot_delta_workload.database_workload_delta": item}, "disk.write.temp_files", "database");
+  const node = direction(saturated({"snapshot_delta_workload.database_workload_delta": item}), "disk.write.temp_files", "database");
   assert.equal(node.status, "warn");
   assert.match(node.reasons.join(" "), /6.0 MiB\/s/);
 });
@@ -370,4 +388,32 @@ test("replication capacity checks are role-aware and retain explicit exhausted-r
   }
   const full = table([{resource: "logical_replication_workers", utilization_pct: null, risk_level: "high", risk_reason: "Enabled subscriptions have no worker capacity"}]);
   assert.equal(direction({[id]: full}, "network.replication.streams", "capacity").status, "crit");
+});
+
+test("direction findings are damped by the parent's resource pressure and bounded by its cap", () => {
+  const cpuChart = (user) => ({collection_status: "ok", result: {kind: "chart", series: [
+    ["user", user], ["system", [3, 3, 3]], ["iowait", [0, 0, 0]], ["idle", user.map(v => 97 - v)]
+  ].map(([name, values]) => ({name, points: values.map((value, i) => ({t: `2026-09-12T00:00:0${i}Z`, value}))}))}});
+  // A statement logged after 150 s of waiting on a row lock: duration, not CPU work.
+  const plans = table([{event_type: "slow_statement", max_duration_ms: 150900, occurrences: 1, collector_generated: false}]);
+  const items = (user) => ({"snapshot_charts_os.os_cpu_utilization": cpuChart(user), "server_log.query_resource_events": plans});
+  const idle = G.evaluate({items: items([10, 12, 11]), runtime: {mode: "snapshots"}}, definition);
+  const direction = idle.nodes["cpu.heavy_queries.sources.plans"];
+  assert.equal(direction.status, "ok", "a long logged statement is not CPU work while user CPU is idle");
+  assert.match(direction.reasons.join(" "), /Longest logged statement: 150\.9 k ms; warning/);
+  assert.match(direction.reasons[0], /kept as evidence.*user CPU pressure is low/);
+  assert.equal(direction.facts["Resource pressure"], "Low");
+  assert.ok(idle.nodes["cpu.heavy_queries"].score < 0.34 && idle.nodes["cpu"].score < 0.34, "the finding no longer turns the CPU root yellow");
+  const busy = G.evaluate({items: items([96, 97, 95]), runtime: {mode: "snapshots"}}, definition);
+  const saturated = busy.nodes["cpu.heavy_queries.sources.plans"];
+  assert.equal(saturated.status, "warn", "the same finding counts when the resource is saturated");
+  assert.equal(saturated.reasons[0], "This direction has its own findings; the color is based on the evidence below.");
+  assert.equal(saturated.facts["Resource pressure"], "High");
+  assert.ok(busy.nodes["cpu.heavy_queries"].score >= saturated.score);
+  const capped = JSON.parse(JSON.stringify(definition));
+  capped.nodes.find(node => node.id === "cpu.heavy_queries").cap = 0.3;
+  const bounded = G.evaluate({items: items([96, 97, 95]), runtime: {mode: "snapshots"}}, capped).nodes["cpu.heavy_queries.sources.plans"];
+  assert.equal(bounded.status, "ok");
+  assert.ok(bounded.score <= 0.3, String(bounded.score));
+  assert.match(bounded.reasons[0], /bounded by this node's cap \(0\.3\)/);
 });

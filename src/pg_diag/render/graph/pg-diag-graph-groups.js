@@ -193,10 +193,9 @@
     vacuum(ctx) { return legacy(ctx, "vacuum_lag", "Overdue vacuum requires accumulated dead tuples; running or insert-triggered vacuum alone is not lag."); },
     bloat(ctx) { return legacy(ctx, "bloat", "Bloat estimates are assessed only for objects with at least " + fmtBytes(T.bloatMinWastedBytes) + " estimated waste."); },
     configuration(ctx) {
-      let score = maxScore(legacy(ctx, "configuration"), evaluators.durability(ctx));
-      const id = "cluster_inventory.pending_restart_settings", count = ctx.rows(id).length;
-      if (count) { score = maxScore(score, 0.5); ctx.reason(count + " settings require restart (warning)", id); }
-      return score;
+      // Pending-restart rows are scored by the configuration rule itself, which skips
+      // reload artifacts of auto-computed settings (pending_restart_kind).
+      return maxScore(legacy(ctx, "configuration"), evaluators.durability(ctx));
     },
     statements(ctx) { return legacy(ctx, "heavy_queries", "Execution duration is not CPU time. CPU use requires the per-statement CPU delta; time concentration alone can only warn."); },
     system_cpu(ctx) { return chartMetric(ctx, "snapshot_charts_os.os_cpu_utilization", "System CPU", T.cpuSystemPct, "%", /^(system|irq|softirq)$/i); },
@@ -206,9 +205,15 @@
       return rowMetric(ctx, id, "total_time_ms_per_sec", "Largest function elapsed time rate", [1000, 4000], "ms/s");
     },
     plans(ctx) {
-      let score = rowMetric(ctx, "server_log.query_resource_events", "max_duration_ms", "Longest logged statement", T.meanExecMs, "ms");
+      const id = "server_log.query_resource_events";
+      // Logged duration includes lock and I/O waits (a statement blocked for minutes is
+      // not CPU work) and the collector's own sampling queries are excluded.
+      const workload = ctx.rows(id).filter(r => r.collector_generated !== true);
+      if (workload.some(row => toNumber(row.max_duration_ms) < 0)) ctx.missing("Longest logged statement: negative values indicate a counter reset or invalid interval.");
+      let score = metric(ctx, "Longest logged statement", maxBy(workload, "max_duration_ms").value, T.meanExecMs, "ms", id);
       const durations = ctx.series("server_log.auto_explain_plans").map(s => seriesStats(s.values, 1)).filter(Boolean);
       if (durations.length) score = maxScore(score, metric(ctx, "Longest auto_explain plan duration", Math.max(...durations.map(s => s.max)), T.meanExecMs, "ms", "server_log.auto_explain_plans"));
+      if (score !== null && score > 0.5) { score = 0.5; ctx.reason("Long logged statements are capped at warning for the CPU root: duration alone cannot separate CPU work from waits.", id); }
       ctx.reason("Only statements meeting logging thresholds are represented; logged duration includes waits and does not prove CPU pressure.");
       return score;
     },

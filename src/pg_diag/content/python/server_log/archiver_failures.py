@@ -31,6 +31,8 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
                 "repeat_count": record.repeat_count,
                 "severity": record.severity,
                 "message": record.message,
+                # csvlog DETAIL carries the failed command text
+                "detail": record.detail,
                 "count_complete": record.count_complete,
             }
         )
@@ -53,7 +55,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
                 "has a gap."
             ),
             "recommendation": (
-                "Fix archive_command (the sanitized message shows its output), then "
+                "Fix archive_command (the detail column shows the failed command), then "
                 "confirm pg_stat_archiver.failed_count stops growing and pg_wal "
                 "drains; verify PITR coverage over the gap."
             ),

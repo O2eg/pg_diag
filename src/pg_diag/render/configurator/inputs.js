@@ -71,15 +71,24 @@
 
     // Read only database-host items. Collector runtime CPU/RAM are never a fallback.
     const cpuCandidates = [], ramCandidates = [], cpuLimits = [], ramLimits = [];
+    let ambiguousLimits = false;
     for (const [id, data] of tables) {
       if (!id.startsWith("os.")) continue;
+      // One row per PostgreSQL postmaster cgroup: with several postmasters in different
+      // cgroups the report cannot tell which limit is this database's, so none is applied.
+      const ambiguous = data.length > 1 && data.some(row => positive(row.cgroup_count) > 1);
+      if (ambiguous) ambiguousLimits = true;
       for (const row of data) {
+        if (ambiguous) break;
+        // limits measured on the collector's own cgroup (no visible postmaster) are not database limits
+        const limitsApply = row.scope !== "collector";
         for (const field of ["logical_cpus", "cpu_count", "online_cpus"])
           if (positive(row[field])) cpuCandidates.push({value: Number(row[field]), id});
         if (positive(row.total_ram_bytes)) ramCandidates.push({value: Number(row.total_ram_bytes), id});
         if (row.metric === "MemTotal" && row.unit_normalized === "bytes" && positive(row.value_normalized))
           ramCandidates.push({value: Number(row.value_normalized), id});
         // Explicit limits, when a content pack supplies them; never RSS or memory usage.
+        if (!limitsApply) continue;
         for (const field of ["effective_cpu_cores", "cpu_limit_cores"])
           if (positive(row[field])) cpuLimits.push({value: Number(row[field]), id});
         if (positive(row.cpu_quota_us) && positive(row.cpu_period_us))
@@ -112,8 +121,14 @@
       if (new Set(candidates.map(c => c.value)).size > 1)
         notes.push(`${label} sources disagree; the smaller collected capacity is used.`);
     };
-    resource("db_cpu", cpuCandidates, cpuLimits, "CPU capacity");
-    resource("db_ram", ramCandidates, ramLimits, "RAM capacity");
+    if (ambiguousLimits) {
+      // Host capacity is not a substitute for an unknown container limit: the database's
+      // CPU/RAM must be entered explicitly (Main → Hardware) before a configuration is proposed.
+      missing.push("CPU and RAM capacity: several PostgreSQL postmasters run in different cgroups, so the database's limit is unknown; enter the container allocation explicitly");
+    } else {
+      resource("db_cpu", cpuCandidates, cpuLimits, "CPU capacity");
+      resource("db_ram", ramCandidates, ramLimits, "RAM capacity");
+    }
     if ((!cpuLimits.length || !ramLimits.length) && /\boverlay\b|\bdocker\b|\blxc\b/i.test(
       text(items["os.mounts"]) + " " + table("os.disk_usage").map(r => r.filesystem).join(" "))) {
       notes.push("Container filesystem detected. CPU/RAM are host-visible where limits are absent; set the container allocation in Main → Hardware before using the proposed configuration.");

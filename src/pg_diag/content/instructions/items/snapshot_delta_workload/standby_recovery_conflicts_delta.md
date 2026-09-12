@@ -13,7 +13,7 @@ This instruction belongs to report item `snapshot_delta_workload.standby_recover
 
 ## Interval coverage
 - Values require matching database identity and unchanged `pg_stat_database.stats_reset`.
-- Primary servers normally show zero deltas.
+- The source returns no rows on a primary (`pg_stat_database_conflicts` only counts on a standby), so the item is empty there instead of listing zero rows.
 
 ## Common fault causes
 - Long standby queries, vacuum cleanup on the primary, DDL replay, pinned buffers, and logical decoding horizons.

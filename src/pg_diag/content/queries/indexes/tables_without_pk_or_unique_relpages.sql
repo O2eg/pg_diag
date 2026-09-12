@@ -10,8 +10,8 @@ with recursive ordinary_root_candidates as (
     and c.relnamespace not in (
       select n.oid
       from pg_namespace n
-      where n.nspname in ('pg_catalog', 'pg_toast', 'information_schema')
-         or n.nspname like 'pg_toast%'
+      where n.nspname in ('pg_catalog', 'information_schema')
+         or n.nspname ~ '^pg_(toast|temp)'
     )
   order by c.relpages desc, c.oid
   limit 10000
@@ -26,7 +26,7 @@ partitioned_root_candidates as (
   where c.relkind = 'p'
     and not c.relispartition
     and n.nspname not in ('pg_catalog', 'pg_toast', 'information_schema')
-    and n.nspname not like 'pg_toast%'
+    and n.nspname !~ '^pg_(toast|temp)'
   order by n.nspname, c.relname, c.oid
   limit 10000
 ),

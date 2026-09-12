@@ -42,6 +42,10 @@
         {
           "id": "os.lshw_processor",
           "role": "fact"
+        },
+        {
+          "id": "os.cgroup_limits",
+          "role": "fact"
         }
       ]
     },
@@ -1678,6 +1682,10 @@
         {
           "id": "os.total_ram",
           "role": "fact"
+        },
+        {
+          "id": "os.cgroup_limits",
+          "role": "fact"
         }
       ],
       "pressure": "cpu_iowait"
@@ -1715,6 +1723,10 @@
         },
         {
           "id": "snapshot_charts_os.os_memory_pressure",
+          "role": "fact"
+        },
+        {
+          "id": "os.cgroup_limits",
           "role": "fact"
         }
       ]
@@ -1756,6 +1768,10 @@
         {
           "id": "server_log.system_incidents",
           "role": "support"
+        },
+        {
+          "id": "os.cgroup_limits",
+          "role": "fact"
         }
       ],
       "binding_groups": [
@@ -1766,7 +1782,8 @@
             "snapshot_charts_os.os_memory_usage",
             "os.memory_info",
             "os.total_ram",
-            "os.lshw_memory"
+            "os.lshw_memory",
+            "os.cgroup_limits"
           ],
           "evaluator": "memory"
         },

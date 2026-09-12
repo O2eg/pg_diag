@@ -433,6 +433,7 @@ queries:
     description: Sequence usage, capacity, and related tables to detect approaching exhaustion.
     source: queries_collection/pg_sequences_helper_monitor_sequence_status_pg_pgexporter_conf.md
     cost: medium
+    timeout_ms: 2000
     display:
       default_sort:
         column: percent
@@ -456,6 +457,7 @@ queries:
     description: Indexes covered by another index on the same relation.
     source: queries_collection/pg_index_redundant_indexes_pg_utils.md
     cost: medium
+    timeout_ms: 2000
     display:
       default_sort:
         column: estimated_redundant_index_size_bytes

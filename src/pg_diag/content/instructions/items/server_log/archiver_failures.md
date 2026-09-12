@@ -3,7 +3,7 @@
 This instruction belongs to report item `server_log.archiver_failures`. The item is backed by `server_log.archiver_failures` (trusted Python source) and consumes the csvlog window collected with `--log-depth-time-min`.
 
 ## What this item shows
-- Failed `archive_command` invocations, collapsed into series with first/last time and repeat counts; the sanitized message carries the command output.
+- Failed `archive_command` invocations, collapsed into series with first/last time and repeat counts; the sanitized `detail` column carries the failed command.
 - Any row is incident-grade: un-archived WAL accumulates in `pg_wal` and the WAL archive has a gap until archiving recovers.
 
 ## What to watch

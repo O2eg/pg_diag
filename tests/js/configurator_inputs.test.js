@@ -86,6 +86,16 @@ test('explicit cgroup quota/cpuset and memory limits constrain host values, unli
   generate(p);
   a.items['os.resource_limits'] = table([{cpu_quota_us: -1, cpu_period_us: 100000, memory_limit_bytes: 2 ** 63}]);
   p = prepare(a); assert.equal(p.inputs.db_cpu, '12'); assert.equal(p.inputs.db_ram, String(64 * GiB));
+  // several postmasters in different cgroups: no limit can be attributed to this database
+  a.items['os.resource_limits'] = table([
+    {scope: 'postmaster', cgroup_count: 2, cpu_quota_us: 150000, cpu_period_us: 100000, memory_limit_bytes: 4 * GiB},
+    {scope: 'postmaster', cgroup_count: 2, cpu_quota_us: 50000, cpu_period_us: 100000, memory_limit_bytes: 2 * GiB}]);
+  p = prepare(a); assert.equal(p.ready, false, 'host capacity never substitutes an unknown container limit');
+  assert.equal(p.inputs.db_cpu, undefined); assert.equal(p.inputs.db_ram, undefined);
+  assert.ok(p.missing.some(n => /several PostgreSQL postmasters/.test(n)));
+  // limits of the collector's own cgroup (no postmaster visible) are not database limits
+  a.items['os.resource_limits'] = table([{scope: 'collector', cgroup_count: 0, cpu_quota_us: 150000, cpu_period_us: 100000, memory_limit_bytes: 4 * GiB}]);
+  p = prepare(a); assert.equal(p.inputs.db_cpu, '12'); assert.equal(p.inputs.db_ram, String(64 * GiB));
 });
 test('mounted database storage wins over unrelated disks and unresolved mixed inventories stay unavailable', () => {
   const a = artifact(); a.items['os.lshw_disk'].result.rows.push({logicalname: '/dev/sda', description: 'SATA disk'});

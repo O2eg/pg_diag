@@ -142,6 +142,7 @@ async def collect_postgresql_backend_proc(
                 f"{endpoint_name}: selected={selected_count}, captured={captured_count}"
             )
     if incomplete_endpoints:
+        lost = _lost_process_summary(start["processes"], end["processes"])
         warnings.append(
             {
                 "sampler": output_id,
@@ -152,6 +153,23 @@ async def collect_postgresql_backend_proc(
                     + "). Processes may have exited during capture, or the collector "
                     "may not have permission to read /proc/<pid>/stat. CPU and I/O "
                     "rankings include only processes captured at both endpoints."
+                    + (f" Not present at the end: {lost}." if lost else "")
+                ),
+            }
+        )
+    unreadable_io = sum(
+        1 for process in end["processes"].values() if not process.get("io_access")
+    )
+    if unreadable_io:
+        warnings.append(
+            {
+                "sampler": output_id,
+                "code": "backend_process_io_unreadable",
+                "message": (
+                    f"/proc/<pid>/io was not readable for {unreadable_io} of "
+                    f"{len(end['processes'])} captured PostgreSQL processes; their I/O rates "
+                    "are null. Reading another user's I/O counters needs CAP_SYS_PTRACE "
+                    "(or the same uid), which container root usually lacks."
                 ),
             }
         )
@@ -160,6 +178,28 @@ async def collect_postgresql_backend_proc(
         errors=[],
         warnings=warnings,
     )
+
+
+def _lost_process_summary(
+    start_processes: dict[int, dict[str, Any]],
+    end_processes: dict[int, dict[str, Any]],
+    *,
+    limit: int = 12,
+) -> str:
+    """Short, redaction-safe list of PIDs selected at the start but gone at the end."""
+    lost = sorted(pid for pid in start_processes if pid not in end_processes)
+    if not lost:
+        return ""
+    parts = []
+    for pid in lost[:limit]:
+        comm = str(start_processes[pid].get("comm") or "").strip()
+        cmdline = str(start_processes[pid].get("cmdline") or "").strip()
+        # "postgres: user db host(port) state" -> keep the backend role only
+        label = cmdline.split("(")[0][:60] if cmdline.startswith("postgres:") else comm
+        parts.append(f"{pid} ({label})" if label else str(pid))
+    if len(lost) > limit:
+        parts.append(f"and {len(lost) - limit} more")
+    return ", ".join(parts)
 
 
 async def _collect_proc_samples(

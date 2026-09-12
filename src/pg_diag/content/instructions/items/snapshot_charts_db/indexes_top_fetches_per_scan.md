@@ -19,6 +19,7 @@ This instruction belongs to report item `snapshot_charts_db.indexes_top_fetches_
 
 ## Automatic evaluation
 - This is informational; a high ratio can be correct and a low ratio can reflect index-only or bitmap behavior.
+- Members are chosen per interval, so the legend is the union of every interval's Top 10 and can hold many series with a single point on quiet intervals; use the legend filter and read the columns interval by interval.
 
 ## Related report items
 - [snapshot_charts_db.indexes_top_scan_rate](#item-snapshot_charts_db.indexes_top_scan_rate) — Check scan volume behind the ratio.

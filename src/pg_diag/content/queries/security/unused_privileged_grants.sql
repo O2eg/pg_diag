@@ -1,10 +1,34 @@
-with storage_table_roots_bounded as (
+with stats_epoch as (
+  -- Lower bound of the observation window for cumulative counters: they have accumulated
+  -- at least since this moment. pg_stat_database.stats_reset is exact when set (on
+  -- PostgreSQL 15+ it stays NULL until pg_stat_reset() is called). A shared statistics
+  -- reset after the postmaster started is either a crash recovery, which discards every
+  -- counter, or a targeted pg_stat_reset_shared(), which leaves per-object counters older
+  -- than it; taking the latest candidate therefore never overstates the window. Statistics
+  -- survive clean restarts, so the postmaster start time is a lower bound as well.
+  select
+    db.stats_reset as stats_reset,
+    greatest(pg_catalog.pg_postmaster_start_time(), db.stats_reset, bg.stats_reset) as stats_window_start,
+    case
+      when db.stats_reset is not null
+        and db.stats_reset = greatest(pg_catalog.pg_postmaster_start_time(), db.stats_reset, bg.stats_reset)
+        then 'pg_stat_database.stats_reset'
+      when bg.stats_reset is not null
+        and bg.stats_reset = greatest(pg_catalog.pg_postmaster_start_time(), db.stats_reset, bg.stats_reset)
+        then 'shared statistics reset after postmaster start (crash recovery or pg_stat_reset_shared(); per-object counters may be older)'
+      else 'postmaster start time (statistics survive clean restarts, so counters may be older)'
+    end as stats_window_source
+  from pg_catalog.pg_stat_database db
+  cross join pg_catalog.pg_stat_bgwriter bg
+  where db.datname = pg_catalog.current_database()
+),
+storage_table_roots_bounded as (
     select c.oid, c.relname, c.relowner, c.relacl, n.nspname
     from pg_class c
     join pg_namespace n on n.oid = c.relnamespace
     where c.relkind = 'r'
       and n.nspname not in ('pg_catalog', 'information_schema')
-      and n.nspname not like 'pg_toast%'
+      and n.nspname !~ '^pg_(toast|temp)'
     order by c.relpages desc, n.nspname, c.relname, c.oid
     limit 10001
 ),
@@ -27,7 +51,7 @@ partitioned_table_roots_bounded as (
     join pg_namespace n on n.oid = c.relnamespace
     where c.relkind = 'p'
       and n.nspname not in ('pg_catalog', 'information_schema')
-      and n.nspname not like 'pg_toast%'
+      and n.nspname !~ '^pg_(toast|temp)'
     order by n.nspname, c.relname, c.oid
     limit 10001
 ),
@@ -51,7 +75,8 @@ table_candidates as (
 ),
 expanded_acl_bounded as (
     select
-        db.stats_reset,
+        se.stats_reset,
+        se.stats_window_start,
         c.nspname::text as schema_name,
         c.relname::text as table_name,
         c.oid::int8 as table_oid,
@@ -65,7 +90,7 @@ expanded_acl_bounded as (
     left join pg_stat_user_tables s on s.relid = c.oid
     cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) e
     left join pg_roles grantee on grantee.oid = e.grantee
-    left join pg_stat_database db on db.datname = current_database()
+    cross join stats_epoch se
     where e.grantee <> c.relowner
       and e.privilege_type in ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER')
       and coalesce(s.seq_scan, 0) + coalesce(s.idx_scan, 0)
@@ -95,6 +120,7 @@ findings as (
 )
 select
     findings.stats_reset,
+    findings.stats_window_start,
     findings.schema_name,
     findings.table_name,
     findings.table_oid,
@@ -111,12 +137,13 @@ select
     case
         when coverage.candidate_sample_truncated or coverage.acl_expansion_truncated or coverage.result_truncated
             then 'Unused-grant finding is part of a truncated bounded sample; review coverage flags before treating the inventory as complete'
-        else 'No table activity is visible since stats reset; this does not prove that the privilege is unused'
+        else 'No table activity is visible since the statistics window start; this does not prove that the privilege is unused'
     end as risk_reason
 from findings
 cross join coverage
 union all
 select
+    null::timestamptz,
     null::timestamptz,
     '[coverage]'::text,
     ''::text,

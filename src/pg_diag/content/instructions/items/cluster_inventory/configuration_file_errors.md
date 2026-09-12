@@ -5,6 +5,7 @@ This instruction belongs to report item `cluster_inventory.configuration_file_er
 ## What this item shows
 - Entries from `pg_file_settings` that the server cannot apply (`error` set) or that are overridden by a later entry for the same parameter or by ALTER SYSTEM.
 - File name and line number for every reported entry, so the exact line can be fixed.
+- `auto_computed_artifact = true` marks an entry that keeps the `auto` sentinel of a server-computed setting (the file value equals `boot_val`, usually `-1`, and `pg_settings.source` is `override`, e.g. `io_max_concurrency` or `wal_buffers`): the server recomputes the value at startup and reports the sentinel as not applied after every reload. Such rows are reload artifacts, reported as `ok`.
 - An empty result means every configuration file entry is applied cleanly.
 
 ## What to watch
@@ -18,11 +19,11 @@ This instruction belongs to report item `cluster_inventory.configuration_file_er
 - Include files applied in an unexpected order.
 
 ## Automatic evaluation
-- Entries with a parse or apply error report `high`.
+- Entries with a parse or apply error report `high`, except auto-computed sentinels (`auto_computed_artifact`), which report `ok` with an explanatory reason.
 - Overridden entries report `ok` with an explanatory reason; the list covers the first 1000 problem entries and marks truncation.
 
 ## Related report items
-- [cluster_inventory.pending_restart_settings](#item-cluster_inventory.pending_restart_settings) — Applied changes still waiting for a restart.
+- [cluster_inventory.pending_restart_settings](#item-cluster_inventory.pending_restart_settings) — Applied changes still waiting for a restart; its `auto_computed_artifact` rows are the same sentinels.
 - [overview.pg_settings](#item-overview.pg_settings) — The effective configuration the server is actually using.
 
 ## Checklist

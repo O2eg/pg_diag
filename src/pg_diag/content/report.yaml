@@ -208,6 +208,10 @@ sections:
         script: os.total_ram
         tags: [Memory, Hardware]
         state: collapsed
+      cgroup_limits:
+        script: os.cgroup_limits
+        tags: [CPU, Memory, Kernel]
+        state: collapsed
       cpu_info:
         script: os.cpu_info
         tags: [CPU, Hardware]

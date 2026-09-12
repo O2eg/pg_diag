@@ -22,6 +22,7 @@ This instruction belongs to report item `object_workload.table_io`. The item is 
 - This item is informational because physical-read expectations depend on workload and cache warm-up.
 - Counters are cumulative from `stats_reset`; use table I/O deltas for the collection-window rate.
 - Only the top 200 tables by cumulative block reads are retained.
+- `stats_window_start` and `stats_window_source` give a lower bound of the counter window: the counters have accumulated at least since that moment. It is the latest of the postmaster start, `pg_stat_database.stats_reset` (exact when set; on PostgreSQL 15+ it stays NULL until `pg_stat_reset()` is called) and the shared statistics reset time (`pg_stat_bgwriter.stats_reset`). A shared reset after the postmaster started is either a crash recovery, which discards every counter, or a targeted `pg_stat_reset_shared()`, which leaves per-object counters older, so the later time never overstates the window; statistics also survive clean restarts, so the true window may be longer than shown. An object created after `stats_window_start` has accumulated only since its creation, which the catalog does not record.
 
 ## Related report items
 - [snapshot_delta_workload.table_io_delta](#item-snapshot_delta_workload.table_io_delta) — Measure table I/O in the capture window.

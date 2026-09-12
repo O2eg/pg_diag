@@ -13,6 +13,7 @@ from pg_diag.logscan.items_common import (
 ROW_LIMIT = 100
 _KINDS = (
     ("archive command failed", "archive_failure"),
+    ("failed too many times, will try again later", "archive_failure"),
     ("restore command failed", "restore_failure"),
     ("requested WAL segment", "wal_missing"),
     ("has already been removed", "wal_missing"),

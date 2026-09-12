@@ -7,11 +7,14 @@ from typing import Any
 from pg_diag import runtime_config
 from pg_diag.cli import build_parser
 from pg_diag.collection import CollectionRun, collect_report_object_ddl
+from pg_diag import object_ddl
 from pg_diag.object_ddl import (
     MAX_DDL_CHARS,
     _entry,
     collect_object_ddl,
     harvest_object_oids,
+    harvest_object_references,
+    rank_oids,
 )
 
 
@@ -56,6 +59,33 @@ def test_harvest_object_oids_allowlist_and_dedup() -> None:
     assert harvested["database"] == {5, 7}
     assert harvested["role"] == {8001, 8002, 8003, 8004, 8005}
     assert harvested["tablespace"] == {1663}
+
+
+def test_object_references_rank_by_sources_then_rows_never_by_oid() -> None:
+    artifact = {
+        "items": {
+            "workload": _table_item(["table_oid"], [[900001], [900001], [900001], [17]]),
+            "sizes": _table_item(["relid"], [[900001], [500]]),
+            "bloat": _table_item(["table_oid"], [[500], [500], [500], [500]]),
+        },
+        "snapshot_schemas": {"snap": {"columns": [{"name": "relid"}]}},
+        "snapshots": [
+            {"items": {"snap": {"result": {"kind": "table", "rows": [[900001]]}}}},
+            {"items": {"snap": {"result": {"kind": "table", "rows": [[900001]]}}}},
+        ],
+    }
+    references = harvest_object_references(artifact)["relation"]
+    # Snapshot repetitions of one source count as one source; every row counts.
+    assert references[900001].sources == {"workload", "sizes", "snap"}
+    assert references[900001].rows == 6
+    assert references[500].sources == {"sizes", "bloat"}
+    assert references[500].rows == 5
+    assert references[17].sources == {"workload"}
+    # The newest object is the most referenced one: it survives a bound, the lowest oid does not.
+    assert rank_oids(references, 2) == [900001, 500]
+    assert rank_oids(references, 1) == [900001]
+    assert rank_oids(references, 10) == [900001, 500, 17]
+    assert harvest_object_oids(artifact)["relation"] == {900001, 500, 17}
 
 
 def test_harvest_object_oids_from_snapshots() -> None:
@@ -232,6 +262,23 @@ def _artifact_with_oids() -> dict[str, Any]:
             )
         }
     }
+
+
+def test_collect_object_ddl_bound_keeps_most_referenced_relation(monkeypatch) -> None:
+    # 1002 (a view) is referenced by three items, 1001 (the table) by one: with room for a
+    # single relation the extractor is asked for 1002, not for the lower oid.
+    artifact = {
+        "items": {
+            "a": _table_item(["table_oid", "relation_oid"], [[1001, 1002]]),
+            "b": _table_item(["relation_oid"], [[1002]]),
+            "c": _table_item(["relid"], [[1002]]),
+        }
+    }
+    monkeypatch.setattr(object_ddl, "MAX_RELATIONS", 1)
+    conn = RoutedConn(_routes())
+    asyncio.run(collect_object_ddl(conn, 150000, artifact))
+    bundle_calls = [args for sql, args in conn.calls if "'trigger'::text as section" in sql]
+    assert bundle_calls == [([1002],)]
 
 
 def test_collect_object_ddl_builds_catalog() -> None:

@@ -5,7 +5,7 @@ with unlogged_bounded as (
   where c.relpersistence = 'u'
     and c.relkind in ('r', 'S')
     and n.nspname not in ('pg_catalog', 'information_schema')
-    and n.nspname not like 'pg_toast%'
+    and n.nspname !~ '^pg_(toast|temp)'
   order by c.relpages desc, c.oid
   limit 501
 ),

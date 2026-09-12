@@ -23,7 +23,7 @@ WAL_BYTES_THRESHOLD = 64 * 1_048_576
 MAX_BLOCK_SIZE_BYTES = 32_768
 
 _AUTO_HEAD_RE = re.compile(
-    r'automatic (?P<kind>vacuum|analyze) of table "(?P<relation>[^"]+)"', re.I
+    r'automatic (?P<aggressive>aggressive )?(?P<kind>vacuum|analyze) of table "(?P<relation>[^"]+)"', re.I
 )
 _ELAPSED_RE = re.compile(r"elapsed:\s*(\d+(?:\.\d+)?)\s*s", re.I)
 _DURATION_MS_RE = re.compile(r"^duration:\s*(\d+(?:\.\d+)?)\s*ms", re.I)
@@ -48,6 +48,7 @@ class _Event:
     record: Any
     kind: str
     relation: str | None
+    aggressive: bool
     duration_s: float | None
     pages_removed: int | None
     relation_pages_after: int | None
@@ -86,6 +87,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
             "log_time": fmt_time(event.record.log_time),
             "kind": event.kind,
             "relation": event.relation,
+            "aggressive": event.aggressive,
             "inclusion_reason": event.inclusion_reason,
             "impact_score": round(event.impact_score, 3),
             "duration_s": event.duration_s,
@@ -201,6 +203,7 @@ def _parse_event(record: Any, block_size: int | None) -> tuple[_Event | None, bo
         else ("autovacuum" if is_autovacuum else (command.lower() or "maintenance"))
     )
     relation = head.group("relation") if head else None
+    aggressive = bool(head and head.group("aggressive"))
     duration_s = _float_match(_ELAPSED_RE, message)
     if duration_s is None and is_manual:
         duration_ms = _float_match(_DURATION_MS_RE, message)
@@ -261,6 +264,7 @@ def _parse_event(record: Any, block_size: int | None) -> tuple[_Event | None, bo
         record,
         kind,
         relation,
+        aggressive,
         duration_s,
         pages_removed,
         relation_pages_after,

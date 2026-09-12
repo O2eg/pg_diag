@@ -19,6 +19,7 @@ left join (
     state,
     count(*)::int8 as count
   from pg_stat_activity
+  where coalesce(backend_type, 'client backend') = 'client backend'
   group by datname, state
 ) as activity on activity.datname = pg_database.datname and activity.state = states.state
 order by pg_database.datname, states.state

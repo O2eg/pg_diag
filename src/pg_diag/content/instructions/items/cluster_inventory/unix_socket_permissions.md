@@ -19,9 +19,10 @@ This item reports PostgreSQL Unix socket permissions that allow access by other 
 
 ## Automatic evaluation
 
-- `medium`: other OS users can attempt a Unix-socket connection.
+- `medium`: the socket is world-accessible and its directory lets any OS user replace it; `unknown`: the default 0777 mode inside a protected directory.
 - This is not an authentication bypass: matching `local` pg_hba rules still decide database access.
 - Abstract sockets cannot be checked with filesystem permissions and are skipped.
+- `0777` is the PostgreSQL default and `local` pg_hba rules decide whether a connection attempt succeeds, so the default alone is `unknown` (review). The row is `medium` only when the socket directory itself is world-writable without the sticky bit, because any OS user could then replace the socket path.
 
 ## Related report items
 - [cluster_inventory.pg_hba_generic_database_or_user](#item-cluster_inventory.pg_hba_generic_database_or_user) — Review local identity matching in HBA.

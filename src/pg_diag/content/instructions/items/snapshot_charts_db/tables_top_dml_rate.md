@@ -26,6 +26,7 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_dml_rate`
 ## Automatic evaluation
 - Insert/update/delete interval deltas share rows/second and are stacked per stable relation OID.
 - Changing bounded membership and counter decreases become missing evidence, not zero.
+- Members are chosen per interval, so the legend is the union of every interval's Top 10 and can hold many series with a single point on quiet intervals; use the legend filter and read the columns interval by interval.
 
 ## Related report items
 - [snapshot_delta_workload.table_dml_delta](#item-snapshot_delta_workload.table_dml_delta) — Inspect insert, update, and delete deltas.

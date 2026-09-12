@@ -1,9 +1,11 @@
 """Collect DDL for object oids referenced by report items.
 
 After all items are collected, the oid values found in allowlisted oid
-columns are deduplicated in memory and their DDL is extracted in a few
-batched calls through :mod:`pg_diag.ddlx`.  Both regular item results and
-snapshot rows (via ``snapshot_schemas``) are scanned.  The result is
+columns are deduplicated in memory, ranked by how many report items and rows
+reference them, bounded per object kind (``MAX_*``) and their DDL is extracted
+in a few batched calls through :mod:`pg_diag.ddlx`.  When a bound is hit the
+least referenced objects are dropped, never the newest ones.  Both regular
+item results and snapshot rows (via ``snapshot_schemas``) are scanned.  The result is
 stored in the artifact as the ``object_ddl`` map (``oid -> {kind,
 identifier, ddl}``) that the report template uses to make oid cells
 clickable, the same way ``query_texts`` backs clickable query ids.
@@ -15,6 +17,7 @@ The column allowlist below must stay in sync with
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any
 
 from pg_diag.ddlx import DdlExtractor, TableBundle
@@ -32,7 +35,7 @@ ROLE_OID_SUFFIXES = ("role_oid", "owner_oid", "grantee_oid")
 ROLE_OID_NAMES = ("userid", "usesysid")
 TABLESPACE_OID_SUFFIXES = ("tablespace_oid",)
 
-MAX_RELATIONS = 400
+MAX_RELATIONS = 1000
 MAX_FUNCTIONS = 200
 MAX_CONSTRAINTS = 200
 MAX_TRIGGERS = 200
@@ -73,20 +76,35 @@ def _column_kind(name: str) -> str | None:
     return None
 
 
-def _remember_oid(bucket: set[int], value: Any) -> None:
+@dataclass
+class ObjectReference:
+    """How strongly a harvested oid is referenced by the report.
+
+    ``sources`` are the distinct item ids (snapshot sources count once, however
+    many snapshots repeat them); ``rows`` is the total number of referencing rows.
+    """
+
+    oid: int
+    sources: set[str] = field(default_factory=set)
+    rows: int = 0
+
+
+ObjectReferences = dict[str, dict[int, ObjectReference]]
+
+
+def _parse_oid(value: Any) -> int | None:
     if isinstance(value, bool):
-        return
+        return None
     if isinstance(value, int):
         oid = value
     elif isinstance(value, str) and value.strip().isdigit():
         oid = int(value.strip())
     else:
-        return
-    if oid > 0:
-        bucket.add(oid)
+        return None
+    return oid if oid > 0 else None
 
 
-def _harvest_table(result: Any, columns: Any, harvested: dict[str, set[int]]) -> None:
+def _harvest_table(result: Any, columns: Any, harvested: ObjectReferences, source: str) -> None:
     rows = (result or {}).get("rows")
     if not isinstance(columns, list) or not isinstance(rows, list):
         return
@@ -101,17 +119,23 @@ def _harvest_table(result: Any, columns: Any, harvested: dict[str, set[int]]) ->
         if not isinstance(row, list):
             continue
         for index, kind in oid_columns:
-            if index < len(row):
-                _remember_oid(harvested[kind], row[index])
+            if index >= len(row):
+                continue
+            oid = _parse_oid(row[index])
+            if oid is None:
+                continue
+            reference = harvested[kind].setdefault(oid, ObjectReference(oid))
+            reference.sources.add(source)
+            reference.rows += 1
 
 
-def harvest_object_oids(artifact: dict[str, Any]) -> dict[str, set[int]]:
-    """Collect unique object oids from allowlisted columns of all table rows."""
-    harvested: dict[str, set[int]] = {kind: set() for kind in _EMPTY_KINDS}
-    for item in (artifact.get("items") or {}).values():
+def harvest_object_references(artifact: dict[str, Any]) -> ObjectReferences:
+    """Collect object oids from allowlisted columns with their reference counts."""
+    harvested: ObjectReferences = {kind: {} for kind in _EMPTY_KINDS}
+    for item_id, item in (artifact.get("items") or {}).items():
         result = (item or {}).get("result") or {}
         if result.get("kind") == "table":
-            _harvest_table(result, result.get("columns"), harvested)
+            _harvest_table(result, result.get("columns"), harvested, str(item_id))
     schemas = artifact.get("snapshot_schemas") or {}
     for snapshot in artifact.get("snapshots") or []:
         if not isinstance(snapshot, dict):
@@ -121,8 +145,24 @@ def harvest_object_oids(artifact: dict[str, Any]) -> dict[str, set[int]]:
             if result.get("kind") != "table":
                 continue
             columns = (schemas.get(source_id) or {}).get("columns")
-            _harvest_table(result, columns, harvested)
+            _harvest_table(result, columns, harvested, str(source_id))
     return harvested
+
+
+def harvest_object_oids(artifact: dict[str, Any]) -> dict[str, set[int]]:
+    """Collect unique object oids from allowlisted columns of all table rows."""
+    return {kind: set(refs) for kind, refs in harvest_object_references(artifact).items()}
+
+
+def rank_oids(references: dict[int, ObjectReference], limit: int) -> list[int]:
+    """The ``limit`` most referenced oids: by distinct sources, then rows, then oid.
+
+    A bounded catalog keeps the objects the reader meets most often across the
+    report and drops the rarely mentioned ones, instead of dropping whichever
+    objects happen to have the highest oids.
+    """
+    ordered = sorted(references.values(), key=lambda ref: (-len(ref.sources), -ref.rows, ref.oid))
+    return [ref.oid for ref in ordered[:limit]]
 
 
 _FUNCTION_KINDS = ("function", "procedure", "window function")
@@ -181,14 +221,14 @@ async def collect_object_ddl(
     artifact: dict[str, Any],
 ) -> dict[str, dict[str, str]]:
     """Extract DDL for every harvested oid; a few batched round trips total."""
-    harvested = harvest_object_oids(artifact)
-    relation_oids = sorted(harvested["relation"])[:MAX_RELATIONS]
-    function_oids = sorted(harvested["function"])[:MAX_FUNCTIONS]
-    constraint_oids = sorted(harvested["constraint"])[:MAX_CONSTRAINTS]
-    trigger_oids = sorted(harvested["trigger"])[:MAX_TRIGGERS]
-    database_oids = sorted(harvested["database"])[:MAX_DATABASES]
-    role_oids = sorted(harvested["role"])[:MAX_ROLES]
-    tablespace_oids = sorted(harvested["tablespace"])[:MAX_TABLESPACES]
+    harvested = harvest_object_references(artifact)
+    relation_oids = rank_oids(harvested["relation"], MAX_RELATIONS)
+    function_oids = rank_oids(harvested["function"], MAX_FUNCTIONS)
+    constraint_oids = rank_oids(harvested["constraint"], MAX_CONSTRAINTS)
+    trigger_oids = rank_oids(harvested["trigger"], MAX_TRIGGERS)
+    database_oids = rank_oids(harvested["database"], MAX_DATABASES)
+    role_oids = rank_oids(harvested["role"], MAX_ROLES)
+    tablespace_oids = rank_oids(harvested["tablespace"], MAX_TABLESPACES)
     catalog: dict[str, dict[str, str]] = {}
     if not any(
         (

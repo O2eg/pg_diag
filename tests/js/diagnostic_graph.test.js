@@ -375,6 +375,33 @@ test("load alone and unpaired component samples do not manufacture CPU work", ()
   assert.equal(G.evaluate(artifact([cpu]), definition).nodes["cpu.utilization"].ownStatus, "no_data");
 });
 
+test("cgroup memory is judged inside its own limit, host MemAvailable stays host-scoped", () => {
+  const gib = 1024 * 1024 * 1024;
+  const host = objectTable("os.memory_info", [{metric: "MemTotal", value_normalized: 64 * gib}, {metric: "MemAvailable", value_normalized: 32 * gib}]);
+  const settings = objectTable("overview.pg_settings", [{setting_name: "shared_buffers", setting_value: "3GB", setting_normalized: 3 * gib}]);
+  const limits = objectTable("os.cgroup_limits", [{scope: "postmaster", cgroup_count: 1, cpu_limit_cores: 2, memory_limit_bytes: 4 * gib, memory_current_bytes: 4 * gib - 1024}]);
+  const ev = G.evaluate(artifact([host, settings, limits]), definition);
+  const pressure = ev.nodes["ram.pressure"];
+  assert.equal(pressure.ownStatus, "crit", "a nearly full cgroup is not 'ok' because the host has free memory");
+  assert.match(pressure.reasons.join(" "), /50 % of host RAM/);
+  assert.match(pressure.reasons.join(" "), /cgroup memory\.current 4\.0 GiB of the 4\.0 GiB limit \(0 % headroom/);
+  assert.match(ev.nodes["ram.shared_buffers"].reasons.join(" "), /75 % of the cgroup memory limit/);
+  // several postmasters in different cgroups: no limit can be attributed to this database
+  const ambiguous = objectTable("os.cgroup_limits", [
+    {scope: "postmaster", cgroup_count: 2, cpu_limit_cores: 2, memory_limit_bytes: 4 * gib, memory_current_bytes: 4 * gib - 1024},
+    {scope: "postmaster", cgroup_count: 2, cpu_limit_cores: 1, memory_limit_bytes: 2 * gib, memory_current_bytes: gib}
+  ]);
+  const ev2 = G.evaluate(artifact([host, settings, ambiguous]), definition);
+  assert.equal(ev2.nodes["ram.pressure"].ownStatus, "ok");
+  assert.match(ev2.nodes["ram.pressure"].reasons.join(" "), /no container limit is applied/);
+  assert.match(ev2.nodes["ram.shared_buffers"].reasons.join(" "), /5 % of RAM/);
+  // the collector's own cgroup (no postmaster visible) does not bound the database
+  const collector = objectTable("os.cgroup_limits", [{scope: "collector", cgroup_count: 0, cpu_limit_cores: 2, memory_limit_bytes: 4 * gib, memory_current_bytes: 4 * gib - 1024}]);
+  const ev3 = G.evaluate(artifact([host, settings, collector]), definition);
+  assert.equal(ev3.nodes["ram.pressure"].ownStatus, "ok");
+  assert.match(ev3.nodes["ram.shared_buffers"].reasons.join(" "), /5 % of RAM/);
+});
+
 test("swap and available memory are independent, occupancy is not active paging", () => {
   const memory = objectTable("os.memory_info", [{metric: "MemTotal", value_normalized: 1000}, {metric: "MemAvailable", value_normalized: 800}, {metric: "SwapTotal", value_normalized: 100}, {metric: "SwapFree", value_normalized: 20}]);
   const ev = G.evaluate(artifact([memory]), definition);
@@ -496,7 +523,10 @@ test("lab snapshots fixture evaluates every node without errors and with data", 
   assert.equal(ev.nodes["network.interfaces.errors"].status, "no_data", "old fixture has no interface error chart");
   assert.equal(ev.nodes["network.traffic.receive"].status, "no_data", "throughput without matching link speed is a fact, not a verdict");
   assert.equal(ev.nodes["cpu"].ownStatus, "no_data", "CPU root aggregates its diagnostic branches");
-  assert.equal(ev.nodes["cpu"].status, "warn", "independently assessed directions propagate their findings");
+  assert.equal(ev.nodes["cpu"].status, "ok", "direction findings under an idle CPU are damped like every other contributor");
+  const damped = ev.order.filter(id => id.startsWith("cpu.") && ev.nodes[id].kind === "sources" && /kept as evidence.*pressure is low/.test(ev.nodes[id].reasons[0] || ""));
+  assert.ok(damped.includes("cpu.index_efficiency.sources.design"), damped.join(", "));
+  for (const id of damped) assert.ok(ev.nodes[id].score < 0.34 && ev.nodes[id].reasons.length > 1, id);
   assert.equal(ev.nodes["database_security"].status, "crit");
   assert.ok(ev.nodes["disk.saturation"].reasons[0].includes("nvme0n1 (nvme)"));
   assert.ok(ev.links.length > 0);
@@ -616,7 +646,42 @@ test("explicit checkpoints in the log are not WAL pressure; wal-triggered ones a
   assert.match(node.reasons.join(" "), /6 requested and 1 timed checkpoints in the log window, triggered by WAL volume/);
   const single = chart("snapshot_charts_db.checkpoint_trigger_events", [["completed", [0, 1, 0]], ["requested", [0, 1, 0]]]);
   node = G.evaluate(artifact([disk, single]), definition).nodes["disk.write.checkpoints"];
-  assert.equal(node.status, "warn", "one requested checkpoint is too few to judge");
+  assert.equal(node.status, "ok", "one requested checkpoint is too few to judge: advisory, never a warning");
+  assert.match(node.reasons.join(" "), /1 requested and 0 timed checkpoints in the window \(requested share 100 %, too few to judge\)/);
+  assert.ok(node.ownScore > 0 && node.ownScore <= 0.3, String(node.ownScore));
+  assert.equal(G.evaluate(artifact([disk, single]), definition).nodes["disk.write.checkpoints.sources.activity"].status, "ok");
+});
+
+test("64-bit identifiers keep their exact text while counters become numbers", () => {
+  const item = table("x.q", [{name: "query_id", encoding: "decimal_string"}, {name: "toplevel_query_id", encoding: "decimal_string"}, {name: "plan_id", encoding: "decimal_string"}, {name: "calls", encoding: "decimal_string"}], [["2915049932481116899", "-5763507173314187612", "9007199254740993", "97"]]);
+  assert.deepEqual(G.tableRows(item)[0], {query_id: "2915049932481116899", toplevel_query_id: "-5763507173314187612", plan_id: "9007199254740993", calls: 97});
+  const cpu = chart("snapshot_charts_os.os_cpu_utilization", [["user", [90, 92, 91]], ["system", [3, 3, 3]], ["iowait", [0, 0, 0]], ["idle", [7, 5, 6]]]);
+  const cores = {item_id: "os.cpu_info", section_id: "os", collection_status: "ok", result: {kind: "plain_text", data: "CPU(s): 4\n"}};
+  const statements = table("snapshot_delta_workload.sql_cpu_efficiency_delta", [{name: "query_id", encoding: "decimal_string"}, {name: "cpu_seconds_per_sec", encoding: "json_number"}, {name: "cpu_ms_per_call", encoding: "json_number"}], [["2915049932481116899", 2.4, 12.5]]);
+  const node = G.evaluate(artifact([cpu, cores, statements]), definition).nodes["cpu.heavy_queries"];
+  assert.match(node.reasons.join(" "), /query_id 2915049932481116899 2\.40 CPU s\/s/, "the DBA can look the statement up in pg_stat_statements");
+  assert.ok(!node.reasons.join(" ").includes("2915049932481116700"));
+});
+
+test("auto-computed reload artifacts are explained, not scored, in pending_restart and file-error views", () => {
+  const pending = objectTable("cluster_inventory.pending_restart_settings", [{name: "io_max_concurrency", setting: "64", source: "override", boot_val: "-1", file_value: "-1", file_error: "setting could not be applied", pending_restart_kind: "auto_computed_artifact"}]);
+  const staleError = objectTable("cluster_inventory.configuration_file_errors", [{setting_name: "io_max_concurrency", file_value: "-1", error: "setting could not be applied", risk_level: "high"}]);
+  let ev = G.evaluate(artifact([pending, staleError], {mode: "one-shot"}), definition);
+  let node = ev.nodes["health.configuration"];
+  assert.ok(node.ownScore === null || node.ownScore === 0, "an artifact flagged by an older item version is filtered through pending_restart_settings: " + node.ownScore);
+  assert.match(node.reasons.join(" "), /1 pending_restart flag\(s\) are reload artifacts/);
+  assert.match(node.reasons.join(" "), /1 configuration file entr\(ies\) keep the auto value/);
+  assert.ok(!node.reasons.join(" ").includes("cannot apply"));
+  assert.notEqual(ev.nodes["health.configuration.sources.safety"].status, "warn");
+  const flagged = objectTable("cluster_inventory.configuration_file_errors", [
+    {setting_name: "wal_buffers", file_value: "-1", error: "setting could not be applied", auto_computed_artifact: true, risk_level: "ok"},
+    {setting_name: "work_mem", file_value: "lots", error: "invalid value for parameter", auto_computed_artifact: false, risk_level: "high"}
+  ]);
+  ev = G.evaluate(artifact([flagged], {mode: "one-shot"}), definition);
+  node = ev.nodes["health.configuration"];
+  assert.equal(node.status, "warn", "a real apply error still warns");
+  assert.match(node.reasons.join(" "), /1 configuration entr\(ies\) the server cannot apply: work_mem = lots/);
+  assert.ok(!node.reasons.join(" ").includes("wal_buffers = -1"));
 });
 
 test("backend writes ignore bulk-load ring buffers in pg_stat_io", () => {

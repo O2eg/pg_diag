@@ -14,7 +14,7 @@ with index_roots_bounded as (
     and tbl.relkind in ('r', 'p')
     and i.indisvalid and i.indisready and i.indislive
     and n.nspname not in ('pg_catalog', 'pg_toast', 'information_schema')
-    and n.nspname not like 'pg_toast%'
+    and n.nspname !~ '^pg_(toast|temp)'
   order by idx.relpages desc, idx.oid
   limit 3001
 ),

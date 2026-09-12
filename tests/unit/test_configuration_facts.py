@@ -65,6 +65,17 @@ def _artifact() -> dict[str, object]:
                 ]
             ),
             "os.total_ram": _table([{"total_ram_bytes": 17179869184}]),
+            "os.cgroup_limits": _table(
+                [
+                    {
+                        "scope": "postmaster",
+                        "cgroup_count": 1,
+                        "cpu_limit_cores": 2.5,
+                        "memory_limit_bytes": 4294967296,
+                        "memory_current_bytes": 1073741824,
+                    }
+                ]
+            ),
             "os.cpu_info": _plain(
                 "Architecture: x86_64\nCPU(s): 8\nSocket(s): 1\n"
                 "Core(s) per socket: 4\nThread(s) per core: 2\nModel name: Test CPU\n"
@@ -107,6 +118,10 @@ def test_extract_configuration_facts_normalizes_tuning_inputs(
     assert facts["postgresql"]["available_extensions"] == ["pg_stat_statements", "postgis"]
     assert facts["host"]["cpu_cores"] == 8
     assert facts["host"]["ram_bytes"] == 17179869184
+    # an unambiguous cgroup limit caps the capacity consumers size from
+    assert facts["host"]["cgroup"]["applied"] is True
+    assert facts["host"]["effective_cpu_cores"] == 2
+    assert facts["host"]["effective_ram_bytes"] == 4294967296
     assert facts["postgresql"]["settings"]["shared_buffers"]["normalized_value"] == 134217728
     assert facts["collection"]["usable"] is True
     validate_configuration_facts(facts)
@@ -114,6 +129,46 @@ def test_extract_configuration_facts_normalizes_tuning_inputs(
     facts["host"]["ram_bytes"] = 1
     with pytest.raises(ValidationError, match="hash does not match"):
         validate_configuration_facts(facts)
+
+
+def test_cgroup_limits_are_not_applied_when_ambiguous_or_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(configuration_facts, "validate_artifact", lambda _artifact: None)
+    artifact = _artifact()
+    rows = artifact["items"]["os.cgroup_limits"]["result"]["rows"]
+    # two postmasters in different cgroups: the report cannot tell which one is the database
+    artifact["items"]["os.cgroup_limits"] = _table(
+        [
+            {"scope": "postmaster", "cgroup_count": 2, "cpu_limit_cores": 2.5, "memory_limit_bytes": 4294967296},
+            {"scope": "postmaster", "cgroup_count": 2, "cpu_limit_cores": 1, "memory_limit_bytes": 1073741824},
+        ]
+    )
+    facts = extract_configuration_facts(artifact)
+    assert facts["host"]["cgroup"]["ambiguous"] is True
+    assert facts["host"]["cgroup"]["applied"] is False
+    # the capacity is unknown, not the host's: consumers must be told it explicitly
+    assert facts["host"]["effective_cpu_cores"] is None
+    assert facts["host"]["effective_ram_bytes"] is None
+    assert facts["host"]["cpu_cores"] == 8
+    validate_configuration_facts(facts)
+    assert rows  # the original fixture had limits
+
+    # the collector's own cgroup (no postmaster visible) is not a database limit
+    artifact["items"]["os.cgroup_limits"] = _table(
+        [{"scope": "collector", "cgroup_count": 0, "cpu_limit_cores": 2, "memory_limit_bytes": 4294967296}]
+    )
+    facts = extract_configuration_facts(artifact)
+    assert facts["host"]["cgroup"]["applied"] is False
+    assert facts["host"]["effective_cpu_cores"] == 8
+
+    del artifact["items"]["os.cgroup_limits"]
+    facts = extract_configuration_facts(artifact)
+    assert facts["host"]["cgroup"] is None
+    assert facts["host"]["effective_cpu_cores"] == 8
+    assert facts["collection"]["usable"] is True
+    assert "os.cgroup_limits" in facts["collection"]["missing_item_ids"]
+    validate_configuration_facts(facts)
 
 
 def test_missing_critical_item_marks_facts_unusable(monkeypatch: pytest.MonkeyPatch) -> None:

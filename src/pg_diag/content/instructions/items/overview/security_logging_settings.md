@@ -24,6 +24,8 @@ This instruction belongs to report item `overview.security_logging_settings`. Th
 
 ## Automatic evaluation
 - Returned rows use the `risk_level` described in What to watch. An empty result means only that the selected settings match the bundled posture.
+- `log_line_prefix` accepts `%r` (remote host and port) as the client-address field, since it is a superset of `%h`.
+- When `log_destination` includes `csvlog` or `jsonlog` the prefix is not evaluated: structured log records carry the timestamp, user, database, application and client fields regardless of the stderr prefix.
 
 ## Related report items
 - [cluster_inventory.pgaudit_configuration](#item-cluster_inventory.pgaudit_configuration) — Check whether pgAudit supplies additional audit coverage.

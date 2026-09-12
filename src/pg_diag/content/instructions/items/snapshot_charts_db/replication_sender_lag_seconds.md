@@ -19,6 +19,7 @@ This instruction belongs to report item `snapshot_charts_db.replication_sender_l
 ## Automatic evaluation
 - Charts are informational and assign no severity.
 - Up to 50 senders are sampled per snapshot.
+- Logical subscribers are labelled `[logical]` in the sender name. An idle logical sender reports no time lag at all; its series stays empty on purpose, because an unreported value is unknown, not zero.
 
 ## Related report items
 - [snapshot_charts_db.replication_sender_lag_bytes](#item-snapshot_charts_db.replication_sender_lag_bytes) — Compare time lag with byte lag.

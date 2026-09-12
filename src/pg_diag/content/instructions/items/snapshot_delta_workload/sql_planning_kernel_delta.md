@@ -19,6 +19,7 @@ This instruction belongs to report item `snapshot_delta_workload.sql_planning_ke
 ## Interval coverage
 - The same query identity and unchanged `pg_stat_kcache.stats_since` must be present at both window endpoints.
 - Candidate churn and reset/decreased planning or plan counters are omitted; per-plan ratios use only accepted deltas.
+- PostgreSQL 14+: the `pg_stat_kcache` entry is joined to the `pg_stat_statements` row with the same `toplevel` flag, so a statement executed both directly and from a function keeps one identity per nesting level; earlier versions have no `toplevel` column and use the plain identity join.
 
 ## Common fault causes
 - Unparameterized SQL producing many query identities or repeated replanning.

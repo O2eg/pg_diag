@@ -455,6 +455,7 @@ def _series_is_all_zero(series: dict[str, Any]) -> bool:
     return bool(values) and all(value == 0 for value in values)
 
 
+
 def _build_top_n_chart_result(
     metric: dict[str, Any],
     samples: list[dict[str, Any]],

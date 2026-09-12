@@ -29,6 +29,7 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_tuple_acc
 ## Automatic evaluation
 - This chart is informational and ranks interval deltas for stable relation OIDs present in both bounded samples.
 - Sequential reads plus index fetches are logical tuple counters, not physical I/O.
+- Members are chosen per interval, so the legend is the union of every interval's Top 10 and can hold many series with a single point on quiet intervals; use the legend filter and read the columns interval by interval.
 
 ## Related report items
 - [snapshot_delta_workload.table_scan_delta](#item-snapshot_delta_workload.table_scan_delta) — Inspect scan counters for hot tables.

@@ -5,7 +5,7 @@ with table_roots_bounded as (
   join pg_catalog.pg_namespace n on n.oid = c.relnamespace
   where c.relkind in ('r', 'p', 'v', 'm', 'f')
     and n.nspname not in ('pg_catalog', 'information_schema')
-    and n.nspname not like 'pg_toast%'
+    and n.nspname !~ '^pg_(toast|temp)'
   order by c.relpages desc, n.nspname, c.relname, c.oid
   limit 5001
 ),

@@ -11,7 +11,8 @@ with candidates as (
   left join pg_stat_all_tables s on s.relid = c.oid
   where c.relkind in ('r', 'p')
     and not c.relispartition
-    and n.nspname not in ('pg_catalog', 'pg_toast', 'information_schema')
+    and n.nspname not in ('pg_catalog', 'information_schema')
+    and n.nspname !~ '^pg_(toast|temp)'
     and not exists (
       select 1
       from pg_index i

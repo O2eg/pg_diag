@@ -28,6 +28,7 @@ This instruction belongs to report item `snapshot_charts_db.indexes_top_tuple_fe
 ## Automatic evaluation
 - `idx_tup_fetch` is the per-index heap fetch counter for simple index scans and excludes some bitmap behavior.
 - The chart is informational and matches adjacent bounded samples by stable index OID.
+- Members are chosen per interval, so the legend is the union of every interval's Top 10 and can hold many series with a single point on quiet intervals; use the legend filter and read the columns interval by interval.
 
 ## Related report items
 - [snapshot_charts_db.indexes_top_tuple_read_rate](#item-snapshot_charts_db.indexes_top_tuple_read_rate) — Compare heap fetches with index entries read.

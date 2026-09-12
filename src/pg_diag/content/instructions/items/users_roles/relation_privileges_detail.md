@@ -20,6 +20,7 @@ This instruction belongs to report item `users_roles.relation_privileges_detail`
 ## Automatic evaluation
 - This item is an inventory and assigns no risk to individual rows.
 - Stored relations are sampled by descending `relpages` (3,000) and other relations by name (3,000); the result is bounded to 3,000 rows. `candidate_sample_truncated` and `result_truncated` mark partial coverage, add a `[coverage]` row, and set the item severity to `unknown`.
+- System schemas are excluded by the reserved prefix: `pg_catalog`, `information_schema`, `pg_toast*` and the per-backend temporary schemas `pg_temp_N` / `pg_toast_temp_N`; user schemas cannot start with `pg_`.
 
 ## Related report items
 - [users_roles.object_privileges_by_grantee](#item-users_roles.object_privileges_by_grantee) — Start from the aggregated matrix to find roles worth drilling into.

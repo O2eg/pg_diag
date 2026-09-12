@@ -21,6 +21,7 @@ This item reports pgAudit preload and audit logging configuration gaps.
 
 - Severity is `unknown` when pgAudit is absent or has no log classes because audit requirements are deployment-specific.
 - Preload detection tokenizes the comma-separated library list; extension creation is separate from preload state.
+- The preload list is split on commas with surrounding whitespace and lower-cased, so `pgaudit` is recognized in a list of several libraries.
 
 ## Related report items
 - [overview.security_logging_settings](#item-overview.security_logging_settings) — Review the base PostgreSQL logging posture.

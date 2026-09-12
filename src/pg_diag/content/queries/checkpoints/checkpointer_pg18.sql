@@ -3,13 +3,14 @@ select
   num_timed,
   num_requested,
   num_done,
+  -- share of checkpoint triggers that were actually performed (idle checkpoints are skipped)
   (100.0 * num_done / nullif(num_timed + num_requested, 0))
-    as checkpoint_completion_pct,
+    as performed_share_pct,
   restartpoints_timed,
   restartpoints_req,
   restartpoints_done,
-  write_time,
-  sync_time,
+  write_time as write_time_ms,
+  sync_time as sync_time_ms,
   buffers_written,
   slru_written,
   stats_reset,

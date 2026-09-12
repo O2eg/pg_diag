@@ -5,7 +5,7 @@ with checks(setting_name, expected, risk_level, risk_reason) as (
     ('log_error_verbosity', 'verbose', 'medium', 'error logs may miss detailed context'),
     ('log_min_error_statement', 'error', 'medium', 'statements that raise errors may not be logged at the expected level'),
     ('log_statement', 'ddl/mod/all', 'medium', 'DDL statements may not be logged'),
-    ('log_line_prefix', '%m %u %d %a %h', 'medium', 'log prefix may miss timestamp, user, database, app, or client address')
+    ('log_line_prefix', '%m %u %d %a %h (or %r); not evaluated for csvlog/jsonlog', 'medium', 'stderr log prefix may miss timestamp, user, database, app, or client address')
 ),
 evaluated as (
   select
@@ -25,11 +25,16 @@ evaluated as (
       )
       when c.setting_name = 'log_statement' then s.setting in ('ddl', 'mod', 'all')
       when c.setting_name = 'log_line_prefix' then
-        strpos(s.setting, '%m') > 0
-        and strpos(s.setting, '%u') > 0
-        and strpos(s.setting, '%d') > 0
-        and strpos(s.setting, '%a') > 0
-        and strpos(s.setting, '%h') > 0
+        -- csvlog and jsonlog carry every field structurally; the prefix matters for stderr only
+        (select setting from pg_catalog.pg_settings where name = 'log_destination') ~ '(csvlog|jsonlog)'
+        or (
+          strpos(s.setting, '%m') > 0
+          and strpos(s.setting, '%u') > 0
+          and strpos(s.setting, '%d') > 0
+          and strpos(s.setting, '%a') > 0
+          -- %r (host:port) is a superset of %h
+          and (strpos(s.setting, '%h') > 0 or strpos(s.setting, '%r') > 0)
+        )
       else true
     end as is_ok
   from checks c

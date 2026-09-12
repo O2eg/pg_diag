@@ -1262,12 +1262,13 @@ metrics:
     targets: [db]
     requires_collection: window_endpoints
     result: table
-    display: {default_sort: {column: major_faults_delta, direction: desc}}
+    display: {default_sort: {column: page_faults_delta, direction: desc}}
     table:
       key_refs: [dimensions.database_id, dimensions.user_id, dimensions.query_id, dimensions.toplevel]
       epoch_refs: [dimensions.kcache_stats_since]
       limit: 50
-      sort: {column: major_faults_delta, direction: desc}
+      # major faults are rare; the total keeps a deterministic order when they are all zero
+      sort: {column: page_faults_delta, direction: desc}
       columns:
         - {name: datname, value_ref: dimensions.database, transform: last, pg_type: text}
         - {name: rolname, value_ref: dimensions.user, transform: last, pg_type: text}
@@ -2238,6 +2239,7 @@ metrics:
       sort: {column: replay_bytes_delta, direction: desc}
       columns:
         - {name: pid, role: key, key_index: 0, pg_type: int4}
+        - {name: sender_kind, value_ref: dimensions.sender_kind, transform: last, pg_type: text}
         - {name: application_name, value_ref: dimensions.application, transform: last, pg_type: text}
         - {name: client_addr, value_ref: dimensions.client_address, transform: last, pg_type: text}
         - {name: usename, value_ref: dimensions.user, transform: last, pg_type: text}

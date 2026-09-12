@@ -11,7 +11,7 @@ objects as (
         pg_catalog.pg_get_userbyid(n.nspowner) as owner_name
     from pg_namespace n
     where n.nspname not in ('pg_catalog', 'information_schema')
-      and n.nspname not like 'pg_toast%'
+      and n.nspname !~ '^pg_(toast|temp)'
     union all
     select
         case c.relkind
@@ -30,7 +30,7 @@ objects as (
     join pg_namespace n on n.oid = c.relnamespace
     where c.relkind in ('r', 'p', 'S', 'v', 'm', 'f')
       and n.nspname not in ('pg_catalog', 'information_schema')
-      and n.nspname not like 'pg_toast%'
+      and n.nspname !~ '^pg_(toast|temp)'
       and not exists (
           select 1 from pg_depend d
           where d.classid = 'pg_class'::regclass and d.objid = c.oid and d.deptype = 'e'
@@ -44,7 +44,7 @@ objects as (
     from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname not in ('pg_catalog', 'information_schema')
-      and n.nspname not like 'pg_toast%'
+      and n.nspname !~ '^pg_(toast|temp)'
       and not exists (
           select 1 from pg_depend d
           where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e'

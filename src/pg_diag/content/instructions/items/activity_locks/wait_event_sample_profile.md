@@ -16,6 +16,7 @@ This instruction belongs to report item `activity_locks.wait_event_sample_profil
 - The chart is observational and does not assign severity.
 - `Not waiting / Active without wait event` is not proof of CPU execution; the process can be runnable or delayed outside a PostgreSQL wait instrument.
 - Each source sample is limited to 100 groups, then the metric keeps 12 interval groups. Cross-user details require statistics visibility.
+- Only session work is counted: client backends, autovacuum workers, parallel workers and logical replication workers. Walsenders and other server processes are always `active` and are excluded.
 
 ## Common fault causes
 - Lock contention, storage latency, WAL pressure, or slow clients.

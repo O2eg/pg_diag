@@ -233,6 +233,53 @@
       if (byId[rootId]) evaluateNode(rootId);
     }
 
+    // Resource pressure of a node with directions, computed once with the same reads
+    // (attributed to the node) that damp the node's own score.
+    const PRESSURE_LABELS = {cpu_user: "user CPU", cpu_system: "system CPU", cpu_iowait: "I/O wait", cpu: "CPU", disk: "disk", ram: "memory"};
+    const DIRECTION_FINDINGS = "This direction has its own findings; the color is based on the evidence below.";
+    const pressureCache = new Map();
+    function pressureFor(node) {
+      if (!node.pressure) return null;
+      if (!pressureCache.has(node.id)) {
+        const ctx = {
+          node, runtime,
+          ...createAccess(items, (itemId, method) => { if (opts.onRead) opts.onRead(node.id, itemId, method); }),
+          title: (itemId) => (items[itemId] && items[itemId].title) || itemId,
+          anyPresent: () => false, anyCollected: () => false,
+          reason() {}, fact() {}, missing() {},
+          logWindowMinutes: () => logWindowMinutes(runtime)
+        };
+        ctx.facts = makeFacts(ctx);
+        pressureCache.set(node.id, pressureOf(ctx, node.pressure));
+      }
+      return pressureCache.get(node.id);
+    }
+    // Spec §4: raw direction score → parent's pressure damping → parent's cap. When the
+    // reduction changes the color, the first reason says why the listed findings stay green.
+    function contributionOf(node, assessment, pressure) {
+      if (!isFiniteNumber(assessment.score)) return {score: null};
+      let score = assessment.score;
+      const rawStatus = statusOf(score);
+      const reasons = [...assessment.reasons];
+      const facts = Object.assign({}, assessment.facts);
+      if (node.pressure) {
+        if (pressure !== null && score >= 0.34) facts["Resource pressure"] = {ok: "Low", warn: "Elevated", crit: "High"}[statusOf(pressure)];
+        score *= pressure === null ? 0.5 : 0.2 + 0.8 * pressure;
+      }
+      if (isFiniteNumber(node.cap)) score = Math.min(score, node.cap);
+      score = clamp01(score);
+      if (rawStatus !== STATUS.ok && statusOf(score) === STATUS.ok) {
+        const label = PRESSURE_LABELS[node.pressure] || node.pressure;
+        const why = node.pressure && (pressure === null || statusOf(pressure) === STATUS.ok)
+          ? label + " pressure is " + (pressure === null ? "unknown" : "low") + ", so they are a possible contributor, not a bottleneck of this resource"
+          : "they are bounded by this node's cap (" + node.cap + ") as findings that are not a failure of this root";
+        const text = "The findings below are kept as evidence, but the color reflects their contribution to " + node.label + ": " + why + ".";
+        const index = reasons.indexOf(DIRECTION_FINDINGS);
+        if (index >= 0) reasons[index] = text; else reasons.unshift(text);
+      }
+      return {score, reasons, facts};
+    }
+
     // Directions assess only their own sources. Keep the parent's full input pool
     // for its original contextual assessment, then propagate independent findings.
     for (const node of definitionNodes) {
@@ -254,11 +301,14 @@
         const present = bindings.filter(binding => binding.presence === "present").length;
         const assessment = Groups.evaluate(items, runtime, group, node.bindings.filter(b => ids.has(b.id)),
           opts.onRead ? (itemId, method) => opts.onRead(id, itemId, method) : null);
-        const status = statusOf(assessment.score);
+        // A direction is a contributor like any child rule: the parent's resource pressure
+        // damps its findings and the parent's cap bounds them before they can reach a root.
+        const contribution = contributionOf(node, assessment, pressureFor(node));
+        const status = statusOf(contribution.score);
         results[id] = {
           id, label: group.label, summary: group.summary || group.label + " — independent assessment within " + parent.label + ".",
           parent: parent.id, children: [], kind: "sources", evaluator: group.evaluator,
-          ownScore: assessment.score, childScore: null, ...assessment, ownStatus: status, status,
+          ...assessment, ...contribution, ownScore: contribution.score, childScore: null, ownStatus: status, status,
           bindings, present, scoredBindings: bindings.length, causes: [], causedBy: []
         };
         parent.children.push(id);

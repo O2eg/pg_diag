@@ -29,6 +29,8 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
                 "process_id": record.process_id,
                 "repeat_count": record.repeat_count,
                 "message": record.message,
+                # csvlog DETAIL names the blocked/blocking processes and their lock waits
+                "detail": record.detail,
                 "query_id": record.query_id,
             }
         )
@@ -43,7 +45,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
                 "description": f"{len(rows)} deadlock event(s) in the collected window.",
                 "recommendation": (
                     "Deadlocks are application-ordering bugs: make transactions lock objects "
-                    "in a consistent order; message text names the sessions involved."
+                    "in a consistent order; the detail column names the sessions involved."
                 ),
             },
             "items": [],

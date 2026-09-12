@@ -15,7 +15,7 @@ storage_table_roots_bounded as (
   where c.relkind in ('r', 'p')
     and greatest(coalesce(c.relpages, 0), 0) > 0
     and n.nspname not in ('pg_catalog', 'information_schema')
-    and n.nspname not like 'pg_toast%'
+    and n.nspname !~ '^pg_(toast|temp)'
   order by c.relpages desc, n.nspname, c.relname, c.oid
   limit 10001
 ),
@@ -29,7 +29,7 @@ named_table_roots_bounded as (
   where c.relkind in ('r', 'p')
     and greatest(coalesce(c.relpages, 0), 0) = 0
     and n.nspname not in ('pg_catalog', 'information_schema')
-    and n.nspname not like 'pg_toast%'
+    and n.nspname !~ '^pg_(toast|temp)'
   order by n.nspname, c.relname, c.oid
   limit 10001
 ),

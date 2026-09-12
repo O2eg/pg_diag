@@ -7,7 +7,7 @@ with storage_relation_roots_bounded as (
     and c.relkind in ('r', 'm')
     and greatest(coalesce(c.relpages, 0), 0) > 0
     and n.nspname not in ('pg_catalog', 'information_schema')
-    and n.nspname not like 'pg_toast%'
+    and n.nspname !~ '^pg_(toast|temp)'
   order by c.relpages desc, n.nspname, c.relname, c.oid
   limit 3001
 ),
@@ -24,7 +24,7 @@ named_relation_roots_bounded as (
       or (c.relkind in ('r', 'm') and greatest(coalesce(c.relpages, 0), 0) = 0)
     )
     and n.nspname not in ('pg_catalog', 'information_schema')
-    and n.nspname not like 'pg_toast%'
+    and n.nspname !~ '^pg_(toast|temp)'
   order by n.nspname, c.relname, c.oid
   limit 3001
 ),

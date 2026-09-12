@@ -860,7 +860,7 @@ def test_os_instructions_define_complete_interpretation_contract(content_path: P
         for section_id, _item_key, item_id, _item in iter_report_items(content)
         if section_id == "os"
     ]
-    assert len(os_item_ids) == 49
+    assert len(os_item_ids) == 50
     for item_id in os_item_ids:
         text = content.instructions[item_id]["text"]
         assert "This instruction belongs to" in text, item_id

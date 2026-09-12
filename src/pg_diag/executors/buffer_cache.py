@@ -95,6 +95,11 @@ from public.pg_buffercache_usage_counts()
 order by usage_count
 """
 
+AGGREGATE_WORK_MEM_SQL = """
+/* pg_diag:buffer_cache:work_mem */
+select pg_catalog.set_config('work_mem', '64MB', true)
+"""
+
 METADATA_SQL = """
 /* pg_diag:buffer_cache:metadata */
 select
@@ -440,7 +445,12 @@ async def _collect_detail_payload(
     source_ids: frozenset[str],
     aggregate_sql: str,
 ) -> BufferCachePayload:
-    aggregate_records = await conn.fetch(aggregate_sql)
+    # Grouping every shared buffer by relation sorts ~ shared_buffers/8KB rows; with the
+    # default work_mem that spills a temporary file on every snapshot and shows up in the
+    # server's own temp-file statistics. The setting is transaction-local and read-only safe.
+    async with conn.transaction(readonly=True):
+        await conn.execute(AGGREGATE_WORK_MEM_SQL)
+        aggregate_records = await conn.fetch(aggregate_sql)
     needs_metadata = bool(source_ids & (DATABASE_SOURCE_IDS | RELATION_SOURCE_IDS))
     metadata_records = await conn.fetch(METADATA_SQL) if needs_metadata else []
     if needs_metadata and not metadata_records:
@@ -691,23 +701,23 @@ def _build_by_database(
     for row in payload.aggregates:
         if row.relfilenode is not None and row.reldatabase is not None:
             counts[row.reldatabase] += row.buffers
-    named = [
-        (
-            "shared catalogs"
-            if database_oid == 0
-            else payload.database_names.get(database_oid, f"unknown database {database_oid}"),
-            buffers,
-        )
-        for database_oid, buffers in counts.items()
-    ]
-    named.sort(key=lambda item: (-item[1], item[0]))
+    # Every known database and the shared catalogs are listed at every snapshot, so a
+    # database without cached blocks is a zero point, not a gap (same contract as the
+    # by_database.sql source).
+    named: dict[str, int] = {"shared catalogs": counts.get(0, 0)}
+    for database_oid, database_name in payload.database_names.items():
+        named[database_name] = counts.get(database_oid, 0)
+    for database_oid, buffers in counts.items():
+        if database_oid != 0 and database_oid not in payload.database_names:
+            named[f"unknown database {database_oid}"] = buffers
+    ordered = sorted(named.items(), key=lambda item: (-item[1], item[0]))
     return (
         _columns(
             ("snapshot_time", "timestamptz"),
             ("database_name", "text"),
             ("cached_blocks", "int8"),
         ),
-        [[payload.snapshot_time, database_name, buffers] for database_name, buffers in named[:100]],
+        [[payload.snapshot_time, database_name, buffers] for database_name, buffers in ordered[:100]],
     )
 
 

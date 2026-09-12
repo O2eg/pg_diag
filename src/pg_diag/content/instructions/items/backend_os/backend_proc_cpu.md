@@ -19,6 +19,8 @@ This instruction belongs to report item `backend_os.backend_proc_cpu`. The item 
 - A `backend_process_capture_incomplete` warning: some selected PIDs exited
   during capture or `/proc/<pid>/stat` was not readable. The warning reports
   selected and captured counts for both endpoints.
+- The `backend_process_capture_incomplete` diagnostic names the PIDs that were selected at the window start and gone at the end (short-lived client backends), so the reader can see which workload is missing from the ranking.
+- The collector's own backend (`application_name = pg_diag`) is a captured process like any other; compare its command line before treating it as workload.
 
 ## Common fault causes
 - CPU-bound query.

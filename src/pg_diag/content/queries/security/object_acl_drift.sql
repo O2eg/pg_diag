@@ -10,7 +10,7 @@ with storage_relation_roots_bounded as (
     join pg_namespace n on n.oid = c.relnamespace
     where c.relkind in ('r', 'm')
       and n.nspname not in ('pg_catalog', 'information_schema')
-      and n.nspname not like 'pg_toast%'
+      and n.nspname !~ '^pg_(toast|temp)'
     order by c.relpages desc, n.nspname, c.relname, c.oid
     limit 10001
 ),
@@ -42,7 +42,7 @@ named_relation_roots_bounded as (
     join pg_namespace n on n.oid = c.relnamespace
     where c.relkind in ('p', 'S', 'v', 'f')
       and n.nspname not in ('pg_catalog', 'information_schema')
-      and n.nspname not like 'pg_toast%'
+      and n.nspname !~ '^pg_(toast|temp)'
     order by n.nspname, c.relname, c.oid
     limit 10001
 ),
@@ -73,7 +73,7 @@ function_roots_bounded as (
     join pg_namespace n on n.oid = p.pronamespace
     left join pg_stat_user_functions s on s.funcid = p.oid
     where n.nspname not in ('pg_catalog', 'information_schema')
-      and n.nspname not like 'pg_toast%'
+      and n.nspname !~ '^pg_(toast|temp)'
     order by coalesce(s.calls, 0) desc, n.nspname, p.proname, p.oid
     limit 1001
 ),
@@ -108,13 +108,7 @@ acl_ready_objects as (
         end as object_kind,
         c.relname as object_name,
         1 as sample_priority,
-        coalesce(
-            c.relacl,
-            acldefault(
-                (case when c.relkind = 'S' then 'S' else 'r' end)::"char",
-                c.relowner
-            )
-        ) as acl_items
+        c.relacl as acl_items
     from storage_relation_candidates c
     union all
     select
@@ -129,13 +123,7 @@ acl_ready_objects as (
         end,
         c.relname,
         2,
-        coalesce(
-            c.relacl,
-            acldefault(
-                (case when c.relkind = 'S' then 'S' else 'r' end)::"char",
-                c.relowner
-            )
-        )
+        c.relacl
     from named_relation_candidates c
     union all
     select
@@ -144,7 +132,7 @@ acl_ready_objects as (
         'function',
         p.proname,
         3,
-        coalesce(p.proacl, acldefault('f', p.proowner))
+        p.proacl
     from function_candidates p
 ),
 ranked_acl_objects as (
@@ -178,7 +166,10 @@ ranked_acl_objects as (
 bounded_acl_objects as (
     select *
     from ranked_acl_objects
-    where cumulative_acl_expansion_budget <= case sample_priority
+    -- objects without an explicit ACL have the constant 'default' signature and are
+    -- always included; only explicit ACLs consume the expansion budget
+    where acl_items is null
+       or cumulative_acl_expansion_budget <= case sample_priority
         when 1 then 1500
         when 2 then 1000
         else 500
@@ -189,31 +180,33 @@ objects as (
         p.schema_name,
         p.object_kind,
         p.object_name,
-        normalized_acl.acl_signature
-    from bounded_acl_objects p
-    cross join lateral (
-        select md5(
-            coalesce(
-                string_agg(
-                    concat_ws(
-                        ':',
-                        acl.grantor::text,
-                        acl.grantee::text,
-                        acl.privilege_type,
-                        acl.is_grantable::text
-                    ),
-                    ','
-                    order by
-                        acl.grantor,
-                        acl.grantee,
-                        acl.privilege_type,
-                        acl.is_grantable
-                ),
-                ''
+        case
+            when p.acl_items is null then 'default'
+            else (
+                select md5(
+                    coalesce(
+                        string_agg(
+                            concat_ws(
+                                ':',
+                                acl.grantor::text,
+                                acl.grantee::text,
+                                acl.privilege_type,
+                                acl.is_grantable::text
+                            ),
+                            ','
+                            order by
+                                acl.grantor,
+                                acl.grantee,
+                                acl.privilege_type,
+                                acl.is_grantable
+                        ),
+                        ''
+                    )
+                )
+                from aclexplode(p.acl_items) acl
             )
-        ) as acl_signature
-        from aclexplode(p.acl_items) acl
-    ) normalized_acl
+        end as acl_signature
+    from bounded_acl_objects p
 ),
 candidate_coverage as (
     select
@@ -227,7 +220,8 @@ acl_coverage as (
     select
         coalesce(
             bool_or(
-                cumulative_acl_expansion_budget > case sample_priority
+                acl_items is not null
+                and cumulative_acl_expansion_budget > case sample_priority
                     when 1 then 1500
                     when 2 then 1000
                     else 500

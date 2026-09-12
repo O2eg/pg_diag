@@ -160,3 +160,25 @@ def test_root_owned_group_read_tls_key_is_accepted(content_path: Path) -> None:
             Path("/etc/ssl/private/server.key"),
         )
     ) == []
+
+
+def test_archive_paths_require_wal_placeholders(content_path: Path) -> None:
+    module = _module(content_path)
+    flag_only = module._paths_from_command("test -f /tmp/pg-trace-archive-fail && exit 1; true")
+    assert flag_only == []
+    destinations = module._paths_from_command(
+        "test -f /tmp/flag && exit 1; test ! -f /archive/%f && cp %p /archive/%f"
+    )
+    assert [str(path) for path in destinations] == ["/archive"]
+    wrapper = module._paths_from_command("/usr/bin/pgbackrest --stanza=main archive-push %p")
+    assert wrapper == []
+
+
+def test_world_writable_findings_skip_links_sockets_and_sticky_dirs(content_path: Path) -> None:
+    module = _module(content_path)
+    assert module._is_world_writable_finding(0o777, "l") is False
+    assert module._is_world_writable_finding(0o777, "s") is False
+    assert module._is_world_writable_finding(0o1777, "d") is False
+    assert module._is_world_writable_finding(0o777, "d") is True
+    assert module._is_world_writable_finding(0o666, "f") is True
+    assert module._is_world_writable_finding(0o644, "f") is False

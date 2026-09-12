@@ -23,6 +23,7 @@ This instruction belongs to report item `indexes.foreign_keys_without_index`. Th
 - `unknown`: the same structural gap exists on a smaller table; parent UPDATE/DELETE frequency determines impact.
 - `suggested_index` is a starting definition, not executable advice for partitioned tables or a substitute for workload review.
 - Empty output means no gap was found inside the bounded sample; it does not prove that every foreign key in a very large catalog is indexed.
+- An index supports the key when its leading columns equal the foreign-key columns as a set; column order inside that prefix does not matter for referential-integrity lookups.
 
 ## Related report items
 - [snapshot_delta_workload.table_scan_delta](#item-snapshot_delta_workload.table_scan_delta) — Check whether FK checks contribute to table scans.

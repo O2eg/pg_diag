@@ -1,4 +1,28 @@
-with candidates as (
+with stats_epoch as (
+  -- Lower bound of the observation window for cumulative counters: they have accumulated
+  -- at least since this moment. pg_stat_database.stats_reset is exact when set (on
+  -- PostgreSQL 15+ it stays NULL until pg_stat_reset() is called). A shared statistics
+  -- reset after the postmaster started is either a crash recovery, which discards every
+  -- counter, or a targeted pg_stat_reset_shared(), which leaves per-object counters older
+  -- than it; taking the latest candidate therefore never overstates the window. Statistics
+  -- survive clean restarts, so the postmaster start time is a lower bound as well.
+  select
+    db.stats_reset as stats_reset,
+    greatest(pg_catalog.pg_postmaster_start_time(), db.stats_reset, bg.stats_reset) as stats_window_start,
+    case
+      when db.stats_reset is not null
+        and db.stats_reset = greatest(pg_catalog.pg_postmaster_start_time(), db.stats_reset, bg.stats_reset)
+        then 'pg_stat_database.stats_reset'
+      when bg.stats_reset is not null
+        and bg.stats_reset = greatest(pg_catalog.pg_postmaster_start_time(), db.stats_reset, bg.stats_reset)
+        then 'shared statistics reset after postmaster start (crash recovery or pg_stat_reset_shared(); per-object counters may be older)'
+      else 'postmaster start time (statistics survive clean restarts, so counters may be older)'
+    end as stats_window_source
+  from pg_catalog.pg_stat_database db
+  cross join pg_catalog.pg_stat_bgwriter bg
+  where db.datname = pg_catalog.current_database()
+),
+candidates as (
   select
     st.relid,
     st.schemaname,
@@ -37,7 +61,9 @@ select
   c.relid,
   c.schemaname,
   c.relname,
-  db.stats_reset,
+  e.stats_reset,
+  e.stats_window_start,
+  e.stats_window_source,
   c.seq_scan::int8 as seq_scan,
   c.seq_tup_read::int8 as seq_tup_read,
   c.idx_scan::int8 as idx_scan,
@@ -68,5 +94,5 @@ select
     else null
   end as pg_diag_internal_reason
 from candidates c
-left join pg_stat_database db on db.datname = current_database()
+cross join stats_epoch e
 order by total_dml desc nulls last, c.schemaname, c.relname, c.relid

@@ -10,6 +10,7 @@ This instruction belongs to report item `server_log.maintenance_events`. The ite
 - Errors, cancellations, lock waits reported by `log_lock_waits`, and wraparound emergencies are always included. `impact_score` is the largest threshold ratio, so values above 1 identify the dimension that crossed a threshold.
 - Cancelled autovacuum/autoanalyze workers are included even with an empty command tag. Their table and operation are recovered from CSV `CONTEXT` when available; missing completion statistics do not hide the cancellation.
 - At most 100 qualifying series are emitted, ranked by impact. `below_threshold_event_count` records intentionally filtered successful noise; `omitted_series_count` warns when qualifying rows exceeded the fixed limit.
+- `aggressive = true` marks an `automatic aggressive vacuum`; the run keeps its relation and counters like a regular autovacuum.
 
 ## What to watch
 - High WAL or buffer volume, long elapsed time, repeated work on one relation, or many dead tuples that could not be removed.

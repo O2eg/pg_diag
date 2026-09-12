@@ -823,6 +823,7 @@ def test_collect_snapshots_runs_static_items_before_chart_window(tmp_path, monke
                 "lock_timeout": "750",
                 "idle_in_transaction_session_timeout": "10000",
                 "search_path": "pg_catalog, public",
+                "application_name": "pg_diag",
             }
         }
         call_order.append(f"once:{planned.item_id}")

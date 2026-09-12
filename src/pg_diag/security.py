@@ -155,15 +155,67 @@ def _normalize_row(row: Any, columns: list[dict[str, Any]]) -> list[Any]:
     return [row]
 
 
+# "password=secret", "PGPASSWORD: x", "AWS_SECRET_ACCESS_KEY=..." -> the value is the
+# secret. The key may embed the sensitive word anywhere in the identifier; the value is a
+# quoted string or one whitespace-free token. Identifiers that merely contain the word
+# and never carry a secret value (the GUCs password_encryption and passwordcheck.*) are
+# the only exceptions.
+_SECRET_ASSIGNMENT_RE = re.compile(
+    r"(?P<key>(?<![\w.])(?!password_encryption\b|passwordcheck\b)"
+    r"[\w.-]*?(?:password|passwd|secret|token|apikey|api_key|credential)[\w.-]*\s*[=:]\s*)"
+    r"(?P<value>'[^']*'|\"[^\"]*\"|[^\s'\"]+)",
+    re.IGNORECASE,
+)
+# A bare sensitive word as its own token (not part of an identifier such as
+# password_encryption or passwordcheck) still hides the whole line.
+_SENSITIVE_WORD_RE = re.compile(
+    r"(?<![\w.])(password|passwd|secret|token|apikey|api_key|credential|dsn|conninfo)(?![\w])",
+    re.IGNORECASE,
+)
+
+
 def redact_text(value: str) -> str:
-    # Conservative line-level redaction for script/plain text output.
+    """Line-oriented redaction for script and plain-text output.
+
+    Secret values in ``key=value`` / ``key: value`` form (quoted or bare) and
+    credentials in connection URIs are replaced. A line that still names a
+    secret outside such a pair is hidden entirely, even when another pair on the
+    same line was already redacted. Identifiers that merely contain the word,
+    such as the GUC ``password_encryption`` on a postmaster command line, are
+    kept.
+    """
     lines = []
     for line in value.splitlines():
-        if is_sensitive_name(line):
+        candidate = redact_dsn(line) or ""
+        if any(_ambiguous_value(candidate, match) for match in _SECRET_ASSIGNMENT_RE.finditer(candidate)):
+            # shell escapes or mixed quoting: the value's end cannot be located, hide everything
+            lines.append(REDACTED)
+            continue
+        candidate = _SECRET_ASSIGNMENT_RE.sub(lambda m: m.group("key") + REDACTED, candidate)
+        # Look for bare secret words in what is left after the handled pairs are removed.
+        remainder = _SECRET_ASSIGNMENT_RE.sub("", candidate)
+        if _SENSITIVE_WORD_RE.search(remainder):
             lines.append(REDACTED)
         else:
-            lines.append(line)
+            lines.append(candidate)
     return "\n".join(lines)
+
+
+def _ambiguous_value(line: str, match: "re.Match[str]") -> bool:
+    """True when the matched secret value may continue past where the pattern stopped.
+
+    A backslash inside the value (``prefix\\ rest``, ``"a\\"b"``) escapes the delimiter the
+    pattern relied on, and a quote that opens right after a bare or quoted value
+    (``abc'def ghi'``, ``'a'"b c"``) starts another segment of the same word. A quote that
+    closes an enclosing string (``'host=db password=x'``) is not ambiguous.
+    """
+    value = match.group("value")
+    if "\\" in value:
+        return True
+    following = line[match.end() : match.end() + 1]
+    if following in ("'", '"'):
+        return line[: match.start()].count(following) % 2 == 0
+    return False
 
 
 def redact_error(value: BaseException | str) -> str:

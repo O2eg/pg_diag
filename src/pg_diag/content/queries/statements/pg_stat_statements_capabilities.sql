@@ -12,6 +12,21 @@ with settings as (
     'pg_stat_statements.track_utility'
   )
 ),
+info_access as (
+  -- The extension views may be queried only when the view exists and the library is
+  -- preloaded; otherwise pg_stat_statements raises an error instead of returning rows.
+  select
+    to_regclass('pg_stat_statements') is not null
+      and to_regclass('pg_stat_statements_info') is not null
+      and exists (
+        select 1
+        from regexp_split_to_table(
+          (select setting from settings where name = 'shared_preload_libraries'),
+          ','
+        ) as library(name)
+        where btrim(library.name) = 'pg_stat_statements'
+      ) as available
+),
 required_columns(column_name) as (
   select unnest(
     array[
@@ -184,6 +199,54 @@ capabilities as (
     'pg_stat_statements.track_utility',
     coalesce((select setting from settings where name = 'pg_stat_statements.track_utility'), '<missing>'),
     'pg_settings'
+  union all
+  -- The three rows below read the extension views through query_to_xml(), so the view
+  -- names are resolved only when info_access.available is true; a missing or not
+  -- preloaded extension yields '<unavailable>' instead of failing the whole item.
+  select
+    'stats_reset',
+    case
+      when a.available then coalesce((
+        select (xpath('/row/stats_reset/text()', x))[1]::text
+        from query_to_xml(
+          'select stats_reset from ' || to_regclass('pg_stat_statements_info')::text,
+          true, true, ''
+        ) as x
+      ), '<never>')
+      else '<unavailable>'
+    end,
+    'pg_stat_statements_info'
+  from info_access a
+  union all
+  select
+    'dealloc',
+    case
+      when a.available then coalesce((
+        select (xpath('/row/dealloc/text()', x))[1]::text
+        from query_to_xml(
+          'select dealloc from ' || to_regclass('pg_stat_statements_info')::text,
+          true, true, ''
+        ) as x
+      ), '<unavailable>')
+      else '<unavailable>'
+    end,
+    'pg_stat_statements_info'
+  from info_access a
+  union all
+  select
+    'entries_used',
+    case
+      when a.available then coalesce((
+        select (xpath('/row/n/text()', x))[1]::text
+        from query_to_xml(
+          'select count(*) as n from ' || to_regclass('pg_stat_statements')::text,
+          true, true, ''
+        ) as x
+      ), '<unavailable>')
+      else '<unavailable>'
+    end,
+    'pg_stat_statements'
+  from info_access a
 )
 select
   capability,
@@ -218,6 +281,12 @@ select
       then 'planning counters stay zero; enabling planning tracking can add contention overhead'
     when capability = 'pg_stat_statements.track_utility' and value <> 'on'
       then 'utility commands are not included in statement statistics'
+    when capability = 'dealloc' and value ~ '^[0-9]+$' and value::int8 > 0
+      then 'entries were evicted since the last reset; cumulative Top SQL rankings miss evicted statements, raise pg_stat_statements.max or shorten the window'
+    when capability in ('stats_reset', 'dealloc', 'entries_used') and value = '<unavailable>'
+      then 'the extension views cannot be queried until the extension is installed and preloaded'
+    when capability = 'stats_reset'
+      then 'cumulative statement counters start at this time; compare it with overview.stat_reset_times'
     else 'ok'
   end as recommendation,
   case
@@ -230,6 +299,7 @@ select
     when capability = 'cross_user_query_visibility' and value <> 'full' then 'unknown'
     when capability = 'settings_visibility' and value <> 'full' then 'unknown'
     when capability = 'pg_stat_statements.track' and value = 'none' then 'unknown'
+    when capability = 'dealloc' and value ~ '^[0-9]+$' and value::int8 > 0 then 'unknown'
     else 'ok'
   end as pg_diag_internal_severity,
   case
@@ -255,6 +325,8 @@ select
       then 'some pg_stat_statements configuration evidence is hidden'
     when capability = 'pg_stat_statements.track' and value = 'none'
       then 'pg_stat_statements tracking is disabled'
+    when capability = 'dealloc' and value ~ '^[0-9]+$' and value::int8 > 0
+      then 'statement entries were evicted; cumulative Top SQL tables are partial'
     else ''
   end as pg_diag_internal_reason
 from capabilities

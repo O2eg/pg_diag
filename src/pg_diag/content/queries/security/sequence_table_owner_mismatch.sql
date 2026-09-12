@@ -27,8 +27,8 @@ where seq.relkind = 'S'
   and tbl.relkind in ('r', 'p')
   and seq.relowner <> tbl.relowner
   and seq_ns.nspname not in ('pg_catalog', 'information_schema')
-  and seq_ns.nspname not like 'pg_toast%'
+  and seq_ns.nspname !~ '^pg_(toast|temp)'
   and tbl_ns.nspname not in ('pg_catalog', 'information_schema')
-  and tbl_ns.nspname not like 'pg_toast%'
+  and tbl_ns.nspname !~ '^pg_(toast|temp)'
 order by sequence_schema, sequence_name
 limit 1000

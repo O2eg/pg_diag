@@ -28,6 +28,7 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_index_fet
 ## Automatic evaluation
 - This chart is informational and ranks index-driven heap fetch deltas by stable relation OID.
 - Counter resets, changing bounded membership, and absent endpoints become missing evidence.
+- Members are chosen per interval, so the legend is the union of every interval's Top 10 and can hold many series with a single point on quiet intervals; use the legend filter and read the columns interval by interval.
 
 ## Related report items
 - [object_workload.index_workload](#item-object_workload.index_workload) — Inspect index activity on the table.

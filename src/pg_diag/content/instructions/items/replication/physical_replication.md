@@ -6,6 +6,7 @@ This instruction belongs to report item `replication.physical_replication`. The 
 - A point-in-time row for every directly connected WAL sender in `pg_stat_replication` on a primary or cascading standby.
 - Text LSN positions plus byte gaps for current-to-sent, sent-to-write, write-to-flush, flush-to-replay, and current-to-replay stages.
 - PostgreSQL write/flush/replay lag intervals, reply age, sender state, synchronous state, and client identity where visible.
+- `sender_kind` (`physical` or `logical`, from the replication slot the sender is streaming for) and `slot_name`: `pg_stat_replication` lists logical subscribers next to physical standbys, and for a logical sender the write/flush/replay positions are subscriber confirmations, not standby WAL replay.
 
 ## What to watch
 - A sender that remains outside `streaming`, growing byte gaps across captures, or unexpectedly stale replies.

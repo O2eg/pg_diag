@@ -1,15 +1,21 @@
 with senders as (
   select
     r.*,
+    -- a walsender streaming for a logical slot is a logical replication sender
+    coalesce(slot.slot_type::text, 'physical') as sender_kind,
+    slot.slot_name::text as slot_name,
     case
       when pg_catalog.pg_is_in_recovery() then pg_catalog.pg_last_wal_replay_lsn()
       else pg_catalog.pg_current_wal_lsn()
     end as local_wal_lsn
   from pg_catalog.pg_stat_replication r
+  left join pg_catalog.pg_replication_slots slot on slot.active_pid = r.pid
 )
 select
   case when pg_catalog.pg_is_in_recovery() then 'cascading standby' else 'primary' end
     as server_role,
+  sender_kind,
+  slot_name,
   pid,
   usesysid,
   usename,
@@ -42,7 +48,10 @@ select
     as seconds_since_reply,
   case when state = 'streaming' then 'ok' else 'medium' end
     as pg_diag_internal_severity,
-  case when state = 'streaming' then '' else 'WAL sender is not in streaming state' end
-    as pg_diag_internal_reason
+  case
+    when state <> 'streaming' then 'WAL sender is not in streaming state'
+    when sender_kind = 'logical' then 'logical replication sender: write/flush/replay positions are subscriber confirmations, not standby replay'
+    else ''
+  end as pg_diag_internal_reason
 from senders
-order by current_to_replay_lag_bytes desc nulls last, application_name, pid
+order by sender_kind asc, current_to_replay_lag_bytes desc nulls last, application_name, pid

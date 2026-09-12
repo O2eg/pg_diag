@@ -25,7 +25,7 @@ candidates_bounded as (
   where i.relkind = 'i'
     and i.relpages >= 1280
     and n.nspname not in ('pg_catalog', 'information_schema')
-    and n.nspname not like 'pg_toast%'
+    and n.nspname !~ '^pg_(toast|temp)'
   order by i.relpages desc, i.oid
   limit 501
 ),
@@ -122,7 +122,7 @@ select
   end as estimate_caveat,
   coverage.candidate_sample_truncated,
   case
-    when not e.can_estimate then 'unknown'
+    when not e.can_estimate then 'ok'
     when greatest(e.relpages::numeric - e.expected_pages, 0) * 100 / e.relpages >= 60
       and greatest(e.relpages::numeric - e.expected_pages, 0) * e.bs >= 5368709120 then 'high'
     when greatest(e.relpages::numeric - e.expected_pages, 0) * 100 / e.relpages >= 40
@@ -130,7 +130,7 @@ select
     else 'ok'
   end as risk_level,
   case
-    when not e.can_estimate then 'Bloat cannot be estimated for this index'
+    when not e.can_estimate then 'Bloat is not estimated for this index (see estimate_caveat); this row is informational, not a finding'
     when greatest(e.relpages::numeric - e.expected_pages, 0) * 100 / e.relpages >= 60
       and greatest(e.relpages::numeric - e.expected_pages, 0) * e.bs >= 5368709120
       then 'Estimated bloat exceeds 60% and 5 GiB; this is a statistical estimate - verify before planning REINDEX CONCURRENTLY'

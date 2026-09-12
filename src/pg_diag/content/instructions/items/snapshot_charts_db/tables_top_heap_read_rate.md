@@ -29,6 +29,7 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_heap_read
 ## Automatic evaluation
 - This chart ranks physical heap-block read counter deltas by stable relation OID.
 - Changing bounded membership and counter resets become missing evidence; correlate with OS latency and cache state.
+- Members are chosen per interval, so the legend is the union of every interval's Top 10 and can hold many series with a single point on quiet intervals; use the legend filter and read the columns interval by interval.
 
 ## Related report items
 - [snapshot_delta_workload.table_io_delta](#item-snapshot_delta_workload.table_io_delta) — Inspect relation heap-block reads.

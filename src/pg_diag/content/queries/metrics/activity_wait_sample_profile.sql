@@ -10,6 +10,8 @@ from pg_stat_activity a
 where
   a.state = 'active'
   and a.pid <> pg_backend_pid()
+  -- walsenders and other server processes are always 'active'; only session work counts here
+  and coalesce(a.backend_type, 'client backend') in ('client backend', 'autovacuum worker', 'parallel worker', 'logical replication worker')
 group by 1, 2, 3, 4, 5
 order by sessions desc, wait_event_type asc, wait_event asc
 limit 100

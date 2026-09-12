@@ -13,6 +13,8 @@ It is backed by local Python source `security.wal_archive_directory_permissions`
 ## Automatic evaluation
 - World exposure is `high`; other broad permission findings are `medium`.
 - Disabled archiving is `skipped/unknown` as not applicable. `archive_library`, an empty command, or a command without an inferable absolute path produces `unsupported`, never a false pass.
+- Only absolute paths that embed the WAL placeholders `%f` or `%p` are taken as archive destinations. Flag files tested by the command, helper binaries and log paths are ignored, so a command such as `test -f /tmp/flag && exit 1; cp %p /archive/%f` yields `/archive` only.
+- Wrappers such as pgBackRest or WAL-G pass `%p` as an argument and name no destination directory; the item stays `unsupported` for them instead of guessing.
 
 ## Common fault causes
 - Archive wrapper hides the destination, remote/object storage is used, a relative path depends on service cwd, or archive directory ownership drifted.

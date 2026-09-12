@@ -12,7 +12,7 @@ extension_state as (
     ae.default_version,
     ae.installed_version,
     w.name = any(
-      regexp_split_to_array(lower(coalesce(s.session_preload_libraries, '')), '\\s*,\\s*')
+      regexp_split_to_array(btrim(lower(coalesce(s.session_preload_libraries, ''))), '\s*,\s*')
     ) as is_preloaded
   from wanted w
   cross join settings s

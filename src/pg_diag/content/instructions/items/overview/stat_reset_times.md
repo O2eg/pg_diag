@@ -20,9 +20,11 @@ This instruction belongs to report item `overview.stat_reset_times`. The item is
 - Maintenance, testing, or monitoring jobs that reset counters before a diagnostic capture.
 
 ## Automatic evaluation
-- Reset age is not assigned a severity because planned resets and cluster age vary by environment.
+- Reset age itself is not assigned a severity because planned resets and cluster age vary by environment.
 - `not_reported` means the view returned no timestamp; it is not converted to a pass, failure, or zero age.
 - pg_diag only reads these timestamps and never invokes statistics reset functions.
+- `medium` on the `pg_stat_bgwriter` row when every shared statistics view (bgwriter, checkpointer, archiver, WAL, I/O, SLRU, ... depending on the version) carries the same reset time later than the postmaster start. That signature belongs to a crash recovery, which discards per-database and per-object counters as well while `pg_stat_database.stats_reset` stays NULL, or to `pg_stat_reset_shared()` called for every target; check `server_log.server_lifecycle` around that time to tell them apart. A single shared view reset after the postmaster start is a targeted `pg_stat_reset_shared()` that does not touch per-object counters; it is reported without severity.
+- `effective_window_start` gives, for every row, a lower bound of its counter window: the row's own reset time, or, when the view reports none, the later of the postmaster start and the last shared reset after it. Counters may be older (statistics survive clean restarts), never younger, except for objects created after that time.
 
 ## Related report items
 - [overview.database_stats](#item-overview.database_stats) — Interpret cumulative database counters against their reset epoch.

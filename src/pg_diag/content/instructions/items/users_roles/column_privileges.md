@@ -18,6 +18,7 @@ This instruction belongs to report item `users_roles.column_privileges`. The ite
 ## Automatic evaluation
 - This item is an inventory and assigns no risk to individual rows.
 - Only the 5,000 largest relations are inspected and at most 3,000 column ACL rows are expanded; `candidate_sample_truncated`, `column_sample_truncated`, and `result_truncated` mark partial coverage, add a `[coverage]` row, and set the item severity to `unknown`.
+- System schemas are excluded by the reserved prefix: `pg_catalog`, `information_schema`, `pg_toast*` and the per-backend temporary schemas `pg_temp_N` / `pg_toast_temp_N`; user schemas cannot start with `pg_`.
 
 ## Related report items
 - [users_roles.relation_privileges_detail](#item-users_roles.relation_privileges_detail) — Compare with the table-level privileges of the same relations.

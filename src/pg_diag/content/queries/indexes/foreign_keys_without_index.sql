@@ -18,7 +18,7 @@ with foreign_key_roots as (
   join pg_namespace n_target on n_target.oid = c_target.relnamespace
   where con.contype = 'f'
     and n_source.nspname not in ('pg_catalog', 'pg_toast', 'information_schema')
-    and n_source.nspname not like 'pg_toast%'
+    and n_source.nspname !~ '^pg_(toast|temp)'
   order by c_source.relpages desc, n_source.nspname, c_source.relname,
            con.conname, con.oid
   limit 10000
@@ -32,11 +32,12 @@ missing_index_candidates as (
     where i.indrelid = fk.conrelid
       and i.indisvalid and i.indisready and i.indislive
       and i.indpred is null
+      -- the leading index columns must cover the FK columns in any order
       and (
-        select array_agg(key.attnum order by key.ord)::smallint[]
+        select array_agg(key.attnum order by key.attnum)::smallint[]
         from unnest(i.indkey::smallint[]) with ordinality as key(attnum, ord)
         where key.ord <= array_length(fk.conkey, 1)
-      ) = fk.conkey
+      ) = (select array_agg(x order by x)::smallint[] from unnest(fk.conkey) as x)
   )
   limit 3000
 )
@@ -73,8 +74,8 @@ select
   ) as suggested_index,
   case when coalesce(st.n_live_tup, 0) >= 100000 then 'medium' else 'unknown' end as pg_diag_internal_severity,
   case
-    when coalesce(st.n_live_tup, 0) >= 100000 then 'Large referencing table has no valid full left-prefix index for this foreign key.'
-    else 'No valid full left-prefix index; parent UPDATE/DELETE frequency determines whether an index is worthwhile.'
+    when coalesce(st.n_live_tup, 0) >= 100000 then 'Large referencing table has no valid index whose leading columns cover this foreign key.'
+    else 'No valid index whose leading columns cover the foreign key; parent UPDATE/DELETE frequency determines whether an index is worthwhile.'
   end as pg_diag_internal_reason
 from missing_index_candidates fk
 left join pg_stat_all_tables st on st.relid = fk.conrelid

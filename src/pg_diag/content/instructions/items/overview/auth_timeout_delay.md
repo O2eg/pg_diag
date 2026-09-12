@@ -23,6 +23,7 @@ This instruction belongs to report item `overview.auth_timeout_delay`. The item 
 
 ## Automatic evaluation
 - Returned rows use the `risk_level` described in What to watch; external throttling controls are not evaluated automatically.
+- `current_value` of the `failed_authentication_delay` row names the checked parameter (`auth_delay.milliseconds`, `auth_delay.failure_timeout`) and whether `auth_delay` is preloaded; the full `shared_preload_libraries` list is not repeated there.
 
 ## Related report items
 - [activity_locks.connection_pressure](#item-activity_locks.connection_pressure) — Correlate authentication controls with connection pressure.

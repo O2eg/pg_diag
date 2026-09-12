@@ -20,4 +20,6 @@ select
   (to_jsonb(c)->>'confl_active_logicalslot')::int8 as confl_active_logicalslot
 from pg_catalog.pg_stat_database_conflicts c
 left join pg_catalog.pg_stat_database d on d.datid = c.datid
+-- pg_stat_database_conflicts only counts on a standby; a primary has nothing to report
+where pg_catalog.pg_is_in_recovery()
 order by conflicts_total desc, c.datname

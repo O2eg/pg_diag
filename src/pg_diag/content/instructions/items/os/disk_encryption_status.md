@@ -14,6 +14,7 @@ It is backed by local Python source `security.disk_encryption_status`.
 ## Automatic evaluation
 - Unconfirmed encryption is `medium`; it is not proof that storage is unencrypted.
 - Generic `/dev/mapper/*` and `/dev/dm-*` names are not accepted as encryption evidence because ordinary LVM uses them too. Missing mount/lsblk evidence is `unsupported`; cloud or SAN encryption may be invisible locally.
+- Archive paths join the sensitive roots only when `archive_command` names a destination with `%f`/`%p`; flag files or helper paths in the command do not make their directory a PostgreSQL-sensitive mount.
 
 ## Common fault causes
 - Plain LVM, cloud-provider encryption outside the guest, SAN encryption, container mount namespaces, or sensitive paths placed on an unexpected filesystem.

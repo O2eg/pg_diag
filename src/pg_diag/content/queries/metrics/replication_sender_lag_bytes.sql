@@ -1,16 +1,19 @@
 with senders as (
   select
     r.*,
+    slot.slot_type,
     case
       when pg_catalog.pg_is_in_recovery()
         then coalesce(pg_catalog.pg_last_wal_receive_lsn(), pg_catalog.pg_last_wal_replay_lsn())
       else pg_catalog.pg_current_wal_lsn()
     end as local_wal_lsn
   from pg_catalog.pg_stat_replication r
+  left join pg_catalog.pg_replication_slots slot on slot.active_pid = r.pid
 )
 select
   statement_timestamp() as snapshot_time,
   coalesce(nullif(application_name, ''), 'unnamed')
+    || case when slot_type = 'logical' then ' [logical]' else '' end
     || ' (' || coalesce(client_addr::text, 'local') || ', pid ' || pid::text || ')' as sender,
   pid,
   application_name,

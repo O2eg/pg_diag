@@ -169,3 +169,41 @@ def test_shell_table_json_result_builds_dynamic_table_and_redacts() -> None:
         ["disk", None, "[REDACTED]", 1024],
     ]
     assert result["row_count"] == 2
+
+
+def test_redact_text_hides_values_but_keeps_setting_identifiers() -> None:
+    from pg_diag.security import REDACTED, redact_text
+
+    text = "\n".join(
+        [
+            "postgres -c listen_addresses=* -c password_encryption=scram-sha-256 -c ssl=off",
+            "PGPASSWORD=hunter2 psql",
+            "primary_conninfo = 'host=db password=s3cret'",
+            "postgres://app:secret@db/app",
+            "the token is abc",
+            "PGPASSWORD='quoted value with spaces' psql",
+            'PASSWORD=one PGPASSWORD="two" psql',
+            "AWS_SECRET_ACCESS_KEY=three command",
+            "password=x and the secret is here",
+            "passwordcheck.min_length=8",
+            "PGPASSWORD=prefix\\ remainder psql",
+            "PGPASSWORD='a'\"b c\" psql",
+            "PGPASSWORD=abc'def ghi' psql",
+            'PGPASSWORD="a\\"b c" psql',
+        ]
+    )
+    lines = redact_text(text).splitlines()
+    assert lines[0] == "postgres -c listen_addresses=* -c password_encryption=scram-sha-256 -c ssl=off"
+    assert lines[1] == f"PGPASSWORD={REDACTED} psql"
+    assert lines[2] == f"primary_conninfo = 'host=db password={REDACTED}'"
+    assert lines[3] == f"postgres://app:{REDACTED}@db/app"
+    assert lines[4] == REDACTED
+    # quoted values, several pairs on one line, and compound secret names
+    assert lines[5] == f"PGPASSWORD={REDACTED} psql"
+    assert lines[6] == f"PASSWORD={REDACTED} PGPASSWORD={REDACTED} psql"
+    assert lines[7] == f"AWS_SECRET_ACCESS_KEY={REDACTED} command"
+    # a bare secret word left after one pair was handled still hides the line
+    assert lines[8] == REDACTED
+    assert lines[9] == "passwordcheck.min_length=8"
+    # shell escapes and mixed quoting make the value's end ambiguous: the whole line goes
+    assert lines[10:14] == [REDACTED] * 4

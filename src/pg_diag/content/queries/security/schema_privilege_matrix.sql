@@ -7,7 +7,7 @@ with user_schema_roots_bounded as (
         n.nspacl
     from pg_namespace n
     where n.nspname not in ('pg_catalog', 'information_schema')
-      and n.nspname not like 'pg_toast%'
+      and n.nspname !~ '^pg_(toast|temp)'
     order by n.nspname, n.oid
     limit 10001
 ),

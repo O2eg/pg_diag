@@ -37,13 +37,21 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
             continue
         actual_mode = stat.S_IMODE(socket_stat.mode)
         if actual_mode & 0o007:
+            # 0777 is the PostgreSQL default and pg_hba local rules still decide access.
+            # It becomes a real finding only when the socket directory itself lets any
+            # OS user replace the socket (world-writable without the sticky bit).
+            directory_exposed = await _socket_directory_is_exposed(ctx, Path(socket_dir))
             rows.append(
                 {
                     "socket_file": str(socket_path),
                     "configured_permissions": str(socket_permissions or ""),
                     "actual_mode": _octal(actual_mode),
-                    "risk_level": "medium",
-                    "risk_reason": "PostgreSQL Unix socket accepts connection attempts from other OS users; pg_hba authentication still applies",
+                    "risk_level": "medium" if directory_exposed else "unknown",
+                    "risk_reason": (
+                        "PostgreSQL Unix socket is world-accessible inside a world-writable socket directory; other OS users could replace the socket path"
+                        if directory_exposed
+                        else "PostgreSQL Unix socket keeps the default 0777 mode; other OS users can attempt a connection, and local pg_hba rules decide whether it succeeds"
+                    ),
                 }
             )
 
@@ -53,8 +61,8 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
                 "socket_file": "",
                 "configured_permissions": _octal(configured_mode),
                 "actual_mode": "",
-                "risk_level": "medium",
-                "risk_reason": "unix_socket_permissions permits connection attempts by other OS users; pg_hba authentication still applies",
+                "risk_level": "unknown",
+                "risk_reason": "unix_socket_permissions keeps the default 0777 mode; other OS users can attempt a connection, and local pg_hba rules decide whether it succeeds",
             }
         )
 
@@ -66,3 +74,11 @@ async def collect(ctx: PythonSourceContext) -> PythonSourceResult:
         recommendation="Use unix_socket_permissions 0700 or 0770 unless all local OS users are trusted for socket access.",
         diagnostic_code="security_unix_socket_permissions",
     )
+
+
+async def _socket_directory_is_exposed(ctx: PythonSourceContext, directory: Path) -> bool:
+    try:
+        mode = stat.S_IMODE((await ctx.host.stat(directory)).mode)
+    except OSError:
+        return False
+    return bool(mode & 0o002) and not mode & 0o1000

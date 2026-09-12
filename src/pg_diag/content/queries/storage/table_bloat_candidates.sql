@@ -19,7 +19,7 @@ candidates_bounded as (
   where c.relkind in ('r', 'm')
     and c.relpages >= 1280
     and n.nspname not in ('pg_catalog', 'information_schema')
-    and n.nspname not like 'pg_toast%'
+    and n.nspname !~ '^pg_(toast|temp)'
   order by c.relpages desc, c.oid
   limit 501
 ),

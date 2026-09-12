@@ -506,7 +506,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "place-items: start center;" in html
     assert "max-height: calc(100dvh - clamp(24px, 6vh, 48px));" in html
     assert 'id="pg-explain-viewer-library"' in html
-    assert "pg-explain-viewer 0.7.2 - MIT license" in html
+    assert "pg-explain-viewer 0.7.3 - MIT license" in html
     assert 'chart.on("click", openQueryPlanViewerFromChart)' in html
     assert "window.PgPlan.parse(planText)" in html
     assert "window.PgPlanRender.render(root, plan" in html

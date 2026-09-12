@@ -66,8 +66,8 @@ select
     when auth_delay_failure_timeout is not null then
       concat('auth_delay.failure_timeout=', auth_delay_failure_timeout, coalesce(auth_delay_failure_timeout_unit, ''))
     when auth_delay_milliseconds is not null then concat('auth_delay.milliseconds=', auth_delay_milliseconds)
-    when shared_preload_libraries is not null then concat('shared_preload_libraries=', shared_preload_libraries)
-    else '<unset>'
+    when auth_delay_preloaded then 'auth_delay preloaded; auth_delay.milliseconds unset'
+    else 'auth_delay not preloaded; auth_delay.milliseconds unset'
   end as current_value,
   'auth_delay or PostgreSQL failed-auth delay configured with a positive value' as expected_value,
   'medium' as risk_level,

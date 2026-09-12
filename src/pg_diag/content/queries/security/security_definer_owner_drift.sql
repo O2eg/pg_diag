@@ -6,7 +6,7 @@ with function_roots_bounded as (
     left join pg_stat_user_functions stats on stats.funcid = p.oid
     where p.prosecdef
       and n.nspname not in ('pg_catalog', 'information_schema')
-      and n.nspname not like 'pg_toast%'
+      and n.nspname !~ '^pg_(toast|temp)'
       and (r.rolsuper or p.proowner <> n.nspowner)
     order by r.rolsuper desc, coalesce(stats.calls, 0) desc,
              n.nspname, p.proname, p.oid

@@ -14,7 +14,11 @@ activity as (
     )::int8 as idle_in_transaction_connections,
     count(*) filter (
       where state = 'active' and wait_event_type is not null
-    )::int8 as waiting_connections
+        and wait_event_type not in ('Client', 'Timeout', 'Activity')
+    )::int8 as waiting_connections,
+    count(*) filter (
+      where state = 'active' and wait_event_type in ('Client', 'Timeout')
+    )::int8 as client_or_timeout_wait_connections
   from pg_stat_activity
   where backend_type = 'client backend'
 ),
@@ -50,6 +54,7 @@ select
   idle_connections,
   idle_in_transaction_connections,
   waiting_connections,
+  client_or_timeout_wait_connections,
   (used_connections::numeric * 100 / nullif(max_connections, 0)) as used_pct,
   ordinary_available_connections,
   reserved_role_available_connections,

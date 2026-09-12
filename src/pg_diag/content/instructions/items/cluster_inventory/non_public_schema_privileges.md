@@ -24,6 +24,7 @@ This item reports risky grants on non-system schemas other than `public`.
 - `unknown`: PUBLIC has only another privilege such as USAGE; compare it with the schema baseline.
 - At most 10,000 schemas in stable name order are considered and at most 3,000 matching ACL findings are expanded.
 - At most 1,000 findings are displayed. `candidate_sample_truncated`, `acl_expansion_truncated`, and `result_truncated` identify incomplete coverage; a `[coverage]` row prevents truncation from appearing as a clean `empty` result.
+- System schemas are excluded by the reserved prefix: `pg_catalog`, `information_schema`, `pg_toast*` and the per-backend temporary schemas `pg_temp_N` / `pg_toast_temp_N`; user schemas cannot start with `pg_`.
 
 ## Related report items
 - [cluster_inventory.schema_privilege_matrix](#item-cluster_inventory.schema_privilege_matrix) — Review the bounded sample of grants across schemas and roles.

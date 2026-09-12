@@ -28,6 +28,7 @@ This instruction belongs to report item `snapshot_charts_db.tables_top_seq_read_
 ## Automatic evaluation
 - This chart is informational and ranks `seq_tup_read` interval deltas by stable relation OID.
 - A high rate is not proof of a missing index; validate scan count, workload intent, and plans.
+- Members are chosen per interval, so the legend is the union of every interval's Top 10 and can hold many series with a single point on quiet intervals; use the legend filter and read the columns interval by interval.
 
 ## Related report items
 - [snapshot_delta_workload.table_scan_delta](#item-snapshot_delta_workload.table_scan_delta) — Inspect sequential scan counts and tuples.

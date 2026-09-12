@@ -19,6 +19,7 @@ This instruction belongs to report item `snapshot_delta_workload.sql_kernel_cpu_
 ## Interval coverage
 - Per-entry `pg_stat_kcache.stats_since` must be unchanged and all required counters must be monotonic between endpoints.
 - `missing_start`/`missing_end` reflects candidate-set or entry churn; reset/decrease intervals are omitted rather than reported as zero.
+- PostgreSQL 14+: the `pg_stat_kcache` entry is joined to the `pg_stat_statements` row with the same `toplevel` flag, so a statement executed both directly and from a function keeps one identity per nesting level; earlier versions have no `toplevel` column and use the plain identity join.
 
 ## Common fault causes
 - CPU-heavy expressions, joins, aggregation, decompression, or JIT work.

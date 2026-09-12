@@ -13,6 +13,8 @@ It is backed by local Python source `security.world_writable_paths_in_pg_tree`.
 ## Automatic evaluation
 - Every world-writable path is `high`.
 - Scans are bounded to depth 4, 50,000 entries and 100 findings per root. Missing roots, permission errors, or a reached limit produce `unknown` coverage rather than pass.
+- Symlinks, sockets and FIFOs are not findings: `find` reports the mode of the link itself (always 0777) and sockets are created world-writable by design; the symlink item reviews link targets and `cluster_inventory.unix_socket_permissions` covers PostgreSQL sockets.
+- A sticky directory (`1777`, the `/tmp` layout) is not reported: other users cannot modify or remove entries they do not own.
 
 ## Common fault causes
 - Recursive chmod, shared application directories, permissive archive targets, temporary troubleshooting changes, or inherited mount ACLs.

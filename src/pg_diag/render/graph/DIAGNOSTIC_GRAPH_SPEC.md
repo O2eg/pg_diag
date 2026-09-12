@@ -98,8 +98,12 @@ Rules:
   sibling findings and parent scores are never copied into its assessment.
   `kind: sources` identifies these generated directions structurally, not a
   special color. They use the same green/yellow/red/grey palette and are counted
-  in diagnostic coverage. Their findings propagate to ancestors; a healthy
-  sub-check alone cannot fill a missing parent assessment. This also applies
+  in diagnostic coverage. Their findings propagate to ancestors as
+  contributions: the engine damps a direction's raw score by the parent's
+  `pressure` and bounds it by the parent's `cap` exactly as it does for the
+  parent's own score, and when that reduction changes the color the
+  direction's first reason says so (the findings stay listed as evidence). A
+  healthy sub-check alone cannot fill a missing parent assessment. This also applies
   through intermediate diagnostic nodes: healthy checkpoint evidence cannot
   certify CPU when CPU measurements are absent.
   Green requires actual assessed measurements or a completed findings check,
@@ -226,7 +230,8 @@ Scores are numbers in `[0, 1]`; `status` is `ok` (< 0.34), `warn` (< 0.67),
   Original rules and direction metrics share this scale; pressure and explicit
   contribution weights can subsequently reduce a contextual score.
 - Rules return raw scores. The engine applies resource pressure once, then the
-  node cap, then takes the maximum with children. There are no registration-time
+  node cap, then takes the maximum with children; the same two steps apply to
+  every `sources` direction of the node before it propagates. There are no registration-time
   wrappers or evaluator-local damping defaults.
 - Chart statistics use finite points only: `mean`, `max`, `p95`, `last`, `n`.
   A series with fewer than 2 finite points is treated as absent.
@@ -252,8 +257,10 @@ Scores are numbers in `[0, 1]`; `status` is `ok` (< 0.34), `warn` (< 0.67),
   relation blocks use `block_size`, and I/O operations use byte counters or
   `op_bytes`.
 - Table cells are decoded by column `encoding`: `decimal_string` → number
-  (`Number()`; values above 2^53 lose precision, which is acceptable for
-  scoring), `json_number` as is, `json_boolean` as is, others as text.
+  (`Number()`; counters above 2^53 lose precision, which is acceptable for
+  scoring), except 64-bit identifier columns (`query_id`, `queryid`, `plan_id`,
+  `toplevel_query_id`), which stay exact text because they are shown to the
+  reader; `json_number` as is, `json_boolean` as is, others as text.
 - `generic` and direction findings share `findingsScore`. A `risk_level`
   of high/critical is 1, medium/moderate 0.6, low 0.5, ok/info/none 0.
   Unknown or missing levels remain unassessed and explain the missing baseline.
@@ -331,10 +338,16 @@ Scores are numbers in `[0, 1]`; `status` is `ok` (< 0.34), `warn` (< 0.67),
 - Heavy statements: with pg_stat_kcache the CPU seconds per second of the top
   statements and the sum over the listed statements against the core count
   are the primary CPU evidence; mean execution time alone can only warn.
+- Configuration: an entry `pg_file_settings` cannot apply warns (0.6) unless it
+  is the `auto` sentinel of a server-computed setting (`pending_restart_settings`
+  marks the setting `auto_computed_artifact`, the file-errors item marks the row
+  `auto_computed_artifact`); such reload artifacts are explained, not scored.
 - Checkpoints: when the log names the trigger, only `wal` checkpoints count as
   requested against `time` ones; immediate/force/shutdown/end-of-recovery
   checkpoints are explicit and excluded. One requested checkpoint in a window
-  (or a handful since a stats reset) is too few to judge. Log reasons replace
+  (or a handful since a stats reset) is too few to judge: the requested share
+  then stays advisory (at most 0.3, never a warning) and the reason says so.
+  Log reasons replace
   snapshot trigger counts only when the scan covers the entire snapshot window,
   ranking and per-item counts are complete, no rows were capped, and the log
   accounts for the observed trigger counts. Only checkpoint starts inside that

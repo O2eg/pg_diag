@@ -1,4 +1,28 @@
-with candidates as (
+with stats_epoch as (
+  -- Lower bound of the observation window for cumulative counters: they have accumulated
+  -- at least since this moment. pg_stat_database.stats_reset is exact when set (on
+  -- PostgreSQL 15+ it stays NULL until pg_stat_reset() is called). A shared statistics
+  -- reset after the postmaster started is either a crash recovery, which discards every
+  -- counter, or a targeted pg_stat_reset_shared(), which leaves per-object counters older
+  -- than it; taking the latest candidate therefore never overstates the window. Statistics
+  -- survive clean restarts, so the postmaster start time is a lower bound as well.
+  select
+    db.stats_reset as stats_reset,
+    greatest(pg_catalog.pg_postmaster_start_time(), db.stats_reset, bg.stats_reset) as stats_window_start,
+    case
+      when db.stats_reset is not null
+        and db.stats_reset = greatest(pg_catalog.pg_postmaster_start_time(), db.stats_reset, bg.stats_reset)
+        then 'pg_stat_database.stats_reset'
+      when bg.stats_reset is not null
+        and bg.stats_reset = greatest(pg_catalog.pg_postmaster_start_time(), db.stats_reset, bg.stats_reset)
+        then 'shared statistics reset after postmaster start (crash recovery or pg_stat_reset_shared(); per-object counters may be older)'
+      else 'postmaster start time (statistics survive clean restarts, so counters may be older)'
+    end as stats_window_source
+  from pg_catalog.pg_stat_database db
+  cross join pg_catalog.pg_stat_bgwriter bg
+  where db.datname = pg_catalog.current_database()
+),
+candidates as (
   select
     i.indrelid,
     i.indexrelid,
@@ -13,11 +37,12 @@ with candidates as (
       from pg_constraint fk
       where fk.contype = 'f'
         and fk.conrelid = i.indrelid
+        -- leading index columns as a set: (b, a) supports a FK on (a, b) equally well
         and (
-          select array_agg(k.attnum order by k.ord)::smallint[]
+          select array_agg(k.attnum order by k.attnum)::smallint[]
           from unnest(i.indkey::smallint[]) with ordinality as k(attnum, ord)
           where k.ord <= array_length(fk.conkey, 1)
-        ) = fk.conkey
+        ) = (select array_agg(x order by x)::smallint[] from unnest(fk.conkey) as x)
     ) as supports_fk
   from pg_index i
   join pg_class idx on idx.oid = i.indexrelid
@@ -43,7 +68,9 @@ select
   c.table_name,
   c.index_name,
   pg_get_indexdef(c.indexrelid) as index_definition,
-  db.stats_reset,
+  e.stats_reset,
+  e.stats_window_start,
+  e.stats_window_source,
   c.idx_scan,
   c.writes,
   pg_relation_size(c.indexrelid)::int8 as index_size_bytes,
@@ -52,17 +79,17 @@ select
   c.supports_fk,
   case
     when not c.supports_fk
-      and db.stats_reset <= statement_timestamp() - interval '30 days'
+      and e.stats_window_start <= statement_timestamp() - interval '30 days'
       and c.writes >= 100000 then 'medium'
     else 'unknown'
   end as pg_diag_internal_severity,
   case
     when c.supports_fk then 'Zero scans do not make a foreign-key support index removable.'
-    when db.stats_reset is null then 'Statistics reset time is unavailable; zero scans have no known observation window.'
-    when db.stats_reset > statement_timestamp() - interval '30 days' then 'Statistics are younger than 30 days; zero scans are insufficient evidence.'
+    when e.stats_window_start is null then 'Statistics epoch is unavailable; zero scans have no known observation window.'
+    when e.stats_window_start > statement_timestamp() - interval '30 days' then 'The statistics window is younger than 30 days; zero scans are insufficient evidence.'
     when c.writes >= 100000 then 'No scans over at least 30 days while the table accumulated substantial writes; review as a removal candidate.'
     else 'No scans observed, but the workload evidence is not strong enough for automatic severity.'
   end as pg_diag_internal_reason
 from candidates c
-left join pg_stat_database db on db.datname = current_database()
+cross join stats_epoch e
 order by index_size_bytes desc nulls last, c.schema_name, c.table_name, c.index_name, c.indexrelid

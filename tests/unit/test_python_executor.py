@@ -994,11 +994,15 @@ def test_local_security_python_sources_detect_permission_findings(
     assert "0600/0640 are typical" in hba_row[hba_columns.index("expected_file_mode")]
 
     assert socket_permissions["collection_status"] == "ok"
-    assert socket_permissions["severity_level"] == "medium"
+    # 0777 is the PostgreSQL default; inside a protected directory it is a review item,
+    # not a medium finding (pg_hba local rules still decide access)
+    assert socket_permissions["severity_level"] == "unknown"
     assert socket_permissions["result"]["row_count"] == 1
     socket_columns = [column["name"] for column in socket_permissions["result"]["columns"]]
     socket_row = socket_permissions["result"]["rows"][0]
     assert socket_row[socket_columns.index("configured_permissions")] == "0777"
+    assert socket_row[socket_columns.index("risk_level")] == "unknown"
+    assert "default 0777" in socket_row[socket_columns.index("risk_reason")]
 
 
 def test_pg_hba_permissions_include_recursively_included_files(

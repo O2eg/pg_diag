@@ -22,6 +22,7 @@ This instruction belongs to report item `users_roles.object_privileges_by_grante
 ## Automatic evaluation
 - This item is an inventory and assigns no risk to individual privilege rows.
 - Stored relations are sampled by descending `relpages` (10,000), other relations by name (10,000), functions by call count (1,000), and types by name (1,000); ACL expansion is bounded to 3,000 rows per pool and the result to 3,000 rows. `candidate_sample_truncated`, `acl_expansion_truncated`, and `result_truncated` mark partial coverage, add a `[coverage]` row, and set the item severity to `unknown`.
+- System schemas are excluded by the reserved prefix: `pg_catalog`, `information_schema`, `pg_toast*` and the per-backend temporary schemas `pg_temp_N` / `pg_toast_temp_N`; user schemas cannot start with `pg_`.
 
 ## Related report items
 - [users_roles.relation_privileges_detail](#item-users_roles.relation_privileges_detail) — Drill down to individual relations and grantors.

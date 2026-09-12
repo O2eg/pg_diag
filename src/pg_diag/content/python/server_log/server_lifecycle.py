@@ -31,7 +31,7 @@ _KINDS = (
     ("terminating any other active server processes", "backend_crash_cleanup"),
     ("could not create any TCP/IP sockets", "startup_failure"),
     ("could not bind", "startup_failure"),
-    ("FATAL:  lock file", "startup_failure"),
+    ('lock file "postmaster.pid" already exists', "startup_failure"),
 )
 
 

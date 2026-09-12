@@ -6,6 +6,7 @@ This instruction belongs to report item `server_log.replication_events`. The ite
 - Archive/restore command failures, WAL sender/receiver disconnects, missing WAL, timeline mismatch, replication-slot problems, logical-replication failures, and recovery conflicts.
 - Up to 100 highest-frequency/recent series. The existing focused `archiver_failures` item remains available and unchanged.
 - These classifications use localized message text and therefore require C/POSIX/English `lc_messages`.
+- `archive_failure` also covers the archiver's `failed too many times, will try again later` warning.
 
 ## What to watch
 - Missing/removed WAL or timeline mismatch: a replica may require a new base backup or corrected recovery target.

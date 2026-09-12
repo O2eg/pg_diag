@@ -196,12 +196,17 @@
   const rowCache = new WeakMap();
   const seriesCache = new WeakMap();
 
+  // 64-bit identifiers are shown to the reader, never computed with: Number() would round
+  // them above 2^53 and the DBA could not find the value in pg_stat_statements.
+  const IDENTIFIER_COLUMN_RE = /(?:^|_)(?:query|plan|toplevel_query)_?id$/i;
+
   function decodeCell(column, value) {
     if (value === null || value === undefined) {
       return null;
     }
     const encoding = column && column.encoding;
     if (encoding === "decimal_string") {
+      if (column && IDENTIFIER_COLUMN_RE.test(String(column.name || ""))) return String(value);
       return toNumber(value);
     }
     if (encoding === "json_number") {
@@ -369,8 +374,41 @@
       return cache[name];
     }
     return {
+      cgroup() {
+        return memo("cgroup", () => {
+          // Container limits bound PostgreSQL even though /proc describes the whole host.
+          // One row per postmaster cgroup: with several postmasters in different cgroups the
+          // report cannot tell which one is the database, so no limit is applied.
+          const rows = ctx.rows("os.cgroup_limits");
+          const row = rows[0];
+          if (!row) return null;
+          const count = toNumber(row.cgroup_count);
+          const ambiguous = rows.length > 1 || (count !== null && count > 1);
+          // a row measured on the collector's own cgroup (no visible postmaster) says nothing
+          // about the database; rows without a scope come from older content packs
+          const scope = String(row.scope || "postmaster");
+          const applicable = !ambiguous && scope !== "collector";
+          const cpu = toNumber(row.cpu_limit_cores), memory = toNumber(row.memory_limit_bytes), current = toNumber(row.memory_current_bytes);
+          return {
+            scope,
+            ambiguous,
+            cpuLimitCores: applicable && cpu !== null && cpu > 0 ? cpu : null,
+            memoryLimitBytes: applicable && memory !== null && memory > 0 ? memory : null,
+            memoryCurrentBytes: applicable && current !== null && current >= 0 ? current : null,
+            containerHint: String(row.container_hint || "none")
+          };
+        });
+      },
       cpuCores() {
         return memo("cpuCores", () => {
+          const limit = this.cgroup()?.cpuLimitCores ?? null;
+          const host = this.hostCpuCores();
+          if (limit !== null) return host === null ? limit : Math.min(limit, host);
+          return host;
+        });
+      },
+      hostCpuCores() {
+        return memo("hostCpuCores", () => {
           const text = ctx.text("os.cpu_info");
           const match = /^CPU\(s\):\s+(\d+)/m.exec(text);
           if (match) {
@@ -406,8 +444,19 @@
             const ram = ctx.rows("os.total_ram");
             total = ram.length ? toNumber(ram[0].total_ram_bytes) : null;
           }
+          // total/available/free/swap describe the host (/proc/meminfo); usableTotal is the
+          // capacity PostgreSQL can actually use (host RAM capped by the cgroup limit), and
+          // cgroupCurrent is the group's own occupancy. Ratios must stay within one scope.
+          const cgroup = this.cgroup();
+          const limit = cgroup?.memoryLimitBytes ?? null;
+          const usableTotal = limit !== null && (total === null || limit < total) ? limit : total;
           return {
             total,
+            hostTotal: total,
+            usableTotal,
+            cgroupLimit: limit,
+            cgroupCurrent: cgroup?.memoryCurrentBytes ?? null,
+            cgroupAmbiguous: Boolean(cgroup?.ambiguous),
             available: get("MemAvailable"),
             free: get("MemFree"),
             swapTotal: get("SwapTotal"),

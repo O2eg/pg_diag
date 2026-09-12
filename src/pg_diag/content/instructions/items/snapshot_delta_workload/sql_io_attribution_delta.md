@@ -19,6 +19,7 @@ This instruction belongs to report item `snapshot_delta_workload.sql_io_attribut
 ## Interval coverage
 - Filesystem and PostgreSQL block counters must belong to the same query identity at both endpoints with unchanged `pg_stat_kcache.stats_since`.
 - Unmatched candidates, resets, and decreases invalidate the full row so cross-layer ratios never combine different intervals.
+- PostgreSQL 14+: the `pg_stat_kcache` entry is joined to the `pg_stat_statements` row with the same `toplevel` flag, so a statement executed both directly and from a function keeps one identity per nesting level; earlier versions have no `toplevel` column and use the plain identity join.
 
 ## Common fault causes
 - OS page-cache hits, reads/writes outside ordinary relation counters, temporary I/O, extensions, or background writeback.

@@ -23,6 +23,7 @@ This instruction belongs to report item `storage_vacuum.index_bloat_candidates`.
 - `high` when estimated bloat is at least 60% and 5 GiB; `medium` at 40% and 1 GiB; both are statistical signals to verify, not rebuild orders.
 - `unknown` when estimation is refused (non-btree access method, missing statistics, or restricted pg_stats access).
 - Candidates are the 500 largest indexes by `relpages`; truncation is marked.
+- Indexes that cannot be estimated (`can_estimate = false`: non-btree, no statistics) stay `ok` with the reason in `estimate_caveat`; they are unassessed rows, not findings, and do not change the item status.
 
 ## Related report items
 - [storage_vacuum.table_bloat_candidates](#item-storage_vacuum.table_bloat_candidates) — The table-side estimate for the same problem.

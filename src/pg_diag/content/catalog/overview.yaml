@@ -111,6 +111,9 @@ queries:
       default_sort:
         column: seconds_since_reset
         direction: asc
+    evaluation:
+      summary_title: All shared statistics views were reset together after the postmaster started
+      recommendation: Check the server log around that time; a crash recovery discards per-database and per-object counters as well (their stats_reset stays NULL), so treat cumulative items as covering no more than the period since this reset until the cause is known.
     collection:
       default: once
       supports: [once, every_snapshot]

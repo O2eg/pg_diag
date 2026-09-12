@@ -6,6 +6,7 @@ This instruction belongs to report item `sql_workload.pg_stat_statements_capabil
 - Package availability, extension installation/version/schema, and visibility of `pg_stat_statements` and `pg_stat_statements_info` in the connected database.
 - Server preload, built-in query-ID mode, statement tracking, planning, utility, persistence, entry-limit, and I/O-timing settings.
 - Whether the collection role can see query IDs/text for other roles and privileged configuration settings.
+- PostgreSQL 14+: `stats_reset` and `dealloc` from `pg_stat_statements_info` and `entries_used` from the view itself. `dealloc > 0` means entries were evicted since the reset; cumulative Top SQL rankings are then partial and the row is `unknown`. These three rows read the views only when the extension is installed **and** preloaded; otherwise they show `<unavailable>` and the capability rows above explain why, instead of the whole item failing.
 
 ## What to watch
 - The library not preloaded, the extension not installed in this database, or either view missing from pg_diag's `pg_catalog, public` search path.

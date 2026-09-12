@@ -16,6 +16,7 @@ This instruction belongs to report item `activity_locks.connection_pressure`. Th
 - `high`: at most one total client connection slot remains.
 - `medium`: ordinary-role headroom is at or below 5%, with a minimum threshold of two slots.
 - The total count includes pg_diag's own connection because it consumes a real slot. State and wait breakdowns are complete only with sufficient statistics visibility, normally `pg_read_all_stats` or `pg_monitor`.
+- `waiting_connections` counts active sessions waiting on locks, I/O, LWLocks, IPC or buffer pins; sessions waiting for their client (`Client`) or sleeping on a timeout (`Timeout`, such as vacuum cost delay) are reported separately as `client_or_timeout_wait_connections`.
 
 ## Common fault causes
 - Oversized connection pools or a connection leak.

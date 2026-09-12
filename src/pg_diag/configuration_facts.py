@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -21,6 +22,7 @@ CONFIGURATION_ITEM_IDS = (
     "overview.database_volume",
     "os.total_ram",
     "os.cpu_info",
+    "os.cgroup_limits",
     "os.disk_usage",
     "os.mounts",
     "os.lshw_disk",
@@ -122,6 +124,63 @@ def _parse_cpu(text: str | None) -> dict[str, Any]:
     }
 
 
+def _cgroup_limits(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Container / cgroup limits of the PostgreSQL postmaster, when the report has them.
+
+    The item emits one row per postmaster cgroup. With several postmasters in different
+    cgroups the report cannot tell which one is the database, so the limits are kept for
+    reference but not applied (``applied`` is false).
+    """
+    if not rows:
+        return None
+    row = rows[0]
+    count = _as_int(row.get("cgroup_count"))
+    ambiguous = len(rows) > 1 or (count is not None and count > 1)
+    # a row measured on the collector's own cgroup (no visible postmaster) is not a database
+    # limit; rows without a scope come from older content packs and are taken as postmaster
+    scope = row.get("scope") or "postmaster"
+    cpu_limit = _as_number(row.get("cpu_limit_cores"))
+    memory_limit = _as_int(row.get("memory_limit_bytes"))
+    return {
+        "scope": scope,
+        "cgroup_count": count,
+        "ambiguous": ambiguous,
+        "cgroup_version": row.get("cgroup_version"),
+        "container_hint": row.get("container_hint"),
+        "cpu_limit_cores": cpu_limit if cpu_limit is not None and cpu_limit > 0 else None,
+        "memory_limit_bytes": memory_limit if memory_limit is not None and memory_limit > 0 else None,
+        "memory_current_bytes": _as_int(row.get("memory_current_bytes")),
+        "applied": not ambiguous
+        and scope != "collector"
+        and ((cpu_limit is not None and cpu_limit > 0) or (memory_limit is not None and memory_limit > 0)),
+    }
+
+
+def _effective_capacity(
+    host_cpu_cores: int | None,
+    host_ram_bytes: int | None,
+    cgroup: dict[str, Any] | None,
+) -> tuple[int | None, int | None]:
+    """Capacity PostgreSQL can use: host values capped by an unambiguous cgroup limit.
+
+    With several postmaster cgroups the database's limit is unknown, so the capacity is
+    unknown too (None): consumers must be given it explicitly instead of sizing from the host.
+    """
+    cpu_cores, ram_bytes = host_cpu_cores, host_ram_bytes
+    if cgroup and cgroup["ambiguous"]:
+        return None, None
+    if cgroup and cgroup["applied"]:
+        cpu_limit = cgroup["cpu_limit_cores"]
+        if cpu_limit is not None:
+            # a fractional quota (2.5 cores) plans for the whole cores it guarantees
+            limited = max(1, math.floor(cpu_limit))
+            cpu_cores = limited if cpu_cores is None else min(cpu_cores, limited)
+        memory_limit = cgroup["memory_limit_bytes"]
+        if memory_limit is not None:
+            ram_bytes = memory_limit if ram_bytes is None else min(ram_bytes, memory_limit)
+    return cpu_cores, ram_bytes
+
+
 def _postgresql_major(server_version_num: int | None, version_text: str | None) -> str | None:
     if server_version_num is not None:
         if server_version_num >= 100000:
@@ -176,6 +235,10 @@ def extract_configuration_facts(
     ram_rows = _table_rows(items.get("os.total_ram"))
     ram_bytes = _as_int(ram_rows[0].get("total_ram_bytes")) if ram_rows else None
     cpu = _parse_cpu(_plain_text(items.get("os.cpu_info")))
+    cgroup = _cgroup_limits(_table_rows(items.get("os.cgroup_limits")))
+    effective_cpu_cores, effective_ram_bytes = _effective_capacity(
+        cpu["logical_cores"], ram_bytes, cgroup
+    )
     database_sizes = _table_rows(items.get("overview.database_volume"))
     size_values = [
         value
@@ -220,9 +283,15 @@ def extract_configuration_facts(
             "available_extensions": available_extensions,
         },
         "host": {
+            # cpu_cores / ram_bytes describe the host; effective_* is what PostgreSQL can
+            # use once an unambiguous cgroup limit is applied, or null when several postmaster
+            # cgroups make the limit unknown. Consumers size from effective_* only.
             "cpu_cores": cpu["logical_cores"],
             "cpu": cpu,
             "ram_bytes": ram_bytes,
+            "cgroup": cgroup,
+            "effective_cpu_cores": effective_cpu_cores,
+            "effective_ram_bytes": effective_ram_bytes,
             "filesystems": _table_rows(items.get("os.disk_usage")),
             "mounts": _plain_text(items.get("os.mounts")),
             "disks": _table_rows(items.get("os.lshw_disk")),

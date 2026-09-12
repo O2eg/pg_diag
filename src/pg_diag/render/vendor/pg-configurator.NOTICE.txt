@@ -1,5 +1,5 @@
 pg_configurator 0.11.0
-Revision: 43dd95ff8ef8780d9205b900b6a4465a8ba65f7a
+Revision: 147ef56cc01eae6346c5635efaa0daf6524a1be6
 Source: https://github.com/O2eg/pg_configurator
 License: MIT
 Rebuild: python tools/vendor_configurator.py /path/to/pg_configurator

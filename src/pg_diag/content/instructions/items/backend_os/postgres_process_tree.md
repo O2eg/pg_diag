@@ -22,6 +22,7 @@ This instruction belongs to report item `backend_os.postgres_process_tree`. The 
 ## Automatic evaluation
 - This item is informational because expected clusters, users, and process counts are deployment-specific.
 - Filtering uses the `comm` field, so collector commands merely containing the word `postgres` are not included.
+- Redaction hides secret values (`password=...`, `PGPASSWORD=...`, URI credentials) and lines that name a secret; identifiers that merely contain the word, such as the GUC `password_encryption` on the postmaster command line, are kept.
 
 ## Related report items
 - [backend_os.backend_activity](#item-backend_os.backend_activity) — Match process PIDs to PostgreSQL backend identity.

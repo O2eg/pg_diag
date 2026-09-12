@@ -20,6 +20,7 @@ This instruction belongs to report item `snapshot_charts_db.activity_sessions_by
 ## Automatic evaluation
 - This chart is informational and partitions every series by database and state.
 - A session can be active and waiting simultaneously; use wait-profile and lock items for waits.
+- Only `client backend` sessions are counted; walsenders, autovacuum workers and other server processes are always `active` in `pg_stat_activity` and are not sessions.
 
 ## Related report items
 - [activity_locks.session_states](#item-activity_locks.session_states) — Inspect current sessions and application ownership.

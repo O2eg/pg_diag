@@ -229,7 +229,12 @@ while IFS='	' read -r pid comm cmdline; do
   syscr=0
   syscw=0
   io_access=0
-  if
+  # Probe readability with the read builtin (a simple command): a failed redirection
+  # on the while loop below returns status 0 in dash, which would report unreadable
+  # counters as accessible zeros. Root without CAP_SYS_PTRACE (containers) cannot
+  # read /proc/<pid>/io of other users' processes.
+  if IFS= read -r io_probe < "$proc_dir/io" 2>/dev/null; then
+    io_access=1
     while IFS=': ' read -r key value rest; do
       case "$key" in
         read_bytes) read_bytes="$value" ;;
@@ -239,8 +244,6 @@ while IFS='	' read -r pid comm cmdline; do
         syscw) syscw="$value" ;;
       esac
     done < "$proc_dir/io" 2>/dev/null
-  then
-    io_access=1
   fi
   rss_kb=$((rss_pages * page_size / 1024))
   printf '%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0' \
