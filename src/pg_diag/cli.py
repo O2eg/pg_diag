@@ -39,6 +39,7 @@ from .planner import (
 )
 from .progress import ProgressReporter, report_log_path
 from .render.html import render_from_json
+from .summaries import merge_markdown_to_html
 from .security import redact_error
 from .logscan import model as logscan_model
 from .logscan.directory import resolve_log_timezone
@@ -53,6 +54,15 @@ from .versioning import select_query_variant
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.merge_md_to_html:
+        if args.command is not None or args.component_capabilities:
+            parser.error("--merge-md-to-html cannot be combined with another command")
+        if not args.md_files or not args.html_file:
+            parser.error("--merge-md-to-html requires --md-files and --html-file")
+        args.command = "merge-md-to-html"
+        args.func = cmd_merge_md_to_html
+    elif args.md_files is not None or args.html_file is not None:
+        parser.error("--md-files and --html-file require --merge-md-to-html")
     if args.component_capabilities:
         args.command = "capabilities"
         args.func = cmd_capabilities
@@ -84,6 +94,12 @@ def main(argv: list[str] | None = None) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="pg-diag")
     parser.add_argument("--version", action="version", version=f"pg-diag {__version__}")
+    parser.add_argument(
+        "--merge-md-to-html", action="store_true",
+        help="Embed two Markdown audit documents in an existing HTML report",
+    )
+    parser.add_argument("--md-files", nargs="+", help="Two Markdown paths, in either order")
+    parser.add_argument("--html-file", help="HTML report to update in place")
     parser.add_argument(
         "--machine",
         action="store_true",
@@ -958,6 +974,8 @@ def _machine_artifacts(args: argparse.Namespace) -> list[dict[str, Any]]:
             )
     elif args.command == "render":
         paths.append(("DiagnosticReportHtml", None, Path(args.out)))
+    elif args.command == "merge-md-to-html":
+        paths.append(("DiagnosticReportHtml", None, Path(args.html_file)))
     elif args.command in {"one-shot", "snapshots", "logs"}:
         json_path, html_path = report_output_paths(
             args.out,
@@ -1081,7 +1099,7 @@ def _run_machine(args: argparse.Namespace) -> int:
     except PgDiagError as exc:
         code = (
             "validation_error"
-            if args.command in {"validate-artifact", "configuration-facts"}
+            if args.command in {"validate-artifact", "configuration-facts", "merge-md-to-html"}
             else "execution_error"
         )
         _emit_machine(
@@ -1310,6 +1328,12 @@ def _ssh_config(args: argparse.Namespace) -> SshConfig | None:
         ),
         passphrase=passphrase,
     )
+
+
+def cmd_merge_md_to_html(args: argparse.Namespace) -> int:
+    merge_markdown_to_html(args.html_file, args.md_files)
+    print(f"Updated HTML: {args.html_file}")
+    return 0
 
 
 def cmd_render(args: argparse.Namespace) -> int:

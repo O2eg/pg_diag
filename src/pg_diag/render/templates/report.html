@@ -1435,7 +1435,10 @@ __ECHARTS_JS__
 
     .markdown-body h1,
     .markdown-body h2,
-    .markdown-body h3 {
+    .markdown-body h3,
+    .markdown-body h4,
+    .markdown-body h5,
+    .markdown-body h6 {
       margin: 22px 0 8px;
       color: var(--text);
       line-height: 1.25;
@@ -2862,6 +2865,7 @@ __PG_DIAG_GRAPH_RENDER_JS__
     }
 
     function renderSections() {
+      renderSummaries();
       for (const section of artifact.sections || []) {
         const details = document.createElement("details");
         details.className = "section";
@@ -2897,12 +2901,63 @@ __PG_DIAG_GRAPH_RENDER_JS__
       }
     }
 
+    function renderSummaries() {
+      const documents = artifact.summaries;
+      if (!documents || !documents.brief || !documents.detailed) return;
+      const section = document.createElement("details");
+      section.className = "section";
+      section.dataset.sectionId = "__summary";
+      section.dataset.summarySection = "true";
+      section.open = true;
+      const heading = document.createElement("summary");
+      heading.appendChild(renderSummaryTitle("Summary", "section-title", [], []));
+      heading.appendChild(renderSectionControls());
+      section.appendChild(heading);
+      const body = document.createElement("div");
+      body.className = "section-body";
+      for (const [key, title] of [["brief", "Brief summary"], ["detailed", "Detailed report"]]) {
+        const item = document.createElement("details");
+        item.className = "item";
+        item.dataset.itemId = "__summary." + key;
+        item.id = reportItemAnchorId(item.dataset.itemId);
+        const summary = document.createElement("summary");
+        summary.appendChild(renderSummaryTitle(title, "item-title", [], []));
+        item.appendChild(summary);
+        const content = document.createElement("div");
+        content.className = "item-body";
+        item.appendChild(wrapDetailsContent(content));
+        // Long documents are rendered on first opening, after report targets exist.
+        item.addEventListener("toggle", () => {
+          if (item.open && !content.childNodes.length) {
+            content.appendChild(PgDiagMarkdown.render(documents[key].markdown));
+          }
+        });
+        body.appendChild(item);
+      }
+      section.appendChild(wrapDetailsContent(body));
+      app.appendChild(section);
+    }
+
     function renderReportNav() {
       const tree = document.getElementById("reportNavTree");
       if (!tree) {
         return;
       }
       tree.replaceChildren();
+      if (artifact.summaries) {
+        const group = document.createElement("div");
+        group.className = "report-nav-section";
+        for (const [label, targetKind, targetId] of [
+          ["Summary", "section", "__summary"],
+          ["Brief summary", "item", "__summary.brief"],
+          ["Detailed report", "item", "__summary.detailed"],
+        ]) {
+          group.appendChild(renderReportNavButton({
+            label, targetKind, targetId, className: targetKind + "-link",
+          }));
+        }
+        tree.appendChild(group);
+      }
       for (const section of artifact.sections || []) {
         const sectionItems = (section.items || [])
           .map((itemId) => items[itemId])
@@ -4484,11 +4539,13 @@ __PG_DIAG_GRAPH_RENDER_JS__
             index += 1;
             continue;
           }
-          if (line.startsWith("```")) {
-            const language = line.slice(3).trim();
+          const fence = /^\s{0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+          if (fence) {
+            const language = fence[2].trim();
+            const closeFence = new RegExp("^\\s{0,3}" + fence[1][0] + "{" + fence[1].length + ",}\\s*$");
             const codeLines = [];
             index += 1;
-            while (index < lines.length && !lines[index].startsWith("```")) {
+            while (index < lines.length && !closeFence.test(lines[index])) {
               codeLines.push(lines[index]);
               index += 1;
             }
@@ -4498,28 +4555,57 @@ __PG_DIAG_GRAPH_RENDER_JS__
             root.appendChild(renderCodeBlock(codeLines.join("\n"), language));
             continue;
           }
-          const heading = /^(#{1,3})\s+(.+)$/.exec(line);
+          const heading = /^(#{1,6})\s+(.+)$/.exec(line);
           if (heading) {
             root.appendChild(renderHeading(heading[1].length, heading[2]));
             index += 1;
             continue;
           }
-          if (/^\s*[-*]\s+/.test(line)) {
-            const list = document.createElement("ul");
-            while (index < lines.length && /^\s*[-*]\s+/.test(lines[index])) {
-              list.appendChild(renderListItem(lines[index].replace(/^\s*[-*]\s+/, "")));
+          if (/^\s*(?:[-*+] |\d+[.)] )/.test(line)) {
+            const listMatch = /^(\s*)([-*+]|\d+[.)])\s+/.exec(line);
+            const indent = listMatch[1].length;
+            const ordered = /^\d/.test(listMatch[2]);
+            const list = document.createElement(ordered ? "ol" : "ul");
+            while (index < lines.length) {
+              const entry = /^(\s*)([-*+]|\d+[.)])\s+/.exec(lines[index]);
+              if (!entry || entry[1].length !== indent || /^\d/.test(entry[2]) !== ordered) break;
+              const parts = [lines[index].slice(entry[0].length)];
               index += 1;
+              while (index < lines.length) {
+                const continuation = lines[index];
+                if (!continuation.trim()) { parts.push(""); index += 1; continue; }
+                if (continuation.search(/\S/) <= indent) break;
+                parts.push(continuation.slice(Math.min(entry[0].length, continuation.search(/\S/))));
+                index += 1;
+              }
+              const li = document.createElement("li");
+              li.appendChild(render(parts.join("\n")));
+              list.appendChild(li);
             }
             root.appendChild(list);
             continue;
           }
-          if (/^\s*\d+\.\s+/.test(line)) {
-            const list = document.createElement("ol");
-            while (index < lines.length && /^\s*\d+\.\s+/.test(lines[index])) {
-              list.appendChild(renderListItem(lines[index].replace(/^\s*\d+\.\s+/, "")));
+          if (line.includes("|") && index + 1 < lines.length && isTableDivider(lines[index + 1])) {
+            const table = document.createElement("table");
+            const head = document.createElement("thead");
+            head.appendChild(renderTableRow(line, "th"));
+            table.appendChild(head);
+            const body = document.createElement("tbody");
+            index += 2;
+            while (index < lines.length && lines[index].trim() && lines[index].includes("|")) {
+              body.appendChild(renderTableRow(lines[index], "td"));
               index += 1;
             }
-            root.appendChild(list);
+            table.appendChild(body);
+            const wrap = document.createElement("div");
+            wrap.style.overflowX = "auto";
+            wrap.appendChild(table);
+            root.appendChild(wrap);
+            continue;
+          }
+          if (/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+            root.appendChild(document.createElement("hr"));
+            index += 1;
             continue;
           }
           if (/^\s*>\s?/.test(line)) {
@@ -4538,8 +4624,8 @@ __PG_DIAG_GRAPH_RENDER_JS__
           while (
             index < lines.length &&
             lines[index].trim() &&
-            !lines[index].startsWith("```") &&
-            !/^(#{1,3})\s+/.test(lines[index]) &&
+            !/^\s{0,3}(`{3,}|~{3,})/.test(lines[index]) &&
+            !/^(#{1,6})\s+/.test(lines[index]) &&
             !/^\s*[-*]\s+/.test(lines[index]) &&
             !/^\s*\d+\.\s+/.test(lines[index]) &&
             !/^\s*>\s?/.test(lines[index])
@@ -4560,10 +4646,24 @@ __PG_DIAG_GRAPH_RENDER_JS__
         return heading;
       }
 
-      function renderListItem(text) {
-        const item = document.createElement("li");
-        item.appendChild(renderInline(text));
-        return item;
+      function tableCells(line) {
+        return line.trim().replace(/^\|/, "").replace(/\|$/, "")
+          .split(/(?<!\\)\|/).map((cell) => cell.trim().replace(/\\\|/g, "|"));
+      }
+
+      function isTableDivider(line) {
+        const cells = tableCells(line);
+        return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+      }
+
+      function renderTableRow(line, tag) {
+        const row = document.createElement("tr");
+        for (const text of tableCells(line)) {
+          const cell = document.createElement(tag);
+          cell.appendChild(renderInline(text));
+          row.appendChild(cell);
+        }
+        return row;
       }
 
       function renderCodeBlock(text, language) {
@@ -4579,16 +4679,24 @@ __PG_DIAG_GRAPH_RENDER_JS__
 
       function renderInline(text) {
         const fragment = document.createDocumentFragment();
-        const pattern = /(\[[^\]\n]+\]\(#item-[a-z][a-z0-9_.-]*\)|`[^`]+`|\*\*[^*]+\*\*)/g;
+        const pattern = /(\[[^\]\n]+\]\([^\s)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g;
         let lastIndex = 0;
         let match;
         while ((match = pattern.exec(text)) !== null) {
           appendText(fragment, text.slice(lastIndex, match.index));
           const token = match[0];
           if (token.startsWith("[")) {
-            const link = /^\[([^\]]+)\]\(#item-([a-z][a-z0-9_.-]*)\)$/.exec(token);
-            if (link) {
-              fragment.appendChild(renderReportItemReference(link[1], link[2]));
+            const link = /^\[([^\]]+)\]\(([^\s)]+)\)$/.exec(token);
+            const report = link && /^#item-([a-z][a-z0-9_.-]*)(?:\?(queryid|oid)=(-?\d+))?$/.exec(link[2]);
+            if (report) {
+              fragment.appendChild(renderReportItemReference(link[1], report[1], report[2], report[3]));
+            } else if (link && /^https?:\/\//.test(link[2])) {
+              const anchor = document.createElement("a");
+              anchor.href = link[2];
+              anchor.target = "_blank";
+              anchor.rel = "noopener noreferrer";
+              anchor.appendChild(renderInline(link[1]));
+              fragment.appendChild(anchor);
             } else {
               appendText(fragment, token);
             }
@@ -4598,8 +4706,12 @@ __PG_DIAG_GRAPH_RENDER_JS__
             fragment.appendChild(code);
           } else if (token.startsWith("**")) {
             const strong = document.createElement("strong");
-            strong.textContent = token.slice(2, -2);
+            strong.appendChild(renderInline(token.slice(2, -2)));
             fragment.appendChild(strong);
+          } else if (token.startsWith("*")) {
+            const em = document.createElement("em");
+            em.appendChild(renderInline(token.slice(1, -1)));
+            fragment.appendChild(em);
           }
           lastIndex = match.index + token.length;
         }
@@ -4607,7 +4719,7 @@ __PG_DIAG_GRAPH_RENDER_JS__
         return fragment;
       }
 
-      function renderReportItemReference(label, itemId) {
+      function renderReportItemReference(label, itemId, entityKind, entityId) {
         const target = findItemElement(itemId);
         if (!items[itemId] || !target || !isVisibleItem(items[itemId])) {
           const unavailable = document.createElement("span");
@@ -4619,14 +4731,21 @@ __PG_DIAG_GRAPH_RENDER_JS__
         }
         const link = document.createElement("a");
         link.className = "report-item-link";
-        link.href = "#" + reportItemAnchorId(itemId);
+        const href = "#" + reportItemAnchorId(itemId)
+          + (entityKind ? "?" + entityKind + "=" + entityId : "");
+        link.href = href;
         link.dataset.itemId = itemId;
-        link.textContent = label;
+        link.appendChild(renderInline(label));
+        if (entityKind) {
+          link.dataset.entityKind = entityKind;
+          link.dataset.entityId = entityId;
+          bindHoverPreview(link, () => reportReferencePreview(entityKind, entityId));
+        }
         link.addEventListener("click", (event) => {
           event.preventDefault();
           closeInstructionModal();
           if (window.history && typeof window.history.replaceState === "function") {
-            window.history.replaceState(null, "", "#" + reportItemAnchorId(itemId));
+            window.history.replaceState(null, "", href);
           }
           window.setTimeout(() => navigateToReportNode("item", itemId), 0);
         });
@@ -7014,11 +7133,20 @@ __PG_DIAG_GRAPH_RENDER_JS__
       button.title = "Show query";
       setHighlightableText(button, label);
       button.addEventListener("click", () => openQueryTextModal(queryId));
-      bindHoverPreview(button, () => {
-        const text = queryTextForId(queryId);
-        return text ? {title: "Query: " + queryIdToText(queryId), text: text} : null;
-      });
+      bindHoverPreview(button, () => reportReferencePreview("queryid", queryId));
       return button;
+    }
+
+    function reportReferencePreview(kind, value) {
+      if (kind === "queryid") {
+        const text = queryTextForId(value);
+        return text ? {title: "Query: " + queryIdToText(value), text} : null;
+      }
+      const entry = objectDdlEntry(value);
+      return entry && entry.ddl ? {
+        title: "DDL: " + (entry.kind || "object") + " " + (entry.identifier || ""),
+        text: String(entry.ddl),
+      } : null;
     }
 
     let hoverPreviewElement = null;
@@ -7119,6 +7247,11 @@ __PG_DIAG_GRAPH_RENDER_JS__
         window.clearTimeout(hoverPreviewShowTimer);
         scheduleHoverPreviewHide();
       });
+      button.addEventListener("focus", () => {
+        const payload = resolvePayload();
+        if (payload && payload.text) showHoverPreview(button, payload.title, payload.text);
+      });
+      button.addEventListener("blur", scheduleHoverPreviewHide);
       button.addEventListener("click", hideHoverPreview);
     }
 
@@ -7163,16 +7296,7 @@ __PG_DIAG_GRAPH_RENDER_JS__
       button.title = "Show DDL";
       setHighlightableText(button, label);
       button.addEventListener("click", () => openObjectDdlModal(value));
-      bindHoverPreview(button, () => {
-        const entry = objectDdlEntry(value);
-        if (!entry || !entry.ddl) {
-          return null;
-        }
-        return {
-          title: "DDL: " + (entry.kind || "object") + " " + (entry.identifier || ""),
-          text: String(entry.ddl),
-        };
-      });
+      bindHoverPreview(button, () => reportReferencePreview("oid", value));
       return button;
     }
 
@@ -7913,6 +8037,7 @@ __PG_DIAG_GRAPH_RENDER_JS__
       updateFilteredTagHighlights(tag);
       let visibleTotal = 0;
       for (const section of document.querySelectorAll("details.section")) {
+        if (section.dataset.summarySection) continue;
         const sectionMatchesQuery = Boolean(query) && (section.__searchText || "").includes(query);
         let visibleCount = 0;
         for (const item of section.querySelectorAll("details.item")) {

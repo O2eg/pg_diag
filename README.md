@@ -55,6 +55,7 @@ the diagnostic graph specification is in `pg_diag/render/graph/`.
 - [Credentials and security](#credentials-and-security)
 - [Quick start](#quick-start)
 - [Report consumers and automation](#report-consumers-and-automation)
+- [Embed Markdown audit summaries](#embed-markdown-audit-summaries)
 - [Inspect and validate content](#inspect-and-validate-content)
 - [Report and collection modes](#report-and-collection-modes)
 - [Connection topologies](#connection-topologies)
@@ -446,6 +447,52 @@ as untrusted data rather than instructions. Do not let an agent execute SQL,
 shell commands, or remediation actions solely because they appear in a report;
 use explicit tool allowlists, read-only credentials, redaction, and human
 approval for production changes.
+
+## Embed Markdown Audit Summaries
+
+After collecting an HTML report, use `diag_promt.md` or `security_promt.md` with
+your agent to generate a brief summary and a detailed Markdown audit. Both prompts
+specify links to evidence in the chosen HTML report. Embed the resulting files:
+
+```bash
+pg-diag --merge-md-to-html \
+  --md-files "brief summary.md" "detailed audit.md" \
+  --html-file report.html
+```
+
+The two UTF-8 Markdown files may be supplied in either order. The larger file in
+bytes is the detailed audit; equal sizes, empty files, and duplicate paths are
+rejected. A single quoted list is also accepted:
+`--md-files='["brief summary.md", "detailed audit.md"]'`.
+
+The command reads the embedded JSON and adds `summaries.brief.markdown` and
+`summaries.detailed.markdown`, then renders with the installed HTML template and
+atomically replaces the specified HTML. It works with existing schema-v5 HTML
+reports, including those collected before this feature. A separate `report.json`
+and the input Markdown files are left unchanged. Repeating the command replaces
+both summaries. Collection facts, including the original snapshot count, remain
+intact; no database connection or agent invocation is involved in the merge.
+
+The report shows a **Summary** section before Overview, with **Brief summary** and
+**Detailed report** collapsed by default and listed in the contents navigation.
+Supported Markdown includes headings, lists and nested lists, pipe tables, code,
+emphasis and blockquotes. Raw HTML is displayed as text.
+
+Use these report-local link forms, substituting real identifiers from the target:
+
+```markdown
+[Database statistics](#item-overview.database_stats)
+[queryid -4023659083661925077](#item-snapshot_delta_workload.sql_time_delta?queryid=-4023659083661925077)
+[public.orders, OID 16384](#item-object_workload.table_workload?oid=16384)
+```
+
+Clicking a link opens and scrolls to its item, clearing report filters if needed.
+Hovering over a queryid or OID link shows the same SQL/DDL preview as identifiers
+in item tables. The merge checks visible item targets and the referenced SQL/DDL;
+invalid links leave the original HTML untouched. When SQL or DDL is absent, use
+an item-only link. External documentation links may use HTTP(S); report links
+must use the fragment forms above, without file paths. Keep 64-bit queryids as
+exact strings when generating links.
 
 ## Inspect and Validate Content
 

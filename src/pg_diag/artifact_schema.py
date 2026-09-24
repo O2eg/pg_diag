@@ -17,6 +17,7 @@ from .contracts import (
     interval_coverage_totals,
 )
 from .errors import ValidationError
+from .summaries import validate_summaries
 
 INTERNAL_TIME_COLUMN = "epoch_ns"
 INTERNAL_TAG_PREFIX = "tag_"
@@ -201,6 +202,7 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
         raise ValidationError("Artifact field 'query_texts' must map strings to strings")
 
     _validate_json_data(artifact, "$", set())
+    validate_summaries(artifact)
 
 
 def _validate_sections(sections: list[Any]) -> set[str]:

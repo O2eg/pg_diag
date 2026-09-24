@@ -147,7 +147,9 @@ def _publicize_artifact_for_render(artifact: dict[str, Any]) -> dict[str, Any]:
             if key not in {"sections", "items", "snapshots", "snapshot_schemas"}
         }
     )
-    public_artifact["runtime"]["snapshot_count"] = len(snapshots)
+    public_artifact["runtime"]["snapshot_count"] = (
+        len(snapshots) if snapshots else artifact["runtime"].get("snapshot_count", 0)
+    )
     public_artifact["snapshots"] = []
     public_artifact["snapshot_schemas"] = {}
 

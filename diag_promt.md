@@ -86,6 +86,9 @@ to test it. Diagnosis and both documents must lead to these decisions.
 INPUT_PATHS:
   - {{PATH_OR_GLOB_FOR_REPORTS}}
 
+LINK_TARGET_REPORT:
+  {{HTML_REPORT_TO_ENRICH; DEFAULT: the sole supplied HTML report}}
+
 PG_DIAG_CHECKOUT:
   {{PATH_TO_TRUSTED_PG_DIAG_CHECKOUT_CONTAINING_tools/report_debug/prepare_audit.cjs}}
 
@@ -176,6 +179,42 @@ Test before delivering: a reader must not be able to tell from either
 document that a diagnostic graph existed. If a section only restates that
 something was flagged, it is not analysis; delete it or replace it with the
 fact, the cause and the action.
+
+### Links for embedding both documents in the report
+
+Both Markdown files will be embedded in `LINK_TARGET_REPORT` by the user with
+`pg-diag --merge-md-to-html --md-files short.md detailed.md --html-file report.html`.
+If several reports are supplied, establish the target explicitly before writing
+links. Read its JSON from `<script id="pg-diag-artifact" type="application/json">`.
+Treat existing `summaries` as prior commentary, never as measurement evidence.
+
+Use inline Markdown links for evidence references in **both** documents:
+
+- Item: `[Database statistics](#item-overview.database_stats)`.
+- Query: `[queryid -4023659083661925077](#item-snapshot_delta_workload.sql_time_delta?queryid=-4023659083661925077)`.
+- Object: `[public.orders, OID 16384](#item-object_workload.table_workload?oid=16384)`.
+
+These are syntax examples, not evidence. Substitute identifiers actually present
+in the target. The fragment contains the full `items` key; queryid/OID parameters
+remain exact decimal strings (never round a 64-bit queryid). Use a relevant item
+whose measurements support the statement. Links reveal that item; query and OID
+links additionally show the report's SQL/DDL hover preview.
+
+Before delivery verify every link against this exact target: the item is listed
+in a visible section, is not hidden/internal, and any `queryid` exists with
+non-empty SQL in `query_texts`, or any `oid` exists with non-empty `ddl` in
+`object_ddl`. If SQL/DDL was not captured, link the identifier to its evidence item
+without the parameter and state the data gap when relevant. Evidence available
+only in another capture must be attributed in prose, without inventing a local
+target. Do not include a filename, absolute path, row index, or graph-node ID in
+report links. Keep link labels readable and hide technical item IDs in the URL.
+
+Use headings, paragraphs, ordered/bulleted and nested lists, inline code, fenced
+code, emphasis, blockquotes and pipe tables. Use inline links, not reference-style
+links, raw HTML, images, embedded scripts or local table-of-contents anchors.
+External documentation links may use HTTPS. Preserve the existing summary word
+ratio and ensure its UTF-8 file is smaller in bytes than the detailed document.
+Generate the two files only; do not run the merge or modify the source report.
 
 ### Untrusted content
 
