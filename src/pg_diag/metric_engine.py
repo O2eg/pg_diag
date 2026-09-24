@@ -27,6 +27,9 @@ from pg_diag.planner import PlannedItem
 
 SNAPSHOT_TIME_COLUMN = "snapshot_time"
 SEVERITY_LEVEL_RANK = {"ok": 0, "unknown": 1, "medium": 2, "high": 3}
+# Rates and chart values ultimately use floats. Check decimal magnitude before
+# expanding an integral exponent into a Python int (e.g. a WAL name with E).
+MAX_METRIC_DECIMAL_EXPONENT = 308
 
 
 @dataclass(frozen=True)
@@ -926,19 +929,18 @@ def _sample_sum_column_value(
 
     ref = column.get("value_ref") or column.get("ref")
     transform = column.get("transform") or "last"
-    values = [_number_or_none(_resolve_ref(row, semantic_columns, ref)) for row in rows] if ref else []
-    numeric_values = [value for value in values if value is not None]
     if transform == "sample_count":
         return len(rows)
+    if transform not in {"sum", "avg", "max"}:
+        return _resolve_ref(last_row, semantic_columns, ref) if ref else None
+    values = [_number_or_none(_resolve_ref(row, semantic_columns, ref)) for row in rows] if ref else []
+    numeric_values = [value for value in values if value is not None]
     if transform == "sum":
         return sum(numeric_values) if numeric_values else None
     if transform == "avg":
         return sum(numeric_values) / len(numeric_values) if numeric_values else None
     if transform == "max":
         return max(numeric_values) if numeric_values else None
-    if transform == "last":
-        return _resolve_ref(last_row, semantic_columns, ref) if ref else None
-    return _resolve_ref(last_row, semantic_columns, ref) if ref else None
 
 
 def _table_columns(table: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1082,15 +1084,12 @@ def _table_column_value(
 
     ref = column.get("value_ref") or column.get("ref")
     transform = column.get("transform") or "last"
+    if transform == "first":
+        return _resolve_ref(first_row or {}, semantic_columns, ref) if ref and first_row else None
+    if transform not in {"delta", "rate", "pct_delta", "delta_ratio"}:
+        return _resolve_ref(last_row, semantic_columns, ref) if ref else None
     last_value = _number_or_none(_resolve_ref(last_row, semantic_columns, ref)) if ref else None
     first_value = _number_or_none(_resolve_ref(first_row or {}, semantic_columns, ref)) if ref and first_row else None
-
-    if transform == "last":
-        resolved = _resolve_ref(last_row, semantic_columns, ref) if ref else None
-        return resolved
-    if transform == "first":
-        resolved = _resolve_ref(first_row or {}, semantic_columns, ref) if ref and first_row else None
-        return resolved
     if transform == "delta":
         return _counter_delta_value(first_value, last_value).value
     if transform == "rate":
@@ -1520,12 +1519,16 @@ def _number_or_none(value: Any) -> int | float | Decimal | None:
     if isinstance(value, float):
         return value if math.isfinite(value) else None
     if isinstance(value, Decimal):
-        return value if value.is_finite() else None
+        return (
+            value
+            if value.is_finite() and value.adjusted() <= MAX_METRIC_DECIMAL_EXPONENT
+            else None
+        )
     try:
         parsed = Decimal(str(value))
     except (InvalidOperation, ValueError):
         return None
-    if not parsed.is_finite():
+    if not parsed.is_finite() or parsed.adjusted() > MAX_METRIC_DECIMAL_EXPONENT:
         return None
     if parsed == parsed.to_integral_value():
         return int(parsed)

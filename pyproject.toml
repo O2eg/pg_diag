@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pg-diag"
-version = "0.17.0"
+version = "0.17.1"
 description = "PostgreSQL diagnostics with host metrics and portable JSON/HTML reports"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -97,6 +97,12 @@ pg_diag = [
   "content/**/__pycache__/*",
   "content/**/*.pyc",
 ]
+
+[tool.setuptools.data-files]
+"share/doc/pg-diag" = ["*.md"]
+"share/doc/pg-diag/docs" = ["docs/*.md"]
+"share/doc/pg-diag/tests" = ["tests/*.md"]
+"share/doc/pg-diag/tools/report_debug" = ["tools/report_debug/*.md"]
 
 [tool.ruff]
 line-length = 100

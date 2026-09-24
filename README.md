@@ -37,6 +37,19 @@ in core dispatch, validation, or metric rendering.
 - [Tests](https://github.com/O2eg/pg_diag/blob/main/tests/README.md) - test layout, unit and integration test commands,
   and guidance for adding or correcting tests.
 
+Both the wheel and source distribution include all repository Markdown documentation.
+After installation, the README, audit prompts (`diag_promt.md`, `security_promt.md`),
+guides, and test/debug-tool documentation are under `share/doc/pg-diag/` in the
+installation's data directory, preserving their repository paths. Locate that
+directory with:
+
+```bash
+python -c 'import sysconfig; print(sysconfig.get_path("data") + "/share/doc/pg-diag")'
+```
+
+Content-pack documentation and item instructions remain inside `pg_diag/content/`;
+the diagnostic graph specification is in `pg_diag/render/graph/`.
+
 ## Quick Navigation
 
 - [Credentials and security](#credentials-and-security)

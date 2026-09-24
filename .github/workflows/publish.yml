@@ -63,6 +63,9 @@ jobs:
       - name: Check distribution metadata and README rendering
         run: python -m twine check dist/*
 
+      - name: Check bundled Markdown documentation
+        run: python tools/check_distribution_docs.py dist
+
       - name: Smoke-test the built wheel
         shell: bash
         run: |

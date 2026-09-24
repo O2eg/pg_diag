@@ -4,15 +4,7 @@ on:
   push:
     branches:
       - "**"
-    paths-ignore:
-      - "diag_promt.md"
-      - "docs/**"
-      - "tests/README.md"
   pull_request:
-    paths-ignore:
-      - "diag_promt.md"
-      - "docs/**"
-      - "tests/README.md"
   workflow_dispatch:
 
 permissions:
@@ -49,6 +41,7 @@ jobs:
       - run: python -m pip install 'build>=1.2,<2' 'twine>=6,<7'
       - run: python -m build
       - run: python -m twine check dist/*
+      - run: python tools/check_distribution_docs.py dist
       - name: Smoke-test built wheel
         shell: bash
         run: |
