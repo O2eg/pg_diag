@@ -2119,7 +2119,9 @@
         }
       }
       const deadlocks = ctx.rows("server_log.deadlock_events");
-      const deadlockCount = deadlocks.reduce((acc, row) => acc + (toNumber(row.repeat_count) || 1), 0);
+      const deadlockResult = resultOf(ctx.item("server_log.deadlock_events")) || {};
+      const deadlockCount = toNumber(deadlockResult.matched_event_count) ??
+        deadlocks.reduce((acc, row) => acc + (toNumber(row.repeat_count) || 1), 0);
       const chart = seriesTotalStats(ctx, "snapshot_charts_db.database_deadlocks");
       const delta = sumBy(ctx.rows("snapshot_delta_workload.database_workload_delta"), "deadlocks_delta");
       // Both measure pg_stat_database.deadlocks over overlapping windows.

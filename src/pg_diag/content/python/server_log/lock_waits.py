@@ -3,10 +3,13 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from pg_diag.logscan.query_links import query_columns
+
 from pg_diag.executors.python import PythonSourceContext, PythonSourceResult, table_result
 from pg_diag.logscan.items_common import (
     coverage_note,
     empty_result_status,
+    event_count_metadata,
     fmt_time,
     resolve_english_window,
 )
@@ -16,13 +19,19 @@ HIGH_ACCESS_EXCLUSIVE_MS = 10_000.0
 HIGH_ANY_MS = 60_000.0
 
 _HEAD_RE = re.compile(
-    r"^process (?P<pid>\d+) (?P<event>still waiting for|acquired) "
+    r"^process (?P<pid>\d+) "
+    r"(?P<event>still waiting for|acquired|detected deadlock while waiting for) "
     r"(?P<lock_type>\w+) on (?P<target>.+?) after (?P<ms>\d+(?:\.\d+)?) ms"
 )
 _RELATION_RE = re.compile(r"relation (?P<relation>\d+) of database (?P<database>\d+)")
 _DETAIL_RE = re.compile(
     r"Process(?:es)? holding the lock: (?P<holders>[\d, ]+)\. " r"Wait queue: (?P<queue>[\d, ]+)\."
 )
+_EVENT_NAMES = {
+    "still waiting for": "waiting",
+    "acquired": "acquired",
+    "detected deadlock while waiting for": "deadlock_detected",
+}
 
 
 def _target_kind(target: str) -> str:
@@ -43,17 +52,20 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
     rows: list[dict[str, Any]] = []
     waiting = 0
     acquired = 0
+    deadlock_context = 0
     max_wait_ms = 0.0
     severity = "medium"  # every matched row already exceeded deadlock_timeout
     lock_type_counts: dict[str, int] = {}
     for record, match in events:
-        event = "waiting" if match.group("event") == "still waiting for" else "acquired"
+        event = _EVENT_NAMES[match.group("event")]
         lock_type = match.group("lock_type")
         wait_ms = float(match.group("ms"))
         if event == "waiting":
             waiting += record.repeat_count
-        else:
+        elif event == "acquired":
             acquired += record.repeat_count
+        else:
+            deadlock_context += record.repeat_count
         max_wait_ms = max(max_wait_ms, wait_ms)
         lock_type_counts[lock_type] = lock_type_counts.get(lock_type, 0) + record.repeat_count
         if wait_ms > HIGH_ANY_MS or (
@@ -62,7 +74,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
             severity = "high"
 
     for record, match in reversed(events[-EVENT_LIMIT:]):  # newest first
-        event = "waiting" if match.group("event") == "still waiting for" else "acquired"
+        event = _EVENT_NAMES[match.group("event")]
         lock_type = match.group("lock_type")
         wait_ms = float(match.group("ms"))
         target = match.group("target")
@@ -92,15 +104,22 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
                 "queue_depth": queue_depth,
                 "user_name": record.user_name,
                 "database_name": record.database_name,
-                "query_id": record.query_id,
+                **query_columns(record),
                 "count_complete": record.count_complete,
             }
         )
+    result = table_result(rows)
+    result.update(event_count_metadata(
+        [record for record, _ in events],
+        [record for record, _ in events[-EVENT_LIMIT:]], EVENT_LIMIT,
+    ))
+    result.update(waiting_event_count=waiting, acquired_event_count=acquired,
+                  deadlock_context_event_count=deadlock_context, max_wait_ms=max_wait_ms)
     if not rows:
         status, empty_severity, empty_issues = empty_result_status(window)
         return PythonSourceResult(
             collection_status=status,
-            result=table_result(rows),
+            result=result,
             issues=empty_issues,
             severity_level=empty_severity,
         )
@@ -118,6 +137,8 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
             "description": (
                 f"{waiting} waiting and {acquired} acquired event(s); the longest wait "
                 f"is {max_wait_ms:.0f} ms and {dominant} dominates the conflicts. "
+                f"{deadlock_context} supplemental deadlock wait event(s); these are context "
+                "for SQLSTATE 40P01 events, not additional deadlock incidents. "
                 "A 'waiting' event without a matching 'acquired' one was either "
                 "cancelled or still waiting when the record was written."
                 + (
@@ -137,7 +158,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
     }
     return PythonSourceResult(
         collection_status="ok",
-        result=table_result(rows),
+        result=result,
         issues=issues,
         severity_level=severity,
     )

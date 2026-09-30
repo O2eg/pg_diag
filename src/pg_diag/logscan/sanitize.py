@@ -22,11 +22,12 @@ _AUTH_SCHEME_RE = re.compile(
     rf"(?i)\b(authorization|proxy-authorization)\s*[=:]\s*(?:(bearer|basic|token|negotiate|digest)\s+)?{_VALUE}"
 )
 _BEARER_RE = re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}")
-# Composite names (aws_secret_access_key, client_secret, refresh_token) must
-# match too, so the stem may sit anywhere inside the identifier; over-redaction
-# is the safe direction for a log sanitizer (review finding, 2026-08-31).
+# Match explicit credential names, including compound names. A generic "key"
+# is not a secret marker: orderkey, keyword_id and the plan's "Sort Key" are
+# structural SQL evidence. Credential keys still match api/access/private/etc.
 _KEY_VALUE_SECRET_RE = re.compile(
-    rf"(?i)\b([A-Za-z0-9_-]*(?:password|passwd|pwd|secret|token|credential|key)"
+    rf"(?i)\b([A-Za-z0-9_-]*(?:password|passwd|pwd|secret|token|credential|"
+    rf"(?:api|access|private|encryption|signing|auth|client)[_-]?key)"
     rf"[A-Za-z0-9_-]*)\s*[=:]\s*{_VALUE}"
 )
 _AWS_KEY_RE = re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")

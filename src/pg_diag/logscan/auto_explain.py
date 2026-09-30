@@ -10,7 +10,7 @@ from json.decoder import scanstring
 from typing import Any
 from xml.etree import ElementTree
 
-from .model import AutoExplainPlan
+from .model import AutoExplainPlan, LINE_CAP
 from .sanitize import sanitize_text
 
 QUERY_SAMPLE_CHARS = 300
@@ -48,6 +48,7 @@ def parse_auto_explain(message: str, *, complete: bool) -> AutoExplainPlan | Non
         return None
     plan_text = match.group("plan")
     plan_format, root_node_type, node_count, parsed, query_text = _parse_plan(plan_text)
+    safe_query = sanitize_text(query_text) if query_text else None
     return AutoExplainPlan(
         duration_ms=duration_ms,
         plan_format=plan_format,
@@ -56,6 +57,8 @@ def parse_auto_explain(message: str, *, complete: bool) -> AutoExplainPlan | Non
         parsed=parsed,
         complete=complete,
         query_sample=_query_sample(query_text),
+        query_text=safe_query[:LINE_CAP] if safe_query else None,
+        query_truncated=bool(safe_query and len(safe_query) > LINE_CAP),
         viewer_plan=_viewer_plan(message, plan_text, plan_format, duration_ms),
     )
 

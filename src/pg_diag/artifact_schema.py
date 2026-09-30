@@ -158,13 +158,19 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
         raise ValidationError("Artifact field 'sections' must be a list")
     if not isinstance(artifact["items"], dict):
         raise ValidationError("Artifact field 'items' must be a mapping")
+    query_texts = artifact["query_texts"]
+    if not isinstance(query_texts, dict) or any(
+        not isinstance(key, str) or not isinstance(value, str) for key, value in query_texts.items()
+    ):
+        raise ValidationError("Artifact field 'query_texts' must map strings to strings")
+
     referenced_item_ids = _validate_sections(artifact["sections"])
     for item_id, item in artifact["items"].items():
         if not isinstance(item_id, str) or not item_id:
             raise ValidationError("Artifact item ids must be non-empty strings")
         if not isinstance(item, dict):
             raise ValidationError(f"Artifact item {item_id!r} must be a mapping")
-        _validate_item_payload(item_id, item, set(units))
+        _validate_item_payload(item_id, item, set(units), query_texts)
         if item.get("item_id") not in (None, item_id):
             raise ValidationError(f"Artifact item key {item_id!r} does not match item_id")
         if not _valid_item_state(item.get("state")):
@@ -195,11 +201,6 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
                 "Artifact field 'object_ddl' must map oid strings to "
                 "{kind, identifier, ddl} string mappings"
             )
-    query_texts = artifact["query_texts"]
-    if not isinstance(query_texts, dict) or any(
-        not isinstance(key, str) or not isinstance(value, str) for key, value in query_texts.items()
-    ):
-        raise ValidationError("Artifact field 'query_texts' must map strings to strings")
 
     _validate_json_data(artifact, "$", set())
     validate_summaries(artifact)
@@ -237,7 +238,10 @@ def _validate_sections(sections: list[Any]) -> set[str]:
     return referenced_item_ids
 
 
-def _validate_item_payload(item_id: str, item: dict[str, Any], units: set[str]) -> None:
+def _validate_item_payload(
+    item_id: str, item: dict[str, Any], units: set[str],
+    query_texts: dict[str, str] | None = None,
+) -> None:
     for key in ("section_id", "item_key", "title", "source_kind"):
         if not isinstance(item.get(key), str) or not item[key]:
             raise ValidationError(
@@ -260,7 +264,7 @@ def _validate_item_payload(item_id: str, item: dict[str, Any], units: set[str]) 
     result = item.get("result")
     if not isinstance(result, dict):
         raise ValidationError(f"Artifact item {item_id!r} result must be a mapping")
-    _validate_result(item_id, result, units)
+    _validate_result(item_id, result, units, query_texts)
     if not isinstance(item.get("source_metadata"), dict):
         raise ValidationError(f"Artifact item {item_id!r} source_metadata must be a mapping")
     if not isinstance(item.get("issues"), dict):
@@ -292,7 +296,10 @@ def _validate_targets(value: Any, label: str) -> None:
         raise ValidationError(f"{label} must be a unique list containing only host and db")
 
 
-def _validate_result(item_id: str, result: dict[str, Any], units: set[str]) -> None:
+def _validate_result(
+    item_id: str, result: dict[str, Any], units: set[str],
+    query_texts: dict[str, str] | None = None,
+) -> None:
     kind = result.get("kind")
     if not _value_in(kind, RESULT_KINDS):
         raise ValidationError(f"Artifact item {item_id!r} has unsupported result kind {kind!r}")
@@ -305,6 +312,7 @@ def _validate_result(item_id: str, result: dict[str, Any], units: set[str]) -> N
             raise ValidationError(
                 f"Artifact table item {item_id!r} must define list columns and rows"
             )
+        _validate_table_query_links(item_id, result, query_texts or {})
         column_names = []
         for column in columns:
             if (
@@ -382,7 +390,7 @@ def _validate_result(item_id: str, result: dict[str, Any], units: set[str]) -> N
                     entry,
                     f"Artifact chart item {item_id!r} point {point_index}",
                 )
-        _validate_chart_references(item_id, result, series)
+        _validate_chart_references(item_id, result, series, query_texts)
         if "zero_series" in result:
             zero_series = result["zero_series"]
             if not isinstance(zero_series, list):
@@ -415,12 +423,34 @@ def _validate_result(item_id: str, result: dict[str, Any], units: set[str]) -> N
     _validate_interval_coverage(item_id, result.get("interval_coverage"))
 
 
+def _validate_table_query_links(item_id: str, result: dict, query_texts: dict) -> None:
+    links = result.get("query_links", {})
+    if not isinstance(links, dict):
+        raise ValidationError(f"Artifact table item {item_id!r} query_links must be a mapping")
+    columns = [column.get("name") for column in result["columns"] if isinstance(column, dict)]
+    rows = result["rows"]
+    for column, values in links.items():
+        if column not in columns or not isinstance(values, list) or len(values) != len(rows):
+            raise ValidationError(f"Artifact table item {item_id!r} has misaligned query_links")
+        index = columns.index(column)
+        for row, value in zip(rows, values):
+            if isinstance(row, list) and len(row) > index and isinstance(row[index], list):
+                if not isinstance(value, list) or len(row[index]) != len(value):
+                    raise ValidationError(f"Artifact table item {item_id!r} has misaligned query list")
+            for reference in value if isinstance(value, list) else [value]:
+                if reference is not None and (
+                    not isinstance(reference, str) or reference not in query_texts
+                ):
+                    raise ValidationError(f"Artifact table item {item_id!r} query_ref references missing data")
+
+
 def _validate_chart_references(
-    item_id: str, result: dict[str, Any], series: list[dict[str, Any]]
+    item_id: str, result: dict[str, Any], series: list[dict[str, Any]],
+    query_texts: dict[str, str] | None = None,
 ) -> None:
     references = result.get("references")
     if references is None:
-        return
+        references = {}
     if not isinstance(references, dict):
         raise ValidationError(f"Artifact chart item {item_id!r} references must be a mapping")
     namespaces = {"messages": str, "queries": str, "plans": dict}
@@ -448,7 +478,8 @@ def _validate_chart_references(
                     reference = tooltip[field]
                     if reference is not None and (
                         not isinstance(reference, str)
-                        or reference not in references.get(namespace, {})
+                        or (reference not in references.get(namespace, {})
+                            and not (namespace == "queries" and reference in (query_texts or {})))
                     ):
                         raise ValidationError(
                             f"Artifact chart item {item_id!r} {field} references missing data"

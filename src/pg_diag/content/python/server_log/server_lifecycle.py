@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import re
 from typing import Any
+
+from pg_diag.logscan.query_links import query_columns
 
 from pg_diag.executors.python import PythonSourceContext, PythonSourceResult, table_result
 from pg_diag.logscan.items_common import (
@@ -36,6 +39,8 @@ _KINDS = (
 
 
 def _kind(message: str) -> str | None:
+    if re.match(r'^background worker ".+" \(PID \d+\) exited with exit code [1-9]\d*\b', message):
+        return "background_worker_exit"
     lowered = message.lower()
     return next((kind for fragment, kind in _KINDS if fragment.lower() in lowered), None)
 
@@ -62,6 +67,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
             "process_id": record.process_id,
             "backend_type": record.backend_type,
             "message": record.message,
+            **query_columns(record),
             "count_complete": record.count_complete,
         }
         for record, kind in events[:ROW_LIMIT]
@@ -89,7 +95,8 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
         details += f" {omitted} older series were omitted by the fixed {ROW_LIMIT}-row limit."
     if note:
         details += f" {note}"
-    severity = "unknown" if note else ("high" if critical else "ok")
+    worker_failure = any(kind == "background_worker_exit" for _, kind in events)
+    severity = "unknown" if note else ("high" if critical else "medium" if worker_failure else "ok")
     return PythonSourceResult(
         collection_status="ok",
         result=result,
@@ -97,7 +104,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
         issues={
             "summary": {
                 "severity": severity,
-                "status": "review" if critical or note else "ok",
+                "status": "review" if critical or worker_failure or note else "ok",
                 "title": "Server lifecycle events were recorded",
                 "description": details,
                 "recommendation": "Correlate unexpected shutdown, crash recovery, promotion, readiness, and configuration reload markers with the incident timeline.",

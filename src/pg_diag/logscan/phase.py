@@ -52,12 +52,14 @@ from .model import (
 from .item_recall import clauses_for_items
 from .rle import fingerprint, merge_client_series
 from .sanitize import sanitize_text
+from .query_links import query_reference
 from .sources import LocalLogSource, LogScanSource
 
 _INSUFFICIENT_PRIVILEGE = "42501"
 _SUPPORTED_LOCALE_PREFIXES = ("C", "POSIX", "en_", "en.", "English")
 _LOCK_WAIT_EVENT_RE = re.compile(
-    r"^process \d+ (?:still waiting for|acquired) \w+ on .+ after \d+(?:\.\d+)? ms"
+    r"^process \d+ (?:still waiting for|acquired|detected deadlock while waiting for) "
+    r"\w+ on .+ after \d+(?:\.\d+)? ms"
 )
 
 _PG_TO_PYTHON_ENCODING = {
@@ -250,6 +252,22 @@ def _finish(
     inventory: dict[str, Any] | None = None,
 ) -> None:
     run.artifact["runtime"]["log_collection"] = marker
+    if window is not None:
+        catalog = run.artifact.setdefault("query_texts", {})
+        for record in window.records:
+            reference = query_reference(record.query, record.query_id)
+            if reference and record.query:
+                if reference in catalog:
+                    if catalog[reference] != record.query.strip():
+                        run.artifact.setdefault("query_text_metadata", {}).setdefault(reference, {})[
+                            "representative_sample"
+                        ] = True
+                    continue
+                catalog[reference] = record.query.strip()
+                if record.query_truncated:
+                    run.artifact.setdefault("query_text_metadata", {})[reference] = {
+                        "truncated": True, "max_chars": LINE_CAP,
+                    }
     runtime = run.artifact.get("runtime") or {}
     interval_seconds = runtime.get("interval_seconds")
     run.server_log = ServerLogContext(
@@ -694,7 +712,22 @@ def _record_from_series(
     # Keep it intact so item parsers can reach structured suffixes beyond the
     # display-oriented LINE_CAP used for messages.
     detail = sanitize_text(parsed.detail) if parsed.detail else None
-    query = sanitize_text(parsed.query)[:LINE_CAP] if parsed.query else None
+    query = sanitize_text(parsed.query) if parsed.query else None
+    query_truncated = bool(query and len(query) > LINE_CAP)
+    if not query and auto_explain_plan is not None:
+        query = auto_explain_plan.query_text
+        query_truncated = auto_explain_plan.query_truncated
+    if not query:
+        duration_query = re.match(
+            r"^duration:\s*\d+(?:\.\d+)?\s*ms\s+"
+            r"(?:statement|(?:execute|parse|bind)\s+[^:]+):\s*(.*)\Z",
+            message, re.DOTALL,
+        )
+        if duration_query:
+            query = duration_query.group(1)
+            query_truncated = len(query) > LINE_CAP
+    if query:
+        query = query[:LINE_CAP]
     context = sanitize_text(parsed.context)[:LINE_CAP] if parsed.context else None
     application_name = (
         sanitize_text(parsed.application_name)[:256] if parsed.application_name else None
@@ -732,6 +765,7 @@ def _record_from_series(
         transaction_id=parsed.transaction_id,
         application_name=application_name,
         query=query,
+        query_truncated=query_truncated,
         context=context,
         message_full=message,
     )
@@ -743,6 +777,7 @@ def _merge_records(head: LogRecord, nxt: LogRecord) -> LogRecord:
         last_time=max(head.last_time, nxt.last_time),
         repeat_count=head.repeat_count + nxt.repeat_count,
         partial=head.partial or nxt.partial,
+        query_truncated=head.query_truncated or nxt.query_truncated,
         count_complete=head.count_complete and nxt.count_complete,
         encoding_degraded=head.encoding_degraded or nxt.encoding_degraded,
     )
@@ -762,7 +797,9 @@ def _can_merge_client_records(head: LogRecord, nxt: LogRecord) -> bool:
         "57P01",
     )
     return not (
-        head.message.startswith(("duration:", "temporary file:", "invalid record length"))
+        head.query != nxt.query
+        or head.query_id != nxt.query_id
+        or head.message.startswith(("duration:", "temporary file:", "invalid record length"))
         or nxt.message.startswith(("duration:", "temporary file:", "invalid record length"))
         or head.auto_explain_plan is not None
         or nxt.auto_explain_plan is not None
@@ -770,6 +807,14 @@ def _can_merge_client_records(head: LogRecord, nxt: LogRecord) -> bool:
         or nxt.sql_state in preserve_event_time
         or "conflict with recovery" in head.message.lower()
         or "conflict with recovery" in nxt.message.lower()
+        or "unexpected EOF on client connection with an open transaction" in head.message
+        or "unexpected EOF on client connection with an open transaction" in nxt.message
+        or head.message.startswith(("could not send data to client", "could not receive data from client",
+                                    "connection to client lost"))
+        or nxt.message.startswith(("could not send data to client", "could not receive data from client",
+                                   "connection to client lost"))
+        or head.message.startswith("background worker")
+        or nxt.message.startswith("background worker")
         or _LOCK_WAIT_EVENT_RE.match(head.message)
         or _LOCK_WAIT_EVENT_RE.match(nxt.message)
     )

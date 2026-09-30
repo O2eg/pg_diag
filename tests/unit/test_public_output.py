@@ -104,9 +104,24 @@ def test_item_query_texts_are_moved_to_artifact_catalog() -> None:
     assert [column["name"] for column in item["result"]["columns"]] == ["pid", "query_id", "blocked_query_id"]
     assert item["result"]["rows"] == [[101, "11", "22"], [102, "11", ""]]
     assert query_texts == {
-        "11": "select 1 from pg_catalog.pg_class",
+        "11": "select 1",
         "22": "select blocked",
     }
+
+
+def test_log_query_links_preserve_ids_and_arrays_without_sql_duplication() -> None:
+    item = {"result": {"kind": "table", "columns": [
+        {"name": "query_id"}, {"name": "query_ref"}, {"name": "message"},
+    ], "rows": [[0, "log:a", "one"], [0, "log:b", "two"],
+                [["0", "-7074349522848144440"], ["log:a", "log:b"], "group"]]}}
+    catalog = {"log:a": "select 1", "log:b": "select 2"}
+    extract_item_query_texts(item, catalog,
+                            {"id_column_suffix": "query_id", "value_column_remove_suffix": "_id"})
+    result = item["result"]
+    assert [column["name"] for column in result["columns"]] == ["query_id", "message"]
+    assert result["query_links"]["query_id"] == ["log:a", "log:b", ["log:a", "log:b"]]
+    assert result["rows"][2][0] == ["0", "-7074349522848144440"]
+    assert catalog == {"log:a": "select 1", "log:b": "select 2"}
 
 
 @pytest.mark.parametrize("query", [
@@ -207,3 +222,18 @@ def test_redact_text_hides_values_but_keeps_setting_identifiers() -> None:
     assert lines[9] == "passwordcheck.min_length=8"
     # shell escapes and mixed quoting make the value's end ambiguous: the whole line goes
     assert lines[10:14] == [REDACTED] * 4
+
+
+def test_table_query_link_validation_rejects_dangling_or_misaligned_links() -> None:
+    from pg_diag.artifact_schema import _validate_table_query_links
+    from pg_diag.errors import ValidationError
+
+    result = {'columns': [{'name': 'query_id'}], 'rows': [[['0', '42']]],
+              'query_links': {'query_id': [['log:a', 'log:b']]}}
+    catalog = {'log:a': 'SELECT 1', 'log:b': 'SELECT 2'}
+    _validate_table_query_links('events', result, catalog)
+    with pytest.raises(ValidationError, match='missing data'):
+        _validate_table_query_links('events', result, {'log:a': 'SELECT 1'})
+    result['query_links']['query_id'] = [['log:a']]
+    with pytest.raises(ValidationError, match='misaligned'):
+        _validate_table_query_links('events', result, catalog)

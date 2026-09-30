@@ -76,6 +76,28 @@ def test_sanitize_quoted_literals() -> None:
     assert "'[LITERAL]'" in text
 
 
+@pytest.mark.parametrize("text", [
+    "taskmanagerreason.taskmanagerreasonkey = TRANSLATIONLIST.CODE",
+    "SELECT * FROM a JOIN b ON a.orderkey=b.orderkey WHERE a.storerkey = b.storerkey",
+    "(mk.keyword_id = k.id)",
+    'a."orderkey" = b."orderkey"',
+    "Sort Key: t.orderkey, t.keyword_id",
+    "Presorted Key: t.orderkey",
+    "Group Key: t.storerkey",
+    "Cache Key: t.id",
+])
+def test_sanitize_preserves_sql_keys_and_plan_attributes(text: str) -> None:
+    assert sanitize.sanitize_text(text) == text
+
+
+@pytest.mark.parametrize("name", [
+    "api_key", "apiKey", "access_key", "private_key", "encryption_key", "signing_key",
+    "auth_key", "client_key", "aws_secret_access_key", "refresh_token", "DB_PASSWORD",
+])
+def test_sanitize_explicit_credential_keys_still_redact(name: str) -> None:
+    assert sanitize.sanitize_text(f"{name}=SensitiveValue123") == f"{name}=[REDACTED]"
+
+
 # --- csv parsing ---
 
 
@@ -283,7 +305,8 @@ def test_parse_auto_explain_json_viewer_stays_valid_after_sanitization() -> None
     _, viewer_json = parsed.viewer_plan.split("\n", 1)
     viewer_payload = json.loads(viewer_json)
     assert viewer_payload["Plan"]["Node Type"] == "Hash Join"
-    assert "[REDACTED]" in viewer_payload["Plan"]["Hash Cond"]
+    assert viewer_payload["Plan"]["Hash Cond"] == "(mk.keyword_id = k.id)"
+    assert viewer_payload["Query Text"].endswith("ON mk.keyword_id = k.id")
 
 
 @pytest.mark.parametrize("plan_format", ["json", "xml"])
@@ -488,10 +511,21 @@ def test_chart_reference_pool_deduplicates_and_enforces_text_count_limit() -> No
 
 
 def test_chart_reference_pool_deduplicates_and_enforces_plan_count_limit() -> None:
+    assert event_refs.PLAN_REFERENCE_LIMIT >= event_refs.CHART_POINT_LIMIT
     pool = event_refs.ChartReferencePool()
     for index in range(event_refs.PLAN_REFERENCE_LIMIT):
         reference = pool.add_plan("json", f'{{"Plan": {index}}}')
         assert reference == f"p{index + 1}"
     assert pool.add_plan("json", '{"Plan": 0}') == "p1"
     assert pool.add_plan("json", '{"Plan": "over"}') is None
+    assert pool.omitted_plans == 1
+
+
+def test_chart_plan_references_still_enforce_byte_budget(monkeypatch) -> None:
+    monkeypatch.setattr(event_refs, "PLAN_REFERENCE_BYTES", 100)
+    pool = event_refs.ChartReferencePool()
+    first = "a" * 40
+    assert pool.add_plan("text", first) == "p1"
+    assert pool.add_plan("text", "b" * 40) is None
+    assert pool.add_plan("text", first) == "p1"  # dedup costs no additional bytes
     assert pool.omitted_plans == 1

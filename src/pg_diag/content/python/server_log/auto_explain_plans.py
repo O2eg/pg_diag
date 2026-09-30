@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
+import heapq
 import math
 from typing import Any
 
+from pg_diag.logscan.query_links import query_reference
+
 from pg_diag.executors.python import PythonSourceContext, PythonSourceResult
-from pg_diag.logscan.csvparse import parse_timestamp
 from pg_diag.logscan.event_refs import CHART_POINT_LIMIT, ChartReferencePool
 from pg_diag.logscan.items_common import (
     coverage_note,
@@ -16,7 +18,7 @@ from pg_diag.logscan.items_common import (
 )
 
 BUCKET_SECONDS = 60.0
-TOP_QUERIES_PER_BUCKET = 10
+TOP_QUERIES_PER_BUCKET = 15
 
 _BANDS = (
     ("< 100 ms", 0.0, 100.0, "#4ade80"),
@@ -34,61 +36,72 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
     window, early = resolve_english_window(context)
     if early is not None:
         return PythonSourceResult(**early)
+    settings = (getattr(context, "source", None) or {}).get("settings", {})
+    bucket_seconds = settings.get("bucket_seconds", BUCKET_SECONDS)
+    if (isinstance(bucket_seconds, bool) or not isinstance(bucket_seconds, (int, float))
+            or not math.isfinite(bucket_seconds) or bucket_seconds < 1):
+        raise ValueError("settings.bucket_seconds must be a finite number >= 1")
 
-    records = [record for record in window.records if record.auto_explain_plan is not None]
-    bucket_start, bucket_end = _bucket_bounds(context, records, BUCKET_SECONDS)
-    buckets = _buckets(bucket_start, bucket_end, BUCKET_SECONDS)
-    records_by_bucket = defaultdict(list)
+    # The query catalog is shared by all items. Bound only this item's retained
+    # executions; one SQL identity may have multiple timings and different plans.
+    retained: dict[tuple[str | None, int], Any] = {}
+    fastest: list[tuple[float, int, str | None]] = []
     format_counts: Counter[str] = Counter()
     duration_band_counts: Counter[str] = Counter()
-    parsed_plan_count = 0
-    complete_plan_count = 0
-    node_count = 0
-
-    for record in records:
+    plan_count = parsed_plan_count = complete_plan_count = node_count = 0
+    sequence = 0
+    for record in window.records:
         plan = record.auto_explain_plan
-        assert plan is not None
-        bucket = _floor_time(record.log_time, BUCKET_SECONDS)
-        label = _duration_band(plan.duration_ms)
-        records_by_bucket[bucket].extend(
-            [record] * min(max(record.repeat_count, 1), TOP_QUERIES_PER_BUCKET)
-        )
-        format_counts[plan.plan_format] += record.repeat_count
-        duration_band_counts[label] += record.repeat_count
+        if plan is None:
+            continue
+        count = max(record.repeat_count, 1)
+        plan_count += count
+        format_counts[plan.plan_format] += count
+        duration_band_counts[_duration_band(plan.duration_ms)] += count
         if plan.parsed:
-            parsed_plan_count += record.repeat_count
-            node_count += plan.node_count * record.repeat_count
+            parsed_plan_count += count
+            node_count += plan.node_count * count
         if plan.complete:
-            complete_plan_count += record.repeat_count
+            complete_plan_count += count
+        identity = query_reference(record.query or plan.query_text, record.query_id)
+        # At most limit copies of one repeated event could survive. Real plan
+        # events are not RLE-merged, so normally count == 1.
+        for _ in range(min(count, CHART_POINT_LIMIT)):
+            sequence += 1
+            # Equal durations retain the earlier input event. The unique
+            # sequence keeps heap comparisons away from records or SQL text.
+            candidate = (plan.duration_ms, -sequence, identity)
+            key = (identity, sequence)
+            if len(fastest) < CHART_POINT_LIMIT:
+                heapq.heappush(fastest, candidate)
+            elif candidate[:2] > fastest[0][:2]:
+                removed = heapq.heapreplace(fastest, candidate)
+                del retained[(removed[2], -removed[1])]
+            else:
+                continue
+            retained[key] = record
 
-    top_by_bucket = {
-        bucket: sorted(
-            bucket_records,
-            key=lambda record: (
-                -record.auto_explain_plan.duration_ms,
-                record.log_time,
-                record.process_id or -1,
-            ),
-        )[:TOP_QUERIES_PER_BUCKET]
-        for bucket, bucket_records in records_by_bucket.items()
-    }
+    # Intern plans only after eviction, slowest first. Evicted executions never
+    # consume the final reference budget; the byte cap favors the slowest plans.
+    ordered = [retained[(identity, -order)]
+               for _duration, order, identity in sorted(fastest, reverse=True)]
+    selected: dict[datetime, list[dict[str, Any]]] = defaultdict(list)
+    bucket_sizes = Counter(_floor_time(record.log_time, bucket_seconds) for record in ordered)
     utc_offset_seconds, clock_diagnostics = log_clock_offset(context)
-    candidate_point_count = sum(len(bucket_records) for bucket_records in top_by_bucket.values())
-    axis_points = _axis_boundary_points(buckets, utc_offset_seconds)
-    event_point_limit = max(0, CHART_POINT_LIMIT - len(axis_points))
-    selected: dict[datetime, dict[int, Any]] = defaultdict(dict)
-    displayed_plan_count = 0
-    for rank in range(TOP_QUERIES_PER_BUCKET):
-        for bucket in sorted(top_by_bucket):
-            if rank < len(top_by_bucket[bucket]) and displayed_plan_count < event_point_limit:
-                selected[bucket][rank] = top_by_bucket[bucket][rank]
-                displayed_plan_count += 1
-    occupied_first_rank = {
-        _iso_timestamp(bucket, utc_offset_seconds)
-        for bucket, ranks in selected.items() if 0 in ranks
-    }
-    axis_points = [point for point in axis_points if point["t"] not in occupied_first_rank]
     refs = ChartReferencePool()
+    for record in ordered:
+        bucket = _floor_time(record.log_time, bucket_seconds)
+        if len(selected[bucket]) >= TOP_QUERIES_PER_BUCKET:
+            continue
+        selected[bucket].append(_chart_point(
+            bucket, record, utc_offset_seconds, len(selected[bucket]),
+            min(bucket_sizes[bucket], TOP_QUERIES_PER_BUCKET), refs,
+        ))
+    displayed_plan_count = sum(len(points) for points in selected.values())
+    evicted_plan_count = plan_count - len(ordered)
+    bucket_omitted_plan_count = len(ordered) - displayed_plan_count
+    omitted_plan_count = plan_count - displayed_plan_count
+    rank_count = max((len(points) for points in selected.values()), default=0)
 
     result = {
         "kind": "chart",
@@ -112,39 +125,28 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
                 "nullable": False,
                 "quantity": "milliseconds",
                 "unit": "milliseconds",
-                "points": sorted(
-                    (axis_points if rank == 0 else [])
-                    + [
-                        _chart_point(
-                            bucket,
-                            selected[bucket][rank],
-                            utc_offset_seconds,
-                            rank,
-                            len(top_by_bucket.get(bucket) or []),
-                            refs,
-                        )
-                        for bucket in sorted(selected)
-                        if rank in selected[bucket]
-                    ],
-                    key=lambda point: point["t"],
-                ),
+                "points": [selected[bucket][rank] for bucket in sorted(selected)
+                           if rank < len(selected[bucket])],
             }
             # ECharts draws the first stacked series at the bottom. Declare
-            # Rank 10 first and Rank 1 last so durations descend top-to-bottom.
-            for rank in range(TOP_QUERIES_PER_BUCKET - 1, -1, -1)
+            # higher ranks first so durations descend top-to-bottom.
+            for rank in range(rank_count - 1, -1, -1)
         ],
         "references": refs.as_dict(),
-        "bucket_seconds": BUCKET_SECONDS,
+        "bucket_seconds": bucket_seconds,
         "top_queries_per_bucket": TOP_QUERIES_PER_BUCKET,
-        "plan_count": sum(record.repeat_count for record in records),
+        "selection_policy": "slowest_executions",
+        "max_displayed_queries_per_bucket": rank_count,
+        "plan_count": plan_count,
         "displayed_plan_count": displayed_plan_count,
-        "omitted_plan_count": max(
-            0,
-            sum(record.repeat_count for record in records) - displayed_plan_count,
-        ),
-        "candidate_point_count": candidate_point_count,
+        "omitted_plan_count": omitted_plan_count,
+        "evicted_plan_count": evicted_plan_count,
+        "global_retained_plan_count": len(ordered),
+        "bucket_omitted_plan_count": bucket_omitted_plan_count,
+        "minimum_retained_duration_ms": fastest[0][0] if fastest else None,
+        "candidate_point_count": plan_count,
         "point_limit": CHART_POINT_LIMIT,
-        "display_point_count": displayed_plan_count + len(axis_points),
+        "display_point_count": displayed_plan_count,
         "reference_omitted_count": refs.omitted_total,
         "parsed_plan_count": parsed_plan_count,
         "complete_plan_count": complete_plan_count,
@@ -155,7 +157,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
         },
     }
 
-    if not records:
+    if not plan_count:
         status, severity, issues = empty_result_status(window)
         return PythonSourceResult(
             collection_status=status,
@@ -168,40 +170,44 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
     note = coverage_note(window)
     unparsed = result["plan_count"] - parsed_plan_count
     incomplete = result["plan_count"] - complete_plan_count
-    issues: dict[str, Any] = {}
+    selection_summary = (
+        f"{plan_count} auto_explain execution(s) collected; {len(ordered)} retained "
+        f"by the global limit, {displayed_plan_count} displayed. "
+        f"{evicted_plan_count} execution(s) evicted by duration priority under the "
+        f"{CHART_POINT_LIMIT}-execution limit. From the retained executions, each "
+        f"{bucket_seconds:g}-second bucket shows at most {TOP_QUERIES_PER_BUCKET} "
+        f"slowest executions; {bucket_omitted_plan_count} additional execution(s) "
+        "omitted by the per-bucket limit. Repeated SQL retains separate executions "
+        "and plans. Equal-duration ties retain earlier input events."
+    )
     severity = "ok"
-    point_omitted = max(0, candidate_point_count - displayed_plan_count)
-    if note or unparsed or incomplete or point_omitted or refs.omitted_total:
+    details = []
+    if unparsed:
+        details.append(f"{unparsed} plan(s) had an unrecognized or truncated body")
+    if incomplete:
+        details.append(f"{incomplete} plan record(s) exceeded the capture boundary")
+    if note:
+        details.append(note)
+    if refs.omitted_total:
+        details.append(f"{refs.omitted_total} query or plan reference(s) exceeded payload budgets")
+    if details:
         severity = "unknown"
-        details = []
-        if unparsed:
-            details.append(f"{unparsed} plan(s) had an unrecognized or truncated body")
-        if incomplete:
-            details.append(f"{incomplete} plan record(s) exceeded the capture boundary")
-        if note:
-            details.append(note)
-        if point_omitted:
-            details.append(
-                f"{point_omitted} chart point(s) exceeded the fixed "
-                f"{CHART_POINT_LIMIT}-point display limit"
-            )
-        if refs.omitted_total:
-            details.append(
-                f"{refs.omitted_total} query or plan reference(s) exceeded payload budgets"
-            )
-        issues = {
-            "summary": {
-                "severity": "unknown",
-                "status": "review",
-                "title": "Auto-explain chart has incomplete plan evidence",
-                "description": " ".join(details),
-                "recommendation": (
-                    "Reduce the log window or auto_explain volume when collection limits were "
-                    "hit; prefer auto_explain.log_format=json for machine-readable plans."
-                ),
-            },
-            "items": [],
-        }
+    issues = {
+        "summary": {
+            "severity": severity,
+            "status": "review" if details or omitted_plan_count else "ok",
+            "title": "Auto-explain chart has incomplete plan evidence" if details
+            else "Slowest auto-explain executions across the collected window",
+            "description": " ".join([selection_summary, *details]),
+            "recommendation": (
+                "Inspect the highest-duration executions and their plans. This chart is "
+                "selected by duration, not execution frequency or total workload."
+                + (" Review collection coverage and plan payload limits for missing evidence."
+                   if details else "")
+            ),
+        },
+        "items": [],
+    }
     return PythonSourceResult(
         collection_status="ok",
         result=result,
@@ -209,28 +215,6 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
         severity_level=severity,
         diagnostics=clock_diagnostics,
     )
-
-
-def _bucket_bounds(
-    context, records, bucket_seconds: float
-) -> tuple[datetime | None, datetime | None]:
-    inventory = getattr(context.server_log, "inventory", None) or {}
-    start = parse_timestamp(str(inventory.get("window_from") or ""))
-    end = parse_timestamp(str(inventory.get("collected_to") or ""))
-    if start is None and records:
-        start = min(record.log_time for record in records)
-    if end is None and records:
-        end = max(record.log_time for record in records)
-    if start is None or end is None:
-        return None, None
-    return _floor_time(start, bucket_seconds), _floor_time(end, bucket_seconds)
-
-
-def _buckets(start: datetime | None, end: datetime | None, seconds: float) -> list[datetime]:
-    if start is None or end is None or end < start:
-        return []
-    count = int(math.floor((end - start).total_seconds() / seconds)) + 1
-    return [start + timedelta(seconds=index * seconds) for index in range(count)]
 
 
 def _floor_time(value: datetime, seconds: float) -> datetime:
@@ -247,7 +231,7 @@ def _duration_band(duration_ms: float) -> str:
 
 
 def _stack_color(rank: int, bucket_size: int) -> str:
-    """Return a positional red-to-yellow color for one minute's stack."""
+    """Return a positional red-to-yellow color for one bucket's stack."""
     if bucket_size <= 1:
         return _hex_color(_STACK_TOP_COLOR)
     position = min(max(rank, 0), bucket_size - 1) / (bucket_size - 1)
@@ -279,7 +263,8 @@ def _chart_point(
         "tooltip": {
             "log_time": _iso_timestamp(record.log_time, _record_offset(record, utc_offset_seconds)),
             "duration_ms": plan.duration_ms,
-            "query_ref": refs.add_query(plan.query_sample),
+            "query_ref": query_reference(record.query or plan.query_text, record.query_id)
+            if record.query or plan.query_text else None,
         },
     }
     if plan.viewer_plan:
@@ -292,15 +277,6 @@ def _chart_point(
             "read_only": True,
         }
     return point
-
-
-def _axis_boundary_points(buckets: list[datetime], utc_offset_seconds: int) -> list[dict[str, Any]]:
-    if not buckets:
-        return []
-    result = [{"t": _iso_timestamp(buckets[0], utc_offset_seconds), "value": 0}]
-    if buckets[-1] != buckets[0]:
-        result.append({"t": _iso_timestamp(buckets[-1], utc_offset_seconds), "value": 0})
-    return result
 
 
 def _record_offset(record: Any, window_offset: int) -> int:

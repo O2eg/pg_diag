@@ -8,6 +8,9 @@ This instruction belongs to report item `server_log.server_lifecycle`. The item 
 - Up to 100 newest event series; repeated adjacent messages are collapsed with occurrence and first/last timestamps.
 - PostgreSQL localizes these messages, so the item is unsupported when `lc_messages` is not C/POSIX/English rather than claiming a false empty result.
 
+
+- Nonzero `background worker ... exited with exit code ...` records are `background_worker_exit`, with medium severity. They do not by themselves prove a postmaster crash; correlate them with the parallel leader query error.
+
 ## What to watch
 - Unclean shutdown or backend crash followed by recovery.
 - Promotion/timeline events that do not match the expected failover chronology.

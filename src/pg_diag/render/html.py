@@ -37,6 +37,9 @@ def render_html(artifact: dict[str, Any], *, validate: bool = True) -> str:
         "__HIGHLIGHT_JS__": _inline_script(
             _read_render_resource("vendor", "highlight-11.11.1.min.js")
         ),
+        "__SQL_FORMATTER_JS__": _inline_script(
+            _read_render_resource("vendor", "sql-formatter-15.8.2.min.js")
+        ),
         "__HIGHLIGHT_CSS__": _inline_style(
             _read_render_resource("vendor", "highlight-github-dark-11.11.1.min.css")
         ),
@@ -129,6 +132,10 @@ def _third_party_licenses() -> str:
         + _read_render_resource("vendor", "echarts-6.1.0.LICENSE-d3.txt"),
         "highlight.js 11.11.1 - BSD-3-Clause license\n\n"
         + _read_render_resource("vendor", "highlight-11.11.1.LICENSE.txt"),
+        "SQL Formatter 15.8.2 - MIT license\n\n"
+        + _read_render_resource("vendor", "sql-formatter-15.8.2.LICENSE.txt"),
+        "SQL Formatter embedded nearley 2.20.1 - MIT license\n\n"
+        + _read_render_resource("vendor", "sql-formatter-15.8.2.nearley.LICENSE.txt"),
         "pg_configurator - MIT license\n\n"
         + _read_render_resource("vendor", "pg-configurator.LICENSE.txt"),
         _read_render_resource("vendor", "pg-configurator.NOTICE.txt"),

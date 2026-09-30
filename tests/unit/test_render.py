@@ -44,6 +44,7 @@ def _without_vendor_bundles(html: str) -> str:
         ('<style id="pg-explain-viewer-styles"', "</style>"),
         ('<script id="echarts-library"', "</script>"),
         ('<script id="highlight-library"', "</script>"),
+        ('<script id="sql-formatter-library"', "</script>"),
         ('<script id="pg-explain-viewer-expr-library"', "</script>"),
         ('<script id="pg-explain-viewer-sql-library"', "</script>"),
         ('<script id="pg-explain-viewer-library"', "</script>"),
@@ -379,6 +380,9 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "https://cdn.jsdelivr.net/npm" not in html
     assert "__ECHARTS_JS__" not in html
     assert "__HIGHLIGHT_JS__" not in html
+    assert "__SQL_FORMATTER_JS__" not in html
+    assert 'id="sql-formatter-library"' in html
+    assert "SQL Formatter 15.8.2" in html
     assert "__HIGHLIGHT_CSS__" not in html
     assert "__PG_EXPLAIN_VIEWER_THEME_CSS__" not in html
     assert "__PG_EXPLAIN_VIEWER_CSS__" not in html
@@ -391,7 +395,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert 'window.echarts.init(pending.container, null, {renderer: "svg"})' in html
     assert "buildEChartsOptions(entry)" in html
     assert "echartsChartType(chartKind)" in html
-    assert "chartDatetimeBounds(series)" in html
+    assert "chartDatetimeBounds(series, logChart)" in html
     assert "min: datetimeBounds.min" in html
     assert "max: datetimeBounds.max" in html
     assert "const padding = 60000" in html
@@ -479,7 +483,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "event.stopImmediatePropagation()" in html
     assert "{capture: true, passive: false}" in html
     assert "pointer-events: auto !important;" in html
-    assert "chartXGrid(result.series || [], xType)" in html
+    assert "chartXGrid(sourceSeries, xType)" in html
     assert "hasFiniteValue: false" in html
     assert "stored.hasFiniteValue = stored.hasFiniteValue || Number.isFinite(numeric)" in html
     assert "const firstFinite = grid.findIndex" in html
@@ -526,7 +530,7 @@ def test_html_embedded_json_is_inert_and_escaped() -> None:
     assert "hideReportModal(modal)" in html
     assert "const queryTexts = artifact.query_texts;" in html
     assert "query-id-button" in html
-    assert "openQueryTextModal(queryId)" in html
+    assert "openQueryTextModal(queryId, label)" in html
     assert "Show query: " in html
     assert '"query_texts":{"123":"select * from pg_class where oid = $1"}' in html
     assert "const objectDdl = artifact.object_ddl || {};" in html

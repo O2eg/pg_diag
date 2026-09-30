@@ -1503,3 +1503,22 @@ def test_item_type_filter_intersects_with_tags_and_ids(content_path: Path) -> No
         build_plan(content, 180000, item_type="graph")
     with pytest.raises(ValueError, match="at least one item type"):
         build_plan(content, 180000, item_type=" , ")
+
+
+def test_artifact_chart_query_links_use_shared_catalog_and_reject_dangling_refs(tmp_path):
+    artifact = _artifact()
+    artifact['query_texts'] = {'log:sql': 'SELECT 1'}
+    artifact['items']['s.i']['result'] = {
+        'kind': 'chart', 'chart': {'kind': 'stacked_column'},
+        'series': [{
+            'name': 'events', 'label': 'Events', 'value_kind': 'integer',
+            'semantic_role': 'counter_delta', 'quality': 'derived',
+            'encoding': 'json_number', 'nullable': False, 'quantity': 'events', 'unit': 'count',
+            'points': [{'t': '2026-09-29T12:00:00Z', 'value': 1,
+                        'tooltip': {'query_ref': 'log:sql'}}],
+        }],
+    }
+    write_json(tmp_path / 'shared-query.json', artifact)
+    artifact['query_texts'].clear()
+    with pytest.raises(ValidationError, match='query_ref references missing data'):
+        write_json(tmp_path / 'dangling-query.json', artifact)

@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 from pg_diag.logscan.model import AutoExplainPlan, LogCoverage, LogRecord, LogWindow
 from pg_diag.logscan.rle import fingerprint
+from pg_diag.logscan.query_links import query_reference
 
 CONTENT = Path("src/pg_diag/content/python/server_log")
 BASE = datetime(2026, 8, 31, 10, 0, 0)
@@ -184,7 +185,9 @@ def test_top_errors_aggregates_by_fingerprint() -> None:
     assert len(by) == 2  # two fingerprints share dup-key shape
     top = by[0]
     assert top["occurrences"] == 12
-    assert top["distinct_users"] == 2
+    assert top["distinct_users"] == ["a", "b"]
+    assert top["distinct_databases"] == ["appdb"]
+    assert "count_complete" not in top
     assert result.severity_level == "medium"
 
 
@@ -219,6 +222,65 @@ def test_deadlock_events_filter() -> None:
     result = module.collect(_context(_window(records)))
     assert result.result["row_count"] == 1
     assert result.severity_level == "medium"
+
+
+def test_deadlock_totals_include_rle_and_omitted_rows_without_double_counting() -> None:
+    records = [_record(i, message="deadlock detected", sql_state="40P01", repeat=2)
+               for i in range(110)]
+    records.append(_record(120, "LOG", "process 42 detected deadlock while waiting for "
+                           "ShareLock on transaction 99 after 1000.032 ms", "00000"))
+    result = _load("deadlock_events").collect(_context(_window(records)))
+    assert result.result["matched_event_count"] == 220
+    assert result.result["displayed_event_count"] == 200
+    assert result.result["omitted_event_count"] == 20
+    assert result.result["omitted_series_count"] == 10
+    assert "220 deadlock event(s)" in result.issues["summary"]["description"]
+    waits = _load("lock_waits").collect(_context(_window(records)))
+    assert waits.result["deadlock_context_event_count"] == 1
+    assert waits.result["acquired_event_count"] == 0
+    assert _by(waits)[0]["event"] == "deadlock_detected"
+
+
+def test_log_severity_disconnects_and_worker_exit_are_classified() -> None:
+    records = [
+        _record(1, "LOG", "terminating walsender process due to replication timeout", "00000"),
+        _record(2, "LOG", "unexpected EOF on standby connection", "08P01"),
+        _record(3, "LOG", "unexpected EOF on client connection with an open transaction", "08006"),
+        _record(4, "LOG", 'background worker "parallel worker" (PID 42) exited with exit code 1', "00000"),
+        _record(5, "LOG", 'background worker "parallel worker" (PID 43) exited with exit code 0', "00000"),
+    ]
+    context = _context(_window(records))
+    replication = _load("replication_events").collect(context)
+    assert {row["event_type"] for row in _by(replication)} == {
+        "walsender_timeout", "standby_disconnect",
+    }
+    termination = _load("query_termination_events").collect(context)
+    assert termination.result["event_count"] == 1
+    points = [point for series in termination.result["series"] for point in series["points"]]
+    assert points[0]["tooltip"]["event_type"] == "client_disconnect_open_transaction"
+    lifecycle = _load("server_lifecycle").collect(context)
+    assert [row["event_type"] for row in _by(lifecycle)] == ["background_worker_exit"]
+    assert lifecycle.severity_level == "medium"  # not a postmaster crash
+
+
+def test_error_chronology_counts_and_severity_cover_omitted_events() -> None:
+    records = [_record(0, "PANIC", "old failure", repeat=10)]
+    records += [_record(i + 1, repeat=2) for i in range(100)]
+    result = _load("error_chronology").collect(_context(_window(records)))
+    assert result.result["matched_event_count"] == 210
+    assert result.result["omitted_event_count"] == 10
+    assert result.severity_level == "high"
+
+
+def test_autovacuum_counts_cap_and_reads_elapsed_after_display_limit() -> None:
+    message = 'automatic aggressive vacuum of table "appdb.public.t":\n' + "pages " * 500
+    message += " elapsed: 42.5 s"
+    records = [_record(i, "LOG", message[:2000], "00000", repeat=2, message_full=message)
+               for i in range(201)]
+    result = _load("autovacuum_runs").collect(_context(_window(records)))
+    assert result.result["matched_event_count"] == 402
+    assert result.result["omitted_event_count"] == 2
+    assert all(row["aggressive"] and row["elapsed_s"] == 42.5 for row in _by(result))
 
 
 def test_deadlock_events_support_non_english_locale_via_sqlstate() -> None:
@@ -322,7 +384,7 @@ def test_empty_window_is_empty_status() -> None:
         assert result.severity_level == "ok", name
 
 
-def test_auto_explain_chart_keeps_top_ten_queries_per_minute() -> None:
+def test_auto_explain_chart_keeps_executions_below_bucket_limit() -> None:
     module = _load("auto_explain_plans")
 
     def plan(
@@ -343,6 +405,7 @@ def test_auto_explain_chart_keeps_top_ten_queries_per_minute() -> None:
             True,
             query_sample,
             f"duration: {duration_ms} ms  plan:\n{viewer_body}",
+            query_text=query_sample,
         )
 
     records = [
@@ -377,26 +440,26 @@ def test_auto_explain_chart_keeps_top_ten_queries_per_minute() -> None:
     assert result.result["chart"]["quantity"] == "milliseconds"
     assert result.result["chart"]["unit"] == "milliseconds"
     assert result.result["bucket_seconds"] == 60
-    assert result.result["top_queries_per_bucket"] == 10
+    assert result.result["max_displayed_queries_per_bucket"] == 12
+    assert result.result["selection_policy"] == "slowest_executions"
     assert result.result["plan_count"] == 14
-    assert result.result["displayed_plan_count"] == 12
-    assert result.result["omitted_plan_count"] == 2
+    assert result.result["displayed_plan_count"] == 14
+    assert result.result["omitted_plan_count"] == 0
     assert result.result["parsed_plan_count"] == 14
     assert result.result["plan_format_counts"] == {"json": 13, "text": 1}
     assert result.result["chart"]["show_legend"] is False
     assert result.result["chart"]["tooltip_kind"] == "query_event"
-    assert len(result.result["series"]) == 10
+    assert len(result.result["series"]) == 12
     assert [series["name"] for series in result.result["series"]] == [
-        f"Rank {rank}" for rank in range(10, 0, -1)
+        f"Rank {rank}" for rank in range(12, 0, -1)
     ]
     slowest = [point for point in result.result["series"][-1]["points"] if point["value"]]
     second = [point for point in result.result["series"][-2]["points"] if point["value"]]
     assert [point["value"] for point in slowest] == [1_200, 5_000]
     assert [point["tooltip"]["duration_ms"] for point in slowest] == [1_200, 5_000]
-    query_refs = result.result["references"]["queries"]
-    assert [query_refs[point["tooltip"]["query_ref"]] for point in slowest] == [
-        "select 12",
-        "select slow",
+    assert "queries" not in result.result["references"]
+    assert [point["tooltip"]["query_ref"] for point in slowest] == [
+        "7", "7",
     ]
     assert [point["tooltip"]["duration_ms"] for point in second] == [1_100, 2_000]
     first_minute_values = [
@@ -407,10 +470,10 @@ def test_auto_explain_chart_keeps_top_ten_queries_per_minute() -> None:
         next(point for point in series["points"] if point["value"])["color"]
         for series in result.result["series"]
     ]
-    assert first_minute_values == list(range(300, 1_300, 100))
+    assert first_minute_values == list(range(100, 1_300, 100))
     assert first_minute_colors[0] == "#facc15"
     assert first_minute_colors[-1] == "#ef4444"
-    assert len(set(first_minute_colors)) == 10
+    assert len(set(first_minute_colors)) == 12
     second_minute_points = [
         point
         for series in result.result["series"]
@@ -430,9 +493,144 @@ def test_auto_explain_chart_keeps_top_ten_queries_per_minute() -> None:
     }
 
 
+def test_auto_explain_evicts_fastest_executions_across_whole_window(monkeypatch) -> None:
+    module = _load("auto_explain_plans")
+    monkeypatch.setattr(module, "CHART_POINT_LIMIT", 5)
+    # Many executions of the SAME SQL must keep their individual timings/plans.
+    durations = [50, 10, 40, 30, 20, 200, 1, 300, 60, 100]
+    records = [
+        _record(index * 86400, "LOG", query="select 1", query_id=None,
+                auto_explain_plan=AutoExplainPlan(
+                    value, "text", "Result", 1, True, True, "select 1",
+                    f"duration: {value} ms plan: unique execution {index}",
+                    query_text="select 1",
+                ))
+        for index, value in enumerate(durations)
+    ]
+    result = module.collect(_context(_window(records)))
+    data = result.result
+    points = [point for series in data["series"] for point in series["points"]]
+    assert sorted(point["value"] for point in points) == [50, 60, 100, 200, 300]
+    assert data["plan_count"] == data["candidate_point_count"] == 10
+    assert data["displayed_plan_count"] == data["display_point_count"] == 5
+    assert data["omitted_plan_count"] == data["evicted_plan_count"] == 5
+    assert data["minimum_retained_duration_ms"] == 50
+    assert len(data["references"]["plans"]) == 5
+    assert {p["tooltip"]["query_ref"] for p in points} == {query_reference("select 1")}
+    for point in points:
+        plan = data["references"]["plans"][point["viewer"]["plan_ref"]]
+        assert plan["text"].startswith(f"duration: {point['value']} ms")
+    description = result.issues["summary"]["description"]
+    assert "10 auto_explain execution(s) collected; 5 retained" in description
+    assert "5 execution(s) evicted by duration priority" in description
+    # Deliberate top-K selection must not claim a parser/collection failure.
+    assert result.severity_level == "ok"
+    assert "incomplete" not in result.issues["summary"]["title"]
+
+
+def test_auto_explain_duration_ties_keep_earlier_events_and_zero_durations(monkeypatch) -> None:
+    module = _load("auto_explain_plans")
+    monkeypatch.setattr(module, "CHART_POINT_LIMIT", 2)
+    plan = AutoExplainPlan(0, "text", "Result", 1, True, True, "select 1")
+    result = module.collect(_context(_window([
+        _record(index, "LOG", auto_explain_plan=plan) for index in (1, 2, 3)
+    ])))
+    points = [p for s in result.result["series"] for p in s["points"]]
+    assert len(points) == 2
+    assert sorted(p["tooltip"]["log_time"][:19] for p in points) == [
+        "2026-08-31T10:00:01", "2026-08-31T10:00:02",
+    ]
+    assert result.result["evicted_plan_count"] == 1
+    assert result.result["minimum_retained_duration_ms"] == 0
+
+
+def test_auto_explain_caps_dense_bucket_after_global_selection() -> None:
+    module = _load("auto_explain_plans")
+    # 250 plans in one minute, 1750 plans in separate minutes, and 10 too-fast
+    # plans. This previously produced 437750 aligned points in the renderer.
+    records = []
+    for index in range(2010):
+        offset = 1 if index < 250 else (index - 249) * 60
+        duration = 10000 + index if index < 2000 else 1
+        records.append(_record(offset, "LOG", auto_explain_plan=AutoExplainPlan(
+            duration, "text", "Result", 1, True, True, None,
+            f"duration: {duration} ms  plan: execution {index}",
+        )))
+    result = module.collect(_context(_window(records)))
+    data = result.result
+    points = [p for s in data["series"] for p in s["points"]]
+    first_bucket = [p for p in points if p["t"].startswith("2026-08-31T10:00:")]
+    assert len(data["series"]) == data["top_queries_per_bucket"] == 15
+    assert sorted(p["value"] for p in first_bucket) == list(range(10235, 10250))
+    assert len(points) == data["displayed_plan_count"] == 1765
+    assert data["global_retained_plan_count"] == 2000
+    assert data["evicted_plan_count"] == 10
+    assert data["bucket_omitted_plan_count"] == 235
+    assert data["omitted_plan_count"] == 245
+    assert len(data["references"]["plans"]) == 1765
+    assert data["plan_count"] == data["parsed_plan_count"] == 2010
+    assert "235 additional execution(s) omitted by the per-bucket limit" in result.issues["summary"]["description"]
+
+
+def test_auto_explain_bucket_limit_uses_configured_five_minutes() -> None:
+    module = _load("auto_explain_plans")
+    records = [
+        _record(index * 10, "LOG", auto_explain_plan=AutoExplainPlan(
+            index + 1, "text", "Result", 1, True, True, None,
+        )) for index in range(31)
+    ]
+    context = _context(_window(records))
+    context.source = {"settings": {"bucket_seconds": 300}}
+    result = module.collect(context)
+    data = result.result
+    points = [p for s in data["series"] for p in s["points"]]
+    assert data["bucket_seconds"] == 300
+    assert data["displayed_plan_count"] == 16
+    assert sorted(p["value"] for p in points) == list(range(16, 32))
+    assert {p["t"][:19] for p in points} == {
+        "2026-08-31T10:00:00", "2026-08-31T10:05:00",
+    }
+    assert data["evicted_plan_count"] == 0
+    assert data["bucket_omitted_plan_count"] == 15
+    assert "300-second bucket shows at most 15 slowest executions" in result.issues["summary"]["description"]
+
+
+def test_auto_explain_full_scan_statistics_survive_eviction(monkeypatch) -> None:
+    module = _load("auto_explain_plans")
+    monkeypatch.setattr(module, "CHART_POINT_LIMIT", 1)
+    fast = AutoExplainPlan(1, "text", None, 0, False, False, "select 1")
+    slow = AutoExplainPlan(200, "text", "Result", 1, True, True, "select 2")
+    result = module.collect(_context(_window([
+        _record(1, "LOG", repeat=100, auto_explain_plan=fast),
+        _record(200, "LOG", auto_explain_plan=slow),
+    ])))
+    assert result.result["plan_count"] == 101
+    assert result.result["evicted_plan_count"] == 100
+    assert result.result["parsed_plan_count"] == result.result["complete_plan_count"] == 1
+    assert result.severity_level == "unknown"
+    assert "100 plan(s) had an unrecognized or truncated body" in result.issues["summary"]["description"]
+
+
+def test_auto_explain_plan_byte_budget_prioritizes_slowest(monkeypatch) -> None:
+    from pg_diag.logscan import event_refs
+
+    module = _load("auto_explain_plans")
+    monkeypatch.setattr(event_refs, "PLAN_REFERENCE_BYTES", 40)
+    records = [_record(i, "LOG", auto_explain_plan=AutoExplainPlan(
+        value, "text", "Result", 1, True, True, "select 1", text,
+    )) for i, (value, text) in enumerate([(1, "fast"), (100, "slow")])]
+    result = module.collect(_context(_window(records)))
+    points = [p for s in result.result["series"] for p in s["points"]]
+    assert result.result["references"]["plans"] == {"p1": {"format": "text", "text": "slow"}}
+    assert next(p for p in points if p["value"] == 100)["viewer"]["plan_ref"] == "p1"
+    assert "viewer" not in next(p for p in points if p["value"] == 1)
+    assert result.result["reference_omitted_count"] == 1
+    assert result.severity_level == "unknown"
+
+
 def test_auto_explain_chart_always_uses_aligned_minute_buckets() -> None:
     module = _load("auto_explain_plans")
-    plan = AutoExplainPlan(10_000, "yaml", "Result", 1, True, True, "select 1")
+    plan = AutoExplainPlan(10_000, "yaml", "Result", 1, True, True, "select 1", query_text="select 1")
     record = _record(301, "LOG", auto_explain_plan=plan)
     inventory = {
         "window_from": "2026-08-31 09:58:00",
@@ -442,14 +640,13 @@ def test_auto_explain_chart_always_uses_aligned_minute_buckets() -> None:
     result = module.collect(_context(_window([record]), mode="one-shot", inventory=inventory))
     assert result.result["bucket_seconds"] == 60
     series = result.result["series"][-1]
-    assert series["points"][0]["t"] == "2026-08-31T09:58:00+03:00"
-    assert series["points"][-1]["t"] == "2026-08-31T10:07:00+03:00"
-    assert [point["value"] for point in series["points"]] == [0, 10_000, 0]
-    assert series["points"][1]["color"] == "#ef4444"
-    assert series["points"][1]["tooltip"] == {
+    assert series["points"][0]["t"] == "2026-08-31T10:05:00+03:00"
+    assert [point["value"] for point in series["points"]] == [10_000]
+    assert series["points"][0]["color"] == "#ef4444"
+    assert series["points"][0]["tooltip"] == {
         "log_time": "2026-08-31T10:05:01+03:00",
         "duration_ms": 10_000,
-        "query_ref": "q1",
+        "query_ref": "7",
     }
 
 
@@ -755,6 +952,37 @@ def test_lock_waits_nonempty_result_discloses_incomplete_coverage() -> None:
     assert "Counts are lower bounds" in result.issues["summary"]["description"]
 
 
+def test_lock_timeout_is_not_nowait_and_disconnects_follow_backend_type() -> None:
+    termination = _load("query_termination_events")
+    replication = _load("replication_events")
+    records = [
+        _record(1, "ERROR", "canceling statement due to lock timeout", "55P03"),
+        _record(2, "ERROR", "could not obtain lock on row in relation x", "55P03"),
+        _record(3, "LOG", 'skipping vacuum of "x" --- lock not available', "55P03",
+                backend_type="autovacuum worker"),
+        _record(4, "LOG", "could not receive data from client: Connection reset by peer", "08006"),
+        _record(5, "FATAL", "connection to client lost", "08006"),
+        _record(6, "LOG", "could not send data to client: Broken pipe", "08006"),
+        _record(7, "LOG", "could not receive data from client: Connection timed out", "08006",
+                backend_type="walsender"),
+        _record(8, "LOG", "connection to client lost", "08006", backend_type=None),
+        _record(9, "LOG", "could not receive data from WAL stream: EOF", "08006",
+                backend_type="walreceiver"),
+    ]
+    result = termination.collect(_context(_window(records))).result
+    kinds = [p["tooltip"]["event_type"] for s in result["series"] for p in s["points"]]
+    from collections import Counter
+
+    assert Counter(kinds) == {
+        "lock_timeout": 1, "nowait_or_lock_not_available": 2,
+        "client_disconnect": 3, "connection_disconnect": 1,
+    }
+    assert result["event_count"] == 7
+    rows = _by(replication.collect(_context(_window(records))))
+    assert {row["event_type"] for row in rows} == {"walsender_disconnect", "walreceiver_disconnect"}
+    assert {row["backend_type"] for row in rows} == {"walsender", "walreceiver"}
+
+
 def test_system_incidents_uses_sqlstate_across_locales_and_reports_partial_patterns() -> None:
     module = _load("system_incidents")
     records = [
@@ -794,7 +1022,8 @@ def test_server_lifecycle_and_replication_classify_key_events() -> None:
                 [
                     _record(1, "LOG", "archive command failed with exit code 1", None),
                     _record(2, "ERROR", "requested WAL segment 00000001 has already been removed"),
-                    _record(3, "LOG", "could not receive data from client: Connection reset"),
+                    _record(3, "LOG", "could not receive data from client: Connection reset",
+                            backend_type="walsender"),
                 ]
             )
         )
@@ -850,7 +1079,7 @@ def test_query_termination_chart_deduplicates_references_and_keeps_minutes() -> 
         "m1": message,
         "m2": "could not obtain lock on row",
     }
-    assert result.result["references"]["queries"]["q1"] == ("select * from orders where id = 1")
+    assert "queries" not in result.result["references"]
     points = [point for series in result.result["series"] for point in series["points"]]
     assert {point["t"] for point in points} == {
         "2026-08-31T10:00:00+00:00",
@@ -860,7 +1089,7 @@ def test_query_termination_chart_deduplicates_references_and_keeps_minutes() -> 
         point for point in points if point["tooltip"]["event_type"] == "statement_timeout"
     ]
     assert {point["tooltip"]["message_ref"] for point in timeout_points} == {"m1"}
-    assert {point["tooltip"]["query_ref"] for point in timeout_points} == {"q1"}
+    assert {point["tooltip"]["query_ref"] for point in timeout_points} == {"7"}
 
 
 def test_query_resource_events_aggregate_slow_queries_and_temp_files() -> None:
@@ -1104,7 +1333,7 @@ def test_termination_keeps_different_query_and_application_groups() -> None:
     assert result.result["candidate_point_count"] == 4
 
 
-def test_resource_ignores_plans_parse_bind_and_bare_duration_records() -> None:
+def test_resource_separates_parse_bind_and_bare_duration_from_executions() -> None:
     module = _load("query_resource_events")
     messages = [
         "duration: 20.161 ms  statement: SELECT pg_sleep(0.02)",
@@ -1117,8 +1346,13 @@ def test_resource_ignores_plans_parse_bind_and_bare_duration_records() -> None:
     records = [_record(i, "LOG", message, "00000") for i, message in enumerate(messages)]
     standalone = module.collect(_context(_window(records[:2])))
     combined = module.collect(_context(_window(records)))
-    assert combined.result == standalone.result
-    row = _by(combined)[0]
+    rows = {row["event_type"]: row for row in _by(combined)}
+    assert set(rows) == {"slow_statement", "parse_duration", "bind_duration", "duration_only"}
+    assert combined.result["raw_event_count"] == 5  # auto_explain is not an execution
+    assert all("query_sample" not in row for row in rows.values())
+    assert rows["duration_only"]["query_ref"] is None
+    row = rows["slow_statement"]
+    assert row == _by(standalone)[0]
     assert row["occurrences"] == 2
     assert row["max_duration_ms"] == 201.236
     assert row["total_duration_ms"] == 221.397
@@ -1140,12 +1374,12 @@ def test_resource_zero_query_id_uses_sql_identity() -> None:
             )
         ]
         result = module.collect(_context(_window(records)))
-        rows = {row["query_sample"]: row for row in _by(result)}
+        rows = {row["query_id"]: row for row in _by(result)}
         assert len(rows) == 2
-        assert rows["SELECT pg_sleep(0.03)"]["occurrences"] == 2
-        assert rows["SELECT pg_sleep(0.03)"]["total_duration_ms"] == 80
-        assert rows["SELECT md5('beta')"]["total_duration_ms"] == 40
-        assert all(row["query_id"] is None for row in rows.values())
+        assert rows[query_reference("SELECT pg_sleep(0.03)")]["occurrences"] == 2
+        assert rows[query_reference("SELECT pg_sleep(0.03)")]["total_duration_ms"] == 80
+        assert rows[query_reference("SELECT md5('beta')")]["total_duration_ms"] == 40
+        assert all(row["query_id"] == row["query_ref"] for row in rows.values())
 
 
 def test_normal_end_of_wal_is_lifecycle_evidence_not_corruption() -> None:
@@ -1336,7 +1570,7 @@ def test_query_resource_events_flag_collector_queries_and_merge_databaseless_rec
     rows = _by(result)
     assert len(rows) == 2
     workload, collector = rows
-    assert workload["query_id"] == 22
+    assert workload["query_id"] == "22"
     assert workload["occurrences"] == 2
     assert workload["database_partial"] is True
     assert workload["collector_generated"] is False
@@ -1410,3 +1644,58 @@ def test_replication_and_lifecycle_recognize_retry_warning_and_lock_file() -> No
         )
     )
     assert rows[0]["event_type"] == "startup_failure"
+
+
+def test_top_errors_identity_arrays_honor_item_settings_and_report_omissions() -> None:
+    module = _load("top_errors")
+    records = [replace(_record(i, user=f"user{i:02d}"), database_name=f"db{i:02d}")
+               for i in reversed(range(35))]
+    records.append(records[0])  # repeated identities must not consume list slots
+    for limit in (30, 3):
+        context = _context(_window(records))
+        context.source = {"settings": {"distinct_names_limit": limit}}
+        result = module.collect(context)
+        row = _by(result)[0]
+        assert row["distinct_users"] == [f"user{i:02d}" for i in range(limit)]
+        assert row["distinct_databases"] == [f"db{i:02d}" for i in range(limit)]
+        assert row["occurrences"] == 36
+        assert "count_complete" not in row
+        assert result.result["omitted_user_name_count"] == 35 - limit
+        assert result.result["omitted_database_name_count"] == 35 - limit
+        assert f"at most {limit} names" in result.issues["summary"]["description"]
+
+
+def test_top_errors_missing_identities_and_incomplete_counts() -> None:
+    module = _load("top_errors")
+    record = replace(_record(1, count_complete=False), user_name=None, database_name=None)
+    result = module.collect(_context(_window([record])))
+    assert _by(result)[0]["distinct_users"] == []
+    assert _by(result)[0]["distinct_databases"] == []
+    assert result.result["count_complete"] is False
+    assert result.result["distinct_names_limit"] == 30
+
+
+def test_top_errors_links_every_sql_variant_in_a_fingerprint() -> None:
+    records = [_record(i, message="missing table", query_id=0, query=query)
+               for i, query in enumerate(("select a", "select b", "select a"))]
+    result = _load("top_errors").collect(_context(_window(records)))
+    row = _by(result)[0]
+    assert row["occurrences"] == 3
+    assert row["query_id"] == [query_reference("select a"), query_reference("select b")]
+    assert row["query_ref"] == [query_reference("select a"), query_reference("select b")]
+
+
+def test_grouped_queries_deduplicate_native_ids_across_text_variants() -> None:
+    records = [_record(i, message="missing table", query_id=5582924868496553877, query=query)
+               for i, query in enumerate((None, "select a", "select b", "select a"))]
+    result = _load("top_errors").collect(_context(_window(records)))
+    row = _by(result)[0]
+    assert row["occurrences"] == 4
+    assert row["query_id"] == "5582924868496553877"
+    assert row["query_ref"] == row["query_id"]
+    resource_records = [replace(record, message="duration: 10 ms statement: SELECT 1")
+                        for record in records]
+    row = _by(_load("query_resource_events").collect(_context(_window(resource_records))))[0]
+    assert row["query_id"] == "5582924868496553877"
+    assert row["query_ref"] == row["query_id"]
+    assert "query_sample" not in row

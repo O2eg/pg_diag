@@ -30,3 +30,14 @@ The offline web calculation and UI are bundled unchanged; the page entry point
 accepts report inputs before mounting. Rebuild instructions, source hashes,
 copyright and logo provenance are in pg-configurator.NOTICE.txt. The full MIT
 license is distributed in pg-configurator.LICENSE.txt and embedded in reports.
+
+SQL Formatter 15.8.2
+Source: https://registry.npmjs.org/sql-formatter/-/sql-formatter-15.8.2.tgz
+Repository: https://github.com/sql-formatter-org/sql-formatter
+License: MIT
+The unmodified browser bundle dist/sql-formatter.min.js is included inline.
+Package integrity: sha512-kTYRg5FIcvsDtYUG2Qn9pYT6xKwiLJN5TTIvc5Mur6hIg4pSfdpHu8Yyu5bqESLHnVM3mXzD446cb2+uEaKZXg==
+Bundle SHA256: e3123498ae2ea8bb2971d8a444c32816af61f4816177b23c3ca45b60c1c473c1
+Embedded dependency: nearley 2.20.1 (MIT), identified in the package source map.
+The full licenses for SQL Formatter and nearley are distributed beside this
+file and embedded into every HTML report. No CDN connection is required.

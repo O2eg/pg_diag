@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from pg_diag.logscan.query_links import query_columns
+
 from pg_diag.executors.python import PythonSourceContext, PythonSourceResult, table_result
 from pg_diag.logscan.items_common import (
+    coverage_note,
     empty_result_status,
+    event_count_metadata,
     fmt_time,
     resolve_window,
 )
@@ -18,6 +22,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
     if early is not None:
         return PythonSourceResult(**early)
     events = [record for record in window.records if record.sql_state == _DEADLOCK_SQLSTATE]
+    counts = event_count_metadata(events, events[-EVENT_LIMIT:], EVENT_LIMIT)
     events = events[-EVENT_LIMIT:]
     rows: list[dict[str, Any]] = []
     for record in reversed(events):  # newest first
@@ -31,18 +36,27 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
                 "message": record.message,
                 # csvlog DETAIL names the blocked/blocking processes and their lock waits
                 "detail": record.detail,
-                "query_id": record.query_id,
+                **query_columns(record),
             }
         )
-    severity_level = "medium" if rows else "ok"
+    result = table_result(rows)
+    result.update(counts)
+    note = coverage_note(window)
+    severity_level = "unknown" if note else "medium" if rows else "ok"
     issues: dict[str, Any] = {}
     if rows:
         issues = {
             "summary": {
-                "severity": "medium",
+                "severity": severity_level,
                 "status": "review",
                 "title": "Deadlocks were detected during the window",
-                "description": f"{len(rows)} deadlock event(s) in the collected window.",
+                "description": (
+                    f"{counts['matched_event_count']} deadlock event(s) in the collected window; "
+                    f"{len(rows)} series containing {counts['displayed_event_count']} events "
+                    f"are shown; {counts['omitted_event_count']} events omitted by the "
+                    f"{EVENT_LIMIT}-row limit."
+                    + (f" {note}" if note else "")
+                ),
                 "recommendation": (
                     "Deadlocks are application-ordering bugs: make transactions lock objects "
                     "in a consistent order; the detail column names the sessions involved."
@@ -54,13 +68,13 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
         status, empty_severity, empty_issues = empty_result_status(window)
         return PythonSourceResult(
             collection_status=status,
-            result=table_result(rows),
+            result=result,
             issues=empty_issues,
             severity_level=empty_severity,
         )
     return PythonSourceResult(
         collection_status="ok",
-        result=table_result(rows),
+        result=result,
         issues=issues,
         severity_level=severity_level,
     )

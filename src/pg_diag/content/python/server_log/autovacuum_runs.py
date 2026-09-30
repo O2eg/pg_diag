@@ -3,9 +3,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from pg_diag.logscan.query_links import query_columns
+
 from pg_diag.executors.python import PythonSourceContext, PythonSourceResult, table_result
 from pg_diag.logscan.items_common import (
     empty_result_status,
+    event_count_metadata,
     fmt_time,
     resolve_english_window,
 )
@@ -23,14 +26,19 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
         return PythonSourceResult(**early)
     events = []
     for record in window.records:
-        match = _HEAD_RE.search(record.message)
+        message = record.message_full or record.message
+        match = _HEAD_RE.search(message)
         if match is None:
             continue
-        elapsed = _ELAPSED_RE.search(record.message)
+        elapsed = _ELAPSED_RE.search(message)
         events.append(
             (record, match.group("kind"), match.group("aggressive") is not None, match.group("relation"), elapsed)
         )
     truncated = len(events) > EVENT_LIMIT
+    counts = event_count_metadata(
+        [event[0] for event in events],
+        [event[0] for event in events[-EVENT_LIMIT:]], EVENT_LIMIT,
+    )
     events = events[-EVENT_LIMIT:]
     rows: list[dict[str, Any]] = []
     for record, kind, aggressive, relation, elapsed in reversed(events):  # newest first
@@ -46,13 +54,16 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
                 "database_name": record.database_name,
                 "repeat_count": record.repeat_count,
                 "detail": record.message,
+                **query_columns(record),
             }
         )
+    result = table_result(rows)
+    result.update(counts)
     if not rows:
         status, empty_severity, empty_issues = empty_result_status(window)
         return PythonSourceResult(
             collection_status=status,
-            result=table_result(rows),
+            result=result,
             issues=empty_issues,
             severity_level=empty_severity,
         )
@@ -63,14 +74,15 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
                 "severity": "ok",
                 "status": "review",
                 "title": "Only the newest autovacuum runs are listed",
-                "description": f"More than {EVENT_LIMIT} runs matched the window.",
+                "description": (f"{counts['matched_event_count']} runs matched; "
+                                f"{counts['omitted_event_count']} omitted by the row limit."),
                 "recommendation": "Narrow --log-depth-time-min for the full picture.",
             },
             "items": [],
         }
     return PythonSourceResult(
         collection_status="ok",
-        result=table_result(rows),
+        result=result,
         issues=issues,
         severity_level="ok",
     )

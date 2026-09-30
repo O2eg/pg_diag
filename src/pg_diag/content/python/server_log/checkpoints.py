@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from pg_diag.logscan.query_links import query_columns
+
 from pg_diag.executors.python import PythonSourceContext, PythonSourceResult, table_result
 from pg_diag.logscan.items_common import (
     empty_result_status,
@@ -42,6 +44,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
         rows.append(
             {
                 "log_time": fmt_time(record.log_time),
+                **query_columns(record),
                 "last_time": fmt_time(record.last_time),
                 "event": event,
                 "phase": phase,

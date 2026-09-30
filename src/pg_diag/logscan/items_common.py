@@ -20,6 +20,7 @@ __all__ = [
     "client_host",
     "coverage_note",
     "empty_result_status",
+    "event_count_metadata",
     "fmt_time",
     "is_recovery_end_of_wal",
     "log_clock_offset",
@@ -36,6 +37,24 @@ _END_OF_WAL_RE = re.compile(
     r"invalid record length at [0-9A-F]+/[0-9A-F]+: expected at least \d+, got 0",
     re.IGNORECASE,
 )
+
+
+def event_count_metadata(
+    records: list[LogRecord], displayed: list[LogRecord], row_limit: int,
+) -> dict[str, Any]:
+    """Describe output caps independently of scan coverage and RLE compression."""
+    matched = sum(record.repeat_count for record in records)
+    shown = sum(record.repeat_count for record in displayed)
+    return {
+        "matched_event_count": matched,
+        "displayed_event_count": shown,
+        "omitted_event_count": matched - shown,
+        "matched_series_count": len(records),
+        "displayed_series_count": len(displayed),
+        "omitted_series_count": len(records) - len(displayed),
+        "row_limit": row_limit,
+        "count_complete": all(record.count_complete for record in records),
+    }
 
 
 def is_recovery_end_of_wal(record: LogRecord) -> bool:

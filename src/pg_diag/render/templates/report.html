@@ -1274,6 +1274,32 @@ __ECHARTS_JS__
       gap: 8px;
     }
 
+    .sql-format-control {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-inline-end: 16px;
+    }
+
+    .sql-format-control[hidden], .sql-format-status[hidden] {
+      display: none;
+    }
+
+    .sql-format-status {
+      margin: 0;
+      padding: 10px 16px 0;
+      color: var(--muted);
+    }
+
+    .source-code-shell.sql-format-fallback pre {
+      min-width: 0;
+    }
+
+    .source-code-shell.sql-format-fallback code {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
     .source-code-shell {
       min-width: 0;
       min-height: 0;
@@ -2473,11 +2499,15 @@ __ECHARTS_JS__
       <div class="source-dialog-header">
         <h2 id="sourceModalTitle" class="source-dialog-title">Source</h2>
         <div class="source-dialog-actions">
+          <label id="formatSqlControl" class="sql-format-control" hidden>
+            <input id="formatSql" type="checkbox"> Format
+          </label>
           <button id="copySource" type="button" class="btn primary">Copy</button>
           <button id="closeSource" type="button" class="btn">Close</button>
         </div>
       </div>
       <div class="source-code-shell">
+        <p id="formatSqlStatus" class="sql-format-status" role="status" hidden></p>
         <pre><code id="sourceCode"></code></pre>
       </div>
     </div>
@@ -2548,6 +2578,9 @@ __ECHARTS_JS__
   <script id="pg-diag-artifact" type="application/json">__PAYLOAD__</script>
   <script id="highlight-library">
 __HIGHLIGHT_JS__
+  </script>
+  <script id="sql-formatter-library">
+__SQL_FORMATTER_JS__
   </script>
   <script id="pg-explain-viewer-expr-library">
 __PG_EXPLAIN_VIEWER_EXPR_JS__
@@ -2656,11 +2689,33 @@ __PG_DIAG_GRAPH_RENDER_JS__
     const SEVERITY_SUMMARY_ORDER = ["ok", "medium", "high", "unknown"];
     const SEVERITY_LEVEL_RANK = {high: 4, medium: 3, ok: 2, unknown: 1};
     const CELL_COLLAPSED_LINE_LIMIT = 6;
+    // Compact identifying fields and impact metrics precede SQL; long evidence follows it.
+    const LOG_TABLE_COLUMN_ORDER = {
+      "server_log.error_chronology": ["first_time", "severity", "query_id", "message", "repeat_count", "sql_state", "database_name", "user_name", "last_time", "process_id", "backend_type", "partial"],
+      "server_log.top_errors": ["occurrences", "sql_state", "query_id", "message_sample", "severity_worst", "distinct_databases", "distinct_users", "first_seen", "last_seen"],
+      "server_log.top_warnings": ["occurrences", "sql_state", "query_id", "message_sample", "distinct_databases", "distinct_users", "first_seen", "last_seen"],
+      "server_log.deadlock_events": ["log_time", "database_name", "query_id", "repeat_count", "user_name", "process_id", "message", "detail"],
+      "server_log.lock_waits": ["first_time", "wait_ms", "query_id", "event", "waiting_pid", "holder_pids", "repeat_count", "database_name", "user_name", "lock_type", "target_kind", "relation_oid", "database_oid", "queue_depth", "last_time"],
+      "server_log.query_resource_events": ["event_type", "total_temp_bytes", "max_duration_ms", "query_id", "total_duration_ms", "max_temp_bytes", "occurrences", "database_name", "user_name", "application_name", "first_time", "last_time", "message_sample", "database_partial", "collector_generated"],
+      "server_log.authentication_failures": ["failures", "user_name", "connection_from", "database_name", "query_id", "sql_state", "message_sample", "first_seen", "last_seen"],
+      "server_log.autovacuum_runs": ["log_time", "kind", "elapsed_s", "query_id", "relation", "database_name", "aggressive", "repeat_count", "detail"],
+      "server_log.maintenance_events": ["log_time", "kind", "duration_s", "query_id", "relation", "impact_score", "inclusion_reason", "occurrences", "database_name", "severity", "sql_state", "aggressive", "pages_removed", "relation_pages_after", "scanned_pages", "processed_pages", "processed_bytes", "buffer_bytes", "wal_bytes", "tuples_removed", "dead_not_removable", "application_name", "message"],
+      "server_log.checkpoints": ["log_time", "event", "phase", "query_id", "total_s", "write_s", "sync_s", "buffers_written", "reason", "repeat_count", "last_time"],
+      "server_log.archiver_failures": ["first_time", "severity", "query_id", "repeat_count", "message", "detail", "last_time"],
+      "server_log.crash_recovery_events": ["log_time", "severity", "query_id", "message", "repeat_count", "database_name", "user_name", "process_id", "backend_type"],
+      "server_log.system_incidents": ["first_time", "incident_type", "severity", "query_id", "occurrences", "message", "sql_state", "database_name", "application_name", "backend_type", "last_time"],
+      "server_log.server_lifecycle": ["first_time", "event_type", "query_id", "severity", "occurrences", "message", "process_id", "backend_type", "sql_state", "last_time"],
+      "server_log.wraparound_pressure": ["database", "transactions_left", "severity", "query_id", "first_time", "repeat_count", "message", "last_time"],
+      "server_log.replication_events": ["first_time", "event_type", "occurrences", "application_name", "query_id", "message", "database_name", "severity", "sql_state", "backend_type", "last_time"],
+    };
     const DETAILS_ANIMATION_MS = 300;
     const PAGE_SCROLL_SPEED = 2;
     const CHART_QUERY_LABEL_MAX_CHARS = 80;
     const REPORT_MODAL_IDS = ["sourceModal", "metaModal", "instructionModal", "planViewerModal", "configuratorModal"];
     let currentSourceText = "";
+    let originalSourceText = "";
+    let currentSourceLanguage = "";
+    let sqlFormatEnabled = readSqlFormatPreference();
     let currentMetaItem = null;
     let currentPlanViewer = null;
     let scrollControlsRaf = 0;
@@ -3552,9 +3607,50 @@ __PG_DIAG_GRAPH_RENDER_JS__
       if (issuePanel) {
         body.appendChild(issuePanel);
       }
+      const logCountWarning = renderLogCountWarning(item);
+      if (logCountWarning) {
+        body.appendChild(logCountWarning);
+      }
       body.appendChild(isErrorItem(item) ? renderItemError(item) : renderResult(item));
       details.appendChild(wrapDetailsContent(body));
       return details;
+    }
+
+    function isLogEventItem(item) {
+      const sourceId = String((item.source_metadata || {}).python_id || item.item_id || "");
+      return sourceId.startsWith("server_log.") && sourceId !== "server_log.log_files_overview";
+    }
+
+    function renderLogCountWarning(item) {
+      if (!isLogEventItem(item) || !["ok", "empty"].includes(collectionStatus(item))) {
+        return null;
+      }
+      const result = item.result || {};
+      const coverage = ((artifact.runtime || {}).log_collection || {}).coverage || {};
+      const isIncomplete = (value) => value === false || value === "false";
+      const countColumns = (result.columns || []).flatMap((column, index) =>
+        (typeof column === "string" ? column : column.name) === "count_complete" ? [index] : []
+      );
+      const incompleteRow = (result.rows || []).some(row =>
+        countColumns.some(index => isIncomplete(row[index]))
+      );
+      if (!isIncomplete(result.count_complete) && !incompleteRow
+          && !isIncomplete(coverage.ranking_complete) && coverage.window_truncated !== true) {
+        return null;
+      }
+      const warning = document.createElement("div");
+      warning.className = "item-issues severity-medium log-count-warning";
+      warning.setAttribute("role", "note");
+      const title = document.createElement("p");
+      title.className = "item-issue-title";
+      title.textContent = "Incomplete log counts";
+      const description = document.createElement("p");
+      description.className = "item-issue-text";
+      description.textContent = "Event counts are lower bounds for the requested log window; "
+        + "the actual number of events may be higher. An empty result does not prove that no events occurred.";
+      warning.appendChild(title);
+      warning.appendChild(description);
+      return warning;
     }
 
     function reportItemAnchorId(itemId) {
@@ -3820,41 +3916,75 @@ __PG_DIAG_GRAPH_RENDER_JS__
     }
 
     function openSourceModal(item) {
-      currentSourceText = sourceText(item);
       const modal = document.getElementById("sourceModal");
       const title = document.getElementById("sourceModalTitle");
-      const code = document.getElementById("sourceCode");
       const language = sourceLanguage(item);
       title.textContent = sourceActionLabel(item) + ": " + (item.title || item.item_id || "");
-      code.textContent = currentSourceText;
-      code.className = "language-" + language;
-      code.removeAttribute("data-highlighted");
-      if (window.hljs && typeof window.hljs.highlightElement === "function") {
-        window.hljs.highlightElement(code);
-      }
+      setSourceDisplay(sourceText(item), language);
       const rawPanel = document.getElementById("metaRawPanel");
       rawPanel.scrollTop = 0;
       rawPanel.scrollLeft = 0;
       showReportModal(modal, "closeSource");
     }
 
-    function openQueryTextModal(queryId) {
+    function openQueryTextModal(queryId, label = null) {
       const queryIdText = queryIdToText(queryId);
-      currentSourceText = queryTextForId(queryIdText);
-      if (!currentSourceText) {
+      const queryText = queryTextForId(queryIdText);
+      if (!queryText) {
         return;
       }
       const modal = document.getElementById("sourceModal");
       const title = document.getElementById("sourceModalTitle");
+      title.textContent = "Show query: " + (label || queryIdText) + queryTruncationNote(queryIdText);
+      setSourceDisplay(queryText, "sql");
+      showReportModal(modal, "closeSource");
+    }
+
+    function readSqlFormatPreference() {
+      try {
+        return localStorage.getItem("pg_diag_sql_format") === "true";
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function setSourceDisplay(text, language) {
+      originalSourceText = text;
+      currentSourceLanguage = language;
+      renderSourceDisplay();
+    }
+
+    function renderSourceDisplay() {
+      const isSql = currentSourceLanguage === "sql";
+      document.getElementById("formatSqlControl").hidden = !isSql;
+      document.getElementById("formatSql").checked = sqlFormatEnabled;
+      const status = document.getElementById("formatSqlStatus");
+      status.hidden = true;
+      status.textContent = "";
       const code = document.getElementById("sourceCode");
-      title.textContent = "Show query: " + queryIdText;
+      const shell = code.closest(".source-code-shell");
+      shell.classList.remove("sql-format-fallback");
+      currentSourceText = originalSourceText;
+      if (isSql && sqlFormatEnabled) {
+        try {
+          currentSourceText = window.sqlFormatter.format(originalSourceText, {
+            language: "postgresql", tabWidth: 2, keywordCase: "preserve",
+          });
+        } catch (error) {
+          status.textContent = "Could not format this SQL. Showing saved text.";
+          status.hidden = false;
+          shell.classList.add("sql-format-fallback");
+        }
+      }
       code.textContent = currentSourceText;
-      code.className = "language-sql";
+      code.className = "language-" + currentSourceLanguage;
       code.removeAttribute("data-highlighted");
       if (window.hljs && typeof window.hljs.highlightElement === "function") {
         window.hljs.highlightElement(code);
       }
-      showReportModal(modal, "closeSource");
+      shell.scrollTop = 0;
+      shell.scrollLeft = 0;
+      document.getElementById("copySource").textContent = "Copy";
     }
 
     function openMetaModal(item) {
@@ -4765,6 +4895,8 @@ __PG_DIAG_GRAPH_RENDER_JS__
       const modal = document.getElementById("sourceModal");
       hideReportModal(modal);
       currentSourceText = "";
+      originalSourceText = "";
+      currentSourceLanguage = "";
       const copyButton = document.getElementById("copySource");
       copyButton.textContent = "Copy";
     }
@@ -4933,7 +5065,7 @@ __PG_DIAG_GRAPH_RENDER_JS__
     }
 
     function renderChart(result, item) {
-      const series = echartsSeries(result);
+      const series = echartsSeries(result, item);
       if (!series.length) {
         const empty = document.createElement("div");
         empty.className = "empty-state";
@@ -4979,7 +5111,7 @@ __PG_DIAG_GRAPH_RENDER_JS__
           echartsResizeObserver.observe(pending.container);
         }
         chart.on("datazoom", (event) => rememberEChartsZoom(entry, event));
-        if ((pending.result.chart || {}).tooltip_kind === "query_event") {
+        if (["query_event", "log_event"].includes((pending.result.chart || {}).tooltip_kind)) {
           chart.on("click", openQueryPlanViewerFromChart);
         }
         chart.setOption(buildEChartsOptions(entry), {notMerge: true});
@@ -5039,12 +5171,26 @@ __PG_DIAG_GRAPH_RENDER_JS__
       }, {capture: true, passive: false});
     }
 
-    function echartsSeries(result) {
+    function isLogChart(result, item = {}) {
+      return isLogEventItem(item)
+        || ["query_event", "log_event"].includes((result.chart || {}).tooltip_kind);
+    }
+
+    function echartsSeries(result, item = {}) {
+      const logChart = isLogChart(result, item);
       const xType = (result.chart || {}).x_type || "datetime";
       const chartKind = (result.chart || {}).kind || "line";
       const largestStackSeriesOnTop = chartKind === "stacked_column" || chartKind === "stacked_bar";
-      const xGrid = chartXGrid(result.series || [], xType);
-      const series = (result.series || [])
+      // Older artifacts include zero-valued axis anchors. Keep real zero-duration
+      // events (with tooltip/plan evidence), but exclude anchors and null padding.
+      const sourceSeries = logChart ? (result.series || []).map(entry => ({
+        ...entry,
+        points: (entry.points || []).filter(point => point.value !== null
+          && point.value !== undefined && Number.isFinite(Number(point.value))
+          && (Number(point.value) !== 0 || point.tooltip || point.viewer)),
+      })) : (result.series || []);
+      const xGrid = chartXGrid(sourceSeries, xType);
+      const series = sourceSeries
         .map((entry, sourceIndex) => {
           const valuesByX = new Map();
           for (const point of entry.points || []) {
@@ -5082,7 +5228,7 @@ __PG_DIAG_GRAPH_RENDER_JS__
           return {name: entry.name, unit: entry.unit, _color: entry.color || "", _sourceIndex: sourceIndex, _average: average, data};
         })
         .filter((entry) => entry.data.some((point) => Number.isFinite(point.y)))
-        .filter((entry) => entry.data.some((point) => Number.isFinite(point.y) && point.y !== 0));
+        .filter((entry) => logChart || entry.data.some((point) => Number.isFinite(point.y) && point.y !== 0));
       if ((result.chart || {}).series_order === "configured") {
         return series;
       }
@@ -5106,9 +5252,9 @@ __PG_DIAG_GRAPH_RENDER_JS__
     function resolveChartTooltip(result, metadata) {
       const resolved = {...metadata};
       if (!resolved.query_sample && resolved.query_ref) {
-        const query = chartReference(result, "queries", resolved.query_ref);
+        const query = queryTextForId(resolved.query_ref) || chartReference(result, "queries", resolved.query_ref);
         if (typeof query === "string") {
-          resolved.query_sample = query;
+          resolved.query_sample = query.slice(0, 300);
         }
       }
       if (!resolved.message_sample && resolved.message_ref) {
@@ -5193,7 +5339,8 @@ __PG_DIAG_GRAPH_RENDER_JS__
       const axisScale = chartAxisScale(series, unit, (result.chart || {}).quantity, stacked);
       const isPercent = unit === "percent" || unit === "%";
       const xType = (result.chart || {}).x_type || "datetime";
-      const datetimeBounds = xType === "datetime" ? chartDatetimeBounds(series) : {};
+      const logChart = isLogChart(result, item);
+      const datetimeBounds = xType === "datetime" ? chartDatetimeBounds(series, logChart) : {};
       const colors = chartColors(series);
       const categoryValues = series.length ? series[0].data.map((point) => point.x) : [];
       const zoomRange = entry.zoomRange || {start: 0, end: 100};
@@ -5236,7 +5383,7 @@ __PG_DIAG_GRAPH_RENDER_JS__
           showSymbol: false,
           connectNulls: false,
           barMaxWidth: 48,
-          cursor: queryEventTooltip ? "pointer" : "default",
+          cursor: itemEventTooltip ? "pointer" : "default",
           itemStyle: {
             color,
             borderRadius: isBar ? [2, 2, 0, 0] : 0,
@@ -5375,7 +5522,8 @@ __PG_DIAG_GRAPH_RENDER_JS__
             color: theme.muted,
             rotate: xType === "datetime" ? 0 : 35,
             hideOverlap: true,
-            formatter: xType === "datetime" ? (value) => formatChartTimeCoordinate(value) : undefined,
+            formatter: xType === "datetime" ? (value) => logChart
+              ? formatLogChartCoordinate(value, true) : formatChartTimeCoordinate(value) : undefined,
           },
           axisLine: {lineStyle: {color: theme.line}},
           axisTick: {lineStyle: {color: theme.line}},
@@ -5385,7 +5533,7 @@ __PG_DIAG_GRAPH_RENDER_JS__
               backgroundColor: theme.panelSoft,
               color: theme.text,
               formatter: (params) => xType === "datetime"
-                ? formatChartTimeCoordinate(params.value)
+                ? (logChart ? formatLogChartCoordinate(params.value) : formatChartTimeCoordinate(params.value))
                 : String(params.value == null ? "" : params.value),
             },
           },
@@ -5751,21 +5899,26 @@ __PG_DIAG_GRAPH_RENDER_JS__
       return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
     }
 
-    function chartDatetimeBounds(series) {
-      const timestamps = [];
+    function chartDatetimeBounds(series, logChart = false) {
+      let min = Infinity;
+      let max = -Infinity;
       for (const entry of series || []) {
         for (const point of entry.data || []) {
           const parsed = Date.parse(point.x);
           if (Number.isFinite(parsed)) {
-            timestamps.push(parsed);
+            min = Math.min(min, parsed);
+            max = Math.max(max, parsed);
           }
         }
       }
-      if (!timestamps.length) {
+      if (!Number.isFinite(min)) {
         return {};
       }
-      let min = Math.min(...timestamps);
-      let max = Math.max(...timestamps);
+      if (logChart) {
+        // Half a minute on either side keeps the edge bars visible without
+        // stretching a multi-day event chart by a percentage of its whole range.
+        return {min: min - 30000, max: max + 30000};
+      }
       if (min === max) {
         const padding = 60000;
         return {min: min - padding, max: max + padding};
@@ -5861,7 +6014,7 @@ __PG_DIAG_GRAPH_RENDER_JS__
       }
       const duration = Number(metadata.duration_ms);
       const durationLabel = Number.isFinite(duration)
-        ? formatDecimalValue(duration, 3) + " ms"
+        ? formatDurationMilliseconds(duration)
         : "Unavailable";
       const querySample = String(metadata.query_sample || "Query text unavailable");
       const viewer = point.data.pgDiagViewer;
@@ -5926,6 +6079,7 @@ __PG_DIAG_GRAPH_RENDER_JS__
       const viewer = data && data.pgDiagViewer;
       const tooltip = data && data.pgDiagTooltip;
       if (!viewer || typeof viewer !== "object" || viewer.read_only !== true) {
+        if (tooltip && queryTextForId(tooltip.query_ref)) openQueryTextModal(tooltip.query_ref, "SQL");
         return;
       }
       openQueryPlanViewer(viewer, tooltip);
@@ -5945,6 +6099,9 @@ __PG_DIAG_GRAPH_RENDER_JS__
       const format = String(viewer.plan_format || "unknown").toUpperCase();
       title.textContent = "Query plan (read-only) · " + format;
       renderPlanViewerContext(context, tooltip);
+      if (tooltip && queryTextForId(tooltip.query_ref)) {
+        context.appendChild(renderQueryIdButton("Show query", tooltip.query_ref));
+      }
       root.replaceChildren();
       shell.scrollTop = 0;
       shell.scrollLeft = 0;
@@ -5990,7 +6147,7 @@ __PG_DIAG_GRAPH_RENDER_JS__
       const values = [
         ["Date/time", String((tooltip || {}).log_time || "Unavailable")],
         ["Duration", Number.isFinite(Number((tooltip || {}).duration_ms))
-          ? formatDecimalValue(Number(tooltip.duration_ms), 3) + " ms"
+          ? formatDurationMilliseconds(Number(tooltip.duration_ms))
           : "Unavailable"],
       ];
       for (const [label, value] of values) {
@@ -6018,6 +6175,17 @@ __PG_DIAG_GRAPH_RENDER_JS__
       return [date.getHours(), date.getMinutes(), date.getSeconds()]
         .map((part) => String(part).padStart(2, "0"))
         .join(":");
+    }
+
+    function formatLogChartCoordinate(value, multiline = false) {
+      const timestamp = typeof value === "number" ? value : Date.parse(value);
+      if (!Number.isFinite(timestamp)) {
+        return String(value || "");
+      }
+      const date = new Date(timestamp);
+      const day = [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"),
+        String(date.getDate()).padStart(2, "0")].join("-");
+      return day + (multiline ? "\n" : " ") + formatChartTimeCoordinate(timestamp);
     }
 
     function safeChartColor(value) {
@@ -6090,6 +6258,9 @@ __PG_DIAG_GRAPH_RENDER_JS__
             maximum = Math.max(maximum, Math.abs(Number(point.y) || 0));
           }
         }
+      }
+      if (unit === "milliseconds" || unit === "ms") {
+        return maximum >= 1000 ? {factor: 1000, label: "s"} : {factor: 1, label: "ms"};
       }
       if (unit === "bytes" || unit === "bytes/s") {
         const labels = unit === "bytes/s"
@@ -6229,8 +6400,22 @@ __PG_DIAG_GRAPH_RENDER_JS__
       const itemId = item.item_id || "";
       const rows = Array.isArray(result.rows) ? result.rows : [];
       const allColumns = buildColumns(result.columns, rows);
+      for (const column of allColumns) {
+        if (((item.source_metadata || {}).python_id || itemId) === "server_log.replication_events"
+            && column.name === "query_id") {
+          column.label = "Replication command";
+          column.inlineQueryText = true;
+          column.valueKind = "text";
+          column.encoding = "json_string";
+        }
+        const references = (result.query_links || {})[column.name];
+        if (Array.isArray(references)) {
+          column.queryRefs = new Map(rows.map((row, index) => [row, references[index]]));
+        }
+      }
       const snapshotTimeColumn = allColumns.find((column) => column.name === "snapshot_time");
-      const columns = allColumns.filter((column) => column !== snapshotTimeColumn);
+      const columns = orderLogTableColumns(allColumns.filter((column) => column !== snapshotTimeColumn
+        && !(isLogEventItem(item) && column.name === "count_complete")), item);
       const collectedAt = item.source_kind === "metric" ? null : item.collected_at;
       const tableContextLabels = renderTableContextLabels(
         result,
@@ -6458,6 +6643,25 @@ __PG_DIAG_GRAPH_RENDER_JS__
         .trim();
     }
 
+    function orderLogTableColumns(columns, item) {
+      if (!isLogEventItem(item) || !columns.some(column => column.name === "query_id")) {
+        return columns;
+      }
+      const sourceId = (item.source_metadata || {}).python_id || item.item_id;
+      const priority = LOG_TABLE_COLUMN_ORDER[sourceId] || [];
+      const byName = new Map(columns.map(column => [column.name, column]));
+      const ordered = priority.filter(name => byName.has(name)).map(name => byName.get(name));
+      ordered.push(...columns.filter(column => !priority.includes(column.name)));
+      // Optional fields can be absent; keep SQL in positions 3–7 when enough columns exist.
+      const queryIndex = ordered.findIndex(column => column.name === "query_id");
+      const targetIndex = Math.min(Math.max(queryIndex, 2), 6, ordered.length - 1);
+      if (queryIndex !== targetIndex) {
+        const [queryColumn] = ordered.splice(queryIndex, 1);
+        ordered.splice(targetIndex, 0, queryColumn);
+      }
+      return ordered;
+    }
+
     function renderTableContextLabels(result, rows, column, columns, fallbackValue, item) {
       const deltaLabels = renderDeltaWindowLabels(result.delta_window);
       if (deltaLabels) {
@@ -6661,8 +6865,12 @@ __PG_DIAG_GRAPH_RENDER_JS__
       }
       const direction = state.sort.direction === "desc" ? -1 : 1;
       state.filteredRows = state.filteredRows.slice().sort((left, right) => {
-        const leftValue = Array.isArray(left) ? left[column.sourceIndex] : undefined;
-        const rightValue = Array.isArray(right) ? right[column.sourceIndex] : undefined;
+        let leftValue = Array.isArray(left) ? left[column.sourceIndex] : undefined;
+        let rightValue = Array.isArray(right) ? right[column.sourceIndex] : undefined;
+        if (column.inlineQueryText) {
+          leftValue = displayValue(leftValue, column, left, state.columns).text;
+          rightValue = displayValue(rightValue, column, right, state.columns).text;
+        }
         const leftEmpty = leftValue === undefined || leftValue === null || leftValue === "";
         const rightEmpty = rightValue === undefined || rightValue === null || rightValue === "";
         if (leftEmpty !== rightEmpty) {
@@ -6804,7 +7012,7 @@ __PG_DIAG_GRAPH_RENDER_JS__
         || state.columnStatuses[column.name]
         || null;
       const value = Array.isArray(row) ? row[column.sourceIndex] : undefined;
-      if (!raw) {
+      if (!raw || column.inlineQueryText) {
         return displayValue(value, column, row, state.columns, status).text;
       }
       if (status) {
@@ -7101,8 +7309,17 @@ __PG_DIAG_GRAPH_RENDER_JS__
       }
       const content = document.createElement(isComplex ? "pre" : "div");
       content.className = isComplex ? "json-cell cell-content" : "cell-content";
-      if (!isComplex && canOpenQueryText(column, value)) {
-        content.appendChild(renderQueryIdButton(text, value));
+      if (!column.inlineQueryText && isQueryIdColumn(column)
+          && queryCellEntries(column, value, row).some(entry => queryTextForId(entry.ref))) {
+        const entries = queryCellEntries(column, value, row);
+        entries.forEach((entry, index) => {
+          if (index) content.appendChild(document.createTextNode("\n"));
+          if (queryTextForId(entry.ref)) {
+            content.appendChild(renderQueryIdButton(entry.label, entry.ref));
+          } else {
+            content.appendChild(document.createTextNode(entry.label));
+          }
+        });
       } else if (!isComplex && canOpenObjectDdl(column, value)) {
         content.appendChild(renderObjectDdlButton(text, value));
       } else {
@@ -7110,7 +7327,7 @@ __PG_DIAG_GRAPH_RENDER_JS__
       }
       td.appendChild(content);
 
-      if (lineCount(text) > CELL_COLLAPSED_LINE_LIMIT) {
+      if (!column.inlineQueryText && lineCount(text) > CELL_COLLAPSED_LINE_LIMIT) {
         const toggle = document.createElement("button");
         toggle.type = "button";
         toggle.className = "btn ghost cell-toggle";
@@ -7132,8 +7349,11 @@ __PG_DIAG_GRAPH_RENDER_JS__
       button.className = "query-id-button";
       button.title = "Show query";
       setHighlightableText(button, label);
-      button.addEventListener("click", () => openQueryTextModal(queryId));
-      bindHoverPreview(button, () => reportReferencePreview("queryid", queryId));
+      button.addEventListener("click", () => openQueryTextModal(queryId, label));
+      bindHoverPreview(button, () => ({
+        title: "Query: " + label + queryTruncationNote(queryId),
+        text: queryTextForId(queryId).slice(0, 300),
+      }));
       return button;
     }
 
@@ -7257,11 +7477,30 @@ __PG_DIAG_GRAPH_RENDER_JS__
 
     function columnSearchText(value, column, row, columns, status) {
       const display = displayValue(value, column, row, columns, status).text;
-      const queryText = canOpenQueryText(column, value) ? queryTextForId(value) : "";
+      const queryText = isQueryIdColumn(column)
+        ? queryCellEntries(column, value, row).map(entry => queryTextForId(entry.ref)).join(" ")
+        : "";
       const ddlEntry = canOpenObjectDdl(column, value) ? objectDdlEntry(value) : null;
       const ddlText = ddlEntry ? (ddlEntry.identifier || "") + " " + (ddlEntry.ddl || "") : "";
       const statusReason = status && status.reason ? status.reason : "";
       return (display + " " + statusReason + " " + queryText + " " + ddlText).toLowerCase();
+    }
+
+    function queryTruncationNote(reference) {
+      const metadata = (artifact.query_text_metadata || {})[queryIdToText(reference)] || {};
+      return (metadata.representative_sample ? " (SQL sample for this Query ID)" : "")
+        + (metadata.truncated ? " (truncated to " + metadata.max_chars + " characters)" : "");
+    }
+
+    function queryCellEntries(column, value, row) {
+      const values = Array.isArray(value) ? value : [value];
+      const references = column.queryRefs && column.queryRefs.has(row)
+        ? column.queryRefs.get(row) : value;
+      const refs = Array.isArray(references) ? references : [references];
+      return values.map((id, index) => ({
+        label: id === null || id === undefined || String(id) === "0" ? String(refs[index] || "") : String(id),
+        ref: refs[index] || id,
+      }));
     }
 
     function canOpenQueryText(column, value) {
@@ -7305,17 +7544,10 @@ __PG_DIAG_GRAPH_RENDER_JS__
       if (!entry || !entry.ddl) {
         return;
       }
-      currentSourceText = String(entry.ddl);
       const modal = document.getElementById("sourceModal");
       const title = document.getElementById("sourceModalTitle");
-      const code = document.getElementById("sourceCode");
       title.textContent = "Show DDL: " + (entry.kind || "object") + " " + (entry.identifier || "");
-      code.textContent = currentSourceText;
-      code.className = "language-sql";
-      code.removeAttribute("data-highlighted");
-      if (window.hljs && typeof window.hljs.highlightElement === "function") {
-        window.hljs.highlightElement(code);
-      }
+      setSourceDisplay(String(entry.ddl), "sql");
       showReportModal(modal, "closeSource");
     }
 
@@ -7429,6 +7661,14 @@ __PG_DIAG_GRAPH_RENDER_JS__
           text: statusLabel(status.status),
           kind: "empty",
           title: status.reason || status.status,
+        };
+      }
+      if (column.inlineQueryText) {
+        const entries = queryCellEntries(column, value, row);
+        return {
+          text: entries.map(entry => queryTextForId(entry.ref)).filter(Boolean).join("\n\n"),
+          kind: "text",
+          title: entries.map(entry => queryTruncationNote(entry.ref)).filter(Boolean).join(" "),
         };
       }
       if (value === undefined || value === null) {
@@ -7711,6 +7951,13 @@ __PG_DIAG_GRAPH_RENDER_JS__
       };
     }
 
+    function formatDurationMilliseconds(value) {
+      const scale = Math.abs(value) >= 1000
+        ? {factor: 1000, label: "s"}
+        : {factor: 1, label: "ms"};
+      return formatChartTooltipValue(value, "milliseconds", scale);
+    }
+
     function formatChartAxisValue(value, unit, scale) {
       if (!Number.isFinite(Number(value))) {
         return "";
@@ -7813,6 +8060,15 @@ __PG_DIAG_GRAPH_RENDER_JS__
       const modal = document.getElementById("sourceModal");
       document.getElementById("closeSource").addEventListener("click", closeSourceModal);
       document.getElementById("copySource").addEventListener("click", copyCurrentSource);
+      document.getElementById("formatSql").addEventListener("change", (event) => {
+        sqlFormatEnabled = event.target.checked;
+        try {
+          localStorage.setItem("pg_diag_sql_format", String(sqlFormatEnabled));
+        } catch (error) {
+          // Keep the global in-memory preference when browser storage is unavailable.
+        }
+        renderSourceDisplay();
+      });
       modal.addEventListener("click", (event) => {
         if (event.target === modal) {
           closeSourceModal();

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from pg_diag.logscan.query_links import query_columns
+
 from pg_diag.executors.python import PythonSourceContext, PythonSourceResult, table_result
 from pg_diag.logscan.items_common import (
     empty_result_status,
@@ -31,6 +33,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
                 "repeat_count": record.repeat_count,
                 "severity": record.severity,
                 "message": record.message,
+                **query_columns(record),
                 # csvlog DETAIL carries the failed command text
                 "detail": record.detail,
                 "count_complete": record.count_complete,

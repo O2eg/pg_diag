@@ -8,6 +8,9 @@ This instruction belongs to report item `server_log.error_chronology`. The item 
 - The sanitized first line of each message: quoted literals become placeholders and secrets are redacted before the text reaches the report.
 - `count_complete = false` marks a series whose count is a lower bound because the window was truncated by a budget.
 
+
+- Matched/displayed/omitted event and series counts distinguish scan coverage from the row cap. Summary severity includes old events omitted from the table.
+
 ## What to watch
 - `FATAL` and `PANIC` rows: backend or postmaster failures, not application errors.
 - Series with very large `repeat_count`: one client retrying a broken statement can dominate the log and hide real incidents.

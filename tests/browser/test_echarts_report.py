@@ -189,6 +189,58 @@ def test_explain_available_button_ignores_axis_points_and_opens_filtered_item(tm
         browser.close()
 
 
+@pytest.mark.parametrize("tooltip_kind", ["query_event", "log_event"])
+def test_log_chart_dates_and_event_bounds(tmp_path: Path, tooltip_kind: str) -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    artifact = _artifact()
+    result = artifact["items"]["charts.line"]["result"]
+    result["chart"]["tooltip_kind"] = tooltip_kind
+    result["series"] = [{"name": "Events", "points": [
+        {"t": "2026-07-14T00:00:00Z", "value": 0},
+        {"t": "2026-07-15T10:00:00Z", "value": 10},
+        {"t": "2026-07-16T10:00:00Z", "value": 0, "tooltip": {"duration_ms": 0}},
+        {"t": "2026-07-17T00:00:00Z", "value": None},
+        {"t": "2026-07-18T00:00:00Z", "value": 0},
+    ]}]
+    report = tmp_path / "log-dates.html"
+    report.write_text(render_html(artifact, validate=False), encoding="utf-8")
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(timezone_id="Europe/Moscow")
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.goto(report.as_uri(), wait_until="load")
+        page.wait_for_function("echartsCharts.length === 3")
+        actual = page.evaluate("""() => {
+          const entry = echartsCharts.find(e => e.item.item_id === 'charts.line');
+          const axis = entry.chart.getOption().xAxis[0];
+          const first = Date.parse('2026-07-15T10:00:00Z');
+          const last = Date.parse('2026-07-16T10:00:00Z');
+          const result = entry.result;
+          const zeroOnly = {...result, series: [{name: 'Zero', points: [
+            {t: '2026-07-15T10:00:00Z', value: 0, tooltip: {duration_ms: 0}}
+          ]}]};
+          return {
+            lowerPadding: first - axis.min, upperPadding: axis.max - last,
+            label: axis.axisLabel.formatter(first),
+            pointer: axis.axisPointer.label.formatter({value: first}),
+            values: entry.series[0].data.map(p => p.y),
+            zeroCount: echartsSeries(zeroOnly).length,
+            originalPoints: result.series[0].points.length,
+            nonLogLabel: echartsCharts.find(e => e.item.item_id === 'charts.area')
+              .chart.getOption().xAxis[0].axisLabel.formatter(first),
+          };
+        }""")
+        assert actual == {
+            "lowerPadding": 30000, "upperPadding": 30000,
+            "label": "2026-07-15\n13:00:00", "pointer": "2026-07-15 13:00:00",
+            "values": [10, 0], "zeroCount": 1, "originalPoints": 5,
+            "nonLogLabel": "13:00:00",
+        }
+        assert not errors
+        browser.close()
+
+
 def test_self_contained_echarts_report_in_browser(tmp_path: Path) -> None:
     sync_api = pytest.importorskip("playwright.sync_api")
     report_path = tmp_path / "report.html"
@@ -366,6 +418,38 @@ def test_self_contained_echarts_report_in_browser(tmp_path: Path) -> None:
         browser.close()
 
 
+def test_dense_legacy_auto_explain_bounds_do_not_overflow_stack(tmp_path: Path) -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    report_path = tmp_path / "dense-log-chart.html"
+    report_path.write_text(render_html(_artifact(), validate=False), encoding="utf-8")
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(report_path.as_uri(), wait_until="load")
+        result = page.evaluate(
+            """() => {
+              const base = Date.parse('2026-09-29T00:00:00Z');
+              const point = (i) => ({t: new Date(base + i * 60000).toISOString(),
+                value: 10000, tooltip: {duration_ms: 10000}});
+              const result = {chart: {kind: 'stacked_column', x_type: 'datetime',
+                tooltip_kind: 'query_event', unit: 'milliseconds'},
+                series: Array.from({length: 250}, (_, i) => ({name: 'Rank ' + i,
+                  points: i === 0 ? Array.from({length: 1751}, (_, j) => point(j))
+                    : [point(0)]}))};
+              const series = echartsSeries(result);
+              const bounds = chartDatetimeBounds(series, true);
+              return {alignedPoints: series.reduce((n, s) => n + s.data.length, 0),
+                minOffset: bounds.min - base, maxOffset: bounds.max - base};
+            }"""
+        )
+        assert result == {
+            "alignedPoints": 437750,
+            "minOffset": -30000,
+            "maxOffset": 1750 * 60000 + 30000,
+        }
+        browser.close()
+
+
 def test_query_event_chart_hides_legend_and_uses_point_tooltip(tmp_path: Path) -> None:
     sync_api = pytest.importorskip("playwright.sync_api")
     artifact = _artifact()
@@ -375,6 +459,7 @@ def test_query_event_chart_hides_legend_and_uses_point_tooltip(tmp_path: Path) -
             "kind": "stacked_column",
             "show_legend": False,
             "tooltip_kind": "query_event",
+            "unit": "milliseconds",
         }
     )
     nested_plan = {
@@ -424,7 +509,7 @@ def test_query_event_chart_hides_legend_and_uses_point_tooltip(tmp_path: Path) -
     for index, point in enumerate(result["series"][0]["points"]):
         point.update(
             {
-                "value": 1,
+                "value": 12_345.678,
                 "color": "#f87171",
                 "tooltip": {
                     "log_time": f"2026-07-15T10:00:{index * 5:02d}Z",
@@ -475,7 +560,44 @@ def test_query_event_chart_hides_legend_and_uses_point_tooltip(tmp_path: Path) -
             "pointColor": "#f87171",
         }
         assert "2026-07-15T10:00:05Z" in tooltip_text
-        assert "12,345.678 ms" in tooltip_text
+        assert "12.346 s" in tooltip_text
+        duration_display = page.evaluate(
+            """() => {
+              const entry = echartsCharts[0];
+              const options = buildEChartsOptions(entry);
+              const sample = (value) => [{data: [{x: 'a', y: value}]}];
+              const stacked = chartAxisScale(
+                [...sample(600), ...sample(600)], 'milliseconds', null, true);
+              const unstacked = chartAxisScale(
+                [...sample(600), ...sample(600)], 'milliseconds', null, false);
+              entry.chart.dispatchAction({type: 'dataZoom', start: 20, end: 80});
+              const zoomed = buildEChartsOptions(entry);
+              const exported = buildEChartsOptions(entry, null, true);
+              return {
+                title: options.title.text,
+                axis: options.yAxis.axisLabel.formatter(12000),
+                zoomedAxis: zoomed.yAxis.axisLabel.formatter(12000),
+                exportedAxis: exported.yAxis.axisLabel.formatter(12000),
+                stacked, unstacked,
+                boundary: chartAxisScale(sample(1000), 'ms', null, false),
+                belowBoundary: chartAxisScale(sample(999), 'ms', null, false),
+                durations: [256961.866, 999.123, 1000, 0].map(formatDurationMilliseconds),
+                stackedTooltip: formatChartTooltipValue(600, 'milliseconds', stacked),
+              };
+            }"""
+        )
+        assert duration_display == {
+            "title": "Line [s]",
+            "axis": "12",
+            "zoomedAxis": "12",
+            "exportedAxis": "12",
+            "stacked": {"factor": 1000, "label": "s"},
+            "unstacked": {"factor": 1, "label": "ms"},
+            "boundary": {"factor": 1000, "label": "s"},
+            "belowBoundary": {"factor": 1, "label": "ms"},
+            "durations": ["256.962 s", "999.123 ms", "1 s", "0 ms"],
+            "stackedTooltip": "0.6 s",
+        }
         assert "select <unsafe> & escaped..." in tooltip_text
         assert click_hint.inner_text() == "Click to show explain"
         assert click_hint.evaluate("node => getComputedStyle(node).textAlign") == "center"
@@ -950,4 +1072,393 @@ def test_instruction_item_links_expand_present_targets_and_disable_missing_targe
         )
         assert page.locator("#instructionModal").is_hidden()
         assert page.url.endswith("#item-charts.columns")
+        browser.close()
+
+
+def test_log_tables_open_shared_query_texts_after_filtering_and_sorting(tmp_path: Path) -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    artifact = _artifact()
+    first = "SELECT first_variant"
+    second = "SELECT second_variant " + "x" * 1978
+    artifact["query_texts"] = {"log:a": first, "log:b": second}
+    artifact["query_text_metadata"] = {"log:b": {"truncated": True, "max_chars": 2000}}
+    artifact["items"]["charts.line"]["result"] = {
+        "kind": "table",
+        "columns": [{"name": "query_id", "pg_type": "json", "encoding": "json_value"},
+                    {"name": "occurrences", "pg_type": "int8", "encoding": "decimal_string"}],
+        "rows": [["0", "2"], ["0", "3"], [["0", "-7074349522848144440"], "4"]],
+        "row_count": 3,
+        "query_links": {"query_id": ["log:a", "log:b", ["log:a", "log:b"]]},
+    }
+    path = tmp_path / "log-query-links.html"
+    path.write_text(render_html(artifact, validate=False))
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1400, "height": 1000})
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.goto(path.as_uri(), wait_until="load")
+        table = page.locator('[data-item-id="charts.line"]')
+        table.locator(".query-id-button").first.hover()
+        page.wait_for_timeout(200)
+        assert "first_variant" in page.locator(".hover-preview").inner_text()
+        table.locator(".query-id-button").nth(1).click()
+        assert page.locator("#sourceCode").inner_text() == second
+        assert "truncated to 2000 characters" in page.locator("#sourceModalTitle").inner_text()
+        page.locator("#closeSource").click()
+        table.locator('input[type="search"]').fill("second_variant")
+        assert table.locator("tbody tr").count() == 2
+        table.locator("th").nth(1).click()
+        button = table.get_by_role("button", name="-7074349522848144440", exact=True)
+        button.click()
+        assert page.locator("#sourceCode").inner_text() == second
+        assert errors == []
+        browser.close()
+
+
+def test_log_event_chart_opens_query_from_global_catalog(tmp_path: Path) -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    artifact = _artifact()
+    result = artifact["items"]["charts.line"]["result"]
+    result["chart"].update(kind="stacked_column", tooltip_kind="log_event")
+    artifact["query_texts"]["log:test"] = "SELECT chart_query"
+    result["series"][0]["points"][1]["tooltip"] = {
+        "query_ref": "log:test", "event_type": "statement_timeout", "occurrences": 1,
+    }
+    path = tmp_path / "global-log-event.html"
+    path.write_text(render_html(artifact, validate=False))
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1400, "height": 1000})
+        page.goto(path.as_uri(), wait_until="load")
+        page.wait_for_function("document.querySelectorAll('[data-chart-ready=true]').length === 3")
+        page.evaluate('''() => {
+            const entry = echartsCharts[0];
+            const data = entry.chart.getOption().series[0].data[1];
+            entry.chart.dispatchAction({type: "showTip", seriesIndex: 0, dataIndex: 1});
+            entry.chart.trigger("click", {data});
+        }''')
+        assert page.locator("#sourceCode").inner_text() == "SELECT chart_query"
+        assert page.locator("#sourceModal").is_visible()
+        browser.close()
+
+
+def test_log_query_ids_use_one_catalog_sample_and_show_generated_hash(tmp_path: Path) -> None:
+    from pg_diag.logscan.query_links import query_reference
+
+    sync_api = pytest.importorskip("playwright.sync_api")
+    artifact = _artifact()
+    native = "5582924868496553877"
+    sql = "SELECT saved_sample"
+    hashed_sql = "START_REPLICATION SLOT logical_slot LOGICAL 0/0"
+    generated = query_reference(hashed_sql, 0)
+    artifact["query_texts"] = {native: sql, generated: hashed_sql}
+    artifact["query_text_metadata"] = {native: {"representative_sample": True}}
+    artifact["items"]["charts.line"]["result"] = {
+        "kind": "table",
+        "columns": [{"name": "query_id", "pg_type": "text", "encoding": "string"}],
+        "rows": [[native], [native], [generated]],
+        "row_count": 3,
+        # The second record has an ID but no own SQL: it reuses the catalog.
+        "query_links": {"query_id": [native, None, generated]},
+    }
+    path = tmp_path / "stable-log-query-ids.html"
+    path.write_text(render_html(artifact, validate=False))
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1400, "height": 1000})
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.goto(path.as_uri(), wait_until="load")
+        buttons = page.locator(".query-id-button")
+        assert buttons.all_text_contents() == [native, native, generated]
+        for index in (0, 1):
+            buttons.nth(index).hover()
+            page.wait_for_timeout(200)
+            assert sql in page.locator(".hover-preview").inner_text()
+            buttons.nth(index).click()
+            assert page.locator("#sourceCode").inner_text() == sql
+            assert "SQL sample for this Query ID" in page.locator("#sourceModalTitle").inner_text()
+            page.locator("#closeSource").click()
+        buttons.nth(2).click()
+        assert page.locator("#sourceCode").inner_text() == hashed_sql
+        assert generated in page.locator("#sourceModalTitle").inner_text()
+        assert errors == []
+        browser.close()
+
+
+@pytest.mark.parametrize("storage_available", [True, False])
+def test_sql_format_preference_applies_to_all_windows_and_preserves_catalog(
+    tmp_path: Path, storage_available: bool,
+) -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    artifact = _artifact()
+    queries = {
+        "11": "WITH payload_raw AS (SELECT j.item ->> 'key' AS value FROM jsonb_array_elements($1::jsonb) AS j(item)) SELECT value FROM payload_raw WHERE value IS NOT NULL",
+        "22": "select a, count(*) from example where a > 1 group by a",
+        "33": "SELECT 'unterminated",
+    }
+    artifact["query_texts"] = queries.copy()
+    artifact["items"]["charts.line"]["result"] = {
+        "kind": "table", "columns": [{"name": "query_id"}],
+        "rows": [[key] for key in queries], "row_count": len(queries),
+    }
+    path = tmp_path / "format-sql.html"
+    path.write_text(render_html(artifact, validate=False))
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1400, "height": 1000})
+        if not storage_available:
+            page.add_init_script('''Object.defineProperty(window, "localStorage", {
+                get() { throw new Error("storage blocked"); }
+            });''')
+        page.add_init_script('''Object.defineProperty(navigator, "clipboard", {
+            value: {writeText: async (text) => { window.copiedSQL = text; }}
+        });''')
+        errors = []
+        requests = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.on("request", lambda request: requests.append(request.url))
+        page.goto(path.as_uri(), wait_until="load")
+        checkbox = page.get_by_role("checkbox", name="Format", exact=True)
+        code = page.locator("#sourceCode")
+        page.get_by_role("button", name="11", exact=True).click()
+        assert not checkbox.is_checked()
+        assert code.inner_text() == queries["11"]
+        checkbox.check()
+        first_formatted = code.inner_text()
+        assert "\n" in first_formatted
+        assert page.locator("#formatSqlStatus").is_hidden()
+        page.locator("#copySource").click()
+        assert page.evaluate("window.copiedSQL") == first_formatted
+        page.locator("#closeSource").click()
+        page.get_by_role("button", name="22", exact=True).click()
+        assert checkbox.is_checked()
+        assert "\n" in code.inner_text()
+        assert page.evaluate("artifact.query_texts") == queries
+        page.locator("#closeSource").click()
+        page.get_by_role("button", name="33", exact=True).click()
+        assert checkbox.is_checked()
+        assert code.inner_text() == queries["33"]
+        assert page.locator("#formatSqlStatus").is_visible()
+        assert code.evaluate("el => getComputedStyle(el).whiteSpace") == "pre-wrap"
+        page.locator("#closeSource").click()
+        page.get_by_role("button", name="11", exact=True).click()
+        assert checkbox.is_checked()
+        assert code.inner_text() == first_formatted
+        assert page.locator("#formatSqlStatus").is_hidden()
+        if storage_available:
+            page.reload(wait_until="load")
+            page.get_by_role("button", name="11", exact=True).click()
+            assert checkbox.is_checked()
+            assert code.inner_text() == first_formatted
+        checkbox.uncheck()
+        assert code.inner_text() == queries["11"]
+        page.locator("#closeSource").click()
+        page.get_by_role("button", name="22", exact=True).click()
+        assert not checkbox.is_checked()
+        assert code.inner_text() == queries["22"]
+        assert page.evaluate("artifact.query_texts") == queries
+        assert errors == []
+        assert not [url for url in requests if url.startswith(("http:", "https:"))]
+        browser.close()
+
+
+@pytest.mark.parametrize("incomplete_source", [None, "row", "result", "coverage", "truncated"])
+def test_log_count_columns_are_hidden_with_one_warning_and_json_preserved(
+    tmp_path: Path, incomplete_source: str | None,
+) -> None:
+    from copy import deepcopy
+
+    sync_api = pytest.importorskip("playwright.sync_api")
+    artifact = _artifact()
+    template = deepcopy(artifact["items"]["charts.line"])
+    chart = deepcopy(template["result"])
+    source_dir = Path(__file__).parents[2] / "src/pg_diag/content/python/server_log"
+    source_ids = ["server_log." + path.stem for path in sorted(source_dir.glob("*.py"))]
+    source_ids = [key for key in source_ids if not key.rsplit(".", 1)[1].startswith("_")]
+    inventory_id = "server_log.log_files_overview"
+    event_ids = [key for key in source_ids if key != inventory_id]
+    artifact["query_texts"] = {"42": "SELECT retained_sql"}
+    coverage = {"ranking_complete": incomplete_source != "coverage",
+                "window_truncated": incomplete_source == "truncated"}
+    artifact["runtime"]["log_collection"] = {"coverage": coverage}
+    artifact["items"] = {}
+    for item_id in source_ids + ["sql_workload.control"]:
+        item = deepcopy(template)
+        item.update(item_id=item_id, source_kind="python", title=item_id)
+        # Intentionally omit source metadata to cover reports with stripped metadata.
+        item["source_metadata"] = {}
+        item["result"] = {
+            "kind": "table",
+            "columns": [{"name": "message"}, {"name": "count_complete", "label": "Count complete"}, {"name": "query_id"}],
+            "rows": [["first", True, "42"], ["last", incomplete_source != "row", "42"]],
+            "row_count": 2,
+            "count_complete": incomplete_source != "result",
+            # A presentation cap is distinct from incomplete collection.
+            "omitted_event_count": 100,
+        }
+        artifact["items"][item_id] = item
+    chart_id = "server_log.auto_explain_plans"
+    # All tables must hide the column, but the chart also needs a coverage warning.
+    artifact["items"][chart_id]["result"] = chart
+    chart["count_complete"] = incomplete_source not in ("row", "result")
+    empty_id = "server_log.archiver_failures"
+    artifact["items"][empty_id]["result"]["rows"] = []
+    artifact["items"][empty_id]["result"]["row_count"] = 0
+    artifact["items"][empty_id]["result"]["count_complete"] = incomplete_source not in ("row", "result")
+    artifact["items"][empty_id]["collection_status"] = "empty"
+    artifact["sections"][0]["items"] = list(artifact["items"])
+    expected_results = {key: deepcopy(item["result"]) for key, item in artifact["items"].items()}
+    path = tmp_path / "log-completeness.html"
+    path.write_text(render_html(artifact, validate=False))
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1400, "height": 1000})
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.goto(path.as_uri(), wait_until="load")
+        for item_id in event_ids:
+            item = page.locator(f'details.item[data-item-id="{item_id}"]')
+            assert "Count complete" not in item.locator("th").all_text_contents()
+            assert item.locator(".log-count-warning").count() == int(incomplete_source is not None)
+        for item_id in (inventory_id, "sql_workload.control"):
+            item = page.locator(f'details.item[data-item-id="{item_id}"]')
+            assert "Count complete" in item.locator("th").all_text_contents()
+            assert item.locator(".log-count-warning").count() == 0
+        item = page.locator('details.item[data-item-id="server_log.authentication_failures"]')
+        item.get_by_role("button", name="42", exact=True).first.click()
+        assert page.locator("#sourceCode").inner_text() == "SELECT retained_sql"
+        page.locator("#closeSource").click()
+        item.locator('input[type="search"]').fill("last")
+        assert item.locator("tbody tr").count() == 1
+        assert item.locator(".log-count-warning").count() == int(incomplete_source is not None)
+        retained = page.evaluate("Object.fromEntries(Object.entries(artifact.items).map(([k,v]) => [k,v.result]))")
+        assert retained == expected_results
+        assert errors == []
+        browser.close()
+
+
+def test_replication_commands_render_in_full_without_query_links(tmp_path: Path) -> None:
+    from copy import deepcopy
+
+    sync_api = pytest.importorskip("playwright.sync_api")
+    artifact = _artifact()
+    item = artifact["items"].pop("charts.line")
+    item_id = "server_log.replication_events"
+    item["item_id"] = item_id
+    artifact["items"][item_id] = item
+    artifact["sections"][0]["items"] = [item_id if key == "charts.line" else key
+                                         for key in artifact["sections"][0]["items"]]
+    command = 'START_REPLICATION SLOT "logical_slot" LOGICAL 0/123\n' + '\n'.join(
+        f"  /* publication option {i} */" for i in range(8)
+    )
+    other_command = "IDENTIFY_SYSTEM"
+    artifact["query_texts"] = {"short_hash": command, "22": other_command}
+    item["result"] = {
+        "kind": "table", "columns": [{"name": "message"}, {"name": "query_id", "label": "Query id"}],
+        "rows": [["timeout", "11"], ["context", "22"], ["no saved SQL", "33"]], "row_count": 3,
+        "query_links": {"query_id": ["short_hash", None, None]},
+    }
+    original = deepcopy(item["result"])
+    path = tmp_path / "replication-commands.html"
+    path.write_text(render_html(artifact, validate=False))
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1400, "height": 1000})
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.goto(path.as_uri(), wait_until="load")
+        item_node = page.locator(f'details.item[data-item-id="{item_id}"]')
+        headers = item_node.locator("th").all_text_contents()
+        assert "Replication command" in headers and "Query id" not in headers
+        assert item_node.locator(".query-id-button, a, .cell-toggle").count() == 0
+        assert item_node.locator("tbody tr").first.locator("td").nth(1).inner_text() == command
+        assert item_node.locator("tbody tr").first.locator("td .cell-content").nth(1).get_attribute("class").endswith("expanded")
+        assert item_node.locator("tbody tr").nth(2).locator("td").nth(1).inner_text() == ""
+        item_node.get_by_role("button", name="Replication command", exact=True).click()
+        assert item_node.locator("tbody tr").first.locator("td").nth(1).inner_text() == other_command
+        for raw in (False, True):
+            exported = page.evaluate('(raw) => tableExportData(tableViews.find(s => s.item.item_id === "server_log.replication_events"), raw)', raw)
+            assert exported["header"] == ["message", "Replication command"]
+            assert exported["rows"] == [["context", other_command], ["timeout", command], ["no saved SQL", ""]]
+        item_node.locator('input[type="search"]').fill("publication option 7")
+        assert item_node.locator("tbody tr").count() == 1
+        assert page.evaluate('(id) => artifact.items[id].result', item_id) == original
+        assert page.evaluate('artifact.query_texts.short_hash') == command
+        assert errors == []
+        browser.close()
+
+
+def test_log_column_order_preserves_query_links_sorting_and_exports(tmp_path: Path) -> None:
+    from copy import deepcopy
+
+    sync_api = pytest.importorskip("playwright.sync_api")
+    artifact = _artifact()
+    template = deepcopy(artifact["items"]["charts.line"])
+    expected = {
+        "server_log.error_chronology": ["first_time", "severity", "query_id"],
+        "server_log.top_errors": ["occurrences", "sql_state", "query_id"],
+        "server_log.query_resource_events": ["event_type", "total_temp_bytes", "max_duration_ms", "query_id"],
+        "server_log.lock_waits": ["first_time", "wait_ms", "query_id"],
+    }
+    names = ["message", "occurrences", "first_time", "severity", "sql_state", "database_name",
+             "event_type", "max_duration_ms", "total_temp_bytes", "wait_ms", "query_id", "count_complete"]
+    rows = [["first", 1, "2026-09-29 10:00:00", "ERROR", "40P01", "db", "temporary_file", 100, 1000, 30, "11", True],
+            ["second", 2, "2026-09-29 11:00:00", "ERROR", "40P01", "db", "temporary_file", 200, 2000, 60, "22", True]]
+    artifact["query_texts"] = {"11": "SELECT first_sql", "22": "SELECT second_sql"}
+    artifact["items"] = {}
+    for key in list(expected) + ["sql_workload.control"]:
+        item = deepcopy(template)
+        item.update(item_id=key, source_kind="python", source_metadata={})
+        item["result"] = {
+            "kind": "table", "columns": [{"name": name} for name in names],
+            "rows": deepcopy(rows), "row_count": 2,
+            "query_links": {"query_id": ["11", "22"]},
+        }
+        artifact["items"][key] = item
+    artifact["sections"][0]["items"] = list(artifact["items"])
+    original = deepcopy(artifact["items"])
+    path = tmp_path / "log-column-order.html"
+    path.write_text(render_html(artifact, validate=False))
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1400, "height": 1000})
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.goto(path.as_uri(), wait_until="load")
+        for key, leading in expected.items():
+            item = page.locator(f'details.item[data-item-id="{key}"]')
+            assert item.locator("th").all_text_contents()[:len(leading)] == leading
+            item.get_by_role("button", name="occurrences", exact=True).click()
+            item.get_by_role("button", name="occurrences", exact=True).click()
+            item.locator(".query-id-button").first.click()
+            assert page.locator("#sourceCode").inner_text() == "SELECT second_sql"
+            page.locator("#closeSource").click()
+            item.locator('input[type="search"]').fill("first_sql")
+            assert item.locator("tbody tr").count() == 1
+            item.locator(".query-id-button").first.click()
+            assert page.locator("#sourceCode").inner_text() == "SELECT first_sql"
+            page.locator("#closeSource").click()
+            exported = page.evaluate('(id) => tableExportData(tableViews.find(s => s.item.item_id === id), true)', key)
+            assert exported["header"][:len(leading)] == leading
+            assert exported["rows"][0][exported["header"].index("query_id")] == "11"
+            assert exported["rows"][0][exported["header"].index("message")] == "first"
+        assert page.locator('details.item[data-item-id="sql_workload.control"] th').all_text_contents() == names
+        assert page.evaluate('Object.fromEntries(Object.entries(artifact.items).map(([k,v]) => [k,v.result]))') == {
+            key: item["result"] for key, item in original.items()
+        }
+        # All item profiles retain source indexes and a visible query position,
+        # even when optional fields are absent or new fields are appended.
+        assert page.evaluate('''() => Object.keys(LOG_TABLE_COLUMN_ORDER).every(item_id => {
+            const names = LOG_TABLE_COLUMN_ORDER[item_id];
+            return [names, ["extra_a", "query_id", "extra_b", "extra_c"]].every(fields => {
+                const columns = fields.map((name, sourceIndex) => ({name, sourceIndex}));
+                const ordered = orderLogTableColumns(columns, {item_id});
+                const pos = ordered.findIndex(c => c.name === "query_id");
+                return pos >= 2 && pos <= 6 && ordered.length === columns.length
+                  && ordered.every(c => columns[c.sourceIndex] === c);
+            });
+        })''')
+        assert errors == []
         browser.close()

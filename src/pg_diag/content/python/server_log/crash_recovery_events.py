@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from pg_diag.logscan.query_links import query_columns
+
 from pg_diag.executors.python import PythonSourceContext, PythonSourceResult, table_result
 from pg_diag.logscan.items_common import (
     empty_result_status,
@@ -35,6 +37,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
                 "log_time": fmt_time(record.log_time),
                 "severity": record.severity,
                 "message": record.message,
+                **query_columns(record),
                 "repeat_count": record.repeat_count,
                 "process_id": record.process_id,
                 "backend_type": record.backend_type,

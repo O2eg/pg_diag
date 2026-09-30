@@ -456,10 +456,19 @@ def extract_item_query_texts(
 
     column_names = [_column_name(column, index) for index, column in enumerate(columns)]
     name_to_index = {name: index for index, name in enumerate(column_names) if name}
+    # Log IDs are PostgreSQL IDs or generated hashes; each resolves to one shared
+    # SQL sample. Move the links out of the visible table columns.
+    reference_indexes = [index for index, name in enumerate(column_names) if name == "query_ref"]
+    if reference_indexes:
+        reference_index = reference_indexes[0]
+        result.setdefault("query_links", {})["query_id"] = [
+            row[reference_index] if isinstance(row, list) and len(row) > reference_index else None
+            for row in rows
+        ]
     id_column_suffix = str(contract["id_column_suffix"])
     value_column_remove_suffix = str(contract["value_column_remove_suffix"])
     query_pairs: list[tuple[int, int]] = []
-    remove_indexes: set[int] = set()
+    remove_indexes: set[int] = set(reference_indexes)
     for query_id_index, column_name in enumerate(column_names):
         if not column_name.endswith(id_column_suffix):
             continue
@@ -470,7 +479,7 @@ def extract_item_query_texts(
         query_pairs.append((query_id_index, query_index))
         remove_indexes.add(query_index)
 
-    if not query_pairs:
+    if not query_pairs and not remove_indexes:
         return
 
     for row in rows:
@@ -503,11 +512,10 @@ def _remember_query_text(query_texts: dict[str, str], query_id: Any, query_text:
     if query_id is None or query_text is None:
         return
     query_id_text = str(query_id).strip()
-    sql_text = redact_query_credentials(str(query_text).strip())
-    if not query_id_text or not sql_text:
+    if not query_id_text or query_id_text in query_texts:
         return
-    existing = query_texts.get(query_id_text)
-    if existing is None or len(sql_text) > len(existing):
+    sql_text = redact_query_credentials(str(query_text).strip())
+    if sql_text:
         query_texts[query_id_text] = sql_text
 
 

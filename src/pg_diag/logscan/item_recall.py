@@ -38,6 +38,7 @@ ITEM_RECALL: dict[str, RecallClauses] = {
     "server_log.autovacuum_runs": compile_clauses(
         [
             ["automatic vacuum of table"],
+            ["automatic aggressive vacuum of table"],
             ["automatic analyze of table"],
         ]
     ),
@@ -54,6 +55,7 @@ ITEM_RECALL: dict[str, RecallClauses] = {
         [
             [",LOG,00000,", "process ", " still waiting for ", " after "],
             [",LOG,00000,", "process ", " acquired ", " after "],
+            [",LOG,00000,", "process ", " detected deadlock while waiting for "],
         ]
     ),
     "server_log.auto_explain_plans": compile_clauses([["duration: ", " ms  plan:"]]),
@@ -85,6 +87,7 @@ ITEM_RECALL: dict[str, RecallClauses] = {
             ["configuration file contains errors"], ["terminated by signal"],
             ["terminating any other active server processes"], ["could not bind"],
             ["could not create any TCP/IP sockets"],
+            ["background worker", "exited with exit code"],
         ]
     ),
     "server_log.replication_events": compile_clauses(
@@ -92,25 +95,33 @@ ITEM_RECALL: dict[str, RecallClauses] = {
             ["archive command failed"], ["restore command failed"],
             ["requested WAL segment"], ["has already been removed"],
             ["could not receive data from WAL stream"], ["terminating walreceiver"],
+            ["terminating walsender process due to replication timeout"],
+            ["unexpected EOF on standby connection"],
             ["could not send data to client"], ["could not receive data from client"],
+            ["connection to client lost"],
             ["requested starting point"],
             ["not in this server"], ["requested timeline"], ["replication slot"],
             ["logical replication"], ["subscription"], ["conflict with recovery"],
         ]
     ),
     "server_log.query_termination_events": compile_clauses(
-        [[",57014,"], [",55P03,"], [",57P01,"], ["conflict with recovery"]]
+        [[",57014,"], [",55P03,"], [",57P01,"], ["conflict with recovery"],
+         ["unexpected EOF on client connection with an open transaction"],
+         ["could not send data to client"], ["could not receive data from client"],
+         ["connection to client lost"]]
     ),
     "server_log.query_resource_events": compile_clauses(
         [
-            ["duration: ", " ms  statement:"],
-            ["duration: ", " ms  execute "],
+            # The classifier distinguishes statement/execute, parse/bind, bare
+            # log_duration, and auto_explain. Do not discard stages here.
+            ["duration: "],
             ["temporary file:", "size "],
         ]
     ),
     "server_log.maintenance_events": compile_clauses(
         [
             ["automatic vacuum of table"], ["automatic analyze of table"],
+            ["automatic aggressive vacuum of table"],
             [",VACUUM,"], [",ANALYZE,"], [",REINDEX,"],
             ["autovacuum", "canceling"], ["to prevent wraparound"],
         ]

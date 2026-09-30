@@ -3,10 +3,15 @@
 This instruction belongs to report item `server_log.query_termination_events`. The item consumes the csvlog window collected with `--log-depth-time-min`.
 
 ## What this item shows
-- A minute-aligned stacked-column chart for statement/lock timeouts, user cancellation, recovery conflicts, administrative shutdown, and NOWAIT/lock-not-available failures.
+- A minute-aligned stacked-column chart for statement/lock timeouts, user cancellation, recovery conflicts, administrative shutdown, client disconnections, and NOWAIT/lock-not-available failures.
 - Identical events are aggregated within each minute by classification, SQLSTATE, database/user/application, query identity, message, and SQL sample before ranking. Each point retains the full occurrence count for its group, including bursts of more than ten repetitions.
 - Up to ten ranked groups per minute and 2,000 points overall. Repeated message and SQL samples are stored once in `references` and points contain only `message_ref`/`query_ref`.
 - Hover shows the first event time, classification, group occurrence count, SQLSTATE, database/user/application, query, and message when available. The artifact also retains `last_log_time`. The legend is hidden because ranks change each minute.
+
+
+- SQLSTATE `55P03` with `lock timeout` is classified as `lock_timeout`; other lock-not-available cases retain their own classification.
+- Generic send/receive failures and `connection to client lost` are `client_disconnect` only for `client backend`. Missing backend type is reported as `connection_disconnect`; walsender/walreceiver failures stay with replication. These messages describe connection events, not necessarily an executing query.
+- `unexpected EOF on client connection with an open transaction` is retained as `client_disconnect_open_transaction`, including LOG/08006 records. It indicates an interrupted transaction/session, not necessarily an executing query.
 
 ## What to watch
 - Bursts after a deploy, failover, lock pile-up, or timeout change.

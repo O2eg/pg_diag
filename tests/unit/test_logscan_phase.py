@@ -88,12 +88,117 @@ def test_phase_skipped_without_flag() -> None:
     assert run.artifact["runtime"]["log_collection"]["status"] == "skipped"
 
 
+def test_log_query_catalog_is_bounded_and_preserves_zero_id_variants(tmp_path) -> None:
+    now = datetime(2026, 8, 31, 10, 30)
+    queries = ["SELECT first_variant", "SELECT second_variant", "SELECT " + "x" * 3000]
+    output = io.StringIO()
+    for index, query in enumerate(queries + [queries[0]]):
+        row = next(csv.reader(io.StringIO(_record(now - timedelta(seconds=5-index), "ERROR", "boom"))))
+        row[19], row[25] = query, "0"
+        csv.writer(output, lineterminator="\n").writerow(row)
+    path = tmp_path / "a.csv"
+    path.write_text(output.getvalue())
+    run = _run(FakeConn(_facts(tmp_path, now), [{
+        "name": path.name, "size": path.stat().st_size,
+        "modification": now.replace(tzinfo=timezone.utc),
+    }], []))
+    window = asyncio.run(collect_report_server_log(run, depth_minutes=10))
+    assert len(window.records) == 4  # same error, different SQL must not be merged
+    catalog = run.artifact["query_texts"]
+    assert len(catalog) == 3
+    assert all(len(key) == 20 and all(char in "0123456789abcdef" for char in key)
+               for key in catalog)
+    assert set(catalog.values()) == {q[:LINE_CAP] for q in queries}
+    assert "0" not in catalog
+    assert len(run.artifact["query_text_metadata"]) == 1
+    assert sum(record.query_truncated for record in window.records) == 1
+
+
+@pytest.mark.parametrize("first_truncated", [False, True])
+def test_log_catalog_native_id_keeps_first_sample_and_its_truncation(tmp_path, first_truncated) -> None:
+    now = datetime(2026, 8, 31, 10, 30)
+    short, long = "SELECT first", "SELECT " + "x" * 3000
+    queries = [long, short] if first_truncated else [short, long]
+    output = io.StringIO()
+    for index, query in enumerate(queries + [queries[0]]):
+        row = next(csv.reader(io.StringIO(_record(now - timedelta(seconds=5-index), "ERROR", "boom"))))
+        row[19], row[25] = query, "5582924868496553877"
+        csv.writer(output, lineterminator="\n").writerow(row)
+    path = tmp_path / "a.csv"
+    path.write_text(output.getvalue())
+    run = _run(FakeConn(_facts(tmp_path, now), [{
+        "name": path.name, "size": path.stat().st_size,
+        "modification": now.replace(tzinfo=timezone.utc),
+    }], []))
+    asyncio.run(collect_report_server_log(run, depth_minutes=10))
+    assert run.artifact["query_texts"] == {"5582924868496553877": queries[0][:LINE_CAP]}
+    metadata = run.artifact["query_text_metadata"]["5582924868496553877"]
+    assert metadata["representative_sample"] is True
+    assert metadata.get("truncated", False) is first_truncated
+
+
+@pytest.mark.parametrize("item_id,message,state", [
+    ("replication_events", "terminating walsender process due to replication timeout", "00000"),
+    ("replication_events", "unexpected EOF on standby connection", "08P01"),
+    ("query_termination_events", "unexpected EOF on client connection with an open transaction", "08006"),
+    ("query_termination_events", "could not receive data from client: Connection reset by peer", "08006"),
+    ("query_termination_events", "could not send data to client: Broken pipe", "08006"),
+    ("query_termination_events", "connection to client lost", "08006"),
+    ("replication_events", "connection to client lost", "08006"),
+    ("autovacuum_runs", 'automatic aggressive vacuum of table "appdb.public.t":\nelapsed: 1.0 s', "00000"),
+    ("maintenance_events", 'automatic aggressive vacuum of table "appdb.public.t":\nelapsed: 100.0 s', "00000"),
+    ("query_resource_events", "duration: 42.0 ms  parse <unnamed>: SELECT 1", "00000"),
+    ("query_resource_events", "duration: 42.0 ms  bind S_65: UPDATE t SET x = 1", "00000"),
+    ("query_resource_events", "duration: 42.0 ms", "00000"),
+    ("server_lifecycle", 'background worker "parallel worker" (PID 42) exited with exit code 1', "00000"),
+    ("lock_waits", "process 42 detected deadlock while waiting for ShareLock on transaction 99 after 1000.032 ms", "00000"),
+])
+def test_phase_recalls_incident_variants_when_only_owner_is_selected(
+    tmp_path, item_id, message, state,
+) -> None:
+    now = datetime(2026, 8, 31, 10, 30)
+    output = io.StringIO()
+    row = next(csv.reader(io.StringIO(_record(now - timedelta(seconds=5), "LOG", "placeholder"))))
+    row[12], row[13] = state, message
+    csv.writer(output, lineterminator="\n").writerow(row)
+    if item_id == "query_termination_events":
+        # Byte-identical tails across minute buckets must retain both timestamps.
+        row[0] = (now - timedelta(seconds=65)).strftime("%Y-%m-%d %H:%M:%S.000 UTC")
+        # Keep physical records chronological.
+        earlier = io.StringIO()
+        csv.writer(earlier, lineterminator="\n").writerow(row)
+        output = io.StringIO(earlier.getvalue() + output.getvalue())
+    path = tmp_path / "a.csv"
+    path.write_text(output.getvalue())
+    conn = FakeConn(_facts(tmp_path, now), [{
+        "name": path.name, "size": path.stat().st_size,
+        "modification": now.replace(tzinfo=timezone.utc),
+    }], [])
+    run = _run(conn)
+    run.plan.items = [SimpleNamespace(item_id=f"server_log.{item_id}", status="planned")]
+    window = asyncio.run(collect_report_server_log(run, depth_minutes=10))
+    assert len(window.records) == (2 if item_id == "query_termination_events" else 1)
+    assert window.records[0].sql_state == state
+    assert window.records[0].message.startswith(message.splitlines()[0].split(":")[0])
+    assert window.coverage.dropped_lines == 0
+
+
 def test_phase_preserves_numeric_events_and_query_identity(tmp_path) -> None:
     now = datetime(2026, 8, 31, 10, 30)
     messages = [
         "duration: 20.161 ms  statement: SELECT pg_sleep(0.02)",
         "duration: 201.236 ms  statement: SELECT pg_sleep(0.2)",
         "duration: 601.729 ms  statement: SELECT pg_sleep(0.6)",
+        "duration: 10.0 ms  parse <unnamed>: SELECT 1",
+        "duration: 25.0 ms  parse <unnamed>: SELECT 1",
+        "duration: 15.0 ms  bind S_65: SELECT 1",
+        "duration: 35.0 ms  bind S_65: SELECT 1",
+        "duration: 42.0 ms",
+        "duration: 84.0 ms",
+        "process 42 detected deadlock while waiting for ShareLock on transaction 99 after 1000.0 ms",
+        "process 43 detected deadlock while waiting for ShareLock on transaction 100 after 1100.0 ms",
+        'background worker "parallel worker" (PID 42) exited with exit code 1',
+        'background worker "parallel worker" (PID 43) exited with exit code 1',
         'temporary file: path "base/pgsql_tmp/pgsql_tmp42.1", size 2752512',
         'temporary file: path "base/pgsql_tmp/pgsql_tmp42.0", size 280000',
         'temporary file: path "base/pgsql_tmp/pgsql_tmp42.3", size 13672448',
@@ -127,7 +232,8 @@ def test_phase_preserves_numeric_events_and_query_identity(tmp_path) -> None:
     run = _run(conn)
     run.plan.items = [
         SimpleNamespace(item_id=item_id, status="planned")
-        for item_id in ("server_log.query_resource_events", "server_log.system_incidents")
+        for item_id in ("server_log.query_resource_events", "server_log.system_incidents",
+                        "server_log.lock_waits", "server_log.server_lifecycle")
     ]
     window = asyncio.run(collect_report_server_log(run, depth_minutes=10))
     assert [record.message for record in window.records] == messages

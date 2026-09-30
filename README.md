@@ -1247,8 +1247,24 @@ replication/WAL transport events, query terminations by minute, query time/temp
 file groups, and heavy/failed maintenance (the log overview needs only
 `pg_monitor`, no log-content access). Chart event text and plans use bounded,
 deduplicated references so repeated events do not duplicate large payloads.
-The `auto_explain` chart uses clock-aligned one-minute
-columns and keeps the ten longest logged queries in each minute. Every stacked
+Log SQL links reuse the report-wide `query_texts` catalog. Retained SQL is limited
+to 2000 characters and hover previews to 300; truncated text is marked in the
+query dialog. Catalog keys are PostgreSQL Query IDs; missing/zero IDs use the first
+20 hex characters of the retained sanitized SQL's SHA256, without a prefix,
+also displayed as the link label. Each key keeps
+its first SQL sample; subsequent texts never overwrite it. Multiple texts for a
+native ID are marked as a representative sample. Grouped rows list each ID once. Count-completeness flags stay
+in JSON but are hidden from log event tables. Incomplete counts or log coverage
+produce one warning above the affected table/chart; display row limits alone do
+not trigger this warning. The SQL viewer's **Format** checkbox
+uses the bundled SQL Formatter 15.8.2 with the PostgreSQL dialect. The choice
+applies to subsequent SQL windows and is remembered in browser storage when
+available. Formatting changes only the displayed/copyable text; disabling it
+restores the saved SQL. If a truncated or unsupported statement cannot be
+formatted, the viewer keeps the saved text and wraps long lines.
+The `auto_explain` chart selects the 2000 slowest logged executions across the
+window, then shows up to 15 slowest retained executions per clock-aligned time
+bucket (one minute by default, configurable with `settings.bucket_seconds`). Every stacked
 block represents one query; its tooltip shows the exact log timestamp,
 duration, and a sanitized query sample capped at 300 characters. Clicking a
 block opens its sanitized, bounded plan in the bundled read-only
@@ -1257,7 +1273,7 @@ accounts is planned but deliberately not part of this release.
 
 Log collection is bounded to 512 MiB scanned and 128 MiB returned per window.
 An auto_explain record can retain up to 512 KiB; chart plan references have a
-separate 64 MiB / 1024-plan budget. Reaching a scan or return limit preserves
+separate 64 MiB / 2000-plan budget. Reaching a scan or return limit preserves
 already collected events and marks coverage incomplete; it does not discard the
 whole item. Larger limits allow detailed analytical plans while keeping resource
 use bounded.

@@ -34,6 +34,10 @@ PRESERVE_EVENT_MARKERS = (
     b",55P03,",
     b",57P01,",
     b"conflict with recovery",
+    b"unexpected EOF on client connection with an open transaction",
+    b"could not send data to client",
+    b"could not receive data from client",
+    b"connection to client lost",
 )
 
 

@@ -159,6 +159,15 @@ test("overlapping deadlock sources use the same rate in locks and errors", () =>
   }
 });
 
+test("deadlock rate includes events omitted from the table and supports older reports", () => {
+  const capped = evaluate([table("server_log.deadlock_events", [{repeat_count: 1}], {
+    matched_event_count: 600, displayed_event_count: 1, omitted_event_count: 599
+  })])["health.locks"];
+  const full = evaluate([table("server_log.deadlock_events", [{repeat_count: 600}])])["health.locks"];
+  assert.equal(capped.score, full.score);
+  assert.ok(capped.reasons.some(reason => reason.includes("600 deadlock(s)")));
+});
+
 test("table and statement I/O use server block size and keep unknown sizes in blocks", () => {
   for (const [id, column] of [["snapshot_delta_workload.table_io_delta", "total_blks_read_per_sec"],
     ["snapshot_delta_workload.sql_io_delta", "shared_read_blks_per_sec"]]) {

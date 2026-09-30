@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import blake2b
 import re
 from typing import Any
+
+from pg_diag.logscan.query_links import group_query_columns, remember_query
 
 from pg_diag.executors.python import PythonSourceContext, PythonSourceResult, table_result
 from pg_diag.logscan.items_common import (
@@ -14,10 +16,9 @@ from pg_diag.logscan.items_common import (
 )
 
 ROW_LIMIT = 100
-QUERY_SAMPLE_CHARS = 300
 _DURATION_RE = re.compile(
-    r"^duration:\s*(?P<duration>\d+(?:\.\d+)?)\s*ms\s+"
-    r"(?:statement|execute\s+[^:]+):\s*(?P<query>.*)",
+    r"^duration:\s*(?P<duration>\d+(?:\.\d+)?)\s*ms"
+    r"(?:\s+(?P<stage>statement|(?:execute|parse|bind)\s+[^:]+):\s*(?P<query>.*))?\s*$",
     re.DOTALL,
 )
 _TEMP_RE = re.compile(r'^temporary file:\s+path\s+"[^"]+",\s+size\s+(?P<size>\d+)')
@@ -37,11 +38,11 @@ class _Aggregate:
     user_name: str | None = None
     application_name: str | None = None
     query_id: int | None = None
-    query_sample: str | None = None
     message_sample: str | None = None
     count_complete: bool = True
     database_partial: bool = False
     collector_generated: bool = False
+    queries: dict = field(default_factory=dict)
 
 
 def collect(context: PythonSourceContext) -> PythonSourceResult:
@@ -56,7 +57,14 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
         temporary = _TEMP_RE.match(message)
         if duration is None and temporary is None:
             continue
-        event_type = "slow_statement" if duration is not None else "temporary_file"
+        event_type = "temporary_file"
+        if duration is not None:
+            stage = (duration.group("stage") or "duration_only").split()[0]
+            event_type = {
+                "statement": "slow_statement", "execute": "slow_statement",
+                "parse": "parse_duration", "bind": "bind_duration",
+                "duration_only": "duration_only",
+            }[stage]
         query = record.query or (duration.group("query") if duration is not None else None)
         query = query.strip() if query else None
         identity = (
@@ -78,11 +86,11 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
                 user_name=record.user_name,
                 application_name=record.application_name,
                 query_id=record.query_id or None,
-                query_sample=query[:QUERY_SAMPLE_CHARS] if query else None,
                 message_sample=record.message[:500],
                 collector_generated=_is_collector_generated(query, record.application_name),
             )
             aggregates[key] = aggregate
+        remember_query(aggregate.queries, query, record.query_id)
         if record.database_name is None:
             aggregate.database_partial = True
         if aggregate.user_name is None:
@@ -130,8 +138,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
             "database_name": row.database_name,
             "user_name": row.user_name,
             "application_name": row.application_name,
-            "query_id": row.query_id,
-            "query_sample": row.query_sample,
+            **group_query_columns({"queries": row.queries}),
             "message_sample": row.message_sample,
             "database_partial": row.database_partial,
             "collector_generated": row.collector_generated,
@@ -145,6 +152,10 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
     result.update(
         {
             "raw_event_count": raw_event_count,
+            "event_counts_by_type": {
+                kind: sum(row.occurrences for row in ranked if row.event_type == kind)
+                for kind in sorted({row.event_type for row in ranked})
+            },
             "aggregate_count": len(ranked),
             "omitted_aggregate_count": omitted,
             "collector_generated_group_count": len(collector_groups),
@@ -162,6 +173,10 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
     description = (
         f"{raw_event_count - collector_event_count} resource event(s) form {workload_groups} "
         f"query/resource groups; {len(rows)} rows are shown."
+    )
+    description += (
+        " Parse, bind, and duration-only timings are separate event types, not additional "
+        "statement executions; do not sum stages to infer end-to-end query latency."
     )
     if collector_groups:
         description += (
@@ -189,7 +204,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
                 "status": "review" if severity != "ok" else "ok",
                 "title": "Queries consumed notable time or temporary storage",
                 "description": description,
-                "recommendation": "Prioritize groups by total/max temporary bytes and duration; correlate query_id, database, application, and SQL sample with plans and work_mem settings.",
+                "recommendation": "Prioritize groups by total/max temporary bytes and duration; open SQL through Query ID and correlate database and application with plans and work_mem settings.",
             },
             "items": [],
         },
@@ -214,6 +229,8 @@ def _attach_databaseless_groups(aggregates: dict[tuple[Any, ...], _Aggregate]) -
         target.first_time = min(target.first_time, source.first_time)
         target.last_time = max(target.last_time, source.last_time)
         target.occurrences += source.occurrences
+        for identity, reference in source.queries.items():
+            target.queries[identity] = target.queries.get(identity) or reference
         target.total_duration_ms += source.total_duration_ms
         target.total_temp_bytes += source.total_temp_bytes
         if source.max_duration_ms is not None:

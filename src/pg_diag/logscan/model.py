@@ -182,6 +182,7 @@ class LogRecord:
     # UTC offset of this record's wall-clock timestamp when the log clock is
     # known; charts place records with it instead of one window-wide offset.
     utc_offset_seconds: int | None = None
+    query_truncated: bool = False
 
 
 @dataclass(frozen=True)
@@ -204,6 +205,8 @@ class AutoExplainPlan:
     complete: bool
     query_sample: str | None
     viewer_plan: str | None = None
+    query_text: str | None = None  # sanitized SQL, bounded by LINE_CAP
+    query_truncated: bool = False
 
 
 @dataclass(frozen=True)

@@ -4,8 +4,9 @@ This instruction belongs to report item `server_log.query_resource_events`. The 
 
 ## What this item shows
 - Slow-statement duration records and temporary-file creation grouped by event type, query identity, database, and application.
-- Occurrence count, first/last time, max/total duration, max/total temporary bytes, query ID, and a sanitized 300-character SQL sample.
-- Only completed `statement` and `execute` duration records count as slow statements; auto_explain plans, parse/bind timings, and bare `log_duration` records do not add executions.
+- Occurrence count, first/last time, max/total duration, max/total temporary bytes, query ID linking to the shared SQL catalog (hover preview: 300 characters; saved SQL: 2000). There is no separate Query sample column. Each native ID keeps its first saved SQL sample; missing/zero IDs use the first 20 hex characters of SHA256, displayed without a prefix.
+- Only `statement` and `execute` duration records count as `slow_statement`. Parse/bind timings are retained as `parse_duration` / `bind_duration`; bare `log_duration` records are `duration_only`. Auto_explain plans are excluded from resource counts. Do not add these stages to infer execution counts or end-to-end latency.
+- `event_counts_by_type` includes all matched events before the row limit. A duration-only record without a query links to the catalog sample only if its Query ID has a saved SQL text.
 - A missing or zero query ID falls back to sanitized SQL identity. If both query ID and SQL are unavailable, a group contains unattributed message-pattern evidence within its database/application; it does not identify a specific query.
 - At most 100 groups ranked by temporary bytes and duration; `omitted_aggregate_count` explicitly reports discarded lower-impact groups.
 - `collector_generated = true` marks groups produced by pg_diag's own sampling queries (`/* pg_diag:` marker or `application_name = pg_diag`); they are listed last, excluded from the summary counts and ignored by the diagnostic graph.

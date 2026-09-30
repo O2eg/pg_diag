@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from pg_diag.logscan.query_links import query_columns
+
 from pg_diag.executors.python import PythonSourceContext, PythonSourceResult, table_result
 from pg_diag.logscan.items_common import (
     empty_result_status,
@@ -37,6 +39,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
                 "database": database.group("database") if database else None,
                 "transactions_left": int(remaining.group(1)) if remaining else None,
                 "message": record.message,
+                **query_columns(record),
             }
         )
     if not rows:

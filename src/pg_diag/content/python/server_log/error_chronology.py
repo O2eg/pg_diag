@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from pg_diag.logscan.query_links import query_columns
+
 from pg_diag.executors.python import PythonSourceContext, PythonSourceResult, table_result
 from pg_diag.logscan.items_common import (
     SEVERITY_ERRORS,
     coverage_note,
     fmt_time,
     empty_result_status,
+    event_count_metadata,
     resolve_english_window,
     severity_rank,
 )
@@ -21,6 +24,8 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
         return PythonSourceResult(**early)
     series = [record for record in window.records if record.severity in SEVERITY_ERRORS]
     truncated = len(series) > SERIES_LIMIT
+    counts = event_count_metadata(series, series[-SERIES_LIMIT:], SERIES_LIMIT)
+    worst = max((severity_rank(record.severity) for record in series), default=0)
     series = series[-SERIES_LIMIT:]  # keep the newest series
     rows: list[dict[str, Any]] = []
     for record in reversed(series):  # newest first
@@ -36,19 +41,20 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
                 "database_name": record.database_name,
                 "process_id": record.process_id,
                 "backend_type": record.backend_type,
-                "query_id": record.query_id,
+                **query_columns(record),
                 "count_complete": record.count_complete,
                 "partial": record.partial,
             }
         )
-    worst = max((severity_rank(record.severity) for record in series), default=0)
     severity_level = "high" if worst >= 3 else ("medium" if rows else "ok")
     issues: dict[str, Any] = {}
     if rows:
-        total = sum(record.repeat_count for record in series)
+        total = counts["matched_event_count"]
         note = coverage_note(window)
         description = (
-            f"{len(rows)} error series ({total} raw records) in the collected window."
+            f"{counts['matched_series_count']} error series ({total} raw records) in the "
+            f"collected window; {len(rows)} series containing "
+            f"{counts['displayed_event_count']} records are shown."
             + (f" Older series beyond the last {SERIES_LIMIT} are not listed." if truncated else "")
             + (f" {note}" if note else "")
         )
@@ -65,17 +71,19 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
             },
             "items": [],
         }
+    result = table_result(rows)
+    result.update(counts)
     if not rows:
         status, empty_severity, empty_issues = empty_result_status(window)
         return PythonSourceResult(
             collection_status=status,
-            result=table_result(rows),
+            result=result,
             issues=empty_issues,
             severity_level=empty_severity,
         )
     return PythonSourceResult(
         collection_status="ok",
-        result=table_result(rows),
+        result=result,
         issues=issues,
         severity_level=severity_level,
     )

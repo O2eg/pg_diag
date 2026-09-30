@@ -324,8 +324,10 @@ python_sources:
   server_log.top_errors:
     targets: [db]
     title: Top Errors By Frequency
-    description: The 100 most frequent error fingerprints in the collected log window with occurrence counts, first and last time seen, and how many users and databases were affected.
+    description: The 100 most frequent error fingerprints in the collected log window with occurrence counts, first and last time seen, and lists of affected users and databases.
     python_file: server_log/top_errors.py
+    settings:
+      distinct_names_limit: 30
     function: collect
     timeout_ms: 3000
     display:
@@ -508,8 +510,10 @@ python_sources:
   server_log.auto_explain_plans:
     targets: [db]
     item_type: chart
-    title: Top Auto Explain Queries By Minute
-    description: One clock-aligned column per minute with up to ten longest queries logged by auto_explain; every stacked block is one query, exposes a sanitized 300-character query sample, and opens a bounded sanitized plan in the bundled read-only viewer.
+    title: Top Auto Explain Queries By Time Bucket
+    description: Select the 2000 slowest auto_explain executions across the window, then show at most 15 slowest executions per clock-aligned time bucket; every stacked block exposes a sanitized SQL sample and opens a bounded sanitized plan.
     python_file: server_log/auto_explain_plans.py
+    settings:
+      bucket_seconds: 60
     function: collect
     timeout_ms: 3000

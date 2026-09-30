@@ -5,6 +5,8 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
+from pg_diag.logscan.query_links import query_reference
+
 from pg_diag.executors.python import PythonSourceContext, PythonSourceResult
 from pg_diag.logscan.event_refs import CHART_POINT_LIMIT, ChartReferencePool
 from pg_diag.logscan.items_common import (
@@ -74,7 +76,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
     utc_offset, clock_diagnostics = log_clock_offset(context)
     for rank, minute, record, kind in selected:
         message_ref = refs.add_message(record.message)
-        query_ref = refs.add_query(record.query)
+        query_ref = query_reference(record.query, record.query_id) if record.query else None
         points_by_rank[rank].append(
             {
                 "t": _iso_timestamp(minute, _record_offset(record, utc_offset)),
@@ -219,9 +221,20 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
 
 def _event_kind(record: Any) -> str | None:
     message = record.message.lower()
+    if "unexpected eof on client connection with an open transaction" in message:
+        return "client_disconnect_open_transaction"
+    if message.startswith(("could not send data to client", "could not receive data from client",
+                           "connection to client lost")):
+        if record.backend_type == "client backend":
+            return "client_disconnect"
+        if not record.backend_type:
+            return "connection_disconnect"
+        return None
     if record.sql_state == "57P01":
         return "administrative_shutdown"
     if record.sql_state == "55P03":
+        if "lock timeout" in message:
+            return "lock_timeout"
         return "nowait_or_lock_not_available"
     if "conflict with recovery" in message:
         return "recovery_conflict"

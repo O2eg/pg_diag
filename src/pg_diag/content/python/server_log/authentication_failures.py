@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from pg_diag.logscan.query_links import group_query_columns, remember_group_query
+
 from pg_diag.executors.python import PythonSourceContext, PythonSourceResult, table_result
 from pg_diag.logscan.items_common import (
     client_host,
@@ -42,6 +44,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
             },
         )
         group["failures"] += record.repeat_count
+        remember_group_query(group, record)
         group["count_complete"] = group["count_complete"] and record.count_complete
         group["first_seen"] = min(group["first_seen"], record.log_time)
         group["last_seen"] = max(group["last_seen"], record.last_time)
@@ -56,6 +59,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
             "first_seen": fmt_time(group["first_seen"]),
             "last_seen": fmt_time(group["last_seen"]),
             "message_sample": group["message_sample"],
+            **group_query_columns(group),
             "count_complete": group["count_complete"],
         }
         for group in ordered[:TOP_LIMIT]

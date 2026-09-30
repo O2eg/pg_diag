@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from pg_diag.logscan.query_links import query_columns
+
 from pg_diag.executors.python import PythonSourceContext, PythonSourceResult, table_result
 from pg_diag.logscan.items_common import (
     coverage_note,
@@ -19,8 +21,8 @@ _KINDS = (
     ("has already been removed", "wal_missing"),
     ("could not receive data from WAL stream", "walreceiver_disconnect"),
     ("terminating walreceiver", "walreceiver_disconnect"),
-    ("could not send data to client", "walsender_disconnect"),
-    ("could not receive data from client", "walsender_disconnect"),
+    ("terminating walsender process due to replication timeout", "walsender_timeout"),
+    ("unexpected EOF on standby connection", "standby_disconnect"),
     ("requested starting point", "stream_start_failure"),
     ("is not in this server's history", "timeline_mismatch"),
     ("requested timeline", "timeline_mismatch"),
@@ -38,8 +40,11 @@ _GENERIC_FAILURE_KINDS = (
 )
 
 
-def _kind(message: str, severity: str) -> str | None:
+def _kind(message: str, severity: str, backend_type: str | None = None) -> str | None:
     lowered = message.lower()
+    if lowered.startswith(("could not send data to client", "could not receive data from client",
+                           "connection to client lost")):
+        return "walsender_disconnect" if backend_type == "walsender" else None
     specific = next((kind for fragment, kind in _KINDS if fragment.lower() in lowered), None)
     if specific is not None:
         return specific
@@ -55,7 +60,8 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
     window, early = resolve_english_window(context)
     if early is not None:
         return PythonSourceResult(**early)
-    events = [(record, _kind(record.message, record.severity)) for record in window.records]
+    events = [(record, _kind(record.message, record.severity, record.backend_type))
+              for record in window.records]
     events = [(record, kind) for record, kind in events if kind]
     events.sort(key=lambda item: (item[0].repeat_count, item[0].last_time), reverse=True)
     omitted = max(0, len(events) - ROW_LIMIT)
@@ -71,6 +77,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
             "application_name": record.application_name,
             "backend_type": record.backend_type,
             "message": record.message,
+            **query_columns(record),
             "count_complete": record.count_complete,
         }
         for record, kind in events[:ROW_LIMIT]

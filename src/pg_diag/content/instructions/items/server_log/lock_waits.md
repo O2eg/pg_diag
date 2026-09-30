@@ -8,6 +8,9 @@ This instruction belongs to report item `server_log.lock_waits`. The item is bac
 - `holder_pids` and `queue_depth` come from the record's detail field: the sessions holding the lock and the total reported wait queue length, including `waiting_pid` itself.
 - Unlike the live blocking lock tree, this is the history of the whole window, not the single moment of collection.
 
+
+- `deadlock_detected` rows preserve supplemental LOG wait context. They are not added to the SQLSTATE 40P01 incident count. `waiting_event_count`, `acquired_event_count`, and `deadlock_context_event_count` stay separate. Event/series totals and omitted counts describe the row cap explicitly.
+
 ## What to watch
 - `AccessExclusiveLock` waits on relations: DDL or maintenance blocking regular traffic — the summary raises these to `high` past 10 seconds.
 - Large `queue_depth`: one holder serializing many sessions.

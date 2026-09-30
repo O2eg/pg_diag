@@ -126,7 +126,7 @@ is documented in
 | `log_checkpoints` | `on` (default since PG15) | `checkpoints`: trigger reason, buffers, write/sync timings |
 | `log_autovacuum_min_duration` | workload-specific ms threshold | `autovacuum_runs` chronology and `maintenance_events`; the latter emits only failures/emergencies/lock waits or successful runs crossing its documented 5 s / 128 MiB / 64 MiB thresholds |
 | `log_lock_waits` | `on` | Lock-wait history from the log (waits longer than `deadlock_timeout`); also enriches the error chronology |
-| `auto_explain.log_min_duration` | workload-specific threshold | `auto_explain_plans`: ten longest logged queries per minute |
+| `auto_explain.log_min_duration` | workload-specific threshold | `auto_explain_plans`: global top 2000 executions, then top 15 per configured time bucket (60 seconds by default) |
 | `auto_explain.log_format` | `json` recommended | Machine-readable plan validation; text, XML, and YAML are also recognized |
 | `auto_explain.log_parameter_max_length` | `0` | Avoid logging bind-parameter values alongside plans |
 | `log_min_duration_statement` | workload-specific ms threshold | Duration groups in `query_resource_events`; avoid `0` on high-QPS production systems |

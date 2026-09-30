@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import re
 from typing import Any
 
+from pg_diag.logscan.query_links import query_columns
+
 from pg_diag.executors.python import PythonSourceContext, PythonSourceResult, table_result
 from pg_diag.logscan.items_common import (
     coverage_note,
@@ -104,7 +106,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
             "sql_state": event.record.sql_state,
             "database_name": event.record.database_name,
             "application_name": event.record.application_name,
-            "query_id": event.record.query_id,
+            **query_columns(event.record),
             "occurrences": event.record.repeat_count,
             "message": event.record.message,
             "count_complete": event.record.count_complete,

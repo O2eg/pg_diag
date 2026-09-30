@@ -8,6 +8,9 @@ This instruction belongs to report item `server_log.autovacuum_runs`. The item i
 - Runs are visible only when `log_autovacuum_min_duration` is 0 or a positive threshold; `-1` disables the logging entirely.
 - `aggressive = true` marks an `automatic aggressive vacuum` (anti-wraparound freeze); the `kind` column stays `vacuum` or `analyze`.
 
+
+- Ordinary and aggressive vacuum are both recalled. `matched_event_count`, `displayed_event_count`, and `omitted_event_count` account for RLE repeats before/after the row cap; elapsed time is parsed from the full retained message.
+
 ## What to watch
 - The same relation vacuumed again and again: dead-tuple churn outrunning the cost limits.
 - Long `elapsed_s` on small tables: cost-based delays or contention, not volume.

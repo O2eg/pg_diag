@@ -162,6 +162,10 @@ field_reference:
     python_sources/*/targets[]: One required execution target, host or db.
     python_sources/*/description: Maintainer-facing description of the Python check.
     python_sources/*/python_file: Python module path relative to the content Python directory.
+    python_sources/server_log.top_errors/settings: Settings owned by the Top Errors item.
+    python_sources/server_log.top_errors/settings/distinct_names_limit: Positive integer limiting each distinct user and database name array; default 30.
+    python_sources/server_log.auto_explain_plans/settings: Settings owned by the Auto Explain chart.
+    python_sources/server_log.auto_explain_plans/settings/bucket_seconds: Clock-aligned bucket width in seconds, finite and at least 1; default 60, use 300 for five minutes. Each bucket displays at most 15 slowest executions from the global top 2000.
     python_sources/*/function: Trusted callable invoked from the Python module.
     python_sources/*/local_only: Whether the Python source must run on the database host.
     python_sources/*/item_type: Optional presentation type (table, text, chart, delta) selected by --item-type; defaults to table, so chart and text sources must declare it.

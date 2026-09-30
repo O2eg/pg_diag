@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from pg_diag.logscan.query_links import query_columns
+
 from pg_diag.executors.python import PythonSourceContext, PythonSourceResult, table_result
 from pg_diag.logscan.items_common import (
     coverage_note,
@@ -95,6 +97,7 @@ def collect(context: PythonSourceContext) -> PythonSourceResult:
             "application_name": record.application_name,
             "backend_type": record.backend_type,
             "message": record.message,
+            **query_columns(record),
             "count_complete": record.count_complete,
         }
         for record, kind in ranked[:ROW_LIMIT]
