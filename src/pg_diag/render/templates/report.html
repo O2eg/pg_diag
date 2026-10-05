@@ -197,6 +197,16 @@ __ECHARTS_JS__
       margin-top: 4px;
     }
 
+    .log-limit-warning {
+      margin-top: 16px;
+      padding: 12px 16px;
+      color: #fff;
+      background: #991b1b;
+      border: 1px solid #ef4444;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+
     .project-links {
       display: flex;
       flex-wrap: wrap;
@@ -2428,6 +2438,9 @@ __ECHARTS_JS__
       </div>
       <div id="runtime" class="runtime"></div>
       <div id="runtimeDetails" class="runtime"></div>
+      <div id="logParameters" class="runtime" hidden></div>
+      <div id="logWindow" class="runtime" hidden></div>
+      <div id="logCoverage" class="runtime" hidden></div>
       <div class="header-summary">
         <div class="header-summary-counts">
           <div id="statusSummary" class="summary-bar"></div>
@@ -2445,6 +2458,7 @@ __ECHARTS_JS__
       </label>
     </div>
   </header>
+  <div id="logLimitWarning" class="shell log-limit-warning" role="alert" hidden></div>
   <main class="shell">
     <div class="report-toolbar" aria-label="Report controls">
       <label class="field">
@@ -2784,6 +2798,7 @@ __PG_DIAG_GRAPH_RENDER_JS__
         .map((entry) => entry[0] + "=" + formatRuntimeValue(entry[0], entry[1]))
         .join(" ");
       runtimeDetails.hidden = runtimeDetailParts.length === 0;
+      hydrateLogHeader();
 
       const counts = {};
       for (const item of visibleItems) {
@@ -2817,6 +2832,41 @@ __PG_DIAG_GRAPH_RENDER_JS__
           numericValue(point.value) > 0 || numericValue((point.tooltip || {}).duration_ms) !== null
           || Boolean(point.viewer && (point.viewer.plan_ref || point.viewer.plan_text)))));
       explainButton.onclick = () => navigateToReportNode("item", explainId);
+    }
+
+    function hydrateLogHeader() {
+      const log = runtime.log_collection || {};
+      const coverage = log.coverage || {};
+      const limitWarning = document.getElementById("logLimitWarning");
+      limitWarning.hidden = !(coverage.truncation_reasons || []).includes("report_value_limit_hit");
+      limitWarning.textContent = limitWarning.hidden ? "" :
+        "В ходе наполнения отчёта был достигнут лимит; отчёт содержит неполные данные.";
+      const depth = runtime.log_depth_time_min ?? coverage.requested_minutes;
+      const parameters = [];
+      if (depth !== undefined && depth !== null) {
+        const minutes = Number(depth);
+        const readable = minutes > 0 && minutes % 1440 === 0
+          ? " (" + minutes / 1440 + " d)"
+          : minutes >= 60 && minutes % 60 === 0 ? " (" + minutes / 60 + " h)" : "";
+        parameters.push("log_depth_time_min=" + depth + readable);
+      }
+      if (runtime.log_timezone) parameters.push("log_timezone=" + runtime.log_timezone);
+      if (log.status) parameters.push("log_status=" + log.status);
+      const range = (from, to) => from || to ? (from || "unknown") + " → " + (to || "unknown") : "";
+      // These timestamps use the log clock, not the report viewer's timezone.
+      const requested = range(coverage.requested_from, coverage.requested_to);
+      const covered = range(coverage.covered_from, coverage.covered_to);
+      const incomplete = coverage.ranking_complete === false || coverage.window_truncated === true;
+      const rows = {
+        logParameters: parameters.join(" "),
+        logWindow: requested ? "Requested log window: " + requested : "",
+        logCoverage: covered ? "Log coverage: " + covered + (incomplete ? " (incomplete)" : "") : "",
+      };
+      for (const [id, text] of Object.entries(rows)) {
+        const element = document.getElementById(id);
+        element.textContent = text;
+        element.hidden = !text;
+      }
     }
 
     function renderSeveritySummary() {

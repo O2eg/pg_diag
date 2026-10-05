@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 import shlex
+import time
 from typing import Any
 
 from .model import (
@@ -22,6 +23,8 @@ from .model import (
     REASON_SCAN_LIMIT,
     REASON_TIME_LIMIT,
     REASON_UNREADABLE,
+    WIRE_FILE_OVERHEAD,
+    WIRE_REPORT_OVERHEAD,
     RawSeries,
     ScanRequest,
     ScanResult,
@@ -59,30 +62,33 @@ BEGIN {
   fname = ENVIRON["FNAME"]
   cum = 0; have_prev = 0; cnt = 0; spent = 0
   rec_active = 0; rec_q = 0; rec_match = 0
-  matched = 0; dropped = 0; budget_hit = 0
+  matched = 0; dropped = 0; budget_hit = 0; examined = 0
 }
 {
+  if (budget_hit) next
   cum += length($0) + 1
   if (NR == 1 && skipfirst) { dropped += 1; next }
   if (have_prev) processline(prev_line, prev_nr)
   prev_line = $0; prev_nr = NR; have_prev = 1
 }
 END {
-  if (have_prev) {
+  if (have_prev && !budget_hit) {
     if (cum == rangelen) processline(prev_line, prev_nr)
-    else dropped += 1
+    else { dropped += 1; examined += length(prev_line) }
   }
-  if (rec_active) {
+  if (rec_active && !budget_hit) {
     if (rec_match) dropped += 1
     resetrecord()
   }
   flushrun()
   printf "META\t%s\t%d\t%d\t%d\t%d\n", fname, NR, matched, dropped, budget_hit
   printf "SPENT=%d\n", spent | "cat 1>&2"
+  printf "EXAMINED=%d\n", examined | "cat 1>&2"
   close("cat 1>&2")
   if (budget_hit) exit 3
 }
 function processline(l, n,   c) {
+  examined += length(l) + 1
   if (!rec_active) {
     if (l !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] /) {
       if (__RECALL__) dropped += 1
@@ -160,6 +166,7 @@ function processrecord(l, firstn, lastn, ts, truncated,   id, tl, no_merge) {
     return
   }
   flushrun()
+  if (budget_hit) return
   cur_id = id; cur_tl = tl; cnt = 1
   first_n = firstn; last_n = lastn; first_ts = ts; last_ts = ts
   raw = l
@@ -209,7 +216,7 @@ SCAN_LEFT=@SCANBUDGET@
 WIRE_LEFT=@WIREBUDGET@
 # Frame overhead reserve: CAPS/DONE plus per-file FILE/META/FILE_END frames are
 # part of the wire budget too (review finding); constants are upper bounds.
-WIRE_LEFT=$((WIRE_LEFT - 1024))
+WIRE_LEFT=$((WIRE_LEFT - @WIRE_REPORT_OVERHEAD@))
 TIME_S=@TIMEBUDGET@
 AWK_PROG=@AWKPROG@
 STOP=0
@@ -297,13 +304,13 @@ scan_file() {
   else
     size=$msize; dev=0; ino=0
   fi
-  printf 'FILE\t%s\t%s\t%s\t%s\n' "$name" "$size" "$dev" "$ino"
   start=0
   aligned=1
   if [ "$boundary" = 1 ] && [ "$size" -gt 0 ]; then start=$(find_start "$path" "$size"); fi
   if [ "$SCAN_LEFT" -le 0 ]; then REASONS="$REASONS scan_limit_hit"; STOP=1; return 0; fi
-  WIRE_LEFT=$((WIRE_LEFT - 512))
+  WIRE_LEFT=$((WIRE_LEFT - @WIRE_FILE_OVERHEAD@))
   if [ "$WIRE_LEFT" -le 0 ]; then REASONS="$REASONS return_limit_hit"; STOP=1; return 0; fi
+  printf 'FILE\t%s\t%s\t%s\t%s\n' "$name" "$size" "$dev" "$ino"
   range=$((size - start))
   if [ "$range" -gt "$SCAN_LEFT" ]; then
     res=$(probe_ts "$path" $((size - SCAN_LEFT)))
@@ -325,7 +332,9 @@ scan_file() {
     RAWCAP="$RAWCAP" WFROM="$WFROM" WTO="$WTO" awk "$AWK_PROG" 1>&3; } 2>&1 )
   rc=$?
   SCAN_LEFT=$((SCAN_LEFT - range))
-  SCANNED=$((SCANNED + range))
+  examined=$(printf '%s\n' "$captured" | sed -n 's/^EXAMINED=//p' | tail -n 1)
+  case "$examined" in ''|*[!0-9]*) examined=0 ;; esac
+  SCANNED=$((SCANNED + examined))
   spent=$(printf '%s\n' "$captured" | sed -n 's/^SPENT=//p' | tail -n 1)
   case "$spent" in ''|*[!0-9]*) spent=0 ;; esac
   WIRE_LEFT=$((WIRE_LEFT - spent))
@@ -380,7 +389,12 @@ def build_script(request: ScanRequest, *, stats: ScanStats) -> bytes:
         "@RAWCAP@": str(int(request.raw_record_cap)),
         "@SCANBUDGET@": str(int(request.scan_budget_bytes)),
         "@WIREBUDGET@": str(int(request.wire_budget_bytes)),
-        "@TIMEBUDGET@": str(_HOST_TIME_BUDGET_SECONDS),
+        "@WIRE_REPORT_OVERHEAD@": str(WIRE_REPORT_OVERHEAD),
+        "@WIRE_FILE_OVERHEAD@": str(WIRE_FILE_OVERHEAD),
+        "@TIMEBUDGET@": str(
+            _HOST_TIME_BUDGET_SECONDS if request.deadline_monotonic is None
+            else max(0, int(request.deadline_monotonic - time.monotonic() - 2.0))
+        ),
         "@AWKPROG@": "'" + awk_program + "'",
         "@VERSION@": PROTOCOL_VERSION,
         "@SCANCALLS@": "\n".join(calls),
@@ -541,10 +555,15 @@ class BashHarvesterSource(LogScanSource):
 
     async def scan(self, request: ScanRequest) -> ScanResult:
         stats = ScanStats(files_seen=len(request.files))
+        timeout = _HARVEST_TIMEOUT_SECONDS if request.deadline_monotonic is None else (
+            request.deadline_monotonic - time.monotonic()
+        )
+        if timeout <= 0:
+            raise TimeoutError("log scan deadline exceeded")
         script = build_script(request, stats=stats)
         result = await self._transport.run_script_bytes(
             script,
-            timeout=_HARVEST_TIMEOUT_SECONDS,
+            timeout=timeout,
             # The harvester enforces the data budget itself and emits a final
             # coverage frame. A smaller generic SSH cap would discard all of
             # that evidence instead of returning a useful partial window.

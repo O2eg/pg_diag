@@ -35,8 +35,8 @@
       if (event.source !== frame.contentWindow) return;
       if (event.data?.type === "pg-diag-configurator-close" && !modal.hidden) close();
       if (event.data?.type === "pg-diag-configurator-ready") {
-        status.hidden = !event.data.error;
-        if (event.data.error) status.textContent = "Adjust inputs in Main: " + event.data.error;
+        // Calculation errors live in the configurator's shared banner.
+        status.hidden = true;
       }
     });
   };

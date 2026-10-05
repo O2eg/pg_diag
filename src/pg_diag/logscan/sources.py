@@ -7,7 +7,6 @@ harvester (remote) plugs into the same :class:`LogScanSource` interface.
 
 from __future__ import annotations
 
-import asyncio
 import os
 import time
 from typing import BinaryIO
@@ -22,15 +21,17 @@ from .model import (
     REASON_SCAN_LIMIT,
     REASON_TIME_LIMIT,
     REASON_UNREADABLE,
+    WIRE_FILE_OVERHEAD,
+    WIRE_REPORT_OVERHEAD,
     ScanRequest,
     ScanResult,
     ScanStats,
 )
 from .records import plausible_record_start, quote_state as _quote_state
 from .rle import PhysicalRle, ts_prefix
+from .work import run_log_work
 
 _TS_COMPARE_LEN = 19  # YYYY-MM-DD HH:MM:SS
-_SERIES_WIRE_OVERHEAD = 64
 
 
 def _timestamp_key(value: str) -> str:
@@ -194,16 +195,14 @@ class LocalLogSource(LogScanSource):
         self._chunk_bytes = chunk_bytes
 
     async def scan(self, request: ScanRequest) -> ScanResult:
-        # Blocking file I/O must not run on the event loop (slow disk / NFS
-        # would defeat the phase timeout) — review finding, 2026-08-31.
-        return await asyncio.to_thread(self._scan_sync, request)
+        return await run_log_work(self._scan_sync, request)
 
-    # -- synchronous implementation (worker thread) --
+    # -- synchronous implementation (killable worker process) --
 
     def _scan_sync(self, request: ScanRequest) -> ScanResult:
         stats = ScanStats(files_seen=len(request.files))
         series: list = []
-        wire_used = 0
+        wire_used = WIRE_REPORT_OVERHEAD
         stop = False
         base_real = os.path.realpath(self._log_directory)
         # Newest files first: on budget exhaustion the old edge is sacrificed.
@@ -226,6 +225,10 @@ class LocalLogSource(LogScanSource):
                 remaining_scan = request.scan_budget_bytes - stats.scanned_bytes
                 if remaining_scan <= 0:
                     stats.truncation_reasons.add(REASON_SCAN_LIMIT)
+                    break
+                wire_used += WIRE_FILE_OVERHEAD
+                if wire_used >= request.wire_budget_bytes:
+                    stats.truncation_reasons.add(REASON_RETURN_LIMIT)
                     break
                 if size - start > remaining_scan:
                     # Tail-biased truncation: keep the newest part of the range.
@@ -346,11 +349,13 @@ class LocalLogSource(LogScanSource):
             if not chunk:
                 break
             remaining -= len(chunk)
-            stats.scanned_bytes += len(chunk)
             pending += chunk
             lines = pending.split(b"\n")
             pending = lines.pop()  # unterminated tail: kept back (plan §15.4)
             for line in lines:
+                # Count bytes examined, excluding transport read-ahead. This
+                # remains identical across chunk sizes and SSH buffering.
+                stats.scanned_bytes += len(line) + 1
                 lineno += 1
                 if assembler.active:
                     assembler.continuation(lineno, line)
@@ -384,10 +389,11 @@ class LocalLogSource(LogScanSource):
                     wire_used, stop = self._emit(emitted, series, wire_used, request, stats)
                     if stop:
                         break
-        if pending:
+        if pending and not stop:
+            stats.scanned_bytes += len(pending)
             stats.dropped_lines += 1  # in-flight write without trailing newline
             assembler.discard()
-        elif assembler.active and assembler.discard():
+        elif not stop and assembler.active and assembler.discard():
             stats.dropped_lines += 1  # matched logical record has no closing CSV quote
         emitted = rle.flush()
         if emitted is not None and not stop:
@@ -397,7 +403,12 @@ class LocalLogSource(LogScanSource):
     @staticmethod
     def _emit(emitted, series: list, wire_used: int, request: ScanRequest, stats: ScanStats):
         """Hard wire budget: cost is checked BEFORE the series is retained."""
-        cost = len(emitted.raw_record) + _SERIES_WIRE_OVERHEAD
+        header = (
+            f"RUN\t{emitted.first_lineno}\t{emitted.last_lineno}\t{emitted.count}\t"
+            f"{emitted.first_ts}\t{emitted.last_ts}\t{len(emitted.raw_record)}\t"
+            f"{int(emitted.raw_truncated)}"
+        )
+        cost = len(header.encode("utf-8")) + 2 + len(emitted.raw_record)
         if wire_used + cost > request.wire_budget_bytes:
             stats.truncation_reasons.add(REASON_RETURN_LIMIT)
             return wire_used, True

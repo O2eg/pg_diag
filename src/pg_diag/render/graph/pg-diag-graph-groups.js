@@ -250,16 +250,8 @@
       const stats = totalStats(ctx, id, /^sync$/i);
       ctx.reason("Sync time is summed per sampled interval and may include multiple checkpoints; paced write time is not a latency alarm.");
       if (stats) ctx.fact("Checkpoint sync time per interval p95", format(stats.p95, "ms"));
-      const deltaId = "snapshot_delta_workload.checkpointer_delta", row = ctx.rows(deltaId)[0];
-      if (row) {
-        const checkpoints = numeric(row.checkpoints_done_delta), restartpoints = numeric(row.restartpoints_done_delta);
-        // pg_stat_checkpointer sync_time includes both checkpoints and restartpoints.
-        // Missing completion counters (older servers) cannot be replaced by request counts.
-        const done = checkpoints !== null && restartpoints !== null ? checkpoints + restartpoints : null;
-        const sync = numeric(row.sync_time_ms_delta);
-        if (done > 0 && sync !== null) return metric(ctx, "Mean sync time per completed checkpoint/restartpoint in window", sync / done / 1000, T.checkpointSyncSec, "s", deltaId);
-        if (done === 0 && sync === 0) { ctx.reason("No checkpoint completed and no sync time accumulated in the measured window.", deltaId); return 0; }
-      }
+      const score = Rules.checkpointSyncTiming(ctx);
+      if (score !== null) return score;
       ctx.missing("The sync-time chart alone has no per-checkpoint denominator. Collect a valid checkpointer delta or inspect individual sync durations in checkpoint logs.");
       return null;
     },
@@ -345,10 +337,6 @@
     replication_capacity(ctx) { return maxScore(rowMetric(ctx, "replication.replication_capacity", "utilization_pct", "Highest replication resource usage", T.capacityPct, "%"), findings(ctx)); },
     replication_logical(ctx) {
       let score = null;
-      const deltaId = "snapshot_delta_workload.subscription_errors_conflicts_delta";
-      // Conflicts can also be apply errors. Report each counter independently, never sum them.
-      const windowRows = ctx.rows(deltaId);
-      const hasWindow = windowRows.some(r => ["apply_error_count_delta", "sync_error_count_delta", "conflict_count_delta"].some(c => numeric(r[c]) !== null));
       const id = "replication.subscription_workers";
       const rows = ctx.rows(id);
       for (const row of rows) {
@@ -358,11 +346,7 @@
           ctx.reason("Subscription " + row.subname + ": enabled worker " + (failed ? "not running (warning)" : "running"), id);
         }
       }
-      const counterId = hasWindow ? deltaId : id;
-      for (const [column, label] of [["apply_error_count", "Apply errors"], ["sync_error_count", "Synchronization errors"], ["conflict_count", "Logical conflicts"]]) {
-        score = maxScore(score, countCheck(ctx, counterId, label + (hasWindow ? " in window" : " since statistics reset"), [column + (hasWindow ? "_delta" : "")]));
-      }
-      ctx.reason("Apply errors and conflict counters overlap and are not added. Cumulative counters describe history since reset, not necessarily a current failure.");
+      score = maxScore(score, Rules.logicalReplicationErrors(ctx));
       return maxScore(score, Rules.findingsScore(ctx, {roles: ["primary", "support", "fact"], excludeItems: [id]}));
     },
     recovery_conflicts(ctx) {

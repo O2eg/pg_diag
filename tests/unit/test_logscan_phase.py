@@ -104,13 +104,13 @@ def test_log_query_catalog_is_bounded_and_preserves_zero_id_variants(tmp_path) -
     }], []))
     window = asyncio.run(collect_report_server_log(run, depth_minutes=10))
     assert len(window.records) == 4  # same error, different SQL must not be merged
-    catalog = run.artifact["query_texts"]
+    catalog = run.server_log.query_texts
     assert len(catalog) == 3
     assert all(len(key) == 20 and all(char in "0123456789abcdef" for char in key)
                for key in catalog)
     assert set(catalog.values()) == {q[:LINE_CAP] for q in queries}
     assert "0" not in catalog
-    assert len(run.artifact["query_text_metadata"]) == 1
+    assert len(run.server_log.query_text_metadata) == 1
     assert sum(record.query_truncated for record in window.records) == 1
 
 
@@ -131,8 +131,8 @@ def test_log_catalog_native_id_keeps_first_sample_and_its_truncation(tmp_path, f
         "modification": now.replace(tzinfo=timezone.utc),
     }], []))
     asyncio.run(collect_report_server_log(run, depth_minutes=10))
-    assert run.artifact["query_texts"] == {"5582924868496553877": queries[0][:LINE_CAP]}
-    metadata = run.artifact["query_text_metadata"]["5582924868496553877"]
+    assert run.server_log.query_texts == {"5582924868496553877": queries[0][:LINE_CAP]}
+    metadata = run.server_log.query_text_metadata["5582924868496553877"]
     assert metadata["representative_sample"] is True
     assert metadata.get("truncated", False) is first_truncated
 

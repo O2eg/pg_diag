@@ -10,6 +10,7 @@ import multiprocessing
 import os
 import pickle
 import signal
+import struct
 import sys
 import threading
 import time
@@ -214,22 +215,12 @@ async def _run_sync_process(function: Any, *args: Any) -> Any:
     )
     process.start()
     send_conn.close()
-    loop = asyncio.get_running_loop()
-    readable = loop.create_future()
-
-    def mark_readable() -> None:
-        if not readable.done():
-            readable.set_result(None)
-
-    loop.add_reader(recv_conn.fileno(), mark_readable)
     try:
-        await readable
-        raw_payload = recv_conn.recv_bytes()
+        raw_payload = await _read_process_payload(recv_conn)
     except BaseException:
         _terminate_process_group(process)
         raise
     finally:
-        loop.remove_reader(recv_conn.fileno())
         recv_conn.close()
         process.join(0.2)
         if process.is_alive():
@@ -241,6 +232,27 @@ async def _run_sync_process(function: Any, *args: Any) -> Any:
         return payload[0]
     error_type, message = payload
     raise RuntimeError(f"Python source process failed ({error_type}): {message}")
+
+
+async def _read_process_payload(connection: Any) -> bytes:
+    """Read a multiprocessing send_bytes frame without blocking the event loop.
+
+    Readability promises only the first bytes, not the complete payload. Large
+    log windows/reports must remain cancellable while the child sends them.
+    """
+    reader = asyncio.StreamReader()
+    protocol = asyncio.StreamReaderProtocol(reader)
+    pipe = os.fdopen(os.dup(connection.fileno()), "rb")
+    transport, _ = await asyncio.get_running_loop().connect_read_pipe(lambda: protocol, pipe)
+    try:
+        size = struct.unpack("!i", await reader.readexactly(4))[0]
+        if size == -1:  # multiprocessing uses a 64-bit size for large frames
+            size = struct.unpack("!Q", await reader.readexactly(8))[0]
+        if size < 0:
+            raise ValueError("Invalid Python source result frame size")
+        return await reader.readexactly(size)
+    finally:
+        transport.close()
 
 
 def _terminate_process_group(process: Any, *, force: bool = False) -> None:

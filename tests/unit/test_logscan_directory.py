@@ -276,15 +276,38 @@ def test_long_last_record_is_still_found_within_the_probe_cap(kind, tmp_path) ->
 
 
 @pytest.mark.parametrize("kind", ["local", "remote"])
-def test_undetermined_file_is_scanned_and_marks_discovery_incomplete(kind, tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("older_file", [False, True])
+def test_undetermined_file_is_verified_before_anchoring(
+    kind, older_file, tmp_path, monkeypatch,
+) -> None:
     monkeypatch.setattr(directory_module, "MAX_PROBE_BYTES", 65_536)
     plan = "duration: 99.0 ms  plan:\n" + ("x" * 100 + "\n") * 2000  # exceeds the patched cap
     body = _record(BASE - timedelta(minutes=1), "ERROR", "before") + _record(BASE, "LOG", plan)
     (tmp_path / "long.csv").write_text(body)
-    (tmp_path / "short.csv").write_text(_record(BASE - timedelta(minutes=2), "LOG", "noise"))
+    if older_file:
+        (tmp_path / "short.csv").write_text(_record(BASE - timedelta(minutes=2), "LOG", "noise"))
     probed = _probe(kind, tmp_path)
     long = next(f for f in probed.files if f.name == "long.csv")
     assert long.last_ts is None and long.determined is False
+    window = _discover(kind, tmp_path)
+    assert window.window_to == "2026-09-05 10:00:00.000"
+    assert not window.truncation_reasons
+    expected = ["long.csv", "short.csv"] if older_file else ["long.csv"]
+    assert [c.name for c in window.candidates] == expected
+    assert window.inventory["source"]["files_undetermined"] == 0
+    assert window.inventory["source"]["files_verified"] == 1
+    assert window.inventory["source"]["anchor_verified"] is True
+
+
+@pytest.mark.parametrize("kind", ["local", "remote"])
+def test_undetermined_file_over_verification_budget_marks_incomplete(
+    kind, tmp_path, monkeypatch,
+) -> None:
+    monkeypatch.setattr(directory_module, "MAX_PROBE_BYTES", 65_536)
+    monkeypatch.setattr(directory_module, "VERIFY_BUDGET_BYTES", 65_536)
+    plan = "duration: 99.0 ms  plan:\n" + ("x" * 100 + "\n") * 2000
+    (tmp_path / "long.csv").write_text(_record(BASE, "LOG", plan))
+    (tmp_path / "short.csv").write_text(_record(BASE - timedelta(minutes=2), "LOG", "noise"))
     window = _discover(kind, tmp_path)
     assert "discovery_incomplete" in window.truncation_reasons
     assert [c.name for c in window.candidates] == ["long.csv", "short.csv"]

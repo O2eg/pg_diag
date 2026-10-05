@@ -1199,7 +1199,7 @@ Flag semantics:
 
 - flag absent — logs are not collected and every `server_log` item is skipped;
 - `--log-depth-time-min` without a value — the last 10 minutes;
-- `--log-depth-time-min N` — the last `N` minutes (`0` disables, maximum 1440);
+- `--log-depth-time-min N` — the last `N` minutes (`0` disables, maximum 10080 / 7 days);
 - works with both `one-shot` and `snapshots`; the window ends when the log
   phase starts, which is after all other items (and after the sampling window
   in snapshots mode).
@@ -1278,6 +1278,30 @@ already collected events and marks coverage incomplete; it does not discard the
 whole item. Larger limits allow detailed analytical plans while keeping resource
 use bounded.
 
+The string values retained in the report's log tables, chart points and shared
+SQL/plan references have a **soft 128 MiB memory budget**. Admission happens after
+item-level ranking and eviction. `sys.getsizeof()` measures each retained Python
+string object without JSON serialization or UTF-8 copies. Aliases of the same
+object count once; separate equal strings count separately. Keys, container
+storage, presentation metadata, parser buffers and non-log sections are excluded.
+Unused SQL and plan payloads are not added to the report catalog.
+
+A whole output row or chart point and its references can cross the threshold.
+Further log output stops, remaining log items are marked skipped with an explicit
+budget reason, and the report finishes normally. Truncated tables/charts have
+updated displayed/omitted counts. Coverage includes `report_value_limit_hit`,
+`estimated_value_bytes`, `value_budget_bytes` and
+`value_budget_method: python_string_objects`. The estimate describes retained
+output; `parsed_records` and the covered timestamps still describe the scan.
+Admission updates a shared counter incrementally; a final traversal accounts for
+presentation-normalized values without serializing the dictionary.
+
+HTML shows a red warning immediately below the header:
+“В ходе наполнения отчёта был достигнут лимит; отчёт содержит неполные данные.”
+The warning is also shown when saved JSON is rendered later. This budget applies
+to log data in `logs`, `one-shot` and `snapshots`. It measures neither process RSS
+nor file size: intermediate buffers, metadata and HTML resources have other costs.
+
 The artifact records the phase outcome in `runtime.log_collection`
 (`{status, reason, coverage, source}`); `coverage` states the requested and
 actually covered window, scanned bytes, and truncation reasons, so an incomplete
@@ -1322,7 +1346,7 @@ How the command differs from `--log-depth-time-min` on `one-shot`/`snapshots`:
 | --- | --- | --- |
 | File discovery | `pg_ls_logdir()` through the database connection | `*.csv` entries of `--log-dir`; at most 1024 files are probed (newest by modification time first) and symlinks are refused. Modification times never stand in for record times: a truncated listing, an unreadable file, or a file whose last record could not be located within 64 MiB marks the window incomplete |
 | Record boundaries | Server-formatted window, collector parses records | CSV boundaries by quote parity, never physical lines: a date planted inside a quoted message cannot start or end a record. Tail probes are accepted only when parity closes, and the scan start chosen by binary search inside the oldest candidate is validated by record structure (falling back to the whole file); the file that anchors the window is re-checked with exact parity counted from its first byte (`source.anchor_verified`), and a file is excluded from the window only on an exact or trusted timestamp, otherwise it is verified the same way within a 512 MiB budget (`source.files_verified`; past the budget the window is incomplete) |
-| Window end | The server clock when the log phase starts | The newest complete record found in the directory, so `--log-depth-time-min` counts back from the last logged event (default 10, maximum 1440). With a known zone the newest record and the window are chosen on absolute time: across a DST transition both wall-clock scan bounds are widened, the absolute filter decides afterwards, and every record is placed by its own offset |
+| Window end | The server clock when the log phase starts | The newest complete record found in the directory, so `--log-depth-time-min` counts back from the last logged event (default 10, maximum 10080 / 7 days). With a known zone the newest record and the window are chosen on absolute time: across a DST transition both wall-clock scan bounds are widened, the absolute filter decides afterwards, and every record is placed by its own offset |
 | csvlog layout | Known from `server_version_num` | Detected per file from the column count of its first complete record (the head probe grows up to 64 MiB): 23 columns for PostgreSQL 10-12, 24 for 13, 26 for 14 and later; a directory that spans a major upgrade is parsed file by file |
 | Log clock zone | `log_timezone` and its UTC offset | Numeric suffixes (`+03`) and UTC resolve on their own; a bare abbreviation such as `MSK` has no known offset, chart items then carry a `log_timezone_unknown` warning and show the log clock as if UTC unless `--log-timezone Europe/Moscow` names the IANA zone, which also resolves the repeated hour of a fall-back transition through the suffix (`CEST`/`CET`) |
 | Logging settings, rotation findings, active file, block size | From the server GUCs and `pg_current_logfile()` | Unknown: `log_files_overview` lists the files without rotation findings and marks no file as current; `maintenance_events` qualifies page volumes against the largest supported block size (32 KiB) and reports `block_size_unknown` |
@@ -1341,6 +1365,26 @@ file whose last record could not be located or an unverified anchor) marks the
 window incomplete and turns counts into lower bounds. A missing or empty directory produces a report whose `server_log`
 items are `unsupported` with the reason in `runtime.log_collection.reason`;
 the command still exits with status 0 because the report was written.
+
+The `logs` report has a **300-second overall deadline**, including directory
+discovery, collection, parsing, item construction, JSON serialization and HTML
+rendering. Collection uses the remaining time with 30 seconds reserved for
+finishing the report; discovery, the local scanner and remote harvester share
+that deadline. Blocking validation, planning, artifact creation, local reads,
+parsing, query catalog construction and final rendering run in killable worker
+processes. Cancellation stops and reaps the active worker and terminates an
+active SSH command; shutdown time is reserved within the overall budget.
+Interrupted JSON/HTML writes have their temporary files removed by a supervised
+worker, while existing reports and other runs' temporary files are preserved.
+Cleanup shares the deadline, so a stalled filesystem cannot block shutdown.
+If collection times out first, the remaining time can be used to write an explicit
+collection-error report. If later stages exhaust the overall budget, the command
+exits with a deadline error. The log phase on `one-shot`/`snapshots` keeps its
+existing 60-second bound.
+
+Local and SSH scanners use the same wire framing budget and stop at the same
+record boundary when it is exhausted. `scanned_bytes` counts examined input,
+excluding transport read-ahead, so the count does not depend on buffering.
 
 ## Collection Timing and Metric Evaluation
 

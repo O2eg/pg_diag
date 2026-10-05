@@ -21,12 +21,18 @@ LINE_CAP = 2_000
 # exhausting the transport budget after only a few minutes of such activity.
 SCAN_BUDGET_BYTES = 512 * 1_048_576
 WIRE_BUDGET_BYTES = 128 * 1_048_576
+# Identical framing reserves for local and SSH scans.
+WIRE_REPORT_OVERHEAD = 1024
+WIRE_FILE_OVERHEAD = 512
 SERIES_GAP_SECONDS = 60.0
 PHASE_WALLCLOCK_SECONDS = 60.0
+LOGS_REPORT_WALLCLOCK_SECONDS = 300.0
+LOGS_FINISH_RESERVE_SECONDS = 30.0
+REPORT_VALUE_BUDGET_BYTES = 128 * 1_048_576
 MAX_CANDIDATE_FILES = 64
 PROBE_BYTES = 16_384
 MAX_PROBE_DOUBLINGS = 6
-DEPTH_MAX_MINUTES = 1_440
+DEPTH_MAX_MINUTES = 10_080
 DEPTH_DEFAULT_MINUTES = 10
 # Directory discovery (logs mode): bounded per-file head/tail probes replace
 # pg_ls_logdir() and the server clock. Probes double until a complete CSV
@@ -43,6 +49,7 @@ VERIFY_BUDGET_BYTES = 512 * 1_048_576
 
 REASON_SCAN_LIMIT = "scan_limit_hit"
 REASON_RETURN_LIMIT = "return_limit_hit"
+REASON_VALUE_LIMIT = "report_value_limit_hit"
 REASON_TIME_LIMIT = "time_limit_hit"
 REASON_ROTATION_RACE = "rotation_race"
 REASON_PARSE_ERRORS = "parse_errors"
@@ -228,6 +235,8 @@ class LogCoverage:
     locale_supported: bool
     requested_from: str | None = None
     requested_to: str | None = None
+    estimated_value_bytes: int = 0
+    value_budget_bytes: int = REPORT_VALUE_BUDGET_BYTES
 
 
 @dataclass(frozen=True)
@@ -244,6 +253,9 @@ class ServerLogContext:
     inventory: "dict | None" = None
     mode: str | None = None
     interval_seconds: float | None = None
+    # Candidates are promoted to the report catalog only when output uses them.
+    query_texts: dict[str, str] = field(default_factory=dict)
+    query_text_metadata: dict[str, dict] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

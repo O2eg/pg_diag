@@ -77,9 +77,18 @@ def test_configurator_offline_diff_recalculation_theme_and_close(tmp_path: Path)
         frame.locator("#tab-main").click()
         cpu = frame.locator("#readout-db_cpu")
         cpu.fill("0")
-        page.locator("#configuratorStatus").wait_for(state="visible")
-        cpu.fill("2")
+        error = frame.locator("#error")
+        error.wait_for(state="visible")
         page.locator("#configuratorStatus").wait_for(state="hidden")
+        assert error.evaluate("el => el.closest('[role=tabpanel]') === null")
+        assert error.bounding_box()["y"] + error.bounding_box()["height"] <= frame.locator(".pc-top").bounding_box()["y"]
+        for tab in ("calculation", "advisories", "overrides", "diff", "main"):
+            frame.locator(f"#tab-{tab}").click()
+            assert error.is_visible()
+            assert frame.locator("[role=alert]:visible").count() == 1
+            assert not page.locator("#configuratorStatus").is_visible()
+        cpu.fill("2")
+        error.wait_for(state="hidden")
         frame.locator("#tab-artifact").evaluate("el => el.click()")
         import json
         calculated = json.loads(frame.locator("#panel-artifact .pc-code").inner_text())

@@ -80,6 +80,15 @@ The main unit-test groups are:
 - `test_report_output_paths.py` - one-shot and snapshots output-format selection and JSON/HTML paths,
   secure mirrored progress logs, planner-skipped source suppression, and
   once/endpoints/chart-window execution order selection.
+- `test_log_report_limits.py` - seven-day log windows, the soft retained-string memory
+  budget, complete-record retention and shared SQL/plan accounting (including
+  SQL arriving after a bare query ID), valid partial JSON/HTML, and accelerated
+  deadline tests with blocked validation, planning, artifact creation, discovery,
+  scanning, parsing, query catalogs, item construction, output and cleanup workers.
+  Also verifies worker cleanup and removal of interrupted JSON/HTML temporary
+  files without touching existing reports or another run's files.
+- `test_logscan_harvester.py` also compares local/SSH record selection and
+  coverage at wire limits, across files, multiline records and buffer sizes.
 - `test_users_roles_content.py` - the `users_roles` section contract: item set,
   database scopes, PostgreSQL 10-18 query variants and column statuses,
   bounded catalog sampling with coverage flags, and the pg_hba/pg_ident
@@ -276,6 +285,9 @@ PYTHONDONTWRITEBYTECODE=1 python -m py_compile \
 completeness, hidden CPU/network zeros, actual delta durations, simultaneous
 packet/CPU pressure, receiver write versus flush lag, SQLSTATE precedence,
 consistent deadlock/SyncRep scores, and block-size-aware I/O calculations.
+It also checks storage I/O incidents reaching the Disk root, shared parent/direction
+checkpoint denominators and logical-replication counter windows (including partial
+or reset deltas), and hot buffers remaining informational while cache misses score.
 `test_metric_engine.py` also checks missing interface partitions through the
 Linux provider; `test_server_log_items.py` checks incident signatures and checkpoint
 cap/RLE metadata at collection time.

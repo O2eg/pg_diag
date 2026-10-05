@@ -132,6 +132,87 @@ def _artifact() -> dict:
     }
 
 
+def test_header_shows_requested_log_depth_and_actual_coverage(tmp_path: Path) -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        # Header log times must not be reinterpreted in the viewer's timezone.
+        page = browser.new_page(timezone_id="America/New_York")
+        for case in ("legacy", "logs", "coverage-fallback"):
+            artifact = _artifact()
+            if case != "legacy":
+                artifact["runtime"].update({
+                    "log_timezone": "Europe/Moscow",
+                    "log_collection": {
+                        "status": "collected",
+                        "coverage": {
+                            "requested_minutes": 4320,
+                            "requested_from": "2026-09-26 18:25:22",
+                            "requested_to": "2026-09-29 18:25:22.654",
+                            "covered_from": "2026-09-29 12:00:00 MSK",
+                            "covered_to": "2026-09-29 18:25:22.654 MSK",
+                            "ranking_complete": False,
+                        },
+                        "source": {
+                            "log_directory": "/tmp/downloaded logs",
+                            "window_anchor": "newest complete record timestamp",
+                        },
+                    },
+                })
+                if case == "logs":
+                    artifact["runtime"]["log_depth_time_min"] = 4320
+            path = tmp_path / (case + ".html")
+            path.write_text(render_html(artifact, validate=False), encoding="utf-8")
+            page.goto(path.as_uri(), wait_until="load")
+            if case == "legacy":
+                for field in ("logParameters", "logWindow", "logCoverage"):
+                    assert page.locator("#" + field).is_hidden()
+                continue
+            assert page.locator("#logParameters").inner_text() == (
+                "log_depth_time_min=4320 (3 d) log_timezone=Europe/Moscow log_status=collected"
+            )
+            assert page.locator("#logWindow").inner_text() == (
+                "Requested log window: 2026-09-26 18:25:22 → 2026-09-29 18:25:22.654"
+            )
+            assert page.locator("#logCoverage").inner_text() == (
+                "Log coverage: 2026-09-29 12:00:00 MSK → 2026-09-29 18:25:22.654 MSK (incomplete)"
+            )
+            assert page.locator("#logSource").count() == 0
+            assert "log_directory=" not in page.locator(".app-header").inner_text()
+            assert "anchor=" not in page.locator(".app-header").inner_text()
+        browser.close()
+
+
+def test_log_value_limit_warning_is_red_and_below_header(tmp_path: Path) -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        for reasons in ([], ["scan_limit_hit"], ["report_value_limit_hit"]):
+            artifact = _artifact()
+            artifact["runtime"]["log_collection"] = {
+                "status": "collected", "coverage": {"truncation_reasons": reasons},
+            }
+            path = tmp_path / "limit.html"
+            path.write_text(render_html(artifact, validate=False), encoding="utf-8")
+            page.goto(path.as_uri(), wait_until="load")
+            warning = page.locator("#logLimitWarning")
+            if "report_value_limit_hit" not in reasons:
+                assert warning.is_hidden()
+                continue
+            for light in (False, True):
+                page.locator("#themeToggle").set_checked(light)
+                assert warning.is_visible()
+                assert warning.inner_text() == (
+                    "В ходе наполнения отчёта был достигнут лимит; отчёт содержит неполные данные."
+                )
+                assert warning.evaluate("el => getComputedStyle(el).backgroundColor") == "rgb(153, 27, 27)"
+                assert warning.evaluate("el => getComputedStyle(el).color") == "rgb(255, 255, 255)"
+                header = page.locator(".app-header").bounding_box()
+                assert warning.bounding_box()["y"] >= header["y"] + header["height"]
+        browser.close()
+
+
 def test_explain_available_button_ignores_axis_points_and_opens_filtered_item(tmp_path: Path) -> None:
     sync_api = pytest.importorskip("playwright.sync_api")
     item_id = "server_log.auto_explain_plans"

@@ -247,6 +247,7 @@
   const MIXED_LOG_ITEMS = ["server_log.system_incidents", "server_log.server_lifecycle", "server_log.crash_recovery_events"];
   const CORRUPTION_TYPES = ["data_corruption", "index_corruption", "checksum_failure", "wal_corruption"];
   const CRASH_TYPES = ["unclean_shutdown", "crash_recovery", "backend_crash", "backend_crash_cleanup", "startup_failure", "configuration_error"];
+  const STORAGE_FAILURE_TYPES = ["disk_full", "io_error", "fsync_failure", "write_failure", "read_failure"];
 
   function logSignalMatches(row, category) {
     const type = String(row.incident_type || "");
@@ -255,8 +256,13 @@
     if (category === "memory") {
       return type ? type === "out_of_memory" : /out of memory|cannot allocate memory|oom[- ]kill/i.test(message);
     }
-    if (category === "space") {
-      return type ? type === "disk_full" : /no space left on device|disk quota exceeded/i.test(message);
+    if (category === "storage") {
+      // A missing user-supplied file is not an I/O failure. Prefer the collector's
+      // classification/SQLSTATE; message fallback is for older untyped records.
+      if (type) return STORAGE_FAILURE_TYPES.includes(type);
+      const state = String(row.sql_state || "").toUpperCase();
+      if (/^[0-9A-Z]{5}$/.test(state) && !["00000", "XX000"].includes(state)) return ["53100", "58030"].includes(state);
+      return /^(?:no space left on device|disk quota exceeded|read-only file system|could not (?:fsync|read|write)\b)/i.test(message.trim());
     }
     if (String(row.severity).toUpperCase() === "PANIC") return true;
     if (type) return CORRUPTION_TYPES.includes(type);
@@ -295,7 +301,7 @@
 
   function logSignalScore(ctx, category) {
     let score = null;
-    const label = {memory: "Out-of-memory", space: "Disk-full", crash: "Crash or corruption"}[category];
+    const label = {memory: "Out-of-memory", storage: "Storage failure", crash: "Crash or corruption"}[category];
     for (const binding of ctx.node.bindings) {
       if (binding.role === "fact" || !MIXED_LOG_ITEMS.includes(binding.id) || ctx.presence(binding.id) !== "present") continue;
       const rows = ctx.rows(binding.id).filter((row) => logSignalMatches(row, category));
@@ -426,6 +432,69 @@
           Number.isFinite(logTime(row.last_time)) &&
           (logTime(row.last_time) < start || logTime(row.log_time) > end ||
             inSnapshotWindow(ctx, row.log_time) && inSnapshotWindow(ctx, row.last_time))));
+  }
+
+  // Shared by the parent and its timing direction. sync_time covers both
+  // checkpoints and restartpoints, so both completion counters are required.
+  function checkpointSyncTiming(ctx) {
+    const id = "snapshot_delta_workload.checkpointer_delta";
+    const row = ctx.rows(id)[0];
+    if (!row) return null;
+    const checkpoints = toNumber(row.checkpoints_done_delta), restartpoints = toNumber(row.restartpoints_done_delta);
+    const sync = toNumber(row.sync_time_ms_delta);
+    if ([checkpoints, restartpoints, sync].some(value => value === null || value < 0)) {
+      ctx.missing("Checkpoint sync timing requires valid non-negative checkpoint and restartpoint completion counters and sync time.");
+      return null;
+    }
+    const done = checkpoints + restartpoints;
+    if (done > 0) {
+      const seconds = sync / done / 1000;
+      const label = "Mean sync time per completed checkpoint/restartpoint in window";
+      ctx.fact(label, fmtNum(seconds, 2) + " s");
+      ctx.reason(label + ": " + fmtNum(seconds, 2) + " s; warning ≥ " + fmtNum(THRESHOLDS.checkpointSyncSec[0], 2) + " s, critical ≥ " + fmtNum(THRESHOLDS.checkpointSyncSec[1], 2) + " s", id);
+      return scalePair(seconds, THRESHOLDS.checkpointSyncSec);
+    }
+    if (sync === 0) {
+      ctx.reason("No checkpoint or restartpoint completed and no sync time accumulated in the measured window.", id);
+      return 0;
+    }
+    ctx.missing("Sync time accumulated without a completed checkpoint or restartpoint; a mean duration cannot be established.");
+    return null;
+  }
+
+  function logicalReplicationErrors(ctx) {
+    const deltaId = "snapshot_delta_workload.subscription_errors_conflicts_delta", historyId = "replication.subscription_workers";
+    const delta = ctx.rows(deltaId), history = ctx.rows(historyId);
+    const window = (resultOf(ctx.item(deltaId)) || {}).delta_window;
+    const validWindow = !window || toNumber(window.duration_seconds) > 0;
+    let score = null;
+    // Select a valid window independently for each counter. PostgreSQL 15-17
+    // lack conflict counters; null/reset deltas must not masquerade as zero.
+    for (const [column, label] of [["apply_error_count", "Apply errors"], ["sync_error_count", "Synchronization errors"], ["conflict_count", "Logical conflicts"]]) {
+      const values = delta.map(row => toNumber(row[column + "_delta"]));
+      const observed = validWindow ? values.filter(value => value !== null && value >= 0) : [];
+      const hasWindow = observed.length > 0;
+      const id = hasWindow ? deltaId : historyId;
+      if (hasWindow && observed.length < values.length) ctx.missing(label + ": some subscriptions lack a valid window delta; observed errors remain usable, but absence is not established.");
+      if (!hasWindow && history.some(row => toNumber(row[column]) < 0)) {
+        ctx.missing(label + ": negative counters indicate a reset or invalid interval.");
+        continue;
+      }
+      const count = hasWindow ? observed.reduce((sum, value) => sum + value, 0) : sumBy(history, column);
+      const period = hasWindow ? " in window" : " since statistics reset";
+      if (count === null) {
+        if (ctx.presence(id) === "empty") {
+          score = maxScore(score, 0);
+          ctx.reason(label + period + ": no matching subscriptions collected", id);
+        }
+        continue;
+      }
+      score = maxScore(score, count > 0 ? 0.5 : 0);
+      ctx.fact(label + period, count);
+      ctx.reason(label + period + ": " + count + "; warning when greater than zero", id);
+    }
+    ctx.reason("Apply errors and conflict counters overlap and are not added. Cumulative counters describe history since statistics reset, not necessarily a current failure.");
+    return score;
   }
 
 
@@ -1436,8 +1505,7 @@
           const hotShare = hotStats.last / all.last;
           ctx.fact("Buffers with usage count >= 3", fmtPct(hotShare * 100, 0));
           if (hotShare > 0.8) {
-            score = maxScore(score, 0.5);
-            ctx.reason(fmtPct(hotShare * 100, 0) + " of buffers are hot (usage count >= 3): the working set exceeds shared_buffers", "buffer_cache.usage_count_distribution");
+            ctx.reason(fmtPct(hotShare * 100, 0) + " of buffers are hot (usage count >= 3). Frequent reuse alone does not establish that shared_buffers is too small; correlate with cache misses and evictions.", "buffer_cache.usage_count_distribution");
           }
         }
       }
@@ -1704,16 +1772,7 @@
         const keys = Object.keys(reasons);
         if (keys.length) ctx.fact("Checkpoint reasons", keys.map((key) => key + " x" + reasons[key]).join(", "));
       }
-      const delta = ctx.rows("snapshot_delta_workload.checkpointer_delta");
-      if (delta.length) {
-        const done = toNumber(delta[0].checkpoints_done_delta);
-        const syncMs = toNumber(delta[0].sync_time_ms_delta);
-        if (done && syncMs !== null) {
-          const perCheckpoint = syncMs / done / 1000;
-          score = maxScore(score, scalePair(perCheckpoint, THRESHOLDS.checkpointSyncSec));
-          ctx.reason("Sync time per completed checkpoint " + perCheckpoint.toFixed(2) + " s in the window", "snapshot_delta_workload.checkpointer_delta");
-        }
-      }
+      score = maxScore(score, checkpointSyncTiming(ctx));
       return shareScaled(ctx, score, "write", ["checkpointer"]);
     },
 
@@ -1881,7 +1940,7 @@
         score = maxScore(score, scalePair(logBytes, THRESHOLDS.logBytes));
         ctx.fact("Log files", fmtBytes(logBytes) + " in " + logs.length + " files");
       }
-      score = maxScore(score, logSignalScore(ctx, "space"), findingsScore(ctx, {roles: ["support"], weightedOnly: true, excludeItems: MIXED_LOG_ITEMS}));
+      score = maxScore(score, logSignalScore(ctx, "storage"), findingsScore(ctx, {roles: ["support"], weightedOnly: true, excludeItems: MIXED_LOG_ITEMS}));
       return score;
     },
 
@@ -2255,12 +2314,7 @@
         score = maxScore(score, 0.6);
         ctx.reason(fmtNum(conflicts, 0) + " recovery conflict(s) in the window", "snapshot_delta_workload.standby_recovery_conflicts_delta");
       }
-      const subs = ctx.rows("replication.subscription_workers");
-      const errors = (sumBy(subs, "apply_error_count") || 0) + (sumBy(subs, "sync_error_count") || 0);
-      if (errors > 0) {
-        score = maxScore(score, 0.6);
-        ctx.reason(fmtNum(errors, 0) + " logical replication error(s)", "replication.subscription_workers");
-      }
+      score = maxScore(score, logicalReplicationErrors(ctx));
       const delay = seriesTotalStats(ctx, "snapshot_charts_db.standby_replay_delay");
       const lagSeries = ctx.series("snapshot_charts_db.standby_replay_lag_bytes");
       const lagStats = lagSeries.length ? seriesStats(sumSeries(lagSeries, {missing: "strict"}), 2) : null;
@@ -2455,5 +2509,5 @@
     }
   };
 
-  return {THRESHOLDS, evaluators, pressureOf, findingsScore};
+  return {THRESHOLDS, evaluators, pressureOf, findingsScore, checkpointSyncTiming, logicalReplicationErrors};
 });

@@ -213,6 +213,11 @@ def build_parser() -> argparse.ArgumentParser:
     logs_parser = subparsers.add_parser(
         "logs",
         help="Build the server_log section from csvlog files without a database",
+        description=(
+            "Build a log report with a 300-second overall deadline, including "
+            "JSON/HTML output. Retained log values have a soft 128 MiB budget; "
+            "reaching it produces a partial report with a visible warning."
+        ),
     )
     _add_content_arg(logs_parser)
     _add_ssh_args(logs_parser)

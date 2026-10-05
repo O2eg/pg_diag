@@ -928,11 +928,7 @@ body {
 /* ---------------------------------------------------------------- output */
 
 .pc-error {
-  /* The message sits between the fields and the settings, so it needs air on
-     both sides. `.pc-form` ends flush with its last group, contributing no
-     bottom margin of its own, and the gap below collapses to the section's
-     own top margin — so both sides are set to the same step here. */
-  margin: var(--pc-sp-6) 0 var(--pc-sp-4);
+  margin: 0 0 var(--pc-sp-4);
   padding: 10px 14px;
   border: 1px solid var(--vw-border-strong);
   border-radius: 10px;
@@ -942,14 +938,10 @@ body {
   font-size: var(--pv-fs-sm);
   line-height: 1.5;
   white-space: pre-wrap;
-  /* One line of text plus the padding and border above and below it. The slot
-     is held open whether or not there is a message, so the panels below do not
-     move as input goes in and out of range. Box-sizing is border-box here. */
-  min-height: calc(1.5em + 22px);
 }
 
 .pc-error-quiet {
-  visibility: hidden;
+  display: none;
 }
 
 .pc-code {
@@ -1274,6 +1266,7 @@ body {
 </head>
 <body class="pv">
 <div class="pc-wrap">
+  <div class="pc-error pc-error-quiet" id="error" role="alert"></div>
   <div class="pc-top">
     <div>
       <h1 class="pc-title">pg-configurator<small>Explainable, hardware-aware PostgreSQL configuration</small></h1>
@@ -1318,14 +1311,11 @@ body {
     <div class="pc-actions" id="actions"></div>
   </div>
   <div id="panels"></div>
-  <!-- The form moves this into the Main panel, between the fields and the
-       settings they produce; it lives here only so the markup stays declarative. -->
-  <div class="pc-error pc-error-quiet" id="error" role="alert"></div>
 </div>
 
 <script type="application/json" id="pgc-rules">{
   "generator": "tools/export_web_data.py",
-  "package_version": "0.11.0",
+  "package_version": "0.11.1",
   "payload": {
     "counts": {
       "deprecated_sentinels": 3,
@@ -3917,7 +3907,7 @@ body {
 }</script>
 <script type="application/json" id="pgc-pg-settings">{
   "generator": "tools/export_web_data.py",
-  "package_version": "0.11.0",
+  "package_version": "0.11.1",
   "payload": {
     "base": {
       "DateStyle": [
@@ -9696,7 +9686,7 @@ body {
 }</script>
 <script type="application/json" id="pgc-input-schema">{
   "generator": "tools/export_web_data.py",
-  "package_version": "0.11.0",
+  "package_version": "0.11.1",
   "payload": {
     "counts": {
       "calculation": 35,
@@ -15020,7 +15010,7 @@ const MAIN_OUTPUT_TABS = [
  */
 const HIDES_STALE_OUTPUT = new Set(['conf', 'settings', 'patroni', 'diff']);
 
-const STALE_NOTICE = 'Not shown while the input is invalid — see the message on the Main tab.';
+const STALE_NOTICE = 'Not shown while the input is invalid — see the message above.';
 
 const el = (tag, className, text) => {
   const node = document.createElement(tag);
@@ -15250,11 +15240,6 @@ class ConfiguratorPage {
     this.activeGroup ??= groupSlug(FIELD_GROUPS[0].title);
     this.syncGroups();
     panel.append(form);
-
-    // The message belongs with the fields that cause it, not above the tab row:
-    // it reports on the values just entered, and it sits directly over the
-    // settings it is suppressing.
-    panel.append(this.errorBox);
 
     // Deployable output sits right below the form. These views share the same
     // calculation and stay inside Main so changing an input and copying its
@@ -15655,9 +15640,7 @@ class ConfiguratorPage {
   }
 
   renderError() {
-    // The box keeps its place whether or not it says anything: hiding it
-    // outright made every panel below jump on each keystroke that fixed or
-    // broke the input.
+    // The shared banner stays visible when switching between tabs.
     this.errorBox.textContent = this.error ?? '';
     this.errorBox.classList.toggle('pc-error-quiet', this.error === null);
     for (const [, node] of this.fieldNodes) node.wrap.classList.remove('pc-invalid');

@@ -1,23 +1,23 @@
-pg_configurator 0.11.0
-Revision: 147ef56cc01eae6346c5635efaa0daf6524a1be6
+pg_configurator 0.11.1
+Revision: e097cee10d92c3eefb78c1913556c8d875ee3e4b
 Source: https://github.com/O2eg/pg_configurator
 License: MIT
 Rebuild: python tools/vendor_configurator.py /path/to/pg_configurator
 SHA-256 of upstream build inputs (including any local edits):
 5e9b3f562239d5bf41469bac7f99d017c217e4460a43d18b0e00d8f6e4e78081  web/build.py
-cc51e15ab7ee8f36e2429aca2c0c5f9e0c533fc21de044ad2c0451d36c27d726  web/configurator.template.html
+e2a2a7c2d335a156a836d6a3757471326c1556adef834e7737e956e2b7c6a990  web/configurator.template.html
 6c5ae904e37a9f21f58348fe2767c951706d6e32d4c0d2b539e37342676581f7  web/src/field-help.js
 0bccd4349e543a031349d22be80a2d2ae2aa9723ab00694c340cee2644ff6088  web/src/units.js
 24eb031b8fb3b512793cef2391dfbdb3e752c96b64d16ccd08d1210334ce3a1e  web/src/rule-eval.js
 ce031622ce96c2d192cab513b6d8c90f8ebfb7f45f29b2153d8b87aa78bad96b  web/src/configurator.js
 62798cdf23ae72dc97e8b23cac21b2807a0a7a569cb89cb745d8d60215572a63  web/src/make-conf.js
 b98c9cd760dd0435af328e25acd77b3330e87cf7d293b53256441213f9346d9a  web/src/config-diff.js
-d1ea4f25e3e6e0c5c2bb322f5d79fb061e6abb76ea1e91e216577e0fb07396c7  web/src/render.js
-2bffbb20daf95ed633e3d1b8f356ee0fb68477ac2a195816db5a4f6ca1271ba5  web/data/rules.json
-a5d3093c53ccb34d35e5d133476ff90f2ec1cc7b86d5a0c1823adac02b66fb71  web/data/pg_settings.json
-b820dafef5e95e813bbfe971d2010311f3cb4fee36ee4f153989bbcc3509275d  web/data/input-schema.json
+63cbb1141ac6bb850396564de483fc5478df565f8af44c7952a68aa9d912dc8b  web/src/render.js
+3c55dd67d9312d6764da208636b8290ff6937885d493915542abbe8e42ad324a  web/data/rules.json
+c754cd7d32ee39ba5edcfeddc2445ffef8543434cc3df585bef293cc069f6629  web/data/pg_settings.json
+2680fec74559ce88489a395bb671c9c0ef58f078c7c7e28917025d2e49828a05  web/data/input-schema.json
 fc3e6f9698be3d5ab40a4446312815ced6f3d36b859f7130e84d66528d56596c  web/css/pgc-theme.css
-849c00e3b0b67f285f8bec0f1d49d55f9d4736247983ffa6eb0d10360333e09d  web/css/pgc.css
+6ec46ce32333b05b14470e19587f0a49d5ce697b27fa2f00cdd04a045b7b215b  web/css/pgc.css
 
 pg-configurator copyright and provenance notice
 

@@ -33,10 +33,10 @@ POSIX-sh script over SSH per phase, mirroring the scan harvester's protocol).
 
 from __future__ import annotations
 
-import asyncio
 import os
 import re
 import shlex
+import time
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, BinaryIO
@@ -60,6 +60,7 @@ from .model import (
     ProbedFile,
 )
 from .records import complete_records, parse_tail
+from .work import run_log_work
 
 PROBE_PROTOCOL_VERSION = "v3"
 _PROBE_TIMEOUT_SECONDS = PHASE_WALLCLOCK_SECONDS / 2
@@ -151,10 +152,10 @@ class LocalLogDirectoryProbe(LogDirectoryProbe):
     """Direct directory listing plus head/tail reads on the collector."""
 
     async def probe(self, log_directory: str) -> ProbeResult:
-        return await asyncio.to_thread(self._probe_sync, log_directory)
+        return await run_log_work(self._probe_sync, log_directory)
 
     async def verify_last_ts(self, log_directory: str, name: str) -> tuple[str | None, int]:
-        return await asyncio.to_thread(self._verify_sync, log_directory, name)
+        return await run_log_work(self._verify_sync, log_directory, name)
 
     def _probe_sync(self, log_directory: str) -> ProbeResult:
         entries: list[tuple[str, float]] = []
@@ -584,12 +585,18 @@ def _optional_float(value: bytes) -> float | None:
 class HarvesterLogDirectoryProbe(LogDirectoryProbe):
     """Remote transport: ephemeral POSIX-sh probe over SSH stdin."""
 
-    def __init__(self, transport: Any) -> None:
+    def __init__(self, transport: Any, *, deadline_monotonic: float | None = None) -> None:
         self._transport = transport  # needs run_script_bytes()
+        self._deadline = deadline_monotonic
 
     async def _run(self, script: bytes, *, output_limit_bytes: int) -> bytes:
+        timeout = _PROBE_TIMEOUT_SECONDS if self._deadline is None else (
+            self._deadline - time.monotonic()
+        )
+        if timeout <= 0:
+            raise TimeoutError("log directory discovery deadline exceeded")
         result = await self._transport.run_script_bytes(
-            script, timeout=_PROBE_TIMEOUT_SECONDS, output_limit_bytes=output_limit_bytes
+            script, timeout=timeout, output_limit_bytes=output_limit_bytes
         )
         if result.returncode != 0:
             stderr = result.stderr
@@ -689,11 +696,14 @@ async def verify_discovery(
 ) -> DiscoveryState:
     """Establish exact timestamps where a decision depends on them.
 
-    1. The newest file anchors the window: it is re-read with exact quote
+    1. Files whose tail probe could not establish a timestamp are verified
+       first: they may hold records newer than every dated file. Otherwise
+       an old anchor would filter out their records even when scanned.
+    2. The newest file anchors the window: it is re-read with exact quote
        parity from its first byte, repeatedly until the newest verified file
        is at least as new as every unverified one (a planted future date
        cannot move the window).
-    2. Files that would be excluded from the window on an unverified,
+    3. Files that would be excluded from the window on an unverified,
        untrusted timestamp are verified too, closest to the window first (a
        planted old date cannot hide a file). Past VERIFY_BUDGET_BYTES the
        remaining ones stay excluded and the window is reported incomplete.
@@ -702,15 +712,25 @@ async def verify_discovery(
     """
     state = DiscoveryState(files=list(result.files))
     verified: set[str] = set()
+    for file in list(state.files):
+        if file.determined or file.size == 0:
+            continue
+        if await _verify(probe, state, log_directory, file):
+            verified.add(file.name)
+        else:
+            state.reasons.add(REASON_DISCOVERY_INCOMPLETE)
     while True:
         dated = sorted(
             (f for f in state.files if _stamp(f) is not None),
             key=lambda f: _order_key(f, clock_for),
             reverse=True,
         )
-        if not dated or dated[0].name in verified:
+        if not dated:
             break
         newest = dated[0]
+        if newest.name in verified:
+            state.verified_name = newest.name
+            break
         if not await _verify(probe, state, log_directory, newest):
             state.reasons.add(REASON_DISCOVERY_INCOMPLETE)
             break

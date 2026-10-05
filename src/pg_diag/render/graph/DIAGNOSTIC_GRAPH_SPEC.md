@@ -282,9 +282,23 @@ Scores are numbers in `[0, 1]`; `status` is `ok` (< 0.34), `warn` (< 0.67),
   worker state. Informational replication log messages are not weighted failures.
 - Checkpointer sync time includes checkpoints and restartpoints. Its mean uses
   the sum of both completed-operation counters; scheduled/requested counts cannot
-  replace missing completions. Recovery-conflict cumulative counters can support
+  replace missing completions. Parents and timing directions use the same helper,
+  including unknown/reset counters and windows with no completed operations.
+  Recovery-conflict cumulative counters can support
   a historical assessment when no valid delta exists. Temporary-file generation
   can use an explicit bytes/s database delta when its chart is unavailable.
+- Storage incidents include typed disk-full, I/O, fsync, read and write failures.
+  These findings reach the Disk root regardless of free space or current device
+  latency. A generic missing-file incident is not an I/O failure. Untyped older
+  records use SQLSTATE first, then anchored server-message signatures.
+- Parent and direction assessments share logical-replication error calculations:
+  each counter prefers a valid window delta, including zero, over cumulative
+  history. Partial deltas retain observed errors but cannot establish a healthy
+  window; fallback totals explicitly describe history since reset.
+- High buffer usage counts describe frequent reuse, not proof that the working
+  set exceeds `shared_buffers`. They remain facts without increasing the sizing
+  score. Cache misses are assessed in the cache-efficiency branch; inspect misses
+  and evictions before attributing pressure to insufficient cache capacity.
 - Named evaluators implement the runbook rules (CPU busy share and load per
   core, system share, disk latency by media type, cache hit ratio, checkpoint
   requested/timed ratio, backend writes share, connection usage, lock wait

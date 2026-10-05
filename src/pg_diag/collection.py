@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import ipaddress
 from pathlib import Path
 import socket
+import time
 from typing import Any
 
 from . import runtime_config
@@ -77,24 +78,21 @@ class CollectionRun:
     progress: ProgressReporter | None = None
 
 
-async def start_collection(
-    *,
-    content: ContentPack,
-    out_dir: str | Path,
-    dsn: str | None,
-    connection_kwargs: dict[str, Any],
-    mode: str,
-    collection_mode: str,
-    json_out: str | Path | None,
-    html_out: str | Path | None,
-    output_formats: str | Iterable[str] | None,
-    content_validated: bool,
-    ssh_config: SshConfig | None = None,
-    item_id: str | Iterable[str] | None = None,
-    tags: Iterable[str] | None = None,
-    progress: ProgressReporter | None = None,
-    item_type: str | Iterable[str] | None = None,
-) -> CollectionRun:
+async def _collection_step(mode: str, function: Any, /, *args: Any, **kwargs: Any) -> Any:
+    if mode == runtime_config.LOGS_MODE:
+        from .logscan.work import run_log_work
+
+        return await run_log_work(function, *args, **kwargs)
+    return function(*args, **kwargs)
+
+
+def _prepare_collection(
+    content: ContentPack, out_dir: str | Path, mode: str, collection_mode: str,
+    json_out: str | Path | None, html_out: str | Path | None,
+    output_formats: str | Iterable[str] | None, content_validated: bool,
+    item_id: str | Iterable[str] | None, tags: Iterable[str] | None,
+    item_type: str | Iterable[str] | None,
+) -> tuple:
     if collection_mode not in runtime_config.COLLECTION_MODES:
         raise ValueError(f"unsupported collection mode {collection_mode!r}")
     if not content_validated:
@@ -121,6 +119,34 @@ async def start_collection(
     )
 
     json_path, html_path = report_output_paths(out_dir, json_out, html_out, output_formats)
+    return (requested_item_ids, requested_tags, requested_item_types,
+            requirements, json_path, html_path)
+
+
+async def start_collection(
+    *,
+    content: ContentPack,
+    out_dir: str | Path,
+    dsn: str | None,
+    connection_kwargs: dict[str, Any],
+    mode: str,
+    collection_mode: str,
+    json_out: str | Path | None,
+    html_out: str | Path | None,
+    output_formats: str | Iterable[str] | None,
+    content_validated: bool,
+    ssh_config: SshConfig | None = None,
+    item_id: str | Iterable[str] | None = None,
+    tags: Iterable[str] | None = None,
+    progress: ProgressReporter | None = None,
+    item_type: str | Iterable[str] | None = None,
+    deadline_monotonic: float | None = None,
+) -> CollectionRun:
+    (requested_item_ids, requested_tags, requested_item_types,
+     requirements, json_path, html_path) = await _collection_step(
+        mode, _prepare_collection, content, out_dir, mode, collection_mode,
+        json_out, html_out, output_formats, content_validated, item_id, tags, item_type,
+    )
     conn: Any | None = None
     ssh: SshTransport | None = None
     database_connector: DatabaseConnector | None = None
@@ -186,8 +212,8 @@ async def start_collection(
                         "remote_database_port": remote_endpoint[1],
                     }
                 )
-        plan = build_plan(
-            content,
+        plan = await _collection_step(
+            mode, build_plan, content,
             server_version_num,
             mode=mode,
             collection_mode=collection_mode,
@@ -198,7 +224,9 @@ async def start_collection(
         if not plan.supported_server_version:
             raise UnsupportedServerVersion(plan.reason or "Unsupported PostgreSQL server version")
         fail_fast = bool((content.report.get("runtime_policy") or {}).get("fail_fast", False))
-        artifact = create_artifact(content, plan, runtime_context, utc_now())
+        artifact = await _collection_step(
+            mode, create_artifact, content, plan, runtime_context, utc_now(),
+        )
         return CollectionRun(
             content=content,
             conn=conn,
@@ -216,7 +244,14 @@ async def start_collection(
         if conn is not None:
             await close_connection(conn)
         if ssh is not None:
-            await ssh.close()
+            if deadline_monotonic is None:
+                await ssh.close()
+            else:
+                remaining = max(0.001, deadline_monotonic - time.monotonic())
+                try:
+                    await asyncio.wait_for(ssh.close(), timeout=min(2.0, remaining))
+                except TimeoutError:
+                    pass  # preserve the startup error/cancellation
         raise
 
 
@@ -469,11 +504,35 @@ def _numeric_timing(value: Any) -> float:
     return float(value) if isinstance(value, (int, float)) else 0.0
 
 
+def _extract_item_queries(
+    item: dict[str, Any], catalog: dict[str, str], contract: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, str]]:
+    extract_item_query_texts(item, catalog, contract)
+    return item, catalog
+
+
 async def execute_and_record_report_item(
     run: CollectionRun,
     planned: PlannedItem,
 ) -> dict[str, Any]:
     collected_at = utc_now()
+    log_budget = None
+    if planned.item_id.startswith("server_log."):
+        from .logscan import model as log_model
+        from .logscan.budget import LogValueBudget
+
+        log_budget = getattr(run, "log_value_budget", None)
+        if log_budget is None:
+            log_budget = run.log_value_budget = LogValueBudget(log_model.REPORT_VALUE_BUDGET_BYTES)
+        if log_budget.hit:
+            item = item_from_plan(planned, collection_status="skipped",
+                                  reason="Log report value budget reached", result={"kind": "none"},
+                                  diagnostics=[{"level": "warning", "code": log_model.REASON_VALUE_LIMIT,
+                                                "message": "Log report value budget reached"}])
+            item["collected_at"] = collected_at
+            run.artifact["items"][planned.item_id] = item
+            record_item_progress(run, planned, item)
+            return item
     try:
         async def execute(conn: Any) -> dict[str, Any]:
             return await execute_report_item(
@@ -497,11 +556,26 @@ async def execute_and_record_report_item(
         else:
             item = await execute(run.conn)
         item["collected_at"] = collected_at
-        extract_item_query_texts(
-            item,
+        item, catalog = await _collection_step(
+            run.plan.mode, _extract_item_queries, item,
             run.artifact["query_texts"],
             run.content.report["runtime_policy"]["query_text_catalog"],
         )
+        # Worker processes return a copied catalog. Preserve existing string
+        # objects so cross-item sharing and memory accounting remain accurate.
+        for reference, text in catalog.items():
+            run.artifact["query_texts"].setdefault(reference, text)
+        if log_budget is not None:
+            from .logscan.budget import retain_log_item, update_coverage
+
+            context = getattr(run, "server_log", None)
+            retain_log_item(
+                item, log_budget, run.artifact["query_texts"],
+                getattr(context, "query_texts", {}),
+                getattr(context, "query_text_metadata", {}),
+                run.artifact.setdefault("query_text_metadata", {}),
+            )
+            update_coverage(run.artifact, log_budget)
         run.artifact["items"][planned.item_id] = item
         record_item_progress(run, planned, item)
         raise_if_fail_fast(run.fail_fast, item)
@@ -736,6 +810,7 @@ def finish_collection(
     *,
     runtime_updates: dict[str, Any] | None = None,
     strip_meta: bool = False,
+    temporary_paths: dict[Path, Path] | None = None,
 ) -> dict[str, Any]:
     if runtime_updates:
         run.artifact["runtime"].update(runtime_updates)
@@ -752,12 +827,22 @@ def finish_collection(
     apply_presentation_contract(run.content, run.artifact)
     if strip_meta:
         strip_artifact_metadata(run.artifact)
+    if getattr(run, "log_value_budget", None) is not None:
+        from .logscan.budget import finish_budget
+
+        finish_budget(run.artifact, run.log_value_budget)
     validate_artifact(run.artifact)
     if run.html_path is not None:
         html_text = render_html(run.artifact, validate=False)
-        write_text_secure(run.html_path, html_text)
+        write_text_secure(
+            run.html_path, html_text,
+            temporary_path=(temporary_paths or {}).get(run.html_path),
+        )
     if run.json_path is not None:
-        write_json(run.json_path, run.artifact, validate=False)
+        write_json(
+            run.json_path, run.artifact, validate=False,
+            temporary_path=(temporary_paths or {}).get(run.json_path),
+        )
     return run.artifact
 
 

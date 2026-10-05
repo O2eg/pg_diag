@@ -33,6 +33,7 @@ from .model import (
     AUTO_EXPLAIN_RAW_RECORD_CAP,
     DEPTH_MAX_MINUTES,
     LINE_CAP,
+    LOGS_FINISH_RESERVE_SECONDS,
     MAX_CANDIDATE_FILES,
     PHASE_WALLCLOCK_SECONDS,
     RAW_RECORD_CAP,
@@ -54,6 +55,7 @@ from .rle import fingerprint, merge_client_series
 from .sanitize import sanitize_text
 from .query_links import query_reference
 from .sources import LocalLogSource, LogScanSource
+from .work import run_log_work
 
 _INSUFFICIENT_PRIVILEGE = "42501"
 _SUPPORTED_LOCALE_PREFIXES = ("C", "POSIX", "en_", "en.", "English")
@@ -150,7 +152,7 @@ async def collect_report_server_log(
     pg_ls_logdir() and its clock.
     """
     if depth_minutes is None or depth_minutes == 0:
-        _finish(
+        await _finish_async(
             run,
             None,
             {
@@ -162,7 +164,7 @@ async def collect_report_server_log(
         return None
     enabled_items = _enabled_server_log_items(run)
     if not enabled_items:
-        _finish(
+        await _finish_async(
             run,
             None,
             {
@@ -172,7 +174,15 @@ async def collect_report_server_log(
             },
         )
         return None
-    depth = min(int(depth_minutes), DEPTH_MAX_MINUTES)
+    depth = int(depth_minutes)
+    if not 1 <= depth <= DEPTH_MAX_MINUTES:
+        raise ValueError(f"log depth must be between 1 and {DEPTH_MAX_MINUTES} minutes")
+    started = time.monotonic()
+    report_deadline = getattr(run, "report_deadline_monotonic", None)
+    phase_seconds = PHASE_WALLCLOCK_SECONDS if report_deadline is None else max(
+        0.0, report_deadline - started - LOGS_FINISH_RESERVE_SECONDS
+    )
+    run.server_log_deadline_monotonic = started + phase_seconds
     try:
         inventory, window = await asyncio.wait_for(
             (
@@ -185,10 +195,10 @@ async def collect_report_server_log(
                 if log_directory is not None
                 else _collect(run, depth_minutes=depth)
             ),
-            timeout=PHASE_WALLCLOCK_SECONDS,
+            timeout=phase_seconds,
         )
     except _PhaseUnavailable as exc:
-        _finish(
+        await _finish_async(
             run,
             None,
             {
@@ -201,18 +211,18 @@ async def collect_report_server_log(
         )
         return None
     except (TimeoutError, asyncio.TimeoutError):
-        _finish(
+        await _finish_async(
             run,
             None,
             {
                 "status": "error",
-                "reason": f"log collection exceeded {PHASE_WALLCLOCK_SECONDS:.0f}s wall clock",
+                "reason": f"log collection exceeded {phase_seconds:.0f}s wall clock",
                 "coverage": None,
             },
         )
         return None
     except Exception as exc:  # noqa: BLE001 - the phase must never fail the report
-        _finish(
+        await _finish_async(
             run,
             None,
             {
@@ -224,7 +234,7 @@ async def collect_report_server_log(
         return None
     coverage = asdict(window.coverage)
     coverage["truncation_reasons"] = list(coverage["truncation_reasons"])
-    _finish(
+    await _finish_async(
         run,
         window,
         {
@@ -244,6 +254,35 @@ def _source_marker(inventory: dict[str, Any] | None) -> dict[str, Any]:
     return {"source": source} if isinstance(source, dict) else {}
 
 
+async def _finish_async(
+    run: Any,
+    window: LogWindow | None,
+    marker: dict[str, Any],
+    *,
+    inventory: dict[str, Any] | None = None,
+) -> None:
+    if getattr(run, "report_deadline_monotonic", None) is None:
+        _finish(run, window, marker, inventory=inventory)
+        return
+    # Return only state owned by this phase, never live SSH/database objects.
+    catalog, metadata, context = await run_log_work(
+        _finish_state, run, window, marker, inventory=inventory,
+    )
+    run.artifact["runtime"]["log_collection"] = marker
+    if catalog is not None:
+        run.artifact["query_texts"] = catalog
+    if metadata is not None:
+        run.artifact["query_text_metadata"] = metadata
+    run.server_log = replace(context, window=window)
+    run.server_log_window = window
+
+
+def _finish_state(run: Any, window: LogWindow | None, marker: dict[str, Any], **kwargs: Any) -> tuple:
+    _finish(run, window, marker, **kwargs)
+    return (run.artifact.get("query_texts"), run.artifact.get("query_text_metadata"),
+            replace(run.server_log, window=None))
+
+
 def _finish(
     run: Any,
     window: LogWindow | None,
@@ -252,25 +291,28 @@ def _finish(
     inventory: dict[str, Any] | None = None,
 ) -> None:
     run.artifact["runtime"]["log_collection"] = marker
+    catalog: dict[str, str] = {}
+    metadata: dict[str, Any] = {}
     if window is not None:
-        catalog = run.artifact.setdefault("query_texts", {})
         for record in window.records:
             reference = query_reference(record.query, record.query_id)
             if reference and record.query:
                 if reference in catalog:
                     if catalog[reference] != record.query.strip():
-                        run.artifact.setdefault("query_text_metadata", {}).setdefault(reference, {})[
+                        metadata.setdefault(reference, {})[
                             "representative_sample"
                         ] = True
                     continue
                 catalog[reference] = record.query.strip()
                 if record.query_truncated:
-                    run.artifact.setdefault("query_text_metadata", {})[reference] = {
+                    metadata[reference] = {
                         "truncated": True, "max_chars": LINE_CAP,
                     }
     runtime = run.artifact.get("runtime") or {}
     interval_seconds = runtime.get("interval_seconds")
     run.server_log = ServerLogContext(
+        query_texts=catalog,
+        query_text_metadata=metadata,
         window=window,
         marker=marker,
         inventory=inventory,
@@ -420,7 +462,10 @@ async def _collect(run: Any, *, depth_minutes: int) -> tuple[dict[str, Any], Log
     if candidate_overflow:
         result.stats.truncation_reasons.add(REASON_CANDIDATE_LIMIT)
     encodings = await _database_encodings(run.conn)
-    return inventory, _build_window(
+    from ..executors.python import run_blocking
+
+    return inventory, await run_blocking(
+        _build_window,
         result,
         depth_minutes=depth_minutes,
         server_version_num=server_version_num,
@@ -459,7 +504,9 @@ async def _collect_from_directory(
         ssh = getattr(run, "ssh", None)
         if ssh is None:
             raise _PhaseUnavailable("remote log collection needs the SSH transport")
-        probe = HarvesterLogDirectoryProbe(ssh)
+        probe = HarvesterLogDirectoryProbe(
+            ssh, deadline_monotonic=getattr(run, "server_log_deadline_monotonic", None)
+        )
     else:
         raise _PhaseUnavailable(
             "server log collection requires local or remote (SSH) collection mode"
@@ -506,7 +553,10 @@ async def _collect_from_directory(
     # unverified anchor) forfeit completeness exactly like scan truncation.
     result.stats.truncation_reasons.update(discovered.truncation_reasons)
     result.stats.files_unreadable += discovered.files_unreadable
-    return inventory, _build_window(
+    from ..executors.python import run_blocking
+
+    return inventory, await run_blocking(
+        _build_window,
         result,
         depth_minutes=depth_minutes,
         server_version_num=discovered.csv_format.server_version_num,
@@ -537,6 +587,9 @@ async def _scan_candidates(
         # Only inventory-capability items are enabled: no content scan needed.
         return ScanResult(series=[], stats=ScanStats(files_seen=len(candidates)))
     source = _select_source(collection_mode, log_directory, getattr(run, "ssh", None))
+    now = time.monotonic()
+    phase_deadline = getattr(run, "server_log_deadline_monotonic", now + PHASE_WALLCLOCK_SECONDS)
+    parse_reserve = min(5.0, max(0.0, phase_deadline - now) * 0.1)
     request = ScanRequest(
         log_directory=log_directory,
         files=candidates,
@@ -548,7 +601,8 @@ async def _scan_candidates(
             if "server_log.auto_explain_plans" in enabled_items
             else RAW_RECORD_CAP
         ),
-        deadline_monotonic=time.monotonic() + PHASE_WALLCLOCK_SECONDS * 0.9,
+        # Share the phase deadline: discovery must not reset the scan clock.
+        deadline_monotonic=phase_deadline - parse_reserve,
     )
     try:
         result = await source.scan(request)
@@ -625,11 +679,9 @@ def _build_window(
                 continue
             if last_abs < from_abs or first_abs > anchor_abs:
                 continue
-            records.append(record)
+        elif window_from_dt is not None and record.last_time < window_from_dt:
             continue
-        if window_from_dt is not None and record.last_time < window_from_dt:
-            continue
-        if window_to_dt is not None and record.log_time > window_to_dt:
+        elif window_to_dt is not None and record.log_time > window_to_dt:
             continue  # written after the server-side T0 (growing active file)
         records.append(record)
     if parse_errors:

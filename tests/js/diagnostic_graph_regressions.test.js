@@ -37,6 +37,100 @@ const checkpointLog = () => table("server_log.checkpoints", [
   {event: "checkpoint", phase: "starting", reason: "time", repeat_count: 1, log_time: finish, count_complete: true}
 ], {omitted_series_count: 0});
 
+test("storage I/O incidents reach the disk root even with ample free space", () => {
+  for (const row of [
+    {incident_type: "io_error", sql_state: "58030", message: 'could not fsync file "base/1/123": Input/output error'},
+    ...["fsync_failure", "write_failure", "read_failure", "disk_full"].map(incident_type => ({incident_type})),
+    {sql_state: "58030", message: "ошибка ввода-вывода"},
+    {message: 'could not write to file "base/1/123": Read-only file system'}
+  ]) {
+    const incident = table("server_log.system_incidents", [{severity: "ERROR", occurrences: 1, count_complete: true, ...row}]);
+    const nodes = evaluate([incident, table("os.disk_usage", [{mount_point: "/pgdata", used_pct: 40}])]);
+    for (const id of ["disk.space.sources.incidents", "disk.space", "disk"]) assert.equal(nodes[id].status, "crit", id + JSON.stringify(row));
+    assert.ok(nodes["disk.space.sources.incidents"].evidence.includes(incident.item_id));
+    assert.doesNotMatch(nodes["disk.space.sources.incidents"].reasons.join(" "), /No .*failure found/);
+  }
+  for (const row of [
+    {incident_type: "missing_file", sql_state: "58P01", message: 'could not read file "missing": No such file or directory'},
+    {sql_state: "42P01", message: 'relation "could not fsync file" does not exist'},
+    {incident_type: "too_many_connections", sql_state: "53300"}
+  ]) assert.equal(evaluate([table("server_log.system_incidents", [row])])["disk.space.sources.incidents"].status, "ok");
+  const failed = table("server_log.system_incidents", [{incident_type: "io_error"}]);
+  failed.collection_status = "error";
+  assert.equal(evaluate([failed])["disk.space.sources.incidents"].status, "no_data");
+});
+
+test("checkpoint parents and timing directions use the same completed-operation denominator", () => {
+  for (const [checkpoints, restartpoints, sync, expected] of [
+    [1, 9, 15000, "ok"], [0, 3, 6000, "warn"], [0, 3, 30000, "crit"],
+    [0, 0, 0, "ok"], [1, null, 20000, "no_data"], [-1, 3, 6000, "no_data"],
+    [1, 0, -100, "no_data"], [0, 0, 100, "no_data"]
+  ]) {
+    const nodes = evaluate([disk(), chart("snapshot_charts_os.os_cpu_utilization", {iowait: [40, 40]}),
+      table("snapshot_delta_workload.checkpointer_delta", [{checkpoints_done_delta: checkpoints,
+        restartpoints_done_delta: restartpoints, sync_time_ms_delta: sync}])]);
+    for (const id of ["disk.write.checkpoints", "cpu.iowait.write.data.checkpoints"]) {
+      assert.equal(nodes[id].ownStatus, expected, id + JSON.stringify([checkpoints, restartpoints, sync]));
+      assert.equal(nodes[id + ".sources.timing"].status, expected);
+      if (checkpoints === 1 && restartpoints === 9) assert.match(nodes[id].reasons.join(" "), /1\.50 s/);
+    }
+  }
+});
+
+test("current logical replication deltas supersede historical failures in parents and directions", () => {
+  const workers = () => table("replication.subscription_workers", [{subname: "healthy", subenabled: true,
+    worker_running: true, apply_error_count: 100, sync_error_count: 2, conflict_count: 100}]);
+  for (const [deltaRows, expected] of [
+    [[{apply_error_count_delta: 0, sync_error_count_delta: 0, conflict_count_delta: 0}], "ok"],
+    [[{apply_error_count_delta: 1, sync_error_count_delta: 0, conflict_count_delta: 1}], "warn"],
+    [[{apply_error_count_delta: null, sync_error_count_delta: null, conflict_count_delta: null}], "warn"],
+    [[{apply_error_count_delta: -1, sync_error_count_delta: 0, conflict_count_delta: 0}], "warn"],
+    [[], "warn"]
+  ]) {
+    const nodes = evaluate([workers(), table("snapshot_delta_workload.subscription_errors_conflicts_delta", deltaRows)]);
+    for (const id of ["health.replication", "health.replication.sources.logical", "database_health"]) assert.equal(nodes[id].status, expected, id + JSON.stringify(deltaRows));
+    if (expected === "ok") {
+      assert.equal(nodes["health.replication"].ownScore, 0);
+      assert.equal(nodes["health.replication"].facts["Apply errors in window"], "0");
+      assert.doesNotMatch(nodes["health.replication"].reasons.join(" "), /100 logical replication/);
+    } else assert.ok(nodes["health.replication"].reasons.some(r => /in window|since statistics reset/.test(r)));
+  }
+  const failed = table("snapshot_delta_workload.subscription_errors_conflicts_delta", [{apply_error_count_delta: 0, sync_error_count_delta: 0, conflict_count_delta: 0}]);
+  failed.collection_status = "error";
+  assert.equal(evaluate([workers(), failed])["health.replication"].status, "warn");
+  const invalidWindow = table("snapshot_delta_workload.subscription_errors_conflicts_delta", [{apply_error_count_delta: 0, sync_error_count_delta: 0, conflict_count_delta: 0}], {delta_window: {duration_seconds: 0}});
+  assert.equal(evaluate([workers(), invalidWindow])["health.replication"].status, "warn");
+});
+
+test("partial logical replication deltas preserve observed errors without proving healthy zeros", () => {
+  for (const [count, expected] of [[1, "warn"], [0, "no_data"]]) {
+    const nodes = evaluate([
+      table("replication.subscription_workers", [{subname: "healthy", subenabled: true, worker_running: true,
+        apply_error_count: 0, sync_error_count: 0, conflict_count: 0}]),
+      table("snapshot_delta_workload.subscription_errors_conflicts_delta", [
+        {apply_error_count_delta: count, sync_error_count_delta: 0, conflict_count_delta: 0},
+        {apply_error_count_delta: null, sync_error_count_delta: null, conflict_count_delta: null}])
+    ]);
+    for (const id of ["health.replication", "health.replication.sources.logical"]) {
+      assert.equal(nodes[id].status, expected);
+      assert.ok(nodes[id].hints.some(h => /lack a valid window delta/.test(h)));
+    }
+  }
+});
+
+test("hot buffers alone do not prove cache undersizing, while measured misses still warn", () => {
+  const buffers = () => [chart("buffer_cache.utilization", {used: [90, 90], unused: [10, 10]}),
+    chart("buffer_cache.usage_count_distribution", {"usage count 0": [10, 10], "usage count 5": [90, 90]})];
+  const healthy = evaluate([...buffers(), chart("snapshot_charts_db.database_block_access_rate", {"hit (db)": [1000, 1000], "read (db)": [0, 0]})]);
+  assert.equal(healthy["ram.shared_buffers"].ownScore, null, "reuse without a sizing criterion is informational");
+  assert.equal(healthy.ram.status, "ok");
+  assert.equal(healthy["ram.shared_buffers"].facts["Buffers with usage count >= 3"], "90 %");
+  assert.doesNotMatch(healthy["ram.shared_buffers"].reasons.join(" "), /working set exceeds/);
+  const misses = evaluate([...buffers(), chart("snapshot_charts_db.database_block_access_rate", {"hit (db)": [800, 800], "read (db)": [200, 200]})]);
+  assert.equal(misses["ram.cache_efficiency"].ownStatus, "crit");
+  assert.equal(misses.ram.status, "crit");
+});
+
 test("checkpoint logs replace snapshot counts only with complete matching coverage", () => {
   for (const defect of ["short", "truncated", "ranking", "capped", "old", "incomplete_count", "crossing_rle", "insufficient_count"]) {
     const runtime = coverage(), log = checkpointLog();

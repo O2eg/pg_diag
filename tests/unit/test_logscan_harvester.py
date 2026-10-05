@@ -281,6 +281,30 @@ def test_harvester_wire_budget_stops(tmp_path) -> None:
     assert result.series
 
 
+@pytest.mark.parametrize("budget", [512, 1536, 1600, 2048, 3500, 10000, 65536])
+@pytest.mark.parametrize("chunk_bytes", [67, 4096])
+def test_wire_limit_retains_identical_prefix_and_coverage(tmp_path, budget, chunk_bytes) -> None:
+    # A large record followed by small ones must stop both transports at the
+    # same boundary, including across files and buffer splits inside records.
+    for name in ("a.csv", "b.csv"):
+        body = "".join(
+            _multiline_record(BASE + timedelta(seconds=i),
+                              'duration: 1 ms  plan:\n' + 'я' * (3000 if i == 12 else 20))
+            for i in range(40)
+        )
+        (tmp_path / name).write_text(body)
+    request = _request(
+        tmp_path, [_info(tmp_path, name) for name in ("a.csv", "b.csv")], BASE,
+        wire_budget_bytes=budget, recall_clauses=((b"plan:",),),
+    )
+    local = asyncio.run(LocalLogSource(str(tmp_path), chunk_bytes=chunk_bytes).scan(request))
+    remote = _scan(request)
+    assert local == remote
+    if budget < 65536:
+        assert "return_limit_hit" in local.stats.truncation_reasons
+    assert local.stats.dropped_lines == 0
+
+
 def test_harvester_unterminated_tail_dropped(tmp_path) -> None:
     body = _record(BASE + timedelta(seconds=1), "ERROR", "complete")
     body += _record(BASE + timedelta(seconds=2), "ERROR", "cutoff").rstrip("\n")

@@ -273,6 +273,7 @@ def write_json(
     artifact: dict[str, Any],
     *,
     validate: bool = True,
+    temporary_path: Path | None = None,
 ) -> None:
     if validate:
         from .artifact_schema import validate_artifact
@@ -285,19 +286,25 @@ def write_json(
         separators=(",", ":"),
         sort_keys=True,
     ) + "\n"
-    write_text_secure(path, payload)
+    write_text_secure(path, payload, temporary_path=temporary_path)
 
 
-def write_text_secure(path: str | Path, text: str) -> None:
+def write_text_secure(path: str | Path, text: str, *, temporary_path: Path | None = None) -> None:
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    fd, temporary_name = tempfile.mkstemp(
-        dir=output.parent,
-        prefix=f".{output.name}.",
-        suffix=".tmp",
-        text=True,
-    )
-    temporary = Path(temporary_name)
+    if temporary_path is None:
+        fd, temporary_name = tempfile.mkstemp(
+            dir=output.parent,
+            prefix=f".{output.name}.",
+            suffix=".tmp",
+            text=True,
+        )
+        temporary = Path(temporary_name)
+    else:
+        # A supervising process can name and clean this file after killing a
+        # blocked writer. Exclusive creation also rejects existing symlinks.
+        temporary = temporary_path
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
         os.fchmod(fd, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -361,6 +368,9 @@ def omit_skipped_report_items(
         item_id
         for item_id, item in items.items()
         if isinstance(item, dict) and item.get("collection_status") == "skipped"
+        # A runtime output limit is missing evidence, not an inapplicable item.
+        and not any(d.get("code") == "report_value_limit_hit"
+                    for d in item.get("diagnostics", []) if isinstance(d, dict))
     })
     if not skipped_item_ids:
         return
