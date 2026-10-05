@@ -4,13 +4,18 @@ FROM postgres:${PG_IMAGE_TAG}
 ARG PG_MAJOR
 
 # Keep PG10's legacy packages and their indexes together after Bullseye LTS.
+# PGDG moved Bullseye to its archive; retain the image's signed-by keyring.
 # Snapshot expiry is expected; APT signature verification remains enabled.
 RUN if [ "$PG_MAJOR" = "10" ]; then \
         printf '%s\n' \
             'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20260901T000000Z/ bullseye main' \
             'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20260901T000000Z/ bullseye-updates main' \
             'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/20260901T000000Z/ bullseye-security main' \
-            > /etc/apt/sources.list; \
+            > /etc/apt/sources.list \
+        && apt-get update -o Dir::Etc::sourceparts=- \
+        && apt-get install -y --no-install-recommends ca-certificates \
+        && sed -i 's|http://apt.postgresql.org/pub/repos/apt/|https://apt-archive.postgresql.org/pub/repos/apt/|' \
+            /etc/apt/sources.list.d/pgdg.list; \
     fi \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
