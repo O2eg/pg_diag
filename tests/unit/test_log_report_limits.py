@@ -409,14 +409,17 @@ def test_deadline_can_interrupt_a_partially_transferred_worker_result(tmp_path, 
         await asyncio.wait_for(executor.run_blocking(str, "unused"), timeout=0.2)
 
     started = time.monotonic()
-    with pytest.raises(TimeoutError):
+    with pytest.raises(asyncio.TimeoutError):
         asyncio.run(scenario())
     assert time.monotonic() - started < 1.0
     with pytest.raises(ProcessLookupError):
         os.kill(int(pid_file.read_text()), 0)
 
 
-def test_deadline_bounds_ssh_cleanup_when_startup_is_cancelled(content_path, tmp_path, monkeypatch):
+@pytest.mark.parametrize("startup_error", [False, True])
+def test_deadline_bounds_ssh_cleanup_and_preserves_startup_failure(
+    content_path, tmp_path, monkeypatch, startup_error,
+):
     from pg_diag.ssh_transport import SshConfig
 
     close_started = []
@@ -429,11 +432,13 @@ def test_deadline_bounds_ssh_cleanup_when_startup_is_cancelled(content_path, tmp
         return SimpleNamespace(config=config, close=slow_close)
 
     def slow_artifact(*args):
+        if startup_error:
+            raise ValueError("artifact construction failed")
         time.sleep(10)
 
     monkeypatch.setattr(collection.SshTransport, "connect", connect)
     monkeypatch.setattr(collection, "create_artifact", slow_artifact)
-    monkeypatch.setattr(model, "LOGS_REPORT_WALLCLOCK_SECONDS", 1.0)
+    monkeypatch.setattr(model, "LOGS_REPORT_WALLCLOCK_SECONDS", 5.0 if startup_error else 1.0)
 
     async def scenario():
         return await asyncio.wait_for(logs.collect_logs(
@@ -442,8 +447,10 @@ def test_deadline_bounds_ssh_cleanup_when_startup_is_cancelled(content_path, tmp
                 host="localhost", username="root", known_hosts=tmp_path / "known_hosts",
             ),
             content_validated=True, item_id="server_log.top_errors", output_formats="json",
-        ), timeout=2.0)
+        ), timeout=6.0 if startup_error else 2.0)
 
-    with pytest.raises(CommandTimeoutError, match="1s deadline"):
+    error = ValueError if startup_error else CommandTimeoutError
+    message = "artifact construction failed" if startup_error else "1s deadline"
+    with pytest.raises(error, match=message):
         asyncio.run(scenario())
     assert close_started

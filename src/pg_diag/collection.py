@@ -250,7 +250,7 @@ async def start_collection(
                 remaining = max(0.001, deadline_monotonic - time.monotonic())
                 try:
                     await asyncio.wait_for(ssh.close(), timeout=min(2.0, remaining))
-                except TimeoutError:
+                except (asyncio.TimeoutError, TimeoutError):
                     pass  # preserve the startup error/cancellation
         raise
 
